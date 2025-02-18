@@ -28,8 +28,24 @@ from django.utils import timezone
 from api.models import CrossAccountRequest, Tenant
 
 from management.models import *
+from management.role.definer import seed_roles
+from management.tenant_service.tenant_service import BootstrappedTenant
+from management.tenant_service.v2 import V2TenantBootstrapService
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    none_of,
+    one_of,
+    relation,
+    resource,
+    resource_type,
+    subject,
+    subject_type,
+)
 from migration_tool.migrate import migrate_data
 from management.group.definer import seed_group, clone_default_group_in_public_schema
+from tests.management.role.test_dual_write import RbacFixture
 
 
 class MigrateTests(TestCase):
@@ -294,3 +310,262 @@ class MigrateTests(TestCase):
         group_migrator.assert_called_once()
         role_migrator.assert_not_called()
         car_migrator.assert_called_once()
+
+
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+class MigrateTestTupleStore(TestCase):
+    """Test migrator."""
+
+    relations: InMemoryTuples
+    fixture: RbacFixture
+
+    o1: BootstrappedTenant
+    o2: BootstrappedTenant
+
+    def setUp(self):
+        """Set up the migrator tests."""
+        super().setUp()
+
+        self.relations = InMemoryTuples()
+        self.fixture = RbacFixture(V2TenantBootstrapService(InMemoryRelationReplicator(self.relations)))
+
+        # Create two platform default system roles, and one not platform default
+        self.sr1 = self.fixture.new_system_role("sr1", ["app1:res1:verb1", "app2:res2:verb2"], platform_default=True)
+        self.sr2 = self.fixture.new_system_role("sr2", ["app3:res3:verb3", "app4:res4:verb4"], platform_default=True)
+        self.sr3 = self.fixture.new_system_role("sr3", ["app5:res5:verb5", "app6:res6:verb6"])
+
+        self.o1 = self.fixture.new_tenant("o1")
+        self.o2 = self.fixture.new_tenant("o2")
+
+        # Tenanted objects for o1
+        self.o1_r1 = self.fixture.new_custom_role(
+            "o1_r1", self.fixture.workspace_access(default=["app5:res5:verb5"]), self.o1.tenant
+        )
+        self.o1_r2 = self.fixture.new_custom_role(
+            "o1_r2", self.fixture.workspace_access(o1_w1=["app1:res1:verb1"]), self.o1.tenant
+        )
+        self.o1_r3 = self.fixture.new_custom_role(
+            "o1_r3",
+            self.fixture.workspace_access(
+                o1_w1=["app2:res2:verb2"],
+                o1_w2=["app2:res2:verb2", "app3:res3:verb3"],
+            ),
+            self.o1.tenant,
+        )
+
+        self.o1_default_group = self.fixture.custom_default_group(self.o1.tenant)
+        self.fixture.add_role_to_group(self.o1_r1, self.o1_default_group)
+        self.fixture.remove_role_from_group(self.sr2, self.o1_default_group)
+
+        self.o1_g1, _ = self.fixture.new_group("o1_g1", self.o1.tenant, ["o1_u1", "o1_u2"])
+        self.fixture.add_role_to_group(self.sr3, self.o1_g1)
+        self.fixture.add_role_to_group(self.o1_r2, self.o1_g1)
+
+        # Tenanted objects for o2
+        self.o2_r1 = self.fixture.new_custom_role(
+            "o2_r1", self.fixture.workspace_access(default=["app5:res5:verb5"]), self.o2.tenant
+        )
+        self.o2_g1, _ = self.fixture.new_group("o2_g1", self.o2.tenant, ["o2_u1", "o2_u2"])
+        self.fixture.add_role_to_group(self.o2_r1, self.o2_g1)
+
+        self.maxDiff = None
+
+    def test_migrate_no_exclusions(self):
+        self.relations.clear()
+        self.o1.tenant.ready = True
+        self.o1.tenant.save()
+        self.o2.tenant.ready = True
+        self.o2.tenant.save()
+
+        migrate_data(write_relationships=InMemoryRelationReplicator(self.relations))
+
+        # Check tenanted objects for o1 are migrated
+
+        # Group members...
+        # 2
+        self.assertCountEqual(
+            ["redhat/o1_u1", "redhat/o1_u2"],
+            [
+                t.subject_id
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "group", self.o1_g1.uuid), relation("member")),
+                )
+            ],
+        )
+
+        # Bindings...
+
+        # o1_default_group should be bound default workspace with sr1 and o1_r1, but not sr2
+        # Start with the default workspace bindings...
+        default_bindings = self.relations.find_tuples(
+            all_of(resource("rbac", "workspace", self.o1.default_workspace.id), relation("binding")),
+        )
+
+        # 4
+        self.assertTrue(
+            # ...then traverse that role binding
+            default_bindings.traverse_subject(
+                # and find which ones have
+                [
+                    # a role relation, to a role which has only the app5 perm (and no others)
+                    all_of(
+                        relation("role"),
+                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=True),
+                    ),
+                    # and a subject relation to the custom default group's members
+                    all_of(relation("subject"), subject("rbac", "group", self.o1_default_group.uuid, "member")),
+                ]
+            ),
+            "missing o1_r1 binding",
+        )
+
+        # 3
+        self.assertTrue(
+            default_bindings.traverse_subject(
+                # from default find bindings which have
+                [
+                    # a role relation, to the sr1 role
+                    all_of(
+                        relation("role"),
+                        subject("rbac", "role", self.sr1.uuid),
+                    ),
+                    # and a subject relation to the custom default group's members
+                    all_of(relation("subject"), subject("rbac", "group", self.o1_default_group.uuid, "member")),
+                ]
+            ),
+            "missing sr1 binding",
+        )
+
+        self.assertFalse(
+            default_bindings.traverse_subject(
+                # from default find bindings which have
+                [
+                    # a role relation, to the sr2 role
+                    all_of(
+                        relation("role"),
+                        subject("rbac", "role", self.sr2.uuid),
+                    ),
+                    # and a subject relation to the custom default group's members
+                    all_of(relation("subject"), subject("rbac", "group", self.o1_default_group.uuid, "member")),
+                ]
+            ),
+            "unexpected sr2 binding",
+        )
+
+        # o1_1 should be bound to sr3 and to o1_r2, which grants permissions to workspace o1_w1
+        # 3
+        self.assertTrue(
+            default_bindings.traverse_subject(
+                [
+                    all_of(
+                        relation("role"),
+                        subject("rbac", "role", self.sr3.uuid),
+                    ),
+                    all_of(relation("subject"), subject("rbac", "group", self.o1_g1.uuid, "member")),
+                ]
+            )
+        )
+
+        # 4
+        self.assertTrue(
+            self.relations.find_tuples(
+                all_of(resource("rbac", "workspace", "o1_w1"), relation("binding"))
+            ).traverse_subject(
+                [
+                    all_of(
+                        relation("role"),
+                        self.relations.subject_is_resource_of(relation("app1_res1_verb1"), only=True),
+                    ),
+                    all_of(relation("subject"), subject("rbac", "group", self.o1_g1.uuid, "member")),
+                ]
+            )
+        )
+
+        # o1_r3 custom role should have bindings without subjects (none bound yet)
+        # 3
+        self.assertTrue(
+            self.relations.find_tuples(
+                all_of(resource("rbac", "workspace", "o1_w1"), relation("binding"))
+            ).traverse_subject(
+                [
+                    all_of(
+                        relation("role"),
+                        self.relations.subject_is_resource_of(relation("app2_res2_verb2"), only=True),
+                    ),
+                ]
+            ),
+            "missing o1_r3 binding for o1_w1",
+        )
+
+        # 4
+        self.assertTrue(
+            self.relations.find_tuples(
+                all_of(resource("rbac", "workspace", "o1_w2"), relation("binding"))
+            ).traverse_subject(
+                [
+                    all_of(
+                        relation("role"),
+                        self.relations.subject_is_resource_of(
+                            [relation("app2_res2_verb2"), relation("app3_res3_verb3")], only=True
+                        ),
+                    ),
+                ]
+            ),
+            "missing o1_r3 binding for o1_w2",
+        )
+
+        # Check tenanted objects for o2 are migrated
+
+        # Group members...
+        # 2
+        self.assertCountEqual(
+            ["redhat/o2_u1", "redhat/o2_u2"],
+            [
+                t.subject_id
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "group", self.o2_g1.uuid), relation("member")),
+                )
+            ],
+        )
+
+        # Bindings...
+        # 4
+        self.assertTrue(
+            self.relations.find_tuples(
+                all_of(resource("rbac", "workspace", self.o2.default_workspace.id), relation("binding"))
+            ).traverse_subject(
+                [
+                    all_of(
+                        relation("role"),
+                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=True),
+                    ),
+                    all_of(relation("subject"), subject("rbac", "group", self.o2_g1.uuid, "member")),
+                ]
+            ),
+            "missing o2_r1 binding",
+        )
+
+        # Last two are implicit default parent relations – these can be removed
+        self.assertEquals(
+            1,
+            self.relations.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", "o1_w1"),
+                    relation("parent"),
+                    subject("rbac", "workspace", self.o1.default_workspace.id),
+                )
+            ),
+        )
+
+        self.assertEquals(
+            1,
+            self.relations.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", "o1_w2"),
+                    relation("parent"),
+                    subject("rbac", "workspace", self.o1.default_workspace.id),
+                )
+            ),
+        )
+
+        self.assertEquals(31, len(self.relations))

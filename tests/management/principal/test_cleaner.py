@@ -800,7 +800,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             all_tuples = self._tuples.find_tuples()
 
             # Should only have one tuple to ensure the user is in the default group
-            self.assertEqual(
+            self.assertCountEqual(
                 all_tuples,
                 [
                     RelationTuple(
