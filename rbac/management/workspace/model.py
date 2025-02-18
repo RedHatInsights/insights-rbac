@@ -20,17 +20,10 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
+from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
 
 from api.models import TenantAwareModel
-
-
-class BuiltInWorkspaceQuerySet(models.QuerySet):
-    """A custom queryset for built-in workspaces."""
-
-    def built_ins(self, tenant):
-        """Return a queryset of built-in workspaces for a tenant."""
-        return self.filter(tenant=tenant, type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT])
 
 
 class Workspace(TenantAwareModel):
@@ -50,7 +43,7 @@ class Workspace(TenantAwareModel):
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
 
-    objects = BuiltInWorkspaceQuerySet.as_manager()
+    objects = WorkspaceManager()
 
     class Meta:
         constraints = [
