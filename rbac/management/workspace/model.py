@@ -42,7 +42,6 @@ class Workspace(TenantAwareModel):
     modified = AutoDateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ["name", "modified"]
         constraints = [
             UniqueConstraint(
                 fields=["tenant_id", "type"],
