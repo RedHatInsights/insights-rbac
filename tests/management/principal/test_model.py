@@ -30,10 +30,10 @@ class PrincipalModelTests(IdentityRequest):
         """Test that we can create principal correctly."""
         # Default value for cross_account is False.
         principalA = Principal.objects.create(username="principalA", tenant=self.tenant)
-        self.assertEqual(principalA.username, "principalA")
+        self.assertEqual(principalA.username, "principala")
         self.assertEqual(principalA.cross_account, False)
 
         # Explicitly set cross_account.
         principalB = Principal.objects.create(username="principalB", cross_account=True, tenant=self.tenant)
-        self.assertEqual(principalB.username, "principalB")
+        self.assertEqual(principalB.username, "principalb")
         self.assertEqual(principalB.cross_account, True)

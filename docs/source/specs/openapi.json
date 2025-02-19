@@ -620,11 +620,16 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username.",
             "schema": {
               "type": "string",
               "enum": [
-                "username"
+                "username",
+                "name",
+                "owner",
+                "description",
+                "clientId",
+                "time_created"
               ]
             }
           },
@@ -652,6 +657,33 @@
                 "service-account",
                 "user"
               ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact name such as: ?type=service-account&name=userA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact owner such as: ?type=service-account&owner=ownerA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "description",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by partial description such as: ?type=service-account&description=desc.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
