@@ -35,7 +35,7 @@ class WorkspaceManager(models.Manager):
     """A custom manager for workspaces."""
 
     def _get_tenant_id(self, tenant=None, tenant_id=None):
-        """Get the tenant_id from the tenant or tenant_id kwargs"""
+        """Get the tenant_id from the tenant or tenant_id kwargs."""
         if tenant:
             tenant_id = tenant.id
         if not tenant_id:
@@ -50,19 +50,19 @@ class WorkspaceManager(models.Manager):
     def root(self, tenant=None, tenant_id=None):
         """Return the root workspace for a tenant."""
         tenant_id = self._get_tenant_id(tenant=tenant, tenant_id=tenant_id)
-        return self.filter(tenant_id=tenant_id, type=self.model.Types.ROOT).first()
+        return self.get(tenant_id=tenant_id, type=self.model.Types.ROOT)
 
     def default(self, tenant=None, tenant_id=None):
         """Return the default workspace for a tenant."""
         tenant_id = self._get_tenant_id(tenant=tenant, tenant_id=tenant_id)
-        return self.filter(tenant_id=tenant_id, type=self.model.Types.DEFAULT).first()
+        return self.get(tenant_id=tenant_id, type=self.model.Types.DEFAULT)
 
     def built_in(self, tenant=None, tenant_id=None):
-        """Delegate call to the WorkspaceQuerySet"""
+        """Delegate call to the WorkspaceQuerySet."""
         tenant_id = self._get_tenant_id(tenant=tenant, tenant_id=tenant_id)
         return self.get_queryset().built_in(tenant_id)
 
     def standard(self, tenant=None, tenant_id=None):
-        """Delegate call to the WorkspaceQuerySet"""
+        """Delegate call to the WorkspaceQuerySet."""
         tenant_id = self._get_tenant_id(tenant=tenant, tenant_id=tenant_id)
         return self.get_queryset().standard(tenant_id)
