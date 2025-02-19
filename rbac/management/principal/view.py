@@ -141,6 +141,14 @@ class PrincipalView(APIView):
                 query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, required=False
             )
             options["usernames"] = query_params.get(USERNAMES_KEY)
+            options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
+            # Optional query parameters for service account specific filtering
+            options["name"] = query_params.get("name")
+            options["description"] = query_params.get("description")
+            options["clientId"] = query_params.get("clientId")
+            options["owner"] = query_params.get("owner")
+            options["time_created"] = query_params.get("time_created")
+            options["order_by"] = query_params.get("order_by")
 
             # Fetch the service accounts from IT.
             token_validator = ITSSOTokenValidator()
