@@ -317,9 +317,9 @@ class ITService:
             for sa in service_accounts:
                 sa_description = str(sa.get("description"))
                 if (
-                    (name and sa.get("name") == name)
-                    or (owner and sa.get("owner") == owner)
-                    or (description and description in sa_description)
+                    (not name or sa.get("name") == name)
+                    and (not owner or sa.get("owner") == owner)
+                    and (not description or description in sa_description)
                 ):
                     filtered_service_accounts.append(sa)
                     count = len(filtered_service_accounts)
