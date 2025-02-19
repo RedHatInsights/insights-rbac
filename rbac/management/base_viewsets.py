@@ -34,4 +34,4 @@ class BaseV2ViewSet(
 
     def get_queryset(self):
         """Dynamic override of the default queryset for v2 APIs."""
-        return super().get_queryset().filter(tenant=self.request.tenant)
+        return super().get_queryset().filter(tenant=self.request.tenant).order_by("name", "-modified")
