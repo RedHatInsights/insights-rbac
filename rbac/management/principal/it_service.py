@@ -307,12 +307,12 @@ class ITService:
         name = options.get("name")
         owner = options.get("owner")
         description = options.get("description")
-        filtered_service_accounts = []
         sa_query_passed = name or owner or description
 
         count = len(service_accounts)
         # If any one service account filter parameter is provided extract & return the specific service accounts
         if sa_query_passed:
+            filtered_service_accounts = []
             for sa in service_accounts:
                 sa_description = str(sa.get("description"))
                 if (
@@ -321,8 +321,9 @@ class ITService:
                     and (not description or description in sa_description)
                 ):
                     filtered_service_accounts.append(sa)
-                    count = len(filtered_service_accounts)
-                    service_accounts = filtered_service_accounts
+
+            service_accounts = filtered_service_accounts
+            count = len(service_accounts)
         else:
             # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
             if order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
