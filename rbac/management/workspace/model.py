@@ -33,7 +33,7 @@ class Workspace(TenantAwareModel):
         STANDARD = "standard"
         DEFAULT = "default"
         ROOT = "root"
-        UNGROUPED = "ungrouped"
+        UNGROUPED_HOSTS = "ungrouped-hosts"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, unique=True, null=False)
     name = models.CharField(max_length=255, db_index=True)
@@ -50,7 +50,7 @@ class Workspace(TenantAwareModel):
             UniqueConstraint(
                 fields=["tenant_id", "type"],
                 name="unique_default_root_workspace_per_tenant",
-                condition=Q(type__in=["root", "default", "ungrouped"]),
+                condition=Q(type__in=["root", "default", "ungrouped-hosts"]),
             )
         ]
 
@@ -61,8 +61,13 @@ class Workspace(TenantAwareModel):
 
     def clean(self):
         """Validate the model."""
-        if self.type != self.Types.ROOT and self.parent_id is None:
+        if self.type == self.Types.ROOT:
+            if self.parent is not None:
+                raise ValidationError({"root_parent": ("Root workspace must not have a parent.")})
+        elif self.parent_id is None:
             raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
+        elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
+            raise ValidationError({"default_parent": ("Default workspace must have a root parent.")})
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
