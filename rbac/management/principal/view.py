@@ -132,7 +132,7 @@ class PrincipalView(APIView):
         )
         options["principal_type"] = principal_type
         # Optional query parameters for service account specific filtering & sorting
-        params = ["name", "description", "clientId", "order_by"]
+        params = ["name", "description", "owner", "order_by"]
         for param in params:
             if query_params.get(param):
                 options[param] = query_params[param]

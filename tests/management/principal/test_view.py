@@ -1888,8 +1888,6 @@ class PrincipalViewsetTests(IdentityRequest):
 
         client = APIClient()
         response = client.get(url, **self.headers)
-        print(response.data)
-        print(mocked_values)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]
