@@ -935,7 +935,7 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(int(response.data.get("meta").get("count")), 0)
         self.assertEqual(len(response.data.get("data")), 0)
-        
+
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_name_wrong_returns_empty(self, mock_request):
