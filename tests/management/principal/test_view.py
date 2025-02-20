@@ -902,6 +902,74 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_filter_by_owner_with_limit_offset(self, mock_request):
+        """Test that we can filter service accounts by owner with limit and offset provided"""
+        # Create 3 SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_values = []
+        for uuid in sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "ecasey",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = f"{reverse('v1_management:principals')}?type=service-account&owner=ecasey&limit=2&offset=1"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 2)
+
+        sa = response.data.get("data")[0]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa.get("name"), f"service_account_name_{sa_client_ids[1].split('-')[0]}")
+        self.assertEqual(sa.get("description"), f"Service Account description {sa_client_ids[1].split('-')[0]}")
+        self.assertEqual(sa.get("owner"), "ecasey")
+        self.assertEqual(sa.get("type"), "service-account")
+        self.assertEqual(sa.get("username"), "service_account-" + sa_client_ids[1])
+
+        sa2 = response.data.get("data")[1]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[2])
+        self.assertEqual(sa2.get("name"), f"service_account_name_{sa_client_ids[2].split('-')[0]}")
+        self.assertEqual(sa2.get("description"), f"Service Account description {sa_client_ids[2].split('-')[0]}")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), "service_account-" + sa_client_ids[2])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_description(self, mock_request):
         """Test that we can filter service accounts by description"""
         # Create SA in the database
@@ -1686,11 +1754,7 @@ class PrincipalViewsetTests(IdentityRequest):
     def test_principal_service_account_sort_by_clientid_asc(self, mock_request):
         """Test that we can sort service accounts by clientId ascending"""
         # Create SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
-        ]
+        sa_client_ids = ["b6636c60-a31d-013c-b93d-6aa2427b506c", "69a116a0-a3d4-013c-b940-6aa2427b506c"]
         sa_username1 = "service_account-" + sa_client_ids[0]
         sa_username2 = "service_account-" + sa_client_ids[1]
 

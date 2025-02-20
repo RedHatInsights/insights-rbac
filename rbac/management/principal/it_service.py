@@ -311,8 +311,6 @@ class ITService:
         sa_query_passed = name or owner or description
 
         count = len(service_accounts)
-        # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
-        service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
         # If any one service account filter parameter is provided extract & return the specific service accounts
         if sa_query_passed:
             for sa in service_accounts:
@@ -331,6 +329,10 @@ class ITService:
                 service_accounts.sort(reverse=True, key=lambda sa: str(sa.get(order_by[1:], "")).casefold())
             else:
                 service_accounts.sort(reverse=False, key=lambda sa: str(sa.get(order_by, "")).casefold())
+
+        # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
+        service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
+
         return service_accounts, count
 
     def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:

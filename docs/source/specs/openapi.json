@@ -620,11 +620,22 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username.",
             "schema": {
               "type": "string",
               "enum": [
-                "username",
+                "username"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_by ",
+            "required": false,
+            "description": "Parameter for ordering service-account principals by value. For inverse ordering, supply '-' before the param value, such as: ?type=service-account&order_by=name.",
+            "schema": {
+              "type": "string",
+              "enum": [
                 "name",
                 "owner",
                 "description",

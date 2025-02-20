@@ -131,7 +131,7 @@ class PrincipalView(APIView):
             query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, default_value=USER_KEY, required=False
         )
         options["principal_type"] = principal_type
-        # Optional query parameters for service account specific filtering
+        # Optional query parameters for service account specific filtering & sorting
         params = ["name", "description", "clientId", "owner", "time_created", "order_by"]
         for param in params:
             if query_params.get(param):
