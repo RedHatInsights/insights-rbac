@@ -703,6 +703,42 @@ class TestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("data")[0]["id"], str(self.root_workspace.id))
         self.assertType(payload, "root")
 
+    def test_workspace_list_filter_by_name(self):
+        """List workspaces filtered by name."""
+        ws_name = "Workspace for filter"
+        workspaces = Workspace.objects.bulk_create(
+            [
+                Workspace(
+                    name=ws_name,
+                    tenant=self.tenant,
+                    type="standard",
+                    parent_id=self.default_workspace.id,
+                ),
+                Workspace(
+                    name=ws_name,
+                    tenant=self.tenant,
+                    type="standard",
+                    parent_id=self.default_workspace.id,
+                ),
+                Workspace(
+                    name=ws_name.upper(),
+                    tenant=self.tenant,
+                    type="standard",
+                    parent_id=self.default_workspace.id,
+                ),
+            ]
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?name=Workspace for filter", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 2)
+        self.assertType(payload, "standard")
+        assert payload.get("data")[0]["name"] == payload.get("data")[1]["name"] == ws_name
+
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
     def test_get_workspace_list(self):

@@ -23,6 +23,7 @@ from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from management.models import *
 from management.principal.unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
@@ -468,13 +469,36 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsNotNone(principal.get("username"))
         self.assertEqual(principal.get("username"), "test_user")
 
-    def test_bad_query_param(self):
-        """Test handling of bad query params."""
-        url = f'{reverse("v1_management:principals")}?limit=foo'
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_bad_query_param_limit(self, mock_request):
+        """Test handling of bad limit. Invalid limit value should be replaced by the default limit."""
+        default_limit = StandardResultsSetPagination.default_limit
         client = APIClient()
-        response = client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        for limit in ["foo", -10, 0, ""]:
+            url = f'{reverse("v1_management:principals")}?limit={limit}'
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_bad_query_param_offset(self, mock_request):
+        """Test handling of bad offset. Invalid offset value should be replaced by the default offset value."""
+        client = APIClient()
+
+        for offset in ["foo", -10, 0, ""]:
+            url = f'{reverse("v1_management:principals")}?offset={offset}'
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("offset"), 0)
 
     def test_bad_query_param_of_sort_order(self):
         """Test handling of bad query params."""
@@ -979,19 +1003,32 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertEqual(len(response.data.get("data")), min(limit, max(0, 3 - offset)))
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts", return_value=None)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_service_account_invalid_limit_offset(self, mock_request):
-        """Test that 400 is returned for negative limit and offset."""
-        test_values = [(-1, 1), (2, -2)]
-        expected_message = "Values for limit and offset must be positive numbers."
+        """Test that default values are used for invalid limit and offset"""
+        sa_client_id = "026f5290-a3d3-013c-b93f-6aa2427b506c"
+        mock_request.return_value = [
+            {
+                "clientId": sa_client_id,
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_client_id,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        test_values = [(-1, -1), ("foo", "foo"), (0, 0)]
+        default_limit = StandardResultsSetPagination.default_limit
+        client = APIClient()
 
         for limit, offset in test_values:
             url = f"{reverse('v1_management:principals')}?type=service-account&limit={limit}&offset={offset}"
-            client = APIClient()
             response = client.get(url, **self.headers)
-            err = response.json()["errors"][0]
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-            self.assertEqual(err["detail"], expected_message)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("offset"), 0)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch(

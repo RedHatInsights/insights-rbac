@@ -23,12 +23,13 @@ from unittest.mock import Mock, call, patch
 from uuid import uuid4
 
 from django.test import TestCase, override_settings
+
 from django.utils import timezone
 
 from api.models import CrossAccountRequest, Tenant
 
 from management.models import *
-from management.role.definer import seed_roles
+
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
@@ -43,7 +44,9 @@ from migration_tool.in_memory_tuples import (
     subject,
     subject_type,
 )
-from migration_tool.migrate import migrate_data
+
+from migration_tool.migrate import migrate_data, migrate_groups_for_tenant
+
 from management.group.definer import seed_group, clone_default_group_in_public_schema
 from tests.management.role.test_dual_write import RbacFixture
 
@@ -160,6 +163,14 @@ class MigrateTests(TestCase):
             status="approved",
         )
         self.cross_account_request.roles.add(self.system_role_2)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+    @patch("migration_tool.migrate.RelationApiDualWriteGroupHandler.replicate")
+    def test_migration_of_data_no_replication_event_to_migrate_groups(self, replicate_method):
+        """Test that we get the correct access for a principal."""
+        kwargs = {"exclude_apps": ["app1"], "orgs": ["7654321"]}
+        migrate_data(**kwargs)
+        replicate_method.assert_not_called()
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("management.relation_replicator.logging_replicator.logger")
