@@ -101,22 +101,12 @@ class PrincipalView(APIView):
         user = request.user
         path = request.path
         query_params = request.query_params
-        default_limit = StandardResultsSetPagination.default_limit
         usernames_filter = ""
 
-        try:
-            limit = int(query_params.get("limit", default_limit))
-            offset = int(query_params.get("offset", 0))
-            if limit < 0 or offset < 0:
-                raise ValueError
-        except ValueError:
-            error = {
-                "detail": "Values for limit and offset must be positive numbers.",
-                "source": "principals",
-                "status": str(status.HTTP_400_BAD_REQUEST),
-            }
-            errors = {"errors": [error]}
-            return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
+        paginator = StandardResultsSetPagination()
+        paginator.paginate_queryset([], request)
+        limit = paginator.limit
+        offset = paginator.offset
 
         options = {
             "limit": limit,
