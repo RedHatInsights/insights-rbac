@@ -366,6 +366,38 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user1"}, {"username": "test_user2"}]},
+    )
+    def test_read_principal_filtered_list_with_untrimmed_values(self, mock_request):
+        """Test that we can read a filtered list of principals and username values are processed as trimmed values."""
+        client = APIClient()
+        for gap in ("", " ", "     "):
+            url = f'{reverse("v1_management:principals")}?usernames=test_user1,{gap}test_user2'
+            response = client.get(url, **self.headers)
+            # Regardless of the size of the gap between the values, the function is called with the same parameters
+            # => the spaces are correctly removed before the function call.
+            mock_request.assert_called_with(
+                ["test_user1", "test_user2"],
+                org_id=ANY,
+                limit=10,
+                offset=0,
+                options={
+                    "limit": 10,
+                    "offset": 0,
+                    "sort_order": "asc",
+                    "status": "enabled",
+                    "username_only": "false",
+                    "principal_type": "user",
+                },
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data.get("data")), 2)
+
+        # The function is called three times in this test.
+        self.assertEqual(mock_request.call_count, 3)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_read_principal_filtered_list_success(self, mock_request):
@@ -1120,3 +1152,122 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(sa[0].get("username"), "service_account-" + sa_client_ids[2])
         self.assertEqual(sa[1].get("username"), "service_account-" + sa_client_ids[3])
         self.assertEqual(sa[2].get("username"), "service_account-" + sa_client_ids[4])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_read_principal_service_account_filtered_list_success(self, mock_request):
+        """Test that we can read a filtered list of service accounts."""
+        # Create 3 SA in the database
+        sa_client_ids = [
+            "06494bcb-1409-401b-b210-0303c810f6b3",
+            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
+            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_sa = []
+        for uuid in sa_client_ids:
+            mocked_sa.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_sa
+
+        # Without the 'usernames' filter we get all values
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=service-account"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        # With the 'usernames' filter we get only filtered values
+        sa1 = mocked_sa[0]
+        url = f"{reverse('v1_management:principals')}?type=service-account&usernames={sa1['username']}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_service_account_filtered_list_with_untrimmed_values(self, mock_request):
+        """
+        Test that we can read a filtered list of service accounts
+        and username values are processed as trimmed values.
+        """
+        # Create 3 SA in the database
+        sa_client_ids = [
+            "06494bcb-1409-401b-b210-0303c810f6b3",
+            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
+            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_sa = []
+        for uuid in sa_client_ids[:2]:
+            mocked_sa.append(
+                {
+                    "clientId": uuid,
+                    "name": f"sa_name_{uuid.split('-')[0]}",
+                    "description": f"SA description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_sa, 2
+
+        client = APIClient()
+        sa1 = mocked_sa[0]
+        sa2 = mocked_sa[1]
+        for gap in ("", " ", "     "):
+            url = f"{reverse('v1_management:principals')}?type=service-account&usernames={sa1['username']},{gap}{sa2['username']}"
+            response = client.get(url, **self.headers)
+            # Regardless of the size of the gap between the values, the function is called with the same parameters
+            # => the spaces are correctly removed before the function call.
+            mock_request.assert_called_with(
+                user=ANY,
+                options={
+                    "limit": 10,
+                    "offset": 0,
+                    "sort_order": "asc",
+                    "status": "enabled",
+                    "principal_type": "service-account",
+                    "usernames": f"{sa1['username']},{sa2['username']}",
+                    "email": None,
+                    "match_criteria": None,
+                    "username_only": None,
+                },
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data.get("data")), 2)
+
+        # The function is called three times in this test.
+        self.assertEqual(mock_request.call_count, 3)
