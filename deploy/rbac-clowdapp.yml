@@ -806,6 +806,22 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: users-data
+      - name: add-ungrouped-hosts
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - add_ungrouped_hosts
+            - --batch_size
+            - ${FILLING_UNGROUPED_HOSTS_BATCH_SIZE}
+          env: *job_common_env_vars
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1205,3 +1221,6 @@ parameters:
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
   value: '90'
+- name: FILLING_UNGROUPED_HOSTS_BATCH_SIZE
+  description: The number of tenants to process in each batch
+  value: '900'

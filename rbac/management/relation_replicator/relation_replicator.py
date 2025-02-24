@@ -59,6 +59,7 @@ class ReplicationEventType(str, Enum):
     EXPIRE_CROSS_ACCOUNT_REQUEST = "expire_cross_account_request"
     MIGRATE_CROSS_ACCOUNT_REQUEST = "migrate_cross_account_request"
     DELETE_BINDING_MAPPINGS = "delete_binding_mappings"
+    ADD_UNGROUPED_HOSTS = "add_ungrouped_hosts"
 
 
 class ReplicationEvent:
