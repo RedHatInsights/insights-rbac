@@ -1,0 +1,15 @@
+name: Git Checks
+
+on: pull_request
+
+jobs:
+  message-check:
+    name: Block Autosquash Commits
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Block Autosquash Commits
+        uses: skjnldsv/block-fixup-merge-action@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
