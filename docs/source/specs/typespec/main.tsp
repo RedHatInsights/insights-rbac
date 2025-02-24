@@ -100,7 +100,7 @@ namespace Workspaces {
         "root",
         "default",
         "standard",
-        "ungrouped"
+        "ungrouped-hosts"
     }
 
     enum WorkspaceTypesQueryParam {
