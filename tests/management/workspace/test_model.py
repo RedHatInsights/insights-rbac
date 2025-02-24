@@ -23,7 +23,23 @@ from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 
 
-class WorkspaceModelTests(IdentityRequest):
+class WorkspaceBaseTestCase(IdentityRequest):
+    """Base class for Workspace tests for helpers/shared methods."""
+
+    def manager_assertions_for_type(self, func, expected_data):
+        if isinstance(expected_data, list):
+            self.assertCountEqual(list(func(tenant=self.tenant)), expected_data)
+            self.assertCountEqual(list(func(tenant_id=self.tenant.id)), expected_data)
+        else:
+            self.assertEqual(func(tenant=self.tenant), expected_data)
+            self.assertEqual(func(tenant_id=self.tenant.id), expected_data)
+
+        with self.assertRaises(ValueError) as assertion:
+            func()
+        self.assertEqual("You must supply either a tenant object or tenant_id value.", str(assertion.exception))
+
+
+class WorkspaceModelTests(WorkspaceBaseTestCase):
     """Test the workspace model."""
 
     def setUp(self):
@@ -60,7 +76,7 @@ class WorkspaceModelTests(IdentityRequest):
         self.assertCountEqual(level_3.ancestors(), [root, level_1, level_2])
 
 
-class Types(IdentityRequest):
+class Types(WorkspaceBaseTestCase):
     """Test types on a workspace."""
 
     def setUp(self):
@@ -209,3 +225,21 @@ class Types(IdentityRequest):
             {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
             assertion.exception.message_dict,
         )
+
+    def test_built_in_types_queryset(self):
+        """Test the WorkspaceQuerySet on the Workspace model for built_in."""
+        self.manager_assertions_for_type(
+            Workspace.objects.built_in, [self.tenant_1_root_workspace, self.tenant_1_default_workspace]
+        )
+
+    def test_standard_types_queryset(self):
+        """Test the WorkspaceQuerySet on the Workspace model for standard."""
+        self.manager_assertions_for_type(Workspace.objects.standard, [self.tenant_1_standard_workspace])
+
+    def test_root_type_manager(self):
+        """Test the WorkspaceManager on the Workspace model for root."""
+        self.manager_assertions_for_type(Workspace.objects.root, self.tenant_1_root_workspace)
+
+    def test_default_type_manager(self):
+        """Test the WorkspaceManager on the Workspace model for default."""
+        self.manager_assertions_for_type(Workspace.objects.default, self.tenant_1_default_workspace)

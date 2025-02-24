@@ -20,6 +20,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
+from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
 
 from api.models import TenantAwareModel
@@ -41,6 +42,8 @@ class Workspace(TenantAwareModel):
     type = models.CharField(choices=Types.choices, default=Types.STANDARD, null=False)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
+
+    objects = WorkspaceManager()
 
     class Meta:
         constraints = [
