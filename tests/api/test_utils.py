@@ -21,7 +21,7 @@ class TestAPIUtils(TestCase):
 
         migration_resource_deletion("workspace", org_id_2)
         self.assertFalse(Workspace.objects.filter(tenant=another_tenant).exists())
-        self.assertEqual(Workspace.objects.filter(tenant=tenant).count(), 2)
+        self.assertEqual(Workspace.objects.filter(tenant=tenant).count(), 2 + 1)  # ungrouped_hosts
 
         migration_resource_deletion("workspace", None)
         self.assertFalse(Workspace.objects.exists())

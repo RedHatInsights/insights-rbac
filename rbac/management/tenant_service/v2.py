@@ -292,9 +292,10 @@ class V2TenantBootstrapService:
             raise ValueError("Cannot bootstrap public tenant.")
 
         # Set up workspace hierarchy for Tenant
-        root_workspace, default_workspace, relationships = self._built_in_workspaces(tenant)
+        root_workspace, default_workspace, ungrouped_hosts_workspace, relationships = self._built_in_workspaces(tenant)
         root_workspace.save(force_insert=True)
         default_workspace.save(force_insert=True)
+        ungrouped_hosts_workspace.save(force_insert=True)
 
         # We do not check for custom default group here.
         # By this point if there is a custom default group,
@@ -312,6 +313,17 @@ class V2TenantBootstrapService:
 
         return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
 
+    # TODO: remove UNGROUPED_HOSTS related after HBI migration
+    def _add_ungrouped_hosts(self, tenant: Tenant, default: Workspace, ungrouped_hosts=None):
+        """Add relationship of ungrouped hosts to the tenant."""
+        if not ungrouped_hosts:
+            ungrouped_hosts = Workspace.objects.get(tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+        return (
+            create_relationship(
+                ("rbac", "workspace"), str(ungrouped_hosts.id), ("rbac", "workspace"), str(default.id), "parent"
+            ),
+        )
+
     def _replicate_bootstrap(self, tenant: Tenant, mapping: TenantMapping):
         """Replicate the bootstrapping of a tenant."""
         built_in_workspaces = Workspace.objects.built_in(tenant=tenant)
@@ -321,6 +333,7 @@ class V2TenantBootstrapService:
         relationships = []
         relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
         relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default.id)))
+        relationships.extend(self._add_ungrouped_hosts(tenant, default))
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -383,10 +396,10 @@ class V2TenantBootstrapService:
                 kwargs["default_group_uuid"] = group_uuid
             mappings_to_create.append(TenantMapping(**kwargs))
 
-            root, default, built_in_relationships = self._built_in_workspaces(tenant)
+            root, default, ungrouped, built_in_relationships = self._built_in_workspaces(tenant)
 
             default_workspace_ids.append(default.id)
-            workspaces.extend([root, default])
+            workspaces.extend([root, default, ungrouped])
             relationships.extend(built_in_relationships)
 
         Workspace.objects.bulk_create(workspaces)
@@ -554,13 +567,20 @@ class V2TenantBootstrapService:
             type=Workspace.Types.DEFAULT,
             name="Default Workspace",
         )
+        ungrouped_hosts = Workspace(
+            parent_id=default.id,
+            tenant=tenant,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            name="Ungrouped Hosts",
+        )
 
         root_workspace_id = root.id
         default_workspace_id = default.id
 
         relationships.extend(self._built_in_hierarchy_tuples(default_workspace_id, root_workspace_id, tenant.org_id))
+        relationships.extend(self._add_ungrouped_hosts(tenant, default, ungrouped_hosts))
 
-        return root, default, relationships
+        return root, default, ungrouped_hosts, relationships
 
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
