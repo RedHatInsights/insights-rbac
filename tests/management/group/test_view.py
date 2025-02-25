@@ -1379,6 +1379,27 @@ class GroupViewsetTests(IdentityRequest):
             response = client.delete(url, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+            # test whether correctly added to audit logs
+            al_url = "/api/rbac/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            for al_record in al_list:
+                if al_record["action"] == "remove":
+                    al_dict = al_record
+                    break
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "remove")
+
             send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
@@ -2485,6 +2506,27 @@ class GroupViewsetTests(IdentityRequest):
         self.assertCountEqual([], list(self.group.roles()))
         self.assertCountEqual([self.role, self.roleB], list(self.groupB.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # test whether correctly added to audit logs
+        al_url = "/api/rbac/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        for al_record in al_list:
+            if al_record["action"] == "remove":
+                al_dict = al_record
+                break
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "remove")
 
     def test_remove_admin_default_group_roles(self):
         """Test that admin_default groups' roles are protected from removal"""
@@ -5078,6 +5120,27 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Add once removed principal into group
         test_group.principals.add(test_principal)
         test_group.save()
+
+        # test whether correctly added to audit logs
+        al_url = "/api/rbac/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        for al_record in al_list:
+            if al_record["action"] == "remove":
+                al_dict = al_record
+                break
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "remove")
 
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
