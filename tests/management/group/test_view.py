@@ -905,8 +905,8 @@ class GroupViewsetTests(IdentityRequest):
         with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
             request_body = {"roles": [self.role.uuid]}
-
             client = APIClient()
+
             response = client.post(url, request_body, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -1014,6 +1014,15 @@ class GroupViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
+
+            # Delete empty group won't trigger replication
+            url = reverse("v1_management:group-detail", kwargs={"uuid": self.emptyGroup.uuid})
+            mock_method.reset_mock()
+
+            respone = client.delete(url, **self.headers)
+            self.assertEqual(respone.status_code, status.HTTP_204_NO_CONTENT)
+            mock_method.assert_not_called()
+            self.assertEqual(Group.objects.filter(id=self.emptyGroup.id).exists(), False)
 
     def test_delete_default_group(self):
         """Test that platform_default groups are protected from deletion"""
@@ -6085,9 +6094,7 @@ class GroupReplicationTests(IdentityRequest):
 
         # Check that the roles are now bound to the user in the target account (default workspace)
         # and the group
-        default_workspace_id = Workspace.objects.get(
-            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
-        ).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
@@ -6194,9 +6201,7 @@ class GroupReplicationTests(IdentityRequest):
 
         # Check that the roles are now bound to the user in the target account (default workspace)
         # and the group
-        default_workspace_id = Workspace.objects.get(
-            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
-        ).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))

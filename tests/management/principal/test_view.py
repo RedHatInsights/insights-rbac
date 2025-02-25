@@ -19,14 +19,14 @@
 from unittest.mock import patch, ANY
 
 from django.urls import reverse
-from django.conf import settings
 from django.test.utils import override_settings
 from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.test import APIClient
 
+from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from management.models import *
+from management.principal.unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 from tests.identity_request import IdentityRequest
 from management.principal.proxy import PrincipalProxy
 
@@ -99,7 +99,7 @@ class PrincipalViewNonAdminTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer["org_id"],
         )
@@ -163,7 +163,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -229,6 +229,52 @@ class PrincipalViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_read_principal_list_username_only_pagination(self):
+        """Test the pagination is correct when we read a list of principals with username_only=true."""
+        # Create few principals for the pagination test
+        for i in range(5):
+            Principal.objects.create(username=f"test_user{i}", tenant=self.tenant)
+        # now in DB we have these principals:
+        # 1) test_user   2) test_user0  3) test_user1
+        # 4) test_user2  5) test_user3  6) test_user4
+
+        client = APIClient()
+        base_url = f'{reverse("v1_management:principals")}?username_only=true'
+
+        # TEST 1
+        limit = 2
+        url = f"{base_url}&limit={limit}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # With limit=2 the response contains 2 principals from 6
+        self.assertEqual(int(response.data.get("meta").get("count")), 6)
+        self.assertEqual(len(response.data.get("data")), limit)
+
+        principals = response.data.get("data")
+        self.assertEqual(principals[0].get("username"), "test_user")
+        self.assertEqual(principals[1].get("username"), "test_user0")
+
+        # test that data contains only the 'username' and nothing else
+        self.assertEqual(len(principals[0].keys()), 1)
+        self.assertEqual(len(principals[1].keys()), 1)
+
+        # TEST 2
+        offset = 2
+        limit = 3
+        url = f"{base_url}&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # With limit=3 the response contains 3 principals from 6
+        self.assertEqual(int(response.data.get("meta").get("count")), 6)
+        self.assertEqual(len(response.data.get("data")), limit)
+
+        principals = response.data.get("data")
+        self.assertEqual(principals[0].get("username"), "test_user1")
+        self.assertEqual(principals[1].get("username"), "test_user2")
+        self.assertEqual(principals[2].get("username"), "test_user3")
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
         return_value={
@@ -258,7 +304,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -301,7 +347,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         # Cross account user won't be returned.
@@ -339,7 +385,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -373,7 +419,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -408,7 +454,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -423,13 +469,36 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsNotNone(principal.get("username"))
         self.assertEqual(principal.get("username"), "test_user")
 
-    def test_bad_query_param(self):
-        """Test handling of bad query params."""
-        url = f'{reverse("v1_management:principals")}?limit=foo'
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_bad_query_param_limit(self, mock_request):
+        """Test handling of bad limit. Invalid limit value should be replaced by the default limit."""
+        default_limit = StandardResultsSetPagination.default_limit
         client = APIClient()
-        response = client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        for limit in ["foo", -10, 0, ""]:
+            url = f'{reverse("v1_management:principals")}?limit={limit}'
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_bad_query_param_offset(self, mock_request):
+        """Test handling of bad offset. Invalid offset value should be replaced by the default offset value."""
+        client = APIClient()
+
+        for offset in ["foo", -10, 0, ""]:
+            url = f'{reverse("v1_management:principals")}?offset={offset}'
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("offset"), 0)
 
     def test_bad_query_param_of_sort_order(self):
         """Test handling of bad query params."""
@@ -478,7 +547,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "desc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -571,7 +640,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -606,7 +675,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "disabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -639,7 +708,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "admin_only": "false",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -672,7 +741,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "true",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -731,7 +800,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -780,7 +849,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -934,16 +1003,120 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertEqual(len(response.data.get("data")), min(limit, max(0, 3 - offset)))
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts", return_value=None)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_service_account_invalid_limit_offset(self, mock_request):
-        """Test that 400 is returned for negative limit and offset."""
-        test_values = [(-1, 1), (2, -2)]
-        expected_message = "Values for limit and offset must be positive numbers."
+        """Test that default values are used for invalid limit and offset"""
+        sa_client_id = "026f5290-a3d3-013c-b93f-6aa2427b506c"
+        mock_request.return_value = [
+            {
+                "clientId": sa_client_id,
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_client_id,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        test_values = [(-1, -1), ("foo", "foo"), (0, 0)]
+        default_limit = StandardResultsSetPagination.default_limit
+        client = APIClient()
 
         for limit, offset in test_values:
             url = f"{reverse('v1_management:principals')}?type=service-account&limit={limit}&offset={offset}"
-            client = APIClient()
             response = client.get(url, **self.headers)
-            err = response.json()["errors"][0]
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-            self.assertEqual(err["detail"], expected_message)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("offset"), 0)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch(
+        "management.principal.it_service.ITService.get_service_accounts",
+        side_effect=UnexpectedStatusCodeFromITError("Mocked error"),
+    )
+    def test_read_principal_service_account_unexpected_internal_error(self, mock_request):
+        """
+        Test the expected error message is returned in case of unexpected internal error that is returned from
+        method ITService.get_service_accounts().
+        """
+        expected_message = "Unexpected internal error."
+        url = f"{reverse('v1_management:principals')}?type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        err = response.json()["errors"][0]
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(err["detail"], expected_message)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_read_principal_service_account_usernames_only(self, mock_request):
+        """Test the pagination is correct when we read a list of service accounts with username_only=true."""
+        # Create 5 SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+            "1a67d137-374a-4aeb-8f27-83a321e876f9",
+            "eb594f55-3a84-436b-8d3a-36d0f1f3dc2e",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_values = []
+        for uuid in sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        client = APIClient()
+        base_url = f"{reverse('v1_management:principals')}?type=service-account&username_only=true"
+
+        # TEST 1
+        limit = 2
+        url = f"{base_url}&limit={limit}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # With limit=2 the response contains 2 principals from 5
+        self.assertEqual(int(response.data.get("meta").get("count")), 5)
+        self.assertEqual(len(response.data.get("data")), limit)
+
+        sa = response.data.get("data")
+        self.assertEqual(sa[0].get("username"), "service_account-" + sa_client_ids[0])
+        self.assertEqual(sa[1].get("username"), "service_account-" + sa_client_ids[1])
+        # test that data contains only the 'username' and nothing else
+        self.assertEqual(len(sa[0].keys()), 1)
+        self.assertEqual(len(sa[1].keys()), 1)
+
+        # TEST 2
+        offset = 2
+        limit = 3
+        url = f"{base_url}&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # With limit=3 the response contains principals from 5
+        self.assertEqual(int(response.data.get("meta").get("count")), 5)
+        self.assertEqual(len(response.data.get("data")), limit)
+
+        sa = response.data.get("data")
+        self.assertEqual(sa[0].get("username"), "service_account-" + sa_client_ids[2])
+        self.assertEqual(sa[1].get("username"), "service_account-" + sa_client_ids[3])
+        self.assertEqual(sa[2].get("username"), "service_account-" + sa_client_ids[4])

@@ -238,7 +238,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 )
 
             self.tenant_id = binding_tenant.id
-            self.default_workspace = Workspace.objects.get(tenant=binding_tenant, type=Workspace.Types.DEFAULT)
+            self.default_workspace = Workspace.objects.default(tenant=binding_tenant)
         except Exception as e:
             logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)

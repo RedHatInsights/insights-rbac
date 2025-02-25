@@ -30,7 +30,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.model import BindingMapping, Role, SourceKey
 
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -50,9 +50,8 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
 
         try:
             self.cross_account_request = cross_account_request
-            default_workspace = Workspace.objects.get(
-                tenant__org_id=self.cross_account_request.target_org, type=Workspace.Types.DEFAULT
-            )
+            tenant = Tenant.objects.get(org_id=self.cross_account_request.target_org)
+            default_workspace = Workspace.objects.default(tenant=tenant)
             super().__init__(default_workspace, event_type, replicator)
         except Exception as e:
             raise DualWriteException(e)

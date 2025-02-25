@@ -645,7 +645,7 @@
             "in": "query",
             "name": "type",
             "required": false,
-            "description": "Parameter for selecting the type of principal to be returned.",
+            "description": "Parameter for selecting the type of principal to be returned. Defaults to 'user'.",
             "schema": {
               "type": "string",
               "enum": [

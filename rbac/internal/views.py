@@ -665,18 +665,16 @@ def clean_binding_mapping(request, binding_id):
 
     POST /_private/api/utils/bindings/<binding_id>/clean
     Params:
-        users: comma separated user ids
-        groups: comma seprated group uuids
+        field=users or groups
     """
     if not destructive_ok("api"):
         return HttpResponse("Destructive operations disallowed.", status=400)
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
-    users = request.GET.get("users")
-    groups = request.GET.get("groups")
-    if not users and not groups:
+    field = request.GET.get("field")
+    if not field or field not in ("users", "groups"):
         return HttpResponse(
-            'Invalid request, must supply the "users" or "groups" in body.',
+            'Invalid request, must supply the "users" or "groups" in field.',
             status=400,
         )
 
@@ -690,46 +688,51 @@ def clean_binding_mapping(request, binding_id):
                 )
                 .get()
             )
-            if users:
-                users = users.split(",")
+            if field == "users":
                 relations_to_remove = []
                 # Check if the user should be removed
                 if (
-                    CrossAccountRequest.objects.filter(user_id__in=users)
+                    CrossAccountRequest.objects.filter(user_id__in=mapping.mappings["users"])
                     .filter(roles__id=mapping.role.id)
                     .filter(status="approved")
                     .exists()
                 ):
-                    raise Exception(f"User(s) {users} are still in the approved list for role {mapping.role.name}")
-                for user in users:
-                    removal = mapping.unassign_user_from_bindings(user)
-                    if removal is not None:
-                        relations_to_remove.append(removal)
-                # After the migration, if it is still using old format
-                # It must be empty, or there is an issue
-                if len(mapping.mappings["users"]) != 0:
-                    raise Exception(f"User(s) {users} within mappings are expected to be empty")
-                mapping.mappings["users"] = {}
+                    raise Exception(
+                        f"User(s) {mapping.mappings['users']} are still related to approved cross account reqeusts."
+                    )
+                # After migration, if it is still old format with duplication, means
+                # it only binds with expired cars, which we can remove
+                mapping.update_data_format_for_user(relations_to_remove)
                 if relations_to_remove:
                     replicator.replicate(
                         ReplicationEvent(
                             event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
                             info={
-                                "users": users,
+                                "users": mapping.mappings["users"],
                             },
                             partition_key=PartitionKey.byEnvironment(),
                             remove=relations_to_remove,
                             add=[],
                         ),
                     )
-            if groups:
-                groups = groups.split(", ")
+            else:
                 relations_to_remove = []
                 if not mapping.role.system:
                     raise Exception("Groups can only be cleaned for system roles")
-                if Group.objects.filter(uuid__in=groups).exists():
-                    raise Exception(f"Group(s) {groups} still exist.")
-                for group in groups:
+                # Get the list of group UUIDs from the mapping
+                group_uuids = mapping.mappings.get("groups", [])
+
+                # Get existing groups from the database
+                existing_groups = {
+                    str(group_uuid)
+                    for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
+                }
+
+                # Find missing groups
+                missing_groups = set(group_uuids) - existing_groups
+                if not missing_groups:
+                    raise Exception("No groups to clean")
+                for group in missing_groups:
                     removal = mapping.unassign_group(group)
                     if removal is not None:
                         relations_to_remove.append(removal)
@@ -738,7 +741,7 @@ def clean_binding_mapping(request, binding_id):
                         ReplicationEvent(
                             event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
                             info={
-                                "groups": groups,
+                                "groups": missing_groups,
                             },
                             partition_key=PartitionKey.byEnvironment(),
                             remove=relations_to_remove,

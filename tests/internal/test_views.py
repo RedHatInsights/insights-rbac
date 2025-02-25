@@ -20,7 +20,6 @@ from uuid import uuid4
 
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.conf import settings
 from django.test import override_settings
 from django.urls import reverse
 from datetime import datetime, timedelta
@@ -37,7 +36,6 @@ from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.model import Access, ResourceDefinition
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
@@ -677,7 +675,7 @@ class InternalViewsetTests(IdentityRequest):
         with self.assertRaises(BindingMapping.DoesNotExist):
             binding_mappings[0].refresh_from_db()
         binding_mappings[1].refresh_from_db()
-        self.assertEqual(self._tuples.find_tuples(), [])
+        self.assertEqual(self._tuples.count_tuples(), 0)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -694,7 +692,8 @@ class InternalViewsetTests(IdentityRequest):
         replicator = InMemoryRelationReplicator(self._tuples)
         replicate.side_effect = replicator.replicate
         workspace_id = "123456"
-        group_id_to_remove = str(uuid4())
+        group_to_remove = Group.objects.create(name="test", tenant=self.tenant)
+        group_id_to_remove = str(group_to_remove.uuid)
         # Create binding mappings
         binding_attrs = {
             "resource_id": workspace_id,
@@ -747,14 +746,14 @@ class InternalViewsetTests(IdentityRequest):
         self._tuples.write(relations, [])
         # Deleting user still related is not allowed
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?users={car.user_id}",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         car.status = "expired"
         car.save()
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?users={car.user_id},not_exist_user",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -769,14 +768,15 @@ class InternalViewsetTests(IdentityRequest):
             ),
         )
 
-        # Deleting existing group is not allowed
+        # All group still exist
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?groups={self.group.uuid}",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=groups",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        group_to_remove.delete()
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?groups={group_id_to_remove}",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=groups",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -815,8 +815,13 @@ class InternalViewsetTests(IdentityRequest):
         tuples.clear()
 
         tenant = Tenant.objects.create(org_id=org_id)
-        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
-        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+        with self.assertRaises(Workspace.DoesNotExist) as root_assertion:
+            Workspace.objects.root(tenant=tenant)
+        self.assertEqual("Workspace matching query does not exist.", str(root_assertion.exception))
+
+        with self.assertRaises(Workspace.DoesNotExist) as default_assertion:
+            Workspace.objects.default(tenant=tenant)
+        self.assertEqual("Workspace matching query does not exist.", str(default_assertion.exception))
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/",
@@ -825,8 +830,8 @@ class InternalViewsetTests(IdentityRequest):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
-        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+        self.assertIsNotNone(Workspace.objects.root(tenant=tenant))
+        self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
         self.assertTrue(getattr(tenant, "tenant_mapping"))
         self.assertEqual(len(tuples), 9)
 
@@ -845,8 +850,13 @@ class InternalViewsetTests(IdentityRequest):
 
         for org_id in org_ids:
             tenant = Tenant.objects.create(org_id=org_id)
-            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
-            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+            with self.assertRaises(Workspace.DoesNotExist) as root_assertion:
+                Workspace.objects.root(tenant=tenant)
+            self.assertEqual("Workspace matching query does not exist.", str(root_assertion.exception))
+
+            with self.assertRaises(Workspace.DoesNotExist) as default_assertion:
+                Workspace.objects.default(tenant=tenant)
+            self.assertEqual("Workspace matching query does not exist.", str(default_assertion.exception))
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/",
@@ -857,8 +867,8 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for org_id in org_ids:
             tenant = Tenant.objects.get(org_id=org_id)
-            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
-            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+            self.assertIsNotNone(Workspace.objects.root(tenant=tenant))
+            self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
             self.assertTrue(getattr(tenant, "tenant_mapping"))
         self.assertEqual(
             len(tuples), 9 + 9 + 9
