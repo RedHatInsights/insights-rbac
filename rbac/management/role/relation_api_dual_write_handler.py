@@ -302,7 +302,11 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
-                    info={"v1_role_name": self.role.name, "v1_role_uuid": str(self.role.uuid), "org_id": str(self.role.tenant.org_id)},
+                    info={
+                        "v1_role_name": self.role.name,
+                        "v1_role_uuid": str(self.role.uuid),
+                        "org_id": str(self.role.tenant.org_id),
+                    },
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.current_role_relations,
                     add=self.role_relations,
@@ -342,5 +346,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
             return relations
         except Exception as e:
-            logger.error(f"Failed to generate relations and mappings for role {self.role.name}, UUID :{self.role.uuid}:: {e}")
+            logger.error(
+                f"Failed to generate relations and mappings for role {self.role.name}, UUID :{self.role.uuid}:: {e}"
+            )
             raise DualWriteException(e)
