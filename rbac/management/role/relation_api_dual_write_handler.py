@@ -342,5 +342,5 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
             return relations
         except Exception as e:
-            logger.error(f"Failed to generate relations and mappings for role {self.role.name}: {e}")
+            logger.error(f"Failed to generate relations and mappings for role {self.role.name}, UUID :{self.role.uuid}:: {e}")
             raise DualWriteException(e)
