@@ -303,7 +303,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={
-                        "binding_mappings": self.binding_mappings if self.binding_mappings else None,
+                        "binding_mappings": [m.id for m in self.role.binding_mappings.all()] if self.role.binding_mappings.exists() else None,
                         "v1_role_uuid": str(self.role.uuid),
                         "org_id": str(self.role.tenant.org_id),
                     },
