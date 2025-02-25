@@ -1082,22 +1082,21 @@ class GroupViewSet(
                     group=group,
                     org_id=org_id,
                 )
-
-                # Create a default and successful response object. If no user principals are to be removed below,
-                # this response will be returned. Else, it will be overridden with whichever response the user
-                # removal generates.
-                response = Response(status=status.HTTP_204_NO_CONTENT)
-               # Save the information to audit logs
-               if status.is_success(response.status_code):
-                for users_info in users_to_remove:
+                # Save the information to audit logs
+                for service_account_info in service_accounts_to_remove:
                     auditlog = AuditLog()
                     auditlog.log_group_remove(
                         request,
                         AuditLog.GROUP,
                         group,
-                        users_info.username,
-                        Principal.Types.USER,
+                        service_account_info.username,
+                        Principal.Types.SERVICE_ACCOUNT,
                     )
+                # Create a default and successful response object. If no user principals are to be removed below,
+                # this response will be returned. Else, it will be overridden with whichever response the user
+                # removal generates.
+                response = Response(status=status.HTTP_204_NO_CONTENT)
+
             users_to_remove = []
             # Remove the users from the group too.
             if USERNAMES_KEY in request.query_params:
@@ -1106,16 +1105,8 @@ class GroupViewSet(
                 resp, users_to_remove = self.remove_users(group, principals, org_id=org_id)
                 if isinstance(resp, dict) and "errors" in resp:
                     return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
-                response = Response(status=status.HTTP_204_NO_CONTENT)
-             
-            dual_write_handler = RelationApiDualWriteGroupHandler(
-                group,
-                ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
-            )
-            dual_write_handler.replicate_removed_principals(users_to_remove + service_accounts_to_remove)
-            
-            # Save the information to audit logs
-            if status.is_success(response.status_code):
+
+                # Save the informationto audit logs
                 for users_info in users_to_remove:
                     auditlog = AuditLog()
                     auditlog.log_group_remove(
@@ -1125,6 +1116,14 @@ class GroupViewSet(
                         users_info.username,
                         Principal.Types.USER,
                     )
+                response = Response(status=status.HTTP_204_NO_CONTENT)
+
+            dual_write_handler = RelationApiDualWriteGroupHandler(
+                group,
+                ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
+            )
+            dual_write_handler.replicate_removed_principals(users_to_remove + service_accounts_to_remove)
+
         return response
 
     @action(detail=True, methods=["get", "post", "delete"])
@@ -1263,9 +1262,7 @@ class GroupViewSet(
                     group = set_system_flag_before_update(group, request.tenant, request.user)
                     remove_roles(group, role_ids, request.tenant, request.user)
 
-            response = Response(status=status.HTTP_204_NO_CONTENT)
-
-            if status.is_success(response.status_code):
+                # Save the information to audit logs
                 roles = _roles_by_query_or_ids(role_ids)
                 for role_info in roles:
                     auditlog = AuditLog()
@@ -1276,6 +1273,7 @@ class GroupViewSet(
                         role_info.name,
                         AuditLog.ROLE,
                     )
+            response = Response(status=status.HTTP_204_NO_CONTENT)
 
             return response
 
