@@ -2556,6 +2556,28 @@ class GroupViewsetTests(IdentityRequest):
             self.assertCountEqual([], list(self.group.roles()))
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+            # test whether correctly added to audit logs
+            al_url = "/api/rbac/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            print(al_list)
+            for al_record in al_list:
+                if al_record["action"] == "remove":
+                    al_dict = al_record
+                    break
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "remove")
+
             notification_messages = [
                 call(
                     settings.NOTIFICATIONS_TOPIC,
@@ -2809,6 +2831,66 @@ class GroupViewsetTests(IdentityRequest):
                 self.assertEqual(sa.get("owner"), mock_sa["owner"])
                 self.assertEqual(sa.get("type"), "service-account")
                 self.assertEqual(sa.get("username"), mock_sa["username"])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_remove_group_service_account_success(self, mock_request):
+        """Test that getting the "service-account" type principals from a nonempty group returns successfully."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        remove_sa = []
+        for sa in mocked_values:
+            remove_sa.append(sa["clientId"])
+        sa_line = ",".join(remove_sa)
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service-accounts={sa_line}"
+        )
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # test whether correctly added to audit logs
+        al_url = "/api/rbac/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        for al_record in al_list:
+            if al_record["action"] == "remove":
+                al_dict = al_record
+                break
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "remove")
 
     def test_get_group_service_account_username_only_success(self):
         """
@@ -5120,27 +5202,6 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Add once removed principal into group
         test_group.principals.add(test_principal)
         test_group.save()
-
-        # test whether correctly added to audit logs
-        al_url = "/api/rbac/v1/auditlogs/"
-        al_client = APIClient()
-        al_response = al_client.get(al_url, **self.headers)
-        retrieve_data = al_response.data.get("data")
-        al_list = retrieve_data
-        for al_record in al_list:
-            if al_record["action"] == "remove":
-                al_dict = al_record
-                break
-
-        al_dict_principal_username = al_dict["principal_username"]
-        al_dict_description = al_dict["description"]
-        al_dict_resource = al_dict["resource_type"]
-        al_dict_action = al_dict["action"]
-
-        self.assertEqual(self.user_data["username"], al_dict_principal_username)
-        self.assertIsNotNone(al_dict_description)
-        self.assertEqual(al_dict_resource, "group")
-        self.assertEqual(al_dict_action, "remove")
 
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
