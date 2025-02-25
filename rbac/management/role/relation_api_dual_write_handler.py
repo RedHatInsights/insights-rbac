@@ -305,7 +305,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                     info={
                         "binding_mappings": self.binding_mappings if self.binding_mappings else None,
                         "v1_role_uuid": str(self.role.uuid),
-                        "org_id": str(self.role.tenant.org_id)
+                        "org_id": str(self.role.tenant.org_id),
                     },
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.current_role_relations,
