@@ -120,7 +120,11 @@ class PrincipalView(APIView):
             query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, default_value=USER_KEY, required=False
         )
         options["principal_type"] = principal_type
-
+        # Optional query parameters for service account specific filtering & sorting
+        params = ["name", "description", "owner", "order_by"]
+        for param in params:
+            if query_params.get(param):
+                options[param] = query_params[param]
         # Get either service accounts or user principals, depending on what the user specified.
         if principal_type == USER_KEY:
             resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)

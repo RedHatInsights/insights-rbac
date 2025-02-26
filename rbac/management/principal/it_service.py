@@ -303,8 +303,34 @@ class ITService:
         offset = options.get("offset")
         limit = options.get("limit")
         limit_offset_validation(offset, limit)
+        # Service account filtering query parameters
+        name = options.get("name")
+        owner = options.get("owner")
+        description = options.get("description")
+        sa_query_passed = name or owner or description
 
         count = len(service_accounts)
+        # If any one service account filter parameter is provided extract & return the specific service accounts
+        if sa_query_passed:
+            filtered_service_accounts = []
+            for sa in service_accounts:
+                sa_description = str(sa.get("description"))
+                if (
+                    (not name or sa.get("name") == name)
+                    and (not owner or sa.get("owner") == owner)
+                    and (not description or description in sa_description)
+                ):
+                    filtered_service_accounts.append(sa)
+
+            service_accounts = filtered_service_accounts
+            count = len(service_accounts)
+        else:
+            # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
+            if order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
+                service_accounts.sort(reverse=True, key=lambda sa: str(sa.get(order_by[1:], "")).casefold())
+            else:
+                service_accounts.sort(reverse=False, key=lambda sa: str(sa.get(order_by, "")).casefold())
+
         # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
         service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
 
