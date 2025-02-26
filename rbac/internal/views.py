@@ -28,6 +28,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from internal.errors import UserNotFoundError
 from internal.utils import delete_bindings
 from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
@@ -337,6 +338,72 @@ def get_org_admin(request, org_or_account):
 
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
+def get_user_data(request):
+    """Get all groups, roles, and permissions for a provided user via username or email.
+    If both params are provided, email is ignored and username is used. 
+
+    GET /_private/api/utils/get_user_data/?username=foo&email=bar@redhat.com
+    """
+    if request.method != "GET":
+        return handle_error("Invalid http method - only 'GET' is allowed", 405)
+    
+    username = request.GET.get("username")
+    email = request.GET.get("email")
+    
+    try:
+        validate_get_user_data_input(username, email)
+    except ValueError as err:
+        return handle_error(f"Invalid request input - {err}", 400)
+    
+    # if only email, get username from bop
+    if not username:
+        logger.debug(f"Only email provided, getting username from bop via email: '{email}'")
+        try:
+            username = get_username_from_email(email)
+        except UserNotFoundError as err:
+            return handle_error(f"Invalid request - {err}", 404)
+        except Exception as err:
+            return handle_error(f"Internal error - couldn't get username from bop: {err}", 500)
+            
+        logger.debug(f"Successfully retrieved username: '{username}' from bop via email: '{email}'")
+    
+    
+    # query rbac based on username
+    
+    
+    logger.debug(f"username: {username}, email: {email}")
+    
+    return HttpResponse('not implemented', status=200)
+
+def validate_get_user_data_input(username, email):
+    if not username and not email:
+        raise ValueError("you must provide either 'email' or 'username' as query params")
+    
+    if username and username.isspace():
+        raise ValueError("username contains only whitespace")
+    
+    if not username and email.isspace():
+        raise ValueError("email contains only whitespace")
+    
+
+def get_username_from_email(email):
+    principals = [email]
+    resp = PROXY.request_filtered_principals(principals=principals, limit=1, offset=0, options={"query_by":"email"})
+    
+    if isinstance(resp, dict) and "errors" in resp:
+        raise Exception(resp.get("errors"))
+        
+    users = resp["data"]
+
+    if len(users) == 0:
+        raise UserNotFoundError(f"user with email: '{email}' not found in bop")
+    
+    user = users[0]
+    
+    if not "username" in user or not user["username"] or user["username"].isspace():
+        raise Exception(f"invalid user data for '{email}': user found in bop but no username exists")
+    
+    return user["username"]
 
 def run_seeds(request):
     """View method for running seeds.
