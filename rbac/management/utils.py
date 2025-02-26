@@ -239,6 +239,8 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
             key = "detail"
             message = "Query parameter '{}' is required.".format(query_key)
             raise serializers.ValidationError({key: _(message)})
+        if default_value:
+            return default_value.lower()
         return None
 
     elif value.lower() not in valid_values:
