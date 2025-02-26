@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "e913b77a8397de76849d3fc142cab9db2398f2563417a4660a95c4bb88483adb"
+            "sha256": "be01d6df7a4000ebba8a2ae57e8225ff2e51e57b87468d8e3c4d44be3bb22722"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -65,20 +65,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:641dd772eac111d9443258f0f5491c57c2af47bddae94a8d32de19edb5bf7b1c",
-                "sha256:b40fbf2c0f22e55b67df95475a68bb72be5169097180a875726b6b884339ac8b"
+                "sha256:523b69457eee55ac15aa707c0e768b2a45ca1521f95b2442931090633ec72458",
+                "sha256:f67d014a7c5a3cd540606d64d7cb9eec3600cf42acab1ac0518df9751ae115e2"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.36.11"
+            "version": "==1.36.26"
         },
         "botocore": {
             "hashes": [
-                "sha256:7d35ba92ccbed7aa7e1563b12bb339bde612d5f845c89bfdd79a6db8c26b9f2e",
-                "sha256:b8b2ad60e6545aaef3a40163793c39555fcfd67fb081a38695018026c4f4db25"
+                "sha256:4a63bcef7ecf6146fd3a61dc4f9b33b7473b49bdaf1770e9aaca6eee0c9eab62",
+                "sha256:4e3f19913887a58502e71ef8d696fe7eaa54de7813ff73390cd5883f837dfa6e"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.36.24"
+            "version": "==1.36.26"
         },
         "celery": {
             "hashes": [
@@ -423,11 +423,11 @@
         },
         "googleapis-common-protos": {
             "hashes": [
-                "sha256:21398025365f138be356d5923e9168737d94d46a72aefee4a6110a1f23463c86",
-                "sha256:579de760800d13616f51cf8be00c876f00a9f146d3e6510e19d1f4111758b741"
+                "sha256:95d38161f4f9af0d9423eed8fb7b64ffd2568c3464eb542ff02c5bfa1953ab3c",
+                "sha256:aaf179b2f81df26dfadac95def3b16a95064c76a5f45f07e4c68a21bb371c4ac"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==1.67.0"
+            "version": "==1.68.0"
         },
         "grpcio": {
             "hashes": [
@@ -1498,11 +1498,11 @@
         },
         "identify": {
             "hashes": [
-                "sha256:155931cb617a401807b09ecec6635d6c692d180090a1cedca8ef7d58ba5b6aa0",
-                "sha256:3fa266b42eba321ee0b2bb0936a6a6b9e36a1351cbb69055b3082f4193035684"
+                "sha256:61491417ea2c0c5c670484fd8abbb34de34cdae1e5f39a73ee65e48e4bb663fc",
+                "sha256:83657f0f766a3c8d0eaea16d4ef42494b39b34629a4b3192a9d020d349b3e255"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==2.6.7"
+            "version": "==2.6.8"
         },
         "idna": {
             "hashes": [
