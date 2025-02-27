@@ -355,23 +355,16 @@ def get_user_data(request):
     except ValueError as err:
         return handle_error(f"Invalid request input - {err}", 400)
     
-    # if only email, get username from bop
+    # get user from bop
+    try:
+        bop_user = get_user_from_bop(username, email)
+    except UserNotFoundError as err:
+        return handle_error(f"Invalid request - {err}", 404)
+    except Exception as err:
+        return handle_error(f"Internal error - couldn't get user from bop: {err}", 500)
+    
     if not username:
-        logger.debug(f"Only email provided, getting username from bop via email: '{email}'")
-        try:
-            username = get_username_from_email(email)
-        except UserNotFoundError as err:
-            return handle_error(f"Invalid request - {err}", 404)
-        except Exception as err:
-            return handle_error(f"Internal error - couldn't get username from bop: {err}", 500)
-            
-        logger.debug(f"Successfully retrieved username: '{username}' from bop via email: '{email}'")
-    
-    
-    # query rbac based on username
-    
-    
-    logger.debug(f"username: {username}, email: {email}")
+        username = bop_user["username"]
     
     return HttpResponse('not implemented', status=200)
 
@@ -386,9 +379,21 @@ def validate_get_user_data_input(username, email):
         raise ValueError("email contains only whitespace")
     
 
-def get_username_from_email(email):
-    principals = [email]
-    resp = PROXY.request_filtered_principals(principals=principals, limit=1, offset=0, options={"query_by":"email"})
+def get_user_from_bop(username, email):
+    principal = ""
+    query_by = ""
+    
+    if username:
+        principal = username
+        query_by = "principal"
+    else:
+        principal = email
+        query_by = "email"
+    
+    query_options = {"queryBy" : query_by, "include_permissions": True}
+    logger.debug(f"querying bop for user with options: '{query_options}' and principal: '{principal}'")
+    
+    resp = PROXY.request_filtered_principals(principals=[principal], limit=1, offset=0, options=query_options)
     
     if isinstance(resp, dict) and "errors" in resp:
         raise Exception(resp.get("errors"))
@@ -396,14 +401,16 @@ def get_username_from_email(email):
     users = resp["data"]
 
     if len(users) == 0:
-        raise UserNotFoundError(f"user with email: '{email}' not found in bop")
+        raise UserNotFoundError(f"user : '{principal}' not found in bop")
     
     user = users[0]
     
-    if not "username" in user or not user["username"] or user["username"].isspace():
+    if not username and (not "username" in user) or not user["username"] or user["username"].isspace():
         raise Exception(f"invalid user data for '{email}': user found in bop but no username exists")
     
-    return user["username"]
+    logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
+    
+    return user
 
 def run_seeds(request):
     """View method for running seeds.
