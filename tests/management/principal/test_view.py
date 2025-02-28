@@ -1271,3 +1271,169 @@ class PrincipalViewsetTests(IdentityRequest):
 
         # The function is called three times in this test.
         self.assertEqual(mock_request.call_count, 3)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request."""
+        # Create 3 SA in the database and mock the Service Accounts return value
+        sa_client_ids = [
+            "06494bcb-1409-401b-b210-0303c810f6b3",
+            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
+            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_sa = []
+        for uuid in sa_client_ids:
+            mocked_sa.append(
+                {
+                    "clientId": uuid,
+                    "name": f"sa_name_{uuid.split('-')[0]}",
+                    "description": f"SA description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_sa.return_value = mocked_sa, 3
+
+        # Mock the User based Principals return value
+        mock_user.return_value = {
+            "status_code": 200,
+            "data": {
+                "userCount": "3",
+                "users": [
+                    {"username": "test_user1"},
+                    {"username": "test_user2"},
+                    {"username": "test_user3"},
+                ],
+            },
+        }
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 3)
+        self.assertEqual(len(users), 3)
+
+        self.assertEqual(response.data.get("meta").get("count"), 6)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.view.PrincipalView.users_from_proxy")
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_read_principal_all_pagination(self, mock_sa, mock_user):
+        """Test the pagination when we read both principal types in one request."""
+        # Create 3 SA in the database and mock the Service Accounts return value
+        sa_client_ids = [
+            "06494bcb-1409-401b-b210-0303c810f6b3",
+            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
+            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_sa = []
+        for uuid in sa_client_ids:
+            mocked_sa.append(
+                {
+                    "clientId": uuid,
+                    "name": f"sa_name_{uuid.split('-')[0]}",
+                    "description": f"SA description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_sa.return_value = mocked_sa
+
+        # Mock the User based Principals return value
+        mock_user.return_value = {
+            "status_code": 200,
+            "data": {
+                "userCount": 3,
+                "users": [
+                    {"username": "test_user1"},
+                    {"username": "test_user2"},
+                ],
+            },
+        }, ""
+
+        client = APIClient()
+
+        # TEST 1 - 3 SA (service accounts) and 3 U (user based principals) -> 1 SA + 2 U in the response
+        limit = 3
+        offset = 2
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sa = response.data.get("data").get("serviceAccounts")
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 1)
+        self.assertEqual(len(users), 2)
+
+        self.assertEqual(response.data.get("meta").get("count"), 6)
+        self.assertEqual(response.data.get("meta").get("limit"), limit)
+        self.assertEqual(response.data.get("meta").get("offset"), offset)
+
+        # The query for user based principals was called with new limit and offset
+        new_limit = 2
+        new_offset = 0
+        mock_user.assert_called_once_with(ANY, ANY, ANY, new_limit, new_offset)
+
+        # TEST 2 - 3 SA (service accounts) and 3 U (user based principals) -> only 2 SA in the response
+        limit = 2
+        offset = 0
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sa = response.data.get("data").get("serviceAccounts")
+        self.assertNotIn("users", response.data.get("data").keys())
+        self.assertEqual(len(sa), 2)
+
+        self.assertEqual(response.data.get("meta").get("count"), 6)
+        self.assertEqual(response.data.get("meta").get("limit"), limit)
+        self.assertEqual(response.data.get("meta").get("offset"), offset)
+
+        # TEST 3 - 3 SA (service accounts) and 3 U (user based principals) -> only 2 U in the response
+        limit = 2
+        offset = 3
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(users), 2)
+        self.assertNotIn("serviceAccounts", response.data.get("data").keys())
+
+        self.assertEqual(response.data.get("meta").get("count"), 6)
+        self.assertEqual(response.data.get("meta").get("limit"), limit)
+        self.assertEqual(response.data.get("meta").get("offset"), offset)
