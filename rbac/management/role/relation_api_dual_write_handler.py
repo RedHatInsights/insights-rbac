@@ -272,6 +272,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
             self.current_role_relations = relations
         except Exception as e:
+            logger.error(f"Failed to generated relations for v2 role & role bindings: {e}")
             raise DualWriteException(e)
 
     def replicate_new_or_updated_role(self, role):
@@ -301,13 +302,18 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
-                    info={"v1_role_uuid": str(self.role.uuid)},
+                    info={
+                        "binding_mappings": (self.binding_mappings if self.binding_mappings is not None else None),
+                        "v1_role_uuid": str(self.role.uuid),
+                        "org_id": str(self.role.tenant.org_id),
+                    },
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.current_role_relations,
                     add=self.role_relations,
                 ),
             )
         except Exception as e:
+            logger.error(f"Failed to replicate event for role {self.role.name}, UUID :{self.role.uuid}: {e}")
             raise DualWriteException(e)
 
     def _generate_relations_and_mappings_for_role(self):
@@ -340,4 +346,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
             return relations
         except Exception as e:
+            logger.error(
+                f"Failed to generate relations and mappings for role {self.role.name}, UUID :{self.role.uuid}: {e}"
+            )
             raise DualWriteException(e)
