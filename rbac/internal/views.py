@@ -367,7 +367,7 @@ def get_user_data(request):
         
     result = {
         "username": user["username"],
-        "email-address": user["email"],
+        "email_address": user["email"],
     }
     
     principal = Principal.objects.get(username=user["username"])
