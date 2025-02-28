@@ -38,9 +38,61 @@
     {
       "name": "CrossAccountRequest",
       "description": "Operations about cross account requests"
+    },
+    {
+      "name": "Audit Logs",
+      "description": "Operations about audit logs requests"
     }
   ],
   "paths": {
+    "/auditlogs/": {
+      "get": {
+        "tags": [
+          "Audit Logs"
+        ],
+        "description": "A list of all of the Admin User's actions logged in Audit Logs",
+        "operationId": "getAuditlogs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "id",
+            "required": false,
+            "description": "Parameter for filtering resource by database id so that latest actions appear firsts",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User actions have been successfully added to audit logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/auditlogs"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cross-account-requests/": {
       "get": {
         "tags": [
