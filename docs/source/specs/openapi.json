@@ -61,11 +61,12 @@
           },
           {
             "in": "query",
-            "name": "id",
+            "name": "order_by",
             "required": false,
             "description": "Parameter for filtering resource by database id so that latest actions appear firsts",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": ["id"]
             }
           }
         ],
@@ -75,7 +76,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/auditlogs"
+                  "$ref": "#/components/schemas/AuditLogPagination"
                 }
               }
             }
@@ -2972,6 +2973,54 @@
             "$ref": "#/components/schemas/PaginationLinks"
           }
         }
+      },
+      "AuditLog":{
+        "properties": {
+          "created": {
+            "type": "string"
+          },
+          "principal_username": {
+            "type": "string",
+            "example": "user123"
+          },
+          "description": {
+            "type": "string",
+            "example": "user abc added to group: 1234"
+          },
+          "resource_type":{
+            "type": "string",
+            "example": "group"
+          },
+          "action": {
+            "type": "string",
+            "example": "add"
+          }
+        }
+      },
+      "AuditLogPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AuditLog"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
       },
       "Principal": {
         "required": [
