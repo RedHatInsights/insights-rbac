@@ -31,6 +31,7 @@ from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
 from management.group.definer import (
+    _roles_by_query_or_ids,
     add_roles,
     remove_roles,
     set_system_flag_before_update,
@@ -946,14 +947,6 @@ class GroupViewSet(
                 )
                 try:
                     self.ensure_id_for_service_accounts_exists(user=request.user, service_accounts=service_accounts)
-                    auditlog = AuditLog()
-                    auditlog.log_group_assignment(
-                        request,
-                        AuditLog.GROUP,
-                        group,
-                        service_accounts,
-                        Principal.Types.SERVICE_ACCOUNT,
-                    )
                 except InsufficientPrivilegesError as ipe:
                     return Response(
                         status=status.HTTP_403_FORBIDDEN,
@@ -987,14 +980,6 @@ class GroupViewSet(
                 proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
                 if len(proxy_response.get("data", [])) > 0:
                     principals_from_response = proxy_response.get("data", [])
-                auditlog = AuditLog()
-                auditlog.log_group_assignment(
-                    request,
-                    AuditLog.GROUP,
-                    group,
-                    principals,
-                    Principal.Types.USER,
-                )
                 if isinstance(proxy_response, dict) and "errors" in proxy_response:
                     return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
 
@@ -1005,25 +990,27 @@ class GroupViewSet(
                     service_accounts=service_accounts,
                     org_id=org_id,
                 )
-                auditlog = AuditLog()
-                auditlog.log_group_assignment(
-                    request,
-                    AuditLog.GROUP,
-                    group,
-                    service_accounts,
-                    Principal.Types.SERVICE_ACCOUNT,
-                )
+                for sa in new_service_accounts:
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        sa.username,
+                        Principal.Types.SERVICE_ACCOUNT,
+                    )
             new_users = []
             if len(principals) > 0:
                 group, new_users = self.add_users(group, principals_from_response, org_id=org_id)
-                auditlog = AuditLog()
-                auditlog.log_group_assignment(
-                    request,
-                    AuditLog.GROUP,
-                    group,
-                    principals,
-                    Principal.Types.USER,
-                )
+                for user in new_users:
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        user.username,
+                        Principal.Types.USER,
+                    )
 
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP)
             dual_write_handler.replicate_new_principals(new_users + new_service_accounts)
@@ -1081,7 +1068,16 @@ class GroupViewSet(
                     group=group,
                     org_id=org_id,
                 )
-
+                # Save the information to audit logs
+                for service_account_info in service_accounts_to_remove:
+                    auditlog = AuditLog()
+                    auditlog.log_group_remove(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        service_account_info.username,
+                        Principal.Types.SERVICE_ACCOUNT,
+                    )
                 # Create a default and successful response object. If no user principals are to be removed below,
                 # this response will be returned. Else, it will be overridden with whichever response the user
                 # removal generates.
@@ -1095,6 +1091,17 @@ class GroupViewSet(
                 resp, users_to_remove = self.remove_users(group, principals, org_id=org_id)
                 if isinstance(resp, dict) and "errors" in resp:
                     return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
+
+                # Save the informationto audit logs
+                for users_info in users_to_remove:
+                    auditlog = AuditLog()
+                    auditlog.log_group_remove(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        users_info.username,
+                        Principal.Types.USER,
+                    )
                 response = Response(status=status.HTTP_204_NO_CONTENT)
 
             dual_write_handler = RelationApiDualWriteGroupHandler(
@@ -1241,7 +1248,20 @@ class GroupViewSet(
                     group = set_system_flag_before_update(group, request.tenant, request.user)
                     remove_roles(group, role_ids, request.tenant, request.user)
 
-            return Response(status=status.HTTP_204_NO_CONTENT)
+                # Save the information to audit logs
+                roles = _roles_by_query_or_ids(role_ids)
+                for role_info in roles:
+                    auditlog = AuditLog()
+                    auditlog.log_group_remove(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        role_info.name,
+                        AuditLog.ROLE,
+                    )
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+
+            return response
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
 
