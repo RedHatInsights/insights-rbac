@@ -800,7 +800,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             all_tuples = self._tuples.find_tuples()
 
             # Should only have one tuple to ensure the user is in the default group
-            self.assertEqual(
+            self.assertCountEqual(
                 all_tuples,
                 [
                     RelationTuple(
@@ -846,9 +846,9 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         self.assertIsNotNone(mapping)
         workspaces = list(Workspace.objects.filter(tenant=tenant))
         self.assertEqual(len(workspaces), 2)
-        default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+        default = Workspace.objects.default(tenant=tenant)
         self.assertIsNotNone(default)
-        root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+        root = Workspace.objects.root(tenant=tenant)
         self.assertIsNotNone(root)
 
         platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))

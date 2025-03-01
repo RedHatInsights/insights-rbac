@@ -99,7 +99,8 @@ namespace Workspaces {
     enum WorkspaceTypes {
         "root",
         "default",
-        "standard"
+        "standard",
+        "ungrouped-hosts"
     }
 
     enum WorkspaceTypesQueryParam {
@@ -226,6 +227,8 @@ namespace Workspaces {
 
         @doc("Defaults to all when param is not supplied.")
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
+        @doc("Case sensitive exact match of workspace by name.")
+        @query name?: string;
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
