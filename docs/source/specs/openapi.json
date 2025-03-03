@@ -703,7 +703,8 @@
               "type": "string",
               "enum": [
                 "service-account",
-                "user"
+                "user",
+                "all"
               ]
             }
           }
@@ -720,6 +721,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
                     }
                   ]
                 }
@@ -3221,6 +3225,63 @@
             }
           }
         }
+      },
+      "AllPrincipalsPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "serviceAccounts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ServiceAccount"
+                    }
+                  },
+                  "users": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Principal"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "serviceAccounts"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "users"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "serviceAccounts",
+                      "users"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "Group": {
         "required": [
