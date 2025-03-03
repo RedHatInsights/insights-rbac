@@ -63,7 +63,7 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for filtering resource by database id so that latest actions appear firsts",
+            "description": "Parameter for ordering resource by database id so that latest actions appear firsts",
             "schema": {
               "type": "string",
               "enum": ["id"]
@@ -3011,11 +3011,7 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/AuditLog"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/AuditLog"
                 }
               }
             }
