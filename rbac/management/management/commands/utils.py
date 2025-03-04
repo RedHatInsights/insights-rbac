@@ -21,12 +21,14 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 from django.db import IntegrityError, transaction
+from management.models import Workspace
 from management.principal.model import Principal
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.relation_api_dual_write_handler import OutboxReplicator
 from management.tenant_mapping.model import logger
 from management.tenant_service.v2 import V2TenantBootstrapService
 
-from api.models import User
+from api.models import Tenant, User
 
 
 BOOT_STRAP_SERVICE = V2TenantBootstrapService(OutboxReplicator())
@@ -132,3 +134,44 @@ def populate_service_account_data(file_name):
         if user_id := id_mapping.get(principal.service_account_id):
             principal.user_id = user_id
             principal.save()
+
+
+def add_ungrouped_hosts_for_tenants(batch_size=100):
+    """Add ungrouped hosts for all tenants."""
+    relationships = []
+    workspaces_to_create = []
+    count = 0
+    total = Tenant.objects.count()
+    for tenant in Tenant.objects.exclude(tenant_name="public").prefetch_related("workspace_set"):
+        logger.info(f"Process: {count}/{total} ungrouped hosts added.")
+        count += 1
+        default = None
+        ungrouped_hosts = None
+        for workspace in tenant.workspace_set.all():
+            if workspace.type == Workspace.Types.DEFAULT:
+                default = workspace
+            elif workspace.type == Workspace.Types.UNGROUPED_HOSTS:
+                ungrouped_hosts = workspace
+        if ungrouped_hosts:
+            continue
+        ungrouped_hosts = Workspace(
+            tenant=tenant,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            name="Ungrouped Hosts",
+            description="Ungrouped Hosts",
+        )
+        workspaces_to_create.append(ungrouped_hosts)
+        relationships.extend(BOOT_STRAP_SERVICE._add_ungrouped_hosts(tenant, default, ungrouped_hosts))
+        if len(relationships) == batch_size:
+            with transaction.atomic():
+                Workspace.objects.bulk_create(workspaces_to_create)
+                BOOT_STRAP_SERVICE._replicator.replicate(
+                    ReplicationEvent(
+                        event_type=ReplicationEventType.ADD_UNGROUPED_HOSTS,
+                        info={"ungrouped_hosts": "batch"},
+                        partition_key=PartitionKey.byEnvironment(),
+                        add=relationships,
+                    )
+                )
+                relationships = []
+                workspaces_to_create = []

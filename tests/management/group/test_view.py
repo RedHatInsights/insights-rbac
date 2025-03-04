@@ -271,8 +271,8 @@ class GroupViewsetTests(IdentityRequest):
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
+        while Workspace.objects.first():
+            Workspace.objects.filter(children=None).delete()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -3545,8 +3545,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         Access.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
+        while Workspace.objects.first():
+            Workspace.objects.filter(children=None).delete()
 
     @staticmethod
     def _create_group_with_user_access_administrator_role(tenant: Tenant) -> Group:

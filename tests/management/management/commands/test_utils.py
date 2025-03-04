@@ -6,12 +6,18 @@ from django.test import TestCase
 from api.models import Tenant
 from management.group.view import SERVICE_ACCOUNT_USERNAME_FORMAT
 from management.management.commands.utils import (
+    add_ungrouped_hosts_for_tenants,
     populate_tenant_user_data,
     populate_service_account_data,
     process_batch,
 )
-from management.models import Principal
+from management.models import Principal, Workspace
 from management.tenant_mapping.model import TenantMapping
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    resource_type,
+)
 
 
 class TestProcessBatch(TestCase):
@@ -184,3 +190,42 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
 
         self.assertEqual(Principal.objects.get(username="test_user_1").user_id, "1")
         self.assertEqual(Principal.objects.get(username="test_user_2").user_id, "2")
+
+
+class TestAddUngroupedHosts(TestCase):
+    def setUp(self):
+        self.tuples = InMemoryTuples()
+        self.replicator = InMemoryRelationReplicator(self.tuples)
+        self.tenant_1 = Tenant.objects.create(org_id="1000000", tenant_name="test_tenant_1")
+        self.tenant_2 = Tenant.objects.create(org_id="1000001", tenant_name="test_tenant_2")
+        root_1 = Workspace.objects.create(tenant=self.tenant_1, type=Workspace.Types.ROOT, name="Root Workspace")
+        self.default_1 = Workspace.objects.create(
+            tenant=self.tenant_1, type=Workspace.Types.DEFAULT, name="Default Workspace", parent=root_1
+        )
+        root_2 = Workspace.objects.create(tenant=self.tenant_2, type=Workspace.Types.ROOT, name="Root Workspace")
+        self.default_2 = Workspace.objects.create(
+            tenant=self.tenant_2, type=Workspace.Types.DEFAULT, name="Default Workspace", parent=root_2
+        )
+        return super().setUp()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_add_ungrouped_hosts_for_tenants(self, replicate):
+        replicate.side_effect = self.replicator.replicate
+        add_ungrouped_hosts_for_tenants(2)
+
+        self.assertTrue(Workspace.objects.filter(tenant=self.tenant_1, type=Workspace.Types.UNGROUPED_HOSTS).exists())
+        self.assertTrue(Workspace.objects.filter(tenant=self.tenant_2, type=Workspace.Types.UNGROUPED_HOSTS).exists())
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "workspace"))
+        self.assertEquals(len(tuples), 2)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_add_ungrouped_hosts_for_tenants_with_existing_ungrouped_hosts(self, replicate):
+        Workspace.objects.create(
+            tenant=self.tenant_1, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=self.default_1
+        )
+        replicate.side_effect = self.replicator.replicate
+        add_ungrouped_hosts_for_tenants(1)
+
+        self.assertTrue(Workspace.objects.filter(tenant=self.tenant_2, type=Workspace.Types.UNGROUPED_HOSTS).exists())
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "workspace"))
+        self.assertEquals(len(tuples), 1)

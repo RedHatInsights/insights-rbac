@@ -845,7 +845,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         mapping = TenantMapping.objects.get(tenant=tenant)
         self.assertIsNotNone(mapping)
         workspaces = list(Workspace.objects.filter(tenant=tenant))
-        self.assertEqual(len(workspaces), 2)
+        self.assertEqual(len(workspaces), 2 + 1)  # ungrouped_hosts
         default = Workspace.objects.default(tenant=tenant)
         self.assertIsNotNone(default)
         root = Workspace.objects.root(tenant=tenant)
