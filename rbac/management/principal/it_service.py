@@ -315,10 +315,12 @@ class ITService:
             filtered_service_accounts = []
             for sa in service_accounts:
                 sa_description = str(sa.get("description"))
+                sa_owner = str(sa.get("owner"))
+                sa_name = str(sa.get("name"))
                 if (
-                    (not name or sa.get("name") == name)
-                    and (not owner or sa.get("owner") == owner)
-                    and (not description or description in sa_description)
+                    (not name or sa_name.lower() == name.lower())
+                    and (not owner or sa_owner.lower() == owner.lower())
+                    and (not description or description.lower() in sa_description.lower())
                 ):
                     filtered_service_accounts.append(sa)
 
