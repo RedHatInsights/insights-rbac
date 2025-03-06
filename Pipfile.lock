@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "283bda2d59ed2b9977bb9d96ce57010f73d7d2cdc5d5785e3a87a12bfbac95d7"
+            "sha256": "daf80e4c1f83aa54f77368ad2ff1e80b48c63c07276ab44451a170098a0a8916"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -79,15 +79,6 @@
             ],
             "markers": "python_version >= '3.8'",
             "version": "==1.37.7"
-        },
-        "buf": {
-            "hashes": [
-                "sha256:a066e6619c6fc23794bbd8055fe8aa800a3265956db5f496849d3d3e04fb4b51",
-                "sha256:b46b755d5d90ea9f1fa9584f7dc3665e75d635c099b1573a343786968515b94f"
-            ],
-            "index": "pypi",
-            "markers": "python_version >= '3.6'",
-            "version": "==1.0.0"
         },
         "celery": {
             "hashes": [
@@ -424,12 +415,6 @@
             ],
             "index": "pypi",
             "version": "==2.1.1"
-        },
-        "docopt": {
-            "hashes": [
-                "sha256:49b3a825280bd66b3aa83585ef59c4a8c82f2c8a522dbe754a8bc8d08c85c491"
-            ],
-            "version": "==0.6.2"
         },
         "ecs-logging": {
             "hashes": [
@@ -874,12 +859,6 @@
             ],
             "index": "pypi",
             "version": "==2.3.0"
-        },
-        "tabulate": {
-            "hashes": [
-                "sha256:e4ca13f26d0a6be2a2915428dc21e732f1e44dad7f76d7030b2ef1ec251cf7f2"
-            ],
-            "version": "==0.8.2"
         },
         "typing-extensions": {
             "hashes": [
