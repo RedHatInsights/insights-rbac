@@ -90,7 +90,7 @@ class DualWriteTestCase(TestCase):
     def default_workspace(self, tenant: Optional[Tenant] = None) -> str:
         """Return the default workspace ID."""
         tenant = tenant if tenant is not None else self.tenant
-        default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+        default = Workspace.objects.default(tenant=tenant)
         return str(default.id)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
@@ -1348,10 +1348,10 @@ class RbacFixture:
         return set_system_flag_before_update(self.default_group, tenant, None)  # type: ignore
 
     def root_workspace(self, tenant: Tenant) -> Workspace:
-        return Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+        return Workspace.objects.root(tenant=tenant)
 
     def default_workspace(self, tenant: Tenant) -> Workspace:
-        return Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+        return Workspace.objects.default(tenant=tenant)
 
     def add_role_to_group(self, role: Role, group: Group) -> Policy:
         """Add a role to a group for a given tenant and return the policy."""

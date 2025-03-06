@@ -314,9 +314,7 @@ class V2TenantBootstrapService:
 
     def _replicate_bootstrap(self, tenant: Tenant, mapping: TenantMapping):
         """Replicate the bootstrapping of a tenant."""
-        built_in_workspaces = Workspace.objects.filter(
-            tenant=tenant, type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]
-        )
+        built_in_workspaces = Workspace.objects.built_in(tenant=tenant)
         root = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.ROOT)
         default = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.DEFAULT)
 

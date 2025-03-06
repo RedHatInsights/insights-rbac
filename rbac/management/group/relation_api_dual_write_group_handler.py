@@ -63,7 +63,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._public_tenant: Optional[Tenant] = None
             self._tenant_mapping = None
 
-            default_workspace = Workspace.objects.get(tenant_id=self.group.tenant_id, type=Workspace.Types.DEFAULT)
+            default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
             super().__init__(default_workspace, event_type, replicator)
         except Exception as e:
             raise DualWriteException(e)

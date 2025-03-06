@@ -923,7 +923,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.approve_request(self.request_4)
 
         # Check that the roles are now bound to the user in the target account (default workspace)
-        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
@@ -981,7 +981,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
 
-        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         previous_default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
