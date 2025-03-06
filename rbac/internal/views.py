@@ -361,7 +361,7 @@ def get_user_data(request):
     try:
         user = get_user_from_bop(username, email)
     except UserNotFoundError as err:
-        return handle_error(f"Invalid request - {err}", 404)
+        return handle_error(f"Not found - {err}", 404)
     except Exception as err:
         return handle_error(f"Internal error - couldn't get user from bop: {err}", 500)
         
