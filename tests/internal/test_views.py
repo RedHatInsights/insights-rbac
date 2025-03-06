@@ -22,7 +22,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from django.test import override_settings
 from django.urls import reverse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
 import pytz
@@ -71,10 +71,10 @@ class InternalViewsetTests(IdentityRequest):
     _tuples: InMemoryTuples
 
     def valid_destructive_time():
-        return datetime.now(datetime.timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
+        return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
 
     def invalid_destructive_time():
-        return datetime.now(datetime.timezone.utc).replace(tzinfo=pytz.UTC) - timedelta(hours=1)
+        return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) - timedelta(hours=1)
 
     def setUp(self):
         """Set up the internal viewset tests."""
