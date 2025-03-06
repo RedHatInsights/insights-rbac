@@ -29,7 +29,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
-from internal.errors import UserNotFoundError
+from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.utils import delete_bindings
 from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
@@ -343,6 +343,7 @@ def get_org_admin(request, org_or_account):
 
 def get_user_data(request):
     """Get all groups, roles, and permissions for a provided user via username or email.
+
     If both params are provided, email is ignored and username is used.
 
     GET /_private/api/utils/get_user_data/?username=foo&email=bar@redhat.com
@@ -751,12 +752,6 @@ def bootstrap_tenant(request):
             tenant = get_object_or_404(Tenant, org_id=org_id)
             bootstrap_service.bootstrap_tenant(tenant, force=force)
     return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
-
-
-class SentryDiagnosticError(Exception):
-    """Raise this to create an event in Sentry."""
-
-    pass
 
 
 def list_or_delete_bindings_for_role(request, role_uuid):

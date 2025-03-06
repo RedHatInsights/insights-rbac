@@ -37,7 +37,7 @@ def build_internal_user(request, json_rh_auth):
     valid_identity_types = ["Associate", "X509"]
     try:
         identity_type = json_rh_auth["identity"]["type"]
-        if not identity_type in valid_identity_types:
+        if identity_type not in valid_identity_types:
             logger.debug(
                 f"User identity type is not valid: '{identity_type}'. Valid types are: {valid_identity_types}"
             )

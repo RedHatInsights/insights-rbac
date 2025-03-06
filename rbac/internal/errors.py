@@ -22,3 +22,9 @@ class UserNotFoundError(Exception):
     """Raised when a user cannot be found via proxy service (bop)."""
 
     pass
+
+
+class SentryDiagnosticError(Exception):
+    """Raise this to create an event in Sentry."""
+
+    pass
