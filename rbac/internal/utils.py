@@ -38,14 +38,18 @@ def build_internal_user(request, json_rh_auth):
     try:
         identity_type = json_rh_auth["identity"]["type"]
         if not identity_type in valid_identity_types:
-            logger.debug(f"User identity type is not valid: '{identity_type}'. Valid types are: {valid_identity_types}")
+            logger.debug(
+                f"User identity type is not valid: '{identity_type}'. Valid types are: {valid_identity_types}"
+            )
             return None
         user.username = json_rh_auth["identity"].get("associate", {}).get("email", "system")
         user.admin = True
         user.org_id = resolve(request.path).kwargs.get("org_id")
         return user
     except KeyError:
-        logger.debug(f"Identity object is missing 'identity.type' attribute. Valid options are: {valid_identity_types}")
+        logger.debug(
+            f"Identity object is missing 'identity.type' attribute. Valid options are: {valid_identity_types}"
+        )
         return None
 
 

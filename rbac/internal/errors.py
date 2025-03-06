@@ -15,6 +15,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
+"""Public errors related to internal views/endpoints."""
+
+
 class UserNotFoundError(Exception):
-    """Raised when a user cannot be found via proxy service (bop)"""
+    """Raised when a user cannot be found via proxy service (bop)."""
+
     pass

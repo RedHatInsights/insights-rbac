@@ -71,10 +71,10 @@ class InternalViewsetTests(IdentityRequest):
     _tuples: InMemoryTuples
 
     def valid_destructive_time():
-        return datetime.utcnow().replace(tzinfo=pytz.UTC) + timedelta(hours=1)
+        return datetime.now(datetime.timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
 
     def invalid_destructive_time():
-        return datetime.utcnow().replace(tzinfo=pytz.UTC) - timedelta(hours=1)
+        return datetime.now(datetime.timezone.utc).replace(tzinfo=pytz.UTC) - timedelta(hours=1)
 
     def setUp(self):
         """Set up the internal viewset tests."""

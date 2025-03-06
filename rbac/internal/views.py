@@ -340,23 +340,24 @@ def get_org_admin(request, org_or_account):
 
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
+
 def get_user_data(request):
     """Get all groups, roles, and permissions for a provided user via username or email.
-    If both params are provided, email is ignored and username is used. 
+    If both params are provided, email is ignored and username is used.
 
     GET /_private/api/utils/get_user_data/?username=foo&email=bar@redhat.com
     """
     if request.method != "GET":
         return handle_error("Invalid http method - only 'GET' is allowed", 405)
-    
+
     username = request.GET.get("username")
     email = request.GET.get("email")
-    
+
     try:
         validate_get_user_data_input(username, email)
     except ValueError as err:
         return handle_error(f"Invalid request input - {err}", 400)
-    
+
     # get user from bop
     try:
         user = get_user_from_bop(username, email)
@@ -364,71 +365,76 @@ def get_user_data(request):
         return handle_error(f"Not found - {err}", 404)
     except Exception as err:
         return handle_error(f"Internal error - couldn't get user from bop: {err}", 500)
-        
+
     result = {
         "username": user["username"],
         "email_address": user["email"],
     }
-    
+
     principal = Principal.objects.get(username=user["username"])
-   
+
     # TODO: implement paging on groups
     # to page in the db: https://docs.djangoproject.com/en/5.1/topics/db/queries/#limiting-querysets
-    
+
     groups = Group.objects.filter(principals=principal.id) | Group.platform_default_set()
     if user["is_org_admin"]:
         groups = groups | Group.admin_default_set()
-    
+
     user_groups = []
     for group in groups:
         roles = group.roles()
         user_roles = []
         for role in roles:
             accesses = Access.objects.filter(role=role.id)
-            
+
             permissions = []
             for access in accesses:
                 permission = access.permission
                 permissions.append(f"{permission.application} | {permission.resource_type} | {permission.verb}")
-            
-            user_roles.append({
-                "name": role.name,
-                "display name": role.display_name,
-                "description": role.description,
-                "uuid": role.uuid,
-                "platform_default": role.platform_default,
-                "admin_default": role.admin_default,
-                "permissions": permissions
-            })
-        
-        user_groups.append({
-            "name": group.name,
-            "description": group.description if group.description else "",
-            "uuid": group.uuid,
-            "platform_default": group.platform_default,
-            "admin_default": group.admin_default,
-            "roles": user_roles,
-        })
-    
+
+            user_roles.append(
+                {
+                    "name": role.name,
+                    "display name": role.display_name,
+                    "description": role.description,
+                    "uuid": role.uuid,
+                    "platform_default": role.platform_default,
+                    "admin_default": role.admin_default,
+                    "permissions": permissions,
+                }
+            )
+
+        user_groups.append(
+            {
+                "name": group.name,
+                "description": group.description if group.description else "",
+                "uuid": group.uuid,
+                "platform_default": group.platform_default,
+                "admin_default": group.admin_default,
+                "roles": user_roles,
+            }
+        )
+
     result["groups"] = user_groups
-    
+
     return HttpResponse(json.dumps(result, cls=DjangoJSONEncoder), content_type="application/json", status=200)
+
 
 def validate_get_user_data_input(username, email):
     if not username and not email:
         raise ValueError("you must provide either 'email' or 'username' as query params")
-    
+
     if username and username.isspace():
         raise ValueError("username contains only whitespace")
-    
+
     if not username and email.isspace():
         raise ValueError("email contains only whitespace")
-    
+
 
 def get_user_from_bop(username, email):
     principal = ""
     query_by = ""
-    
+
     if username:
         principal = username
         query_by = "principal"
@@ -437,28 +443,31 @@ def get_user_from_bop(username, email):
         query_by = "email"
     else:
         raise Exception("must provide username or email to query bop for user")
-    
-    query_options = {"queryBy" : query_by, "include_permissions": True}
+
+    query_options = {"queryBy": query_by, "include_permissions": True}
     logger.debug(f"querying bop for user with options: '{query_options}' and principal: '{principal}'")
-    
+
     resp = PROXY.request_filtered_principals(principals=[principal], limit=1, offset=0, options=query_options)
-    
+
     if isinstance(resp, dict) and "errors" in resp:
         raise Exception(resp.get("errors"))
-        
+
     users = resp["data"]
 
     if len(users) == 0:
         raise UserNotFoundError(f"user with '{query_by}={principal}' not found in bop")
-    
+
     user = users[0]
-    
+
     if (not "username" in user) or not user["username"] or user["username"].isspace():
-        raise Exception(f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists")
-    
+        raise Exception(
+            f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
+        )
+
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
-    
+
     return user
+
 
 def run_seeds(request):
     """View method for running seeds.

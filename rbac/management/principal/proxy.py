@@ -96,8 +96,10 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             else:
                 params["queryBy"] = options["query_by"]
         if "include_permissions" in options:
-            if options["include_permissions"]: params["include_permissions"] = "true"
-            else: params["include_permissions"] = "false"
+            if options["include_permissions"]:
+                params["include_permissions"] = "true"
+            else:
+                params["include_permissions"] = "false"
 
         return params
 
