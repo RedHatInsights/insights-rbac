@@ -422,6 +422,7 @@ def get_user_data(request):
 
 
 def validate_get_user_data_input(username, email):
+    """Validate input from get_user_data endpoint."""
     if not username and not email:
         raise ValueError("you must provide either 'email' or 'username' as query params")
 
@@ -433,6 +434,7 @@ def validate_get_user_data_input(username, email):
 
 
 def get_user_from_bop(username, email):
+    """Retrieve user from bop via username or email."""
     principal = ""
     query_by = ""
 
@@ -460,7 +462,7 @@ def get_user_from_bop(username, email):
 
     user = users[0]
 
-    if (not "username" in user) or not user["username"] or user["username"].isspace():
+    if ("username" not in user) or (not user["username"]) or (user["username"].isspace()):
         raise Exception(
             f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
         )
