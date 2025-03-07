@@ -359,7 +359,6 @@ def get_user_data(request):
     except ValueError as err:
         return handle_error(f"Invalid request input - {err}", 400)
 
-    # get user from bop
     try:
         user = get_user_from_bop(username, email)
     except UserNotFoundError as err:
@@ -372,7 +371,11 @@ def get_user_data(request):
         "email_address": user["email"],
     }
 
-    principal = Principal.objects.get(username=user["username"])
+    try:
+        principal = Principal.objects.get(username=user["username"])
+    except Exception as e:
+        return handle_error(f"Internal error - user exists in bop but not rbac", 500)
+        
 
     # TODO: implement paging on groups
     # to page in the db: https://docs.djangoproject.com/en/5.1/topics/db/queries/#limiting-querysets
@@ -447,7 +450,7 @@ def get_user_from_bop(username, email):
     else:
         raise Exception("must provide username or email to query bop for user")
 
-    query_options = {"queryBy": query_by, "include_permissions": True}
+    query_options = {"query_by": query_by, "include_permissions": True}
     logger.debug(f"querying bop for user with options: '{query_options}' and principal: '{principal}'")
 
     resp = PROXY.request_filtered_principals(principals=[principal], limit=1, offset=0, options=query_options)
