@@ -23,11 +23,13 @@ import logging
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.utils import delete_bindings
 from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
@@ -43,6 +45,7 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -338,6 +341,140 @@ def get_org_admin(request, org_or_account):
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
 
+def get_user_data(request):
+    """Get all groups, roles, and permissions for a provided user via username or email.
+
+    If both params are provided, email is ignored and username is used.
+
+    GET /_private/api/utils/get_user_data/?username=foo&email=bar@redhat.com
+    """
+    if request.method != "GET":
+        return handle_error("Invalid http method - only 'GET' is allowed", 405)
+
+    username = request.GET.get("username")
+    email = request.GET.get("email")
+
+    try:
+        validate_get_user_data_input(username, email)
+    except ValueError as err:
+        return handle_error(f"Invalid request input - {err}", 400)
+
+    try:
+        user = get_user_from_bop(username, email)
+    except UserNotFoundError as err:
+        return handle_error(f"Not found - {err}", 404)
+    except Exception as err:
+        return handle_error(f"Internal error - couldn't get user from bop: {err}", 500)
+
+    result = {
+        "username": user["username"],
+        "email_address": user["email"],
+    }
+
+    try:
+        principal = Principal.objects.get(username=user["username"])
+    except Exception as e:
+        return handle_error(f"Internal error - user exists in bop but not rbac", 500)
+        
+
+    # TODO: implement paging on groups
+    # to page in the db: https://docs.djangoproject.com/en/5.1/topics/db/queries/#limiting-querysets
+
+    groups = Group.objects.filter(principals=principal.id) | Group.platform_default_set()
+    if user["is_org_admin"]:
+        groups = groups | Group.admin_default_set()
+
+    user_groups = []
+    for group in groups:
+        roles = group.roles()
+        user_roles = []
+        for role in roles:
+            accesses = Access.objects.filter(role=role.id)
+
+            permissions = []
+            for access in accesses:
+                permission = access.permission
+                permissions.append(f"{permission.application} | {permission.resource_type} | {permission.verb}")
+
+            user_roles.append(
+                {
+                    "name": role.name,
+                    "display name": role.display_name,
+                    "description": role.description,
+                    "uuid": role.uuid,
+                    "platform_default": role.platform_default,
+                    "admin_default": role.admin_default,
+                    "permissions": permissions,
+                }
+            )
+
+        user_groups.append(
+            {
+                "name": group.name,
+                "description": group.description if group.description else "",
+                "uuid": group.uuid,
+                "platform_default": group.platform_default,
+                "admin_default": group.admin_default,
+                "roles": user_roles,
+            }
+        )
+
+    result["groups"] = user_groups
+
+    return HttpResponse(json.dumps(result, cls=DjangoJSONEncoder), content_type="application/json", status=200)
+
+
+def validate_get_user_data_input(username, email):
+    """Validate input from get_user_data endpoint."""
+    if not username and not email:
+        raise ValueError("you must provide either 'email' or 'username' as query params")
+
+    if username and username.isspace():
+        raise ValueError("username contains only whitespace")
+
+    if not username and email.isspace():
+        raise ValueError("email contains only whitespace")
+
+
+def get_user_from_bop(username, email):
+    """Retrieve user from bop via username or email."""
+    principal = ""
+    query_by = ""
+
+    if username:
+        principal = username
+        query_by = "principal"
+    elif email and not username:
+        principal = email
+        query_by = "email"
+    else:
+        raise Exception("must provide username or email to query bop for user")
+
+    query_options = {"query_by": query_by, "include_permissions": True}
+    logger.debug(f"querying bop for user with options: '{query_options}' and principal: '{principal}'")
+
+    resp = PROXY.request_filtered_principals(principals=[principal], limit=1, offset=0, options=query_options)
+
+    if isinstance(resp, dict) and "errors" in resp:
+        raise Exception(resp.get("errors"))
+
+    users = resp["data"]
+
+    if len(users) == 0:
+        raise UserNotFoundError(f"user with '{query_by}={principal}' not found in bop")
+
+    user = users[0]
+
+    if ("username" not in user) or (not user["username"]) or (user["username"].isspace()):
+        raise Exception(
+            f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
+        )
+
+    logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
+
+    return user
+
+
 def run_seeds(request):
     """View method for running seeds.
 
@@ -620,12 +757,6 @@ def bootstrap_tenant(request):
             tenant = get_object_or_404(Tenant, org_id=org_id)
             bootstrap_service.bootstrap_tenant(tenant, force=force)
     return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
-
-
-class SentryDiagnosticError(Exception):
-    """Raise this to create an event in Sentry."""
-
-    pass
 
 
 def list_or_delete_bindings_for_role(request, role_uuid):
