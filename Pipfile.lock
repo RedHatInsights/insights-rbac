@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "247cf66a2d51640a3e548d0c422d4c2e9483c4836d446c0972740c0f9a42d9d0"
+            "sha256": "6f4a4231339c44515f01b5882cf55654b2b89c9313652d2ff66316d7bb40d74d"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -795,12 +795,12 @@
         },
         "relations-grpc-clients-python-kessel-project": {
             "hashes": [
-                "sha256:6aeabe34431e859751f7223bbde28919dc55194b9e4f42d1f39aecc94adb8d79",
-                "sha256:b17e3a7869f1eed62d7436513556315828a48485973f8484372796e0ad25da78"
+                "sha256:5f2b6e41f5d130dd4669b24bd36ce5a75d0331cd2665249e2abb09b5c5ec74bc",
+                "sha256:b9b070914e0b68ade95430599d52f5901f61733aeb22d6a3cb527ae6449d696c"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==0.3.5"
+            "version": "==0.3.7"
         },
         "requests": {
             "hashes": [
