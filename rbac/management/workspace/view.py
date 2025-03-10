@@ -29,7 +29,8 @@ from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_CREATE_FIELDS = ["name", "parent_id"]
+# REQUIRED_CREATE_FIELDS = ["name", "parent_id"]
+REQUIRED_CREATE_FIELDS = ["name"]
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
@@ -124,6 +125,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     def validate_required_fields(self, request, required_fields):
         """Validate required fields for workspace."""
+        print(required_fields)
         for field in required_fields:
             if field not in request.data:
                 message = f"Field '{field}' is required."
