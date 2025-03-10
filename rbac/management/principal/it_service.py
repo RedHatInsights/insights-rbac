@@ -110,18 +110,17 @@ class ITService:
 
             # If the offset is zero, that means that we need to call the service at least once to get the first
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
-            parameters: dict[str, Union[int, list[str]]] = {"first": offset, "max": limit}
-            # If we were given client IDs to filter the collection with, do it!
-            if client_ids:
-                parameters["clientId"] = client_ids
+            parameters: dict[str, Union[int, Optional[list[str]]]] = {
+                "first": offset,
+                "max": limit,
+                "clientId": client_ids,
+            }
 
             continue_fetching: bool = True
             while continue_fetching:
                 # Recreate the parameters dictionary every time since otherwise the "assert_has_calls" statement of the
                 # tests only sees the last value for the offset when attempting to fetch multiple pages.
-                parameters = {"first": offset, "max": limit}
-                if client_ids:
-                    parameters["clientId"] = client_ids
+                parameters = {"first": offset, "max": limit, "clientId": client_ids}
 
                 # Call IT.
                 response = requests.get(
