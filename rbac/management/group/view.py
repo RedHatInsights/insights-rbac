@@ -717,12 +717,11 @@ class GroupViewSet(
             required=False,
         )
 
-        # Build the options dict.
+        # Build the 'options' dict.
         options: dict = {"sort_order": sort_order, "username_only": username_only}
 
-        # Attempt validating and obtaining the "principal type" query
-        # parameter. It is important because we need to call BOP for
-        # the users, and IT for the service accounts.
+        # Attempt validating and obtaining the "principal_type" query parameter.
+        # It is important because we need to call BOP for the users, and IT for the service accounts.
         principalType = validate_and_get_key(
             request.query_params,
             PRINCIPAL_TYPE_KEY,
@@ -731,7 +730,7 @@ class GroupViewSet(
             required=False,
         )
 
-        # Store the principal type in the options dict.
+        # Store the principal type in the 'options' dict.
         options[PRINCIPAL_TYPE_KEY] = principalType
 
         # Make sure we return early for service accounts.
