@@ -99,7 +99,7 @@ VALID_GROUP_ROLE_FILTERS = [
 ]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
-VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
+VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -180,7 +180,7 @@ class GroupViewSet(
     """
 
     queryset = Group.objects.annotate(
-        principalCount=Count("principals", filter=Q(principals__type="user"), distinct=True),
+        principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True),
         policyCount=Count("policies", distinct=True),
     )
     permission_classes = (GroupAccessPermission,)
@@ -626,7 +626,9 @@ class GroupViewSet(
 
         tenant = Tenant.objects.get(org_id=org_id)
 
-        valid_principals = Principal.objects.filter(group=group, tenant=tenant, type="user", username__in=principals)
+        valid_principals = Principal.objects.filter(
+            group=group, tenant=tenant, type=Principal.Types.USER, username__in=principals
+        )
         valid_usernames = valid_principals.values_list("username", flat=True)
         usernames_diff = set(principals) - set(valid_usernames)
         if usernames_diff:
@@ -806,7 +808,7 @@ class GroupViewSet(
         options[PRINCIPAL_TYPE_KEY] = principalType
 
         # Make sure we return early for service accounts.
-        if principalType == "service-account":
+        if principalType == Principal.Types.SERVICE_ACCOUNT:
             # Get the service account's description and name filters, and the principal's username filter too.
             # Finally, get the limit and offset parameters.
             options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
@@ -926,7 +928,7 @@ class GroupViewSet(
         principals = []
         service_accounts = []
         for specified_principal in user_specified_principals:
-            if ("type" in specified_principal) and (specified_principal["type"] == "service-account"):
+            if ("type" in specified_principal) and (specified_principal["type"] == Principal.Types.SERVICE_ACCOUNT):
                 service_accounts.append(specified_principal)
             else:
                 principals.append(specified_principal)
@@ -1292,7 +1294,7 @@ class GroupViewSet(
         """Return filtered user principals for group from query params."""
         principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, "principal", request)
         # Make sure we only return users.
-        return group.principals.filter(**principal_filters).filter(type="user")
+        return group.principals.filter(**principal_filters).filter(type=Principal.Types.USER)
 
     def filters_from_params(self, valid_filters, model_name, request):
         """Build filters from group params."""
