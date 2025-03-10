@@ -713,7 +713,7 @@ class GroupViewSet(
             request.query_params,
             USERNAME_ONLY_KEY,
             VALID_BOOLEAN_VALUE,
-            "false",
+            default_value="false",
             required=False,
         )
 
