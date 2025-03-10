@@ -7,5 +7,8 @@
 #npm install @typespec/versioning
 #npm install @typespec/json-schema
 #tsp install
+
 tsp compile main.tsp
-cp tsp-output/@typespec/openapi3/openapi.yaml ../v2
+tsp compile main.tsp --options @typespec/openapi3.output-file=openapi.json
+
+cp tsp-output/@typespec/openapi3/openapi.{yaml,json} ../v2
