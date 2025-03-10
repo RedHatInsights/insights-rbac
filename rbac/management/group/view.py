@@ -801,6 +801,7 @@ class GroupViewSet(
             request.query_params,
             PRINCIPAL_TYPE_KEY,
             VALID_PRINCIPAL_TYPE_VALUE,
+            default_value=Principal.Types.USER,
             required=False,
         )
 
