@@ -326,7 +326,8 @@ class ITService:
 
             service_accounts = filtered_service_accounts
             count = len(service_accounts)
-        else:
+
+        if order_by:
             # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
             if order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
                 service_accounts.sort(reverse=True, key=lambda sa: str(sa.get(order_by[1:], "")).casefold())
