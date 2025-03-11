@@ -871,7 +871,7 @@ class GroupViewSet(
         resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
         if isinstance(resp, dict) and "errors" in resp:
             return Response(status=resp.get("status_code"), data=resp.get("errors"))
-        
+
         path = request.path
 
         paginator = StandardResultsSetPagination()
@@ -903,17 +903,12 @@ class GroupViewSet(
             response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
             response_data["links"] = {
                 "first": f"{path}?limit={limit}&offset=0",
-                "next": (
-                    f"{path}?limit={limit}&offset={next_offset}"
-                    if next_offset < count
-                    else None
-                ),
-                "previous": (
-                    f"{path}?limit={limit}&offset={previous_offset}" if offset - limit >= 0 else None
-                ),
+                "next": (f"{path}?limit={limit}&offset={next_offset}" if next_offset < count else None),
+                "previous": (f"{path}?limit={limit}&offset={previous_offset}" if offset - limit >= 0 else None),
                 "last": f"{path}?limit={limit}&offset={last_link_offset}",
             }
-            response_data["data"] = data
+            slice_resp_data = slice(offset, offset + limit)
+            response_data["data"] = data[slice_resp_data]
         else:
             response_data = resp
             del response_data["status_code"]
