@@ -62,6 +62,10 @@ integration_urlpatterns = [
     path("api/v1/openapi.json", openapi, name="openapi"),
 ]
 
+s2s_urlpatterns = [
+    path("_s2s/hbi/<str:org_id>/ungrouped/", views.hbi_ungrouped_workspace),
+]
+
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/", views.list_tenants),
@@ -95,3 +99,4 @@ urlpatterns = [
 ]
 
 urlpatterns.extend(integration_urlpatterns)
+urlpatterns.extend(s2s_urlpatterns)

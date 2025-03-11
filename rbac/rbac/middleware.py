@@ -33,18 +33,11 @@ from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
-from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
+from management.utils import APPLICATION_KEY, access_for_principal, build_user_from_psk
 from prometheus_client import Counter
 from rest_framework import status
 
-from api.common import (
-    RH_IDENTITY_HEADER,
-    RH_INSIGHTS_REQUEST_ID,
-    RH_RBAC_ACCOUNT,
-    RH_RBAC_CLIENT_ID,
-    RH_RBAC_ORG_ID,
-    RH_RBAC_PSK,
-)
+from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import extract_header
 
@@ -303,19 +296,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
-            request_psk = request.META.get(RH_RBAC_PSK)
-            account = request.META.get(RH_RBAC_ACCOUNT)
-            org_id = request.META.get(RH_RBAC_ORG_ID)
-            client_id = request.META.get(RH_RBAC_CLIENT_ID)
-            has_system_auth_headers = request_psk and org_id and client_id
-
-            if has_system_auth_headers and validate_psk(request_psk, client_id):
-                user.username = client_id
-                user.account = account
-                user.org_id = org_id
-                user.admin = True
-                user.system = True
-            else:
+            user = build_user_from_psk(request)
+            if not user:
                 logger.error("Could not obtain identity on request.")
                 return HttpResponseUnauthorizedRequest()
         except binascii.Error as error:

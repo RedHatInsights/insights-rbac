@@ -25,6 +25,7 @@ from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
+from management.utils import build_user_from_psk
 
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant
@@ -44,22 +45,31 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
         if not any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # We are not in an internal API section
             return
-        try:
-            _, json_rh_auth = extract_header(request, self.header)
-        except (JSONDecodeError, binascii.Error):
-            logger.exception("Invalid X-RH-Identity header.")
-            return HttpResponseForbidden()
-        user = build_internal_user(request, json_rh_auth)
-        if not user:
-            logger.error("Malformed X-RH-Identity header.")
-            return HttpResponseForbidden()
-        try:
-            path_org_id = resolve(request.path).kwargs.get("org_id")
-            if path_org_id:
-                request.tenant = get_object_or_404(Tenant, org_id=user.org_id)
-        except (KeyError, TypeError):
-            logger.error("Malformed X-RH-Identity header.")
-            return HttpResponseForbidden()
+
+        user = None
+        # If the path starts with /_private/_s2s/, it is using psk to authenticate
+        if request.path.startswith("/_private/_s2s/"):
+            user = build_user_from_psk(request)
+            if not user:
+                logger.error("Could not obtain identity on request.")
+                return HttpResponseForbidden()
+        else:
+            try:
+                _, json_rh_auth = extract_header(request, self.header)
+            except (JSONDecodeError, binascii.Error):
+                logger.exception("Invalid X-RH-Identity header.")
+                return HttpResponseForbidden()
+            user = build_internal_user(request, json_rh_auth)
+            if not user:
+                logger.error("Malformed X-RH-Identity header.")
+                return HttpResponseForbidden()
+            try:
+                path_org_id = resolve(request.path).kwargs.get("org_id")
+                if path_org_id:
+                    request.tenant = get_object_or_404(Tenant, org_id=user.org_id)
+            except (KeyError, TypeError):
+                logger.error("Malformed X-RH-Identity header.")
+                return HttpResponseForbidden()
 
         request.user = user
 
