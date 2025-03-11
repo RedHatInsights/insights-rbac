@@ -71,6 +71,7 @@ from rest_framework.filters import OrderingFilter
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from .insufficient_privileges import InsufficientPrivilegesError
 from .service_account_not_found_error import ServiceAccountNotFoundError
@@ -101,6 +102,9 @@ VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
+USER_KEY = "user"
+SA_KEY = "service-account"
+ALL_KEY = "all"
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -867,11 +871,53 @@ class GroupViewSet(
         resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
         if isinstance(resp, dict) and "errors" in resp:
             return Response(status=resp.get("status_code"), data=resp.get("errors"))
+        
+        path = request.path
 
-        page = self.paginate_queryset(resp.get("data"))
-        response = self.get_paginated_response(page)
+        paginator = StandardResultsSetPagination()
+        paginator.paginate_queryset([], request)
+        limit = paginator.limit
+        offset = paginator.offset
 
-        return response
+        status_code = resp.get("status_code")
+        response_data = {}
+        if status_code == status.HTTP_200_OK:
+            data = resp.get("data", [])
+            count = len(data)
+            if principalType == SA_KEY:
+                count = resp.get("saCount")
+            elif principalType == USER_KEY:
+                if isinstance(data, dict):
+                    count = len(data)
+                    data = data.get("users")
+                elif isinstance(data, list):
+                    count = len(data)
+            elif principalType == ALL_KEY:
+                count = resp.get("userCount")
+            else:
+                count = len(data)
+
+            previous_offset = offset - limit if offset - limit > 0 else 0
+            last_link_offset = count - limit if (count - limit) >= 0 else 0
+            next_offset = offset + limit
+            response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
+            response_data["links"] = {
+                "first": f"{path}?limit={limit}&offset=0",
+                "next": (
+                    f"{path}?limit={limit}&offset={next_offset}"
+                    if next_offset < count
+                    else None
+                ),
+                "previous": (
+                    f"{path}?limit={limit}&offset={previous_offset}" if offset - limit >= 0 else None
+                ),
+                "last": f"{path}?limit={limit}&offset={last_link_offset}",
+            }
+            response_data["data"] = data
+        else:
+            response_data = resp
+            del response_data["status_code"]
+        return Response(status=status_code, data=response_data)
 
     def _add_principal_into_group(self, request: Request, uuid: Optional[UUID] = None):
         """Add principals into a group."""
