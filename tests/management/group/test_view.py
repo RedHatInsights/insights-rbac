@@ -2774,7 +2774,7 @@ class GroupViewsetTests(IdentityRequest):
             url = f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}?limit={limit}&offset={offset}"
             client = APIClient()
             response = client.get(url, **self.headers)
-
+            print(len(response.data.get("data")))
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(int(response.data.get("meta").get("count")), 3)
             self.assertEqual(int(response.data.get("meta").get("limit")), limit)
