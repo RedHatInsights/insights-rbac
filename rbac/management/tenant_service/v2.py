@@ -71,6 +71,31 @@ class V2TenantBootstrapService:
         except TenantMapping.DoesNotExist:
             return self._bootstrap_tenant(tenant)
 
+    def create_ungrouped_workspace(self, org_id) -> Workspace:
+        """Util for creating ungrouped workspace. Can be removed once ungrouped workspace has gone."""
+        tenant = Tenant.objects.get(org_id=org_id)
+        default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+        ungrouped_hosts = Workspace.objects.create(
+            tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=default
+        )
+
+        relationship = create_relationship(
+            ("rbac", "workspace"),
+            str(ungrouped_hosts.id),
+            ("rbac", "workspace"),
+            str(default.id),
+            "parent",
+        )
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                info={"org_id": tenant.org_id, "ungrouped_hosts_id": str(ungrouped_hosts.id)},
+                partition_key=PartitionKey.byEnvironment(),
+                add=[relationship],
+            )
+        )
+        return ungrouped_hosts
+
     def update_user(
         self,
         user: User,
