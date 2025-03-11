@@ -102,6 +102,9 @@ VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
+USER_KEY = "user"
+SA_KEY = "service-account"
+ALL_KEY = "all"
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
