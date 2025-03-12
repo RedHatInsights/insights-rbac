@@ -1756,7 +1756,7 @@ class InternalViewsetTests(IdentityRequest):
             **self.request.META,
             content_type="application/json",
         )
-        self.assertTrue(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             response.content.decode(), json.dumps({str(car.request_id): (custom_role.id, custom_role.display_name)})
         )
@@ -1768,10 +1768,112 @@ class InternalViewsetTests(IdentityRequest):
             **self.request.META,
             content_type="application/json",
         )
-        self.assertTrue(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(car.roles.filter(id=system_role.id).exists())
         self.assertFalse(car.roles.filter(id=custom_role.id).exists())
 
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true"
+                }
+            ],
+        },
+    )    
+    def test_get_user_data_happy_path(self, _):
+        # given (a lot of setup)
+        # user data we want to query for
+        username = "test_user"
+        email = "test_user@redhat.com"
+        
+        # create a tenant and principal for our user
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        principal = Principal.objects.create(username=username, tenant=tenant)
+        
+        # create platform & admin default groups
+        Group.objects.create(name="test_group_platform_default", tenant=self.tenant, system=True, admin_default=False, platform_default=True)
+        Group.objects.create(name="test_group_admin_default", tenant=self.tenant, system=True, admin_default=True, platform_default=False)
+        
+        # create a test group and add our user to it
+        test_group = Group.objects.create(name="test_group", tenant=self.tenant)
+        test_group.principals.add(principal)
+        
+        # add some roles to our test group
+        test_role1 = Role.objects.create(name="test_role1", tenant=tenant)
+        test_role2 = Role.objects.create(name="test_role2", tenant=tenant)
+        test_policy = Policy.objects.create(name="test_policy", group=test_group, tenant=tenant)
+        test_policy.roles.add(test_role1, test_role2)
+        test_group.policies.add(test_policy)
+        
+        # and finally add some permissions to our test roles
+        test_perm1 = Permission.objects.create(permission="app:res1:*", tenant=tenant)
+        test_perm2 = Permission.objects.create(permission="app:res2:*", tenant=tenant)
+        Access.objects.create(permission=test_perm1, role=test_role1, tenant=tenant)
+        Access.objects.create(permission=test_perm2, role=test_role1, tenant=tenant)
+        
+        test_perm3 = Permission.objects.create(permission="app:res3:read", tenant=tenant)
+        test_perm4 = Permission.objects.create(permission="app:res3:write", tenant=tenant)
+        Access.objects.create(permission=test_perm3, role=test_role2, tenant=tenant)
+        Access.objects.create(permission=test_perm4, role=test_role2, tenant=tenant)
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?username={username}",
+            **self.request.META,
+            content_type="application/json"
+        )
+        
+        resp = response.content.decode()
+        msg = f"[response from rbac: '{resp}']"
+        
+        # then
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=msg)
+        body = json.loads(resp)
+        
+        # check top level fields
+        self.assertTrue(("username" in body), msg=msg)
+        self.assertTrue(("email_address" in body), msg=msg)
+        self.assertTrue(("groups" in body), msg=msg)
+        self.assertEqual(body["username"], username, msg=msg)
+        self.assertEqual(body["email_address"], email, msg=msg)
+        
+        resp_groups = body["groups"]
+        self.assertIsInstance(resp_groups, list, msg=msg)
+        self.assertEqual(len(resp_groups), 3, msg=msg)
+        
+        # check all our groups were returned
+        group_names = [group["name"] for group in resp_groups]
+        self.assertListEqual(group_names, ["test_group", "test_group_admin_default", "test_group_platform_default"], msg=msg)
+        
+        # check our test group has all its roles
+        resp_test_group = [group for group in resp_groups if group["name"] == "test_group"][0]
+        self.assertIsNotNone(resp_test_group, msg=msg)
+        
+        resp_test_group_roles = resp_test_group["roles"]
+        self.assertIsNotNone(resp_test_group_roles, msg=msg)
+        self.assertIsInstance(resp_test_group_roles, list, msg=msg)
+        self.assertEqual(len(resp_test_group_roles), 2, msg=msg)
+        
+        role_names = [role["name"] for role in resp_test_group_roles]
+        self.assertListEqual(role_names, ["test_role1", "test_role2"], msg=msg)
+        
+        # and finally check all our roles have all their permissions
+        resp_test_group_role1 = resp_test_group_roles[0]
+        resp_test_group_role2 = resp_test_group_roles[1]
+        
+        self.assertIsInstance(resp_test_group_role1["permissions"], list, msg=msg)
+        self.assertEqual(len(resp_test_group_role1["permissions"]), 2)
+        self.assertListEqual(resp_test_group_role1["permissions"], ["app | res1 | *", "app | res2 | *"], msg=msg)
+        
+        self.assertIsInstance(resp_test_group_role2["permissions"], list, msg=msg)
+        self.assertEqual(len(resp_test_group_role2["permissions"]), 2, msg=msg)
+        self.assertListEqual(resp_test_group_role2["permissions"], ["app | res3 | read", "app | res3 | write"], msg=msg)
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
