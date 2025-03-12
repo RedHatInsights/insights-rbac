@@ -65,7 +65,8 @@ class Workspace(TenantAwareModel):
             if self.parent is not None:
                 raise ValidationError({"root_parent": ("Root workspace must not have a parent.")})
         elif self.parent_id is None:
-            raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
+            self.parent_id = self.id
+            # raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
         elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
             raise ValidationError({"default_parent": ("Default workspace must have a root parent.")})
 
