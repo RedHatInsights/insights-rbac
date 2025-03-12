@@ -2105,3 +2105,20 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_bootstrap_pending_tenants(self):
+        tenant = Tenant.objects.create(org_id="111", account_id="111")
+
+        response = self.client.get(
+            f"/_private/api/utils/bootstrap_pending_tenants/",
+            **self.internal_request.META,
+        )
+
+        expected_json = {
+            "org_ids": sorted([str(self.tenant.org_id), str(self.test_tenant.org_id), str(tenant.org_id)]),
+        }
+
+        response_json = json.loads(response.content)
+        response_json["org_ids"].sort()
+
+        self.assertEqual(response_json, expected_json)

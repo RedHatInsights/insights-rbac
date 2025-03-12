@@ -86,6 +86,7 @@ urlpatterns = [
     path("api/utils/bindings/<role_uuid>/", views.list_or_delete_bindings_for_role),
     path("api/utils/binding/<binding_id>/clean/", views.clean_binding_mapping),
     path("api/utils/bootstrap_tenant/", views.bootstrap_tenant),
+    path("api/utils/bootstrap_pending_tenants/", views.bootstrap_pending_tenants),
     path("api/utils/migration_resources/", views.migration_resources),
     path("api/utils/reset_imported_tenants/", views.reset_imported_tenants),
     path("api/utils/resource_definitions/", views.correct_resource_definitions),

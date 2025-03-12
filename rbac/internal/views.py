@@ -25,7 +25,7 @@ from core.utils import destructive_ok
 from django.conf import settings
 from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.utils import delete_bindings
@@ -580,6 +580,26 @@ def data_migration(request):
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
+
+
+def bootstrap_pending_tenants(request):
+    """List tenants which are not bootstrapped.
+
+    GET /_private/api/utils/bootstrap_pending_tenants/
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method only "GET" is allowed.', status=405)
+
+    public_tenant = Tenant._get_public_tenant()
+    org_ids = list(
+        Tenant.objects.filter(tenant_mapping__isnull=True)
+        .exclude(id=public_tenant.id)
+        .values_list("org_id", flat=True)
+    )
+
+    response = {"org_ids": org_ids}
+
+    return JsonResponse(response, content_type="application/json", status=200)
 
 
 def bootstrap_tenant(request):
