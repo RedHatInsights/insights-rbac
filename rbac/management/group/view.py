@@ -72,6 +72,7 @@ from rest_framework.filters import OrderingFilter
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from .insufficient_privileges import InsufficientPrivilegesError
 from .service_account_not_found_error import ServiceAccountNotFoundError
@@ -100,7 +101,8 @@ VALID_GROUP_ROLE_FILTERS = [
 ]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
-VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER]
+ALL_KEY = "all"
+VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER, ALL_KEY]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -739,6 +741,8 @@ class GroupViewSet(
         elif principalType == Principal.Types.USER:
             response = self._list_user_based_principals_in_group(request, group, options)
 
+        elif principalType == ALL_KEY:
+            response = self._list_both_principal_types_in_group(request, group, options)
 
         return response
 
@@ -1123,8 +1127,71 @@ class GroupViewSet(
         if isinstance(resp, dict) and "errors" in resp:
             return Response(status=resp.get("status_code"), data=resp.get("errors"))
 
+        # For 'principal_type=all' we need to return before pagination is applied
+        if options["principal_type"] == ALL_KEY:
+            return resp
+
         page = self.paginate_queryset(resp.get("data"))
         return self.get_paginated_response(page)
+
+    def _list_both_principal_types_in_group(self, request, group, options):
+        """
+        List both principal types (user based, service account based) in the group.
+
+        First we try to list service account based principals and then user based principals.
+        For the second query we need to calculate new limit and offset.
+        Example:
+            the group contains 3 SA + 4 U, limit = 2, offset = 0
+            pagination:
+            page 1 -> 2 SA
+            page 2 -> 1 SA + 1 U
+            page 3 -> 2 U
+            page 4 -> 1 U
+        """
+        paginator = StandardResultsSetPagination()
+        paginator.paginate_queryset([], request)
+        limit = paginator.limit
+        offset = paginator.offset
+
+        # Get Service Account based principals
+        response_sa = self._list_service_accounts_in_group(request, group, options)
+        if response_sa.status_code != status.HTTP_200_OK:
+            return response_sa
+
+        # Calculate new limit and offset for the user based principals query
+        sa_count_total = int(response_sa.data.get("meta").get("count"))
+        sa_count = len(response_sa.data.get("data", []))
+        remaining_limit = limit - sa_count
+        if remaining_limit == 0:
+            new_limit = 1
+            new_offset = 0
+        elif remaining_limit > 0:
+            if offset >= sa_count_total:
+                new_limit = limit
+                new_offset = offset - sa_count_total
+            else:
+                new_limit = remaining_limit
+                new_offset = 0
+
+        # Get User based principals
+        response_user = self._list_user_based_principals_in_group(request, group, options)
+        if response_user.get("status_code") != status.HTTP_200_OK:
+            return response_user
+
+        # Calculate the total count and save it for pagination
+        user_count_total = len(response_user.get("data"))
+        self.paginator.count = sa_count_total + user_count_total
+
+        # Put together the final response
+        response_data = {}
+
+        if response_sa.data.get("data", []):
+            response_data["serviceAccounts"] = response_sa.data.get("data")
+
+        if response_user.get("data", []) and remaining_limit:
+            response_data["users"] = response_user.get("data")[new_offset : new_offset + new_limit]  # noqa: E203
+
+        return self.get_paginated_response(response_data)
 
     @action(detail=True, methods=["get", "post", "delete"])
     def roles(self, request, uuid=None, principals=None):
