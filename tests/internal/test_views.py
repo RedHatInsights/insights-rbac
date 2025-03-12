@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the internal viewset."""
+from abc import abstractmethod
 import logging
 from uuid import uuid4
 
@@ -53,31 +54,14 @@ from migration_tool.utils import create_relationship
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
-
-@override_settings(
-    LOGGING={
-        "version": 1,
-        "disable_existing_loggers": False,
-        "loggers": {
-            "management.relation_replicator.outbox_replicator": {
-                "level": "INFO",
-            },
-        },
-    },
-)
-class InternalViewsetTests(IdentityRequest):
-    """Test the internal viewset."""
-
+class BaseInternalViewsetTests(IdentityRequest):
+    """Base class for testing internal views"""
+    
     _tuples: InMemoryTuples
 
-    def valid_destructive_time():
-        return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
-
-    def invalid_destructive_time():
-        return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) - timedelta(hours=1)
-
+    @abstractmethod
     def setUp(self):
-        """Set up the internal viewset tests."""
+        """Set up the base internal viewset tests."""
         super().setUp()
         self.client = APIClient()
         self.customer = self.customer_data
@@ -108,12 +92,33 @@ class InternalViewsetTests(IdentityRequest):
         logging.disable(logging.NOTSET)
         self._tuples = InMemoryTuples()
 
+    @abstractmethod
     def tearDown(self):
-        """Tear down internal viewset tests."""
+        """Tear down base internal viewset tests."""
         Group.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
         logging.disable(self._prior_logging_disable_level)
+
+@override_settings(
+    LOGGING={
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {
+            "management.relation_replicator.outbox_replicator": {
+                "level": "INFO",
+            },
+        },
+    },
+)
+class InternalViewsetTests(BaseInternalViewsetTests):
+    """Test the internal viewset."""
+    
+    def valid_destructive_time():
+        return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
+
+    def invalid_destructive_time():
+        return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) - timedelta(hours=1)
 
     def test_delete_tenant_disallowed(self):
         """Test that we cannot delete a tenant when disallowed."""
@@ -1773,6 +1778,9 @@ class InternalViewsetTests(IdentityRequest):
         self.assertFalse(car.roles.filter(id=custom_role.id).exists())
 
 
+class InternalViewSetGetUserDataTests(BaseInternalViewsetTests):
+    """Test the /api/utils/get_user_data/ endpoint from internal viewset"""
+        
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -1902,6 +1910,7 @@ class InternalViewsetTests(IdentityRequest):
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("you must provide either 'email' or 'username' as query params", resp_body["error"])
+
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
