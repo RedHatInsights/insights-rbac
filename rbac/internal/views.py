@@ -373,10 +373,9 @@ def get_user_data(request):
 
     try:
         principal = Principal.objects.get(username=user["username"])
-    except Exception as e:
-        logger.warning(f"user '{username}' exists in bop but not rbac")
+    except Exception as err:
+        logger.warning(f"user '{username}' exists in bop but not rbac, err: {err}")
         return handle_error(f"Internal error - user '{username}' exists in bop but not rbac", 500)
-        
 
     # TODO: implement paging on groups
     # to page in the db: https://docs.djangoproject.com/en/5.1/topics/db/queries/#limiting-querysets
@@ -459,7 +458,9 @@ def get_user_from_bop(username, email):
     if isinstance(resp, dict) and "errors" in resp:
         status = resp.get("status_code")
         err = resp.get("errors")
-        logger.error(f"Unexpected error when querying bop for user '{query_by}={principal}' - status: '{status}', response: {err}")
+        logger.error(
+            f"Unexpected error when querying bop for user '{query_by}={principal}', status: '{status}', response: {err}"
+        )
         raise Exception(f"unexpected status: '{status}' returned from bop")
 
     users = resp["data"]
@@ -473,10 +474,13 @@ def get_user_from_bop(username, email):
         raise Exception(
             f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
         )
-    
+
     if "is_org_admin" not in user:
         user["is_org_admin"] = False
-        logger.warning(f"invalid data for user '{query_by}={principal}': user found in bop but does not contain required 'is_org_admin' field")
+        logger.warning(
+            f"""invalid data for user '{query_by}={principal}':
+             user found in bop but does not contain required 'is_org_admin' field"""
+        )
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
 

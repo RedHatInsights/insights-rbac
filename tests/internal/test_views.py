@@ -54,9 +54,10 @@ from migration_tool.utils import create_relationship
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
+
 class BaseInternalViewsetTests(IdentityRequest):
     """Base class for testing internal views"""
-    
+
     _tuples: InMemoryTuples
 
     @abstractmethod
@@ -100,6 +101,7 @@ class BaseInternalViewsetTests(IdentityRequest):
         Policy.objects.all().delete()
         logging.disable(self._prior_logging_disable_level)
 
+
 @override_settings(
     LOGGING={
         "version": 1,
@@ -113,7 +115,7 @@ class BaseInternalViewsetTests(IdentityRequest):
 )
 class InternalViewsetTests(BaseInternalViewsetTests):
     """Test the internal viewset."""
-    
+
     def valid_destructive_time():
         return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
 
@@ -1780,290 +1782,260 @@ class InternalViewsetTests(BaseInternalViewsetTests):
 
 class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
     """Test the /api/utils/get_user_data/ endpoint from internal viewset"""
-        
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 200,
-            "data": [
-                {
-                    "username": "test_user",
-                    "email": "test_user@redhat.com",
-                    "is_org_admin": "true"
-                }
-            ],
+            "data": [{"username": "test_user", "email": "test_user@redhat.com", "is_org_admin": "true"}],
         },
-    )    
+    )
     def test_get_user_data_happy_path(self, _):
         # given (a lot of setup)
         # user data we want to query for
         username = "test_user"
         email = "test_user@redhat.com"
-        
+
         # create a tenant and principal for our user
         tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
         principal = Principal.objects.create(username=username, tenant=tenant)
-        
+
         # create platform & admin default groups
-        Group.objects.create(name="test_group_platform_default", tenant=self.tenant, system=True, admin_default=False, platform_default=True)
-        Group.objects.create(name="test_group_admin_default", tenant=self.tenant, system=True, admin_default=True, platform_default=False)
-        
+        Group.objects.create(
+            name="test_group_platform_default",
+            tenant=self.tenant,
+            system=True,
+            admin_default=False,
+            platform_default=True,
+        )
+        Group.objects.create(
+            name="test_group_admin_default",
+            tenant=self.tenant,
+            system=True,
+            admin_default=True,
+            platform_default=False,
+        )
+
         # create a test group and add our user to it
         test_group = Group.objects.create(name="test_group", tenant=self.tenant)
         test_group.principals.add(principal)
-        
+
         # add some roles to our test group
         test_role1 = Role.objects.create(name="test_role1", tenant=tenant)
         test_role2 = Role.objects.create(name="test_role2", tenant=tenant)
         test_policy = Policy.objects.create(name="test_policy", group=test_group, tenant=tenant)
         test_policy.roles.add(test_role1, test_role2)
         test_group.policies.add(test_policy)
-        
+
         # and finally add some permissions to our test roles
         test_perm1 = Permission.objects.create(permission="app:res1:*", tenant=tenant)
         test_perm2 = Permission.objects.create(permission="app:res2:*", tenant=tenant)
         Access.objects.create(permission=test_perm1, role=test_role1, tenant=tenant)
         Access.objects.create(permission=test_perm2, role=test_role1, tenant=tenant)
-        
+
         test_perm3 = Permission.objects.create(permission="app:res3:read", tenant=tenant)
         test_perm4 = Permission.objects.create(permission="app:res3:write", tenant=tenant)
         Access.objects.create(permission=test_perm3, role=test_role2, tenant=tenant)
         Access.objects.create(permission=test_perm4, role=test_role2, tenant=tenant)
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?username={username}",
-            **self.request.META
-        )
-        
+        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
+
         resp = response.content.decode()
         msg = f"[response from rbac: '{resp}']"
-        
+
         # then
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=msg)
         body = json.loads(resp)
-        
+
         # check top level fields
         self.assertTrue(("username" in body), msg=msg)
         self.assertTrue(("email_address" in body), msg=msg)
         self.assertTrue(("groups" in body), msg=msg)
         self.assertEqual(body["username"], username, msg=msg)
         self.assertEqual(body["email_address"], email, msg=msg)
-        
+
         resp_groups = body["groups"]
         self.assertIsInstance(resp_groups, list, msg=msg)
         self.assertEqual(len(resp_groups), 3, msg=msg)
-        
+
         # check all our groups were returned
         group_names = [group["name"] for group in resp_groups]
-        self.assertListEqual(group_names, ["test_group", "test_group_admin_default", "test_group_platform_default"], msg=msg)
-        
+        self.assertListEqual(
+            group_names, ["test_group", "test_group_admin_default", "test_group_platform_default"], msg=msg
+        )
+
         # check our test group has all its roles
         resp_test_group = [group for group in resp_groups if group["name"] == "test_group"][0]
         self.assertIsNotNone(resp_test_group, msg=msg)
-        
+
         resp_test_group_roles = resp_test_group["roles"]
         self.assertIsNotNone(resp_test_group_roles, msg=msg)
         self.assertIsInstance(resp_test_group_roles, list, msg=msg)
         self.assertEqual(len(resp_test_group_roles), 2, msg=msg)
-        
+
         role_names = [role["name"] for role in resp_test_group_roles]
         self.assertListEqual(role_names, ["test_role1", "test_role2"], msg=msg)
-        
+
         # and finally check all our roles have all their permissions
         resp_test_group_role1 = resp_test_group_roles[0]
         resp_test_group_role2 = resp_test_group_roles[1]
-        
+
         self.assertIsInstance(resp_test_group_role1["permissions"], list, msg=msg)
         self.assertEqual(len(resp_test_group_role1["permissions"]), 2)
         self.assertListEqual(resp_test_group_role1["permissions"], ["app | res1 | *", "app | res2 | *"], msg=msg)
-        
+
         self.assertIsInstance(resp_test_group_role2["permissions"], list, msg=msg)
         self.assertEqual(len(resp_test_group_role2["permissions"]), 2, msg=msg)
-        self.assertListEqual(resp_test_group_role2["permissions"], ["app | res3 | read", "app | res3 | write"], msg=msg)
+        self.assertListEqual(
+            resp_test_group_role2["permissions"], ["app | res3 | read", "app | res3 | write"], msg=msg
+        )
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 200,
-            "data": [
-                {
-                    "username": "test_user",
-                    "email": "test_user@redhat.com",
-                    "is_org_admin": "true"
-                }
-            ],
+            "data": [{"username": "test_user", "email": "test_user@redhat.com", "is_org_admin": "true"}],
         },
-    )    
+    )
     def test_get_user_data_via_email(self, _):
         # given
         username = "test_user"
         email = "test_user@redhat.com"
-        
+
         # create a tenant and principal for our user
         tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
         Principal.objects.create(username=username, tenant=tenant)
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?email={email}",
-            **self.request.META
-        )
-        
+        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
+
         resp = response.content.decode()
         msg = f"[response from rbac: '{resp}']"
-        
+
         # then
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=msg)
         body = json.loads(resp)
-        
+
         # check top level fields
         self.assertTrue(("username" in body), msg=msg)
         self.assertTrue(("email_address" in body), msg=msg)
         self.assertEqual(body["username"], username, msg=msg)
         self.assertEqual(body["email_address"], email, msg=msg)
-   
+
     def test_get_user_data_only_get_method_allowed(self):
         # when
-        response = self.client.post(
-            f"/_private/api/utils/get_user_data/",
-            **self.request.META
-        )
+        response = self.client.post(f"/_private/api/utils/get_user_data/", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("Invalid http method", resp_body["error"])
-        
+
     def test_get_user_data_no_input_provided(self):
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/",
-            **self.request.META
-        )
+        response = self.client.get(f"/_private/api/utils/get_user_data/", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("you must provide either 'email' or 'username' as query params", resp_body["error"])
-        
+
     def test_get_user_data_username_invalid(self):
         # given
         username = "   "
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?username={username}",
-            **self.request.META
-        )
+        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("username contains only whitespace", resp_body["error"])
-        
+
     def test_get_user_data_email_invalid(self):
         # given
         email = "   "
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?email={email}",
-            **self.request.META
-        )
+        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("email contains only whitespace", resp_body["error"])
-        
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 500,
-            "errors": [
-                {"connection refused rip"}
-            ],
+            "errors": [{"connection refused rip"}],
         },
-    )    
+    )
     def test_get_user_data_bop_returns_error(self, _):
         # given
         username = "test_user"
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?username={username}",
-            **self.request.META
-        )
+        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("unexpected status: '500' returned from bop", resp_body["error"])
-        
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 200,
             "data": [],
         },
-    )    
+    )
     def test_get_user_data_bop_returns_empty_set(self, _):
         # given
         username = "test_user"
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?username={username}",
-            **self.request.META
-        )
+        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("Not found", resp_body["error"])
-        
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 200,
-            "data": [
-                {
-                    "email": "test_user@redhat.com",
-                    "is_org_admin": "true"
-                }
-            ],
+            "data": [{"email": "test_user@redhat.com", "is_org_admin": "true"}],
         },
-    )    
+    )
     def test_get_user_data_bop_returns_user_without_username(self, _):
         # given
         email = "test_user@redhat.com"
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?email={email}",
-            **self.request.META
-        )
+        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("user found in bop but no username exists", resp_body["error"])
-        
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -2075,38 +2047,47 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
                 }
             ],
         },
-    )    
+    )
     def test_get_user_data_bop_returns_user_without_is_org_admin(self, _):
         # given
         email = "test_user@redhat.com"
-        
+
         # create a tenant and principal for our user
         tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
         Principal.objects.create(username="test_user", tenant=tenant)
-        
+
         # create platform & admin default groups
-        Group.objects.create(name="test_group_platform_default", tenant=self.tenant, system=True, admin_default=False, platform_default=True)
-        Group.objects.create(name="test_group_admin_default", tenant=self.tenant, system=True, admin_default=True, platform_default=False)
-        
-        # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?email={email}",
-            **self.request.META
+        Group.objects.create(
+            name="test_group_platform_default",
+            tenant=self.tenant,
+            system=True,
+            admin_default=False,
+            platform_default=True,
         )
+        Group.objects.create(
+            name="test_group_admin_default",
+            tenant=self.tenant,
+            system=True,
+            admin_default=True,
+            platform_default=False,
+        )
+
+        # when
+        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
 
         # then - in this case it should default is_org_admin to false and continue request
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertTrue(("groups" in resp_body))
-        
+
         resp_groups = resp_body["groups"]
         self.assertIsInstance(resp_groups, list)
-    
+
         group_names = [group["name"] for group in resp_groups]
         self.assertNotIn("test_group_admin_default", group_names)
         self.assertIn("test_group_platform_default", group_names)
-        
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -2123,20 +2104,16 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         # given
         username = "test_user"
         # we don't add principal to rbac db
-        
+
         # when
-        response = self.client.get(
-            f"/_private/api/utils/get_user_data/?username={username}",
-            **self.request.META
-        )
+        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("user 'test_user' exists in bop but not rbac", resp_body["error"])
-        
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
