@@ -602,6 +602,48 @@ def bootstrap_pending_tenants(request):
     return JsonResponse(response, content_type="application/json", status=200)
 
 
+def fetch_replication_data(request):
+    """
+    Handle a GET request to fetch PostgreSQL replication-related data.
+
+    This function executes multiple queries to retrieve information about:
+    - Replication slots
+    - Publications
+    - Publication tables
+    - Write-Ahead Log (WAL) LSN status for Debezium
+
+    Returns:
+        JsonResponse: A JSON object containing query results for each key.
+        If an error occurs during query execution, returns a JSON response with the error message.
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    wal_lsn_query = """
+                    SELECT pg_current_wal_lsn(), confirmed_flush_lsn
+                    FROM pg_replication_slots
+                    WHERE slot_name = 'debezium';
+                    """
+    queries = {
+        "replication_slots": "SELECT slot_name, slot_type FROM pg_replication_slots;",
+        "publications": "SELECT oid, pubname FROM pg_publication;",
+        "publication_tables": "SELECT pubname, tablename FROM pg_publication_tables;",
+        "wal_lsn": wal_lsn_query,
+    }
+
+    results = {}
+
+    try:
+        with connection.cursor() as cursor:
+            for key, query in queries.items():
+                cursor.execute(query)
+                results[key] = cursor.fetchall()
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse(results, safe=False)
+
+
 def bootstrap_tenant(request):
     """View method for bootstrapping a tenant.
 
