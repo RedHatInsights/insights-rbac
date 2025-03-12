@@ -26,7 +26,7 @@ from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.errors import SentryDiagnosticError, UserNotFoundError
@@ -729,6 +729,68 @@ def data_migration(request):
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
+
+
+def bootstrap_pending_tenants(request):
+    """List tenants which are not bootstrapped.
+
+    GET /_private/api/utils/bootstrap_pending_tenants/
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method only "GET" is allowed.', status=405)
+
+    public_tenant = Tenant._get_public_tenant()
+    org_ids = list(
+        Tenant.objects.filter(tenant_mapping__isnull=True)
+        .exclude(id=public_tenant.id)
+        .values_list("org_id", flat=True)
+    )
+
+    response = {"org_ids": org_ids}
+
+    return JsonResponse(response, content_type="application/json", status=200)
+
+
+def fetch_replication_data(request):
+    """
+    Handle a GET request to fetch PostgreSQL replication-related data.
+
+    This function executes multiple queries to retrieve information about:
+    - Replication slots
+    - Publications
+    - Publication tables
+    - Write-Ahead Log (WAL) LSN status for Debezium
+
+    Returns:
+        JsonResponse: A JSON object containing query results for each key.
+        If an error occurs during query execution, returns a JSON response with the error message.
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    wal_lsn_query = """
+                    SELECT pg_current_wal_lsn(), confirmed_flush_lsn
+                    FROM pg_replication_slots
+                    WHERE slot_name = 'debezium';
+                    """
+    queries = {
+        "replication_slots": "SELECT slot_name, slot_type FROM pg_replication_slots;",
+        "publications": "SELECT oid, pubname FROM pg_publication;",
+        "publication_tables": "SELECT pubname, tablename FROM pg_publication_tables;",
+        "wal_lsn": wal_lsn_query,
+    }
+
+    results = {}
+
+    try:
+        with connection.cursor() as cursor:
+            for key, query in queries.items():
+                cursor.execute(query)
+                results[key] = cursor.fetchall()
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse(results, safe=False)
 
 
 def bootstrap_tenant(request):

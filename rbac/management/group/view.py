@@ -31,6 +31,7 @@ from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
 from management.group.definer import (
+    _roles_by_query_or_ids,
     add_roles,
     remove_roles,
     set_system_flag_before_update,
@@ -98,7 +99,7 @@ VALID_GROUP_ROLE_FILTERS = [
 ]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
-VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
+VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -179,7 +180,7 @@ class GroupViewSet(
     """
 
     queryset = Group.objects.annotate(
-        principalCount=Count("principals", filter=Q(principals__type="user"), distinct=True),
+        principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True),
         policyCount=Count("policies", distinct=True),
     )
     permission_classes = (GroupAccessPermission,)
@@ -625,7 +626,9 @@ class GroupViewSet(
 
         tenant = Tenant.objects.get(org_id=org_id)
 
-        valid_principals = Principal.objects.filter(group=group, tenant=tenant, type="user", username__in=principals)
+        valid_principals = Principal.objects.filter(
+            group=group, tenant=tenant, type=Principal.Types.USER, username__in=principals
+        )
         valid_usernames = valid_principals.values_list("username", flat=True)
         usernames_diff = set(principals) - set(valid_usernames)
         if usernames_diff:
@@ -690,87 +693,13 @@ class GroupViewSet(
         """
         validate_uuid(uuid, "group uuid validation")
         org_id = self.request.user.org_id
-
         group = self.get_object()
+
         # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
         # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
         # other query parameter was specified, we simply return early.
         if SERVICE_ACCOUNT_CLIENT_IDS_KEY in request.query_params:
-            # pagination is ignored in this case
-            for query_param in request.query_params:
-                if query_param not in [
-                    SERVICE_ACCOUNT_CLIENT_IDS_KEY,
-                    "limit",
-                    "offset",
-                ]:
-                    return Response(
-                        status=status.HTTP_400_BAD_REQUEST,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' "
-                                    "parameter is incompatible with "
-                                    "any other query parameter. Please, use it alone",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_400_BAD_REQUEST),
-                                }
-                            ]
-                        },
-                    )
-
-            # Check that the specified query parameter is not empty.
-            service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
-            if not service_account_client_ids_raw:
-                return Response(
-                    status=status.HTTP_400_BAD_REQUEST,
-                    data={
-                        "errors": [
-                            {
-                                "detail": "Not a single client ID was specified for the client IDs filter",
-                                "source": "groups",
-                                "status": str(status.HTTP_400_BAD_REQUEST),
-                            }
-                        ]
-                    },
-                )
-
-            # Turn the received and comma separated client IDs into a manageable set.
-            received_client_ids: set[str] = set(service_account_client_ids_raw.split(","))
-
-            # Validate that the provided strings are actually UUIDs.
-            for rci in received_client_ids:
-                try:
-                    UUID(rci)
-                except ValueError:
-                    return Response(
-                        status=status.HTTP_400_BAD_REQUEST,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": f"The specified client ID '{rci}' is not a valid UUID",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_400_BAD_REQUEST),
-                                }
-                            ]
-                        },
-                    )
-
-            # Generate the report of which of the tenant's service accounts are in a group, and which
-            # ones are available to be added to the given group.
-            it_service = ITService()
-            result: dict = it_service.generate_service_accounts_report_in_group(
-                group=group, client_ids=received_client_ids
-            )
-
-            # Prettify the output payload and return it.
-            return Response(
-                status=status.HTTP_200_OK,
-                data={
-                    "meta": {"count": len(result)},
-                    "links": {},
-                    "data": result,
-                },
-            )
+            return self.get_sa_group_membership(group, request)
 
         # Get the "order_by" query parameter.
         all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ["-" + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
@@ -784,28 +713,28 @@ class GroupViewSet(
             request.query_params,
             USERNAME_ONLY_KEY,
             VALID_BOOLEAN_VALUE,
-            "false",
+            default_value="false",
             required=False,
         )
 
-        # Build the options dict.
+        # Build the 'options' dict.
         options: dict = {"sort_order": sort_order, "username_only": username_only}
 
-        # Attempt validating and obtaining the "principal type" query
-        # parameter. It is important because we need to call BOP for
-        # the users, and IT for the service accounts.
+        # Attempt validating and obtaining the "principal_type" query parameter.
+        # It is important because we need to call BOP for the users, and IT for the service accounts.
         principalType = validate_and_get_key(
             request.query_params,
             PRINCIPAL_TYPE_KEY,
             VALID_PRINCIPAL_TYPE_VALUE,
+            default_value=Principal.Types.USER,
             required=False,
         )
 
-        # Store the principal type in the options dict.
+        # Store the principal type in the 'options' dict.
         options[PRINCIPAL_TYPE_KEY] = principalType
 
         # Make sure we return early for service accounts.
-        if principalType == "service-account":
+        if principalType == Principal.Types.SERVICE_ACCOUNT:
             # Get the service account's description and name filters, and the principal's username filter too.
             # Finally, get the limit and offset parameters.
             options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
@@ -925,7 +854,7 @@ class GroupViewSet(
         principals = []
         service_accounts = []
         for specified_principal in user_specified_principals:
-            if ("type" in specified_principal) and (specified_principal["type"] == "service-account"):
+            if ("type" in specified_principal) and (specified_principal["type"] == Principal.Types.SERVICE_ACCOUNT):
                 service_accounts.append(specified_principal)
             else:
                 principals.append(specified_principal)
@@ -946,14 +875,6 @@ class GroupViewSet(
                 )
                 try:
                     self.ensure_id_for_service_accounts_exists(user=request.user, service_accounts=service_accounts)
-                    auditlog = AuditLog()
-                    auditlog.log_group_assignment(
-                        request,
-                        AuditLog.GROUP,
-                        group,
-                        service_accounts,
-                        Principal.Types.SERVICE_ACCOUNT,
-                    )
                 except InsufficientPrivilegesError as ipe:
                     return Response(
                         status=status.HTTP_403_FORBIDDEN,
@@ -987,14 +908,6 @@ class GroupViewSet(
                 proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
                 if len(proxy_response.get("data", [])) > 0:
                     principals_from_response = proxy_response.get("data", [])
-                auditlog = AuditLog()
-                auditlog.log_group_assignment(
-                    request,
-                    AuditLog.GROUP,
-                    group,
-                    principals,
-                    Principal.Types.USER,
-                )
                 if isinstance(proxy_response, dict) and "errors" in proxy_response:
                     return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
 
@@ -1005,25 +918,27 @@ class GroupViewSet(
                     service_accounts=service_accounts,
                     org_id=org_id,
                 )
-                auditlog = AuditLog()
-                auditlog.log_group_assignment(
-                    request,
-                    AuditLog.GROUP,
-                    group,
-                    service_accounts,
-                    Principal.Types.SERVICE_ACCOUNT,
-                )
+                for sa in new_service_accounts:
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        sa.username,
+                        Principal.Types.SERVICE_ACCOUNT,
+                    )
             new_users = []
             if len(principals) > 0:
                 group, new_users = self.add_users(group, principals_from_response, org_id=org_id)
-                auditlog = AuditLog()
-                auditlog.log_group_assignment(
-                    request,
-                    AuditLog.GROUP,
-                    group,
-                    principals,
-                    Principal.Types.USER,
-                )
+                for user in new_users:
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        user.username,
+                        Principal.Types.USER,
+                    )
 
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP)
             dual_write_handler.replicate_new_principals(new_users + new_service_accounts)
@@ -1081,7 +996,16 @@ class GroupViewSet(
                     group=group,
                     org_id=org_id,
                 )
-
+                # Save the information to audit logs
+                for service_account_info in service_accounts_to_remove:
+                    auditlog = AuditLog()
+                    auditlog.log_group_remove(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        service_account_info.username,
+                        Principal.Types.SERVICE_ACCOUNT,
+                    )
                 # Create a default and successful response object. If no user principals are to be removed below,
                 # this response will be returned. Else, it will be overridden with whichever response the user
                 # removal generates.
@@ -1095,6 +1019,17 @@ class GroupViewSet(
                 resp, users_to_remove = self.remove_users(group, principals, org_id=org_id)
                 if isinstance(resp, dict) and "errors" in resp:
                     return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
+
+                # Save the informationto audit logs
+                for users_info in users_to_remove:
+                    auditlog = AuditLog()
+                    auditlog.log_group_remove(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        users_info.username,
+                        Principal.Types.USER,
+                    )
                 response = Response(status=status.HTTP_204_NO_CONTENT)
 
             dual_write_handler = RelationApiDualWriteGroupHandler(
@@ -1104,6 +1039,84 @@ class GroupViewSet(
             dual_write_handler.replicate_removed_principals(users_to_remove + service_accounts_to_remove)
 
         return response
+
+    @staticmethod
+    def get_sa_group_membership(group, request):
+        """Process the request with the SERVICE_ACCOUNT_CLIENT_IDS_KEY query param."""
+        # pagination is ignored in this case
+        for query_param in request.query_params:
+            if query_param not in [
+                SERVICE_ACCOUNT_CLIENT_IDS_KEY,
+                "limit",
+                "offset",
+            ]:
+                return Response(
+                    status=status.HTTP_400_BAD_REQUEST,
+                    data={
+                        "errors": [
+                            {
+                                "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' parameter is incompatible with "
+                                f"any other query parameter. Please, use it alone",
+                                "source": "groups",
+                                "status": str(status.HTTP_400_BAD_REQUEST),
+                            }
+                        ]
+                    },
+                )
+
+        # Check that the specified query parameter is not empty.
+        service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
+        if not service_account_client_ids_raw:
+            return Response(
+                status=status.HTTP_400_BAD_REQUEST,
+                data={
+                    "errors": [
+                        {
+                            "detail": "Not a single client ID was specified for the client IDs filter",
+                            "source": "groups",
+                            "status": str(status.HTTP_400_BAD_REQUEST),
+                        }
+                    ]
+                },
+            )
+
+        # Turn the received and comma separated client IDs into a manageable set.
+        received_client_ids: set[str] = set(service_account_client_ids_raw.split(","))
+
+        # Validate that the provided strings are actually UUIDs.
+        for rci in received_client_ids:
+            try:
+                UUID(rci)
+            except ValueError:
+                return Response(
+                    status=status.HTTP_400_BAD_REQUEST,
+                    data={
+                        "errors": [
+                            {
+                                "detail": f"The specified client ID '{rci}' is not a valid UUID",
+                                "source": "groups",
+                                "status": str(status.HTTP_400_BAD_REQUEST),
+                            }
+                        ]
+                    },
+                )
+
+        # Generate the report of which of the tenant's service accounts are in a group, and which
+        # ones are available to be added to the given group.
+        it_service = ITService()
+        result: dict = it_service.generate_service_accounts_report_in_group(
+            group=group, client_ids=received_client_ids
+        )
+
+        # Prettify the output payload and return it.
+        return Response(
+            status=status.HTTP_200_OK,
+            data={
+                "meta": {"count": len(result)},
+                "links": {},
+                "data": result,
+            },
+        )
 
     @action(detail=True, methods=["get", "post", "delete"])
     def roles(self, request, uuid=None, principals=None):
@@ -1241,7 +1254,20 @@ class GroupViewSet(
                     group = set_system_flag_before_update(group, request.tenant, request.user)
                     remove_roles(group, role_ids, request.tenant, request.user)
 
-            return Response(status=status.HTTP_204_NO_CONTENT)
+                # Save the information to audit logs
+                roles = _roles_by_query_or_ids(role_ids)
+                for role_info in roles:
+                    auditlog = AuditLog()
+                    auditlog.log_group_remove(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        role_info.name,
+                        AuditLog.ROLE,
+                    )
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+
+            return response
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
 
@@ -1272,7 +1298,7 @@ class GroupViewSet(
         """Return filtered user principals for group from query params."""
         principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, "principal", request)
         # Make sure we only return users.
-        return group.principals.filter(**principal_filters).filter(type="user")
+        return group.principals.filter(**principal_filters).filter(type=Principal.Types.USER)
 
     def filters_from_params(self, valid_filters, model_name, request):
         """Build filters from group params."""

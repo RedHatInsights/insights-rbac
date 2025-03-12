@@ -38,9 +38,62 @@
     {
       "name": "CrossAccountRequest",
       "description": "Operations about cross account requests"
+    },
+    {
+      "name": "Audit Logs",
+      "description": "Operations about audit logs requests"
     }
   ],
   "paths": {
+    "/auditlogs/": {
+      "get": {
+        "tags": [
+          "Audit Logs"
+        ],
+        "description": "A list of all of the Admin User's actions logged in Audit Logs",
+        "operationId": "getAuditlogs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering resource by database id so that latest actions appear first",
+            "schema": {
+              "type": "string",
+              "enum": ["id"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User actions have been successfully added to audit logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogPagination"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cross-account-requests/": {
       "get": {
         "tags": [
@@ -650,7 +703,8 @@
               "type": "string",
               "enum": [
                 "service-account",
-                "user"
+                "user",
+                "all"
               ]
             }
           }
@@ -667,6 +721,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
                     }
                   ]
                 }
@@ -2921,6 +2978,50 @@
           }
         }
       },
+      "AuditLog":{
+        "properties": {
+          "created": {
+            "type": "string"
+          },
+          "principal_username": {
+            "type": "string",
+            "example": "user123"
+          },
+          "description": {
+            "type": "string",
+            "example": "user abc added to group: 1234"
+          },
+          "resource_type":{
+            "type": "string",
+            "example": "group"
+          },
+          "action": {
+            "type": "string",
+            "example": "add"
+          }
+        }
+      },
+      "AuditLogPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditLog"
+                }
+              }
+            }
+          }
+        ]
+      },
       "Principal": {
         "required": [
           "username",
@@ -3124,6 +3225,63 @@
             }
           }
         }
+      },
+      "AllPrincipalsPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "serviceAccounts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ServiceAccount"
+                    }
+                  },
+                  "users": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Principal"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "serviceAccounts"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "users"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "serviceAccounts",
+                      "users"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "Group": {
         "required": [
