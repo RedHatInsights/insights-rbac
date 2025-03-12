@@ -16,10 +16,12 @@
 #
 """Producer to send messages to kafka server."""
 import json
+import logging
+
+logger = logging.getLogger("__name__")
 
 from django.conf import settings
-from kafka import KafkaProducer
-
+from kafka import KafkaProducer, KafkaError
 
 class FakeKafkaProducer:
     """Fake kafka producer to enable local development without kafka server."""
@@ -31,15 +33,27 @@ class FakeKafkaProducer:
 
 class RBACProducer:
     """Kafka message producer to emit events to notification service."""
-
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
+        retries = 1
+        max_retries = settings.KAFKA_AUTH.get("retries")
         if not hasattr(self, "producer"):
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 self.producer = FakeKafkaProducer()
+                logger.info("Fake Kafka producer initialized in development mode")
             else:
                 if settings.KAFKA_AUTH:
-                    self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                    try:
+                        self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                        logger.info("Kafka producer initialized successfully")
+                    except KafkaError as e:
+                        logger.error(f"Kafka error during initialization of Kafka producer: {e}")
+                        retries += 1
+                        if retries > max_retries:
+                            logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
+                        logger.info(f"Retrying Kafka producer initialization attempt {retries}")
+                    except Exception as e:
+                        logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")   
                 elif not settings.KAFKA_SERVERS:
                     raise AttributeError("Empty servers list")
                 else:
