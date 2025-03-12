@@ -469,6 +469,10 @@ def get_user_from_bop(username, email):
         raise Exception(
             f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
         )
+    
+    if "is_org_admin" not in user:
+        user["is_org_admin"] = False
+        logger.warning(f"invalid data for user '{query_by}={principal}': user found in bop but does not contain required 'is_org_admin' field")
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
 

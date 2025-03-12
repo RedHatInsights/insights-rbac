@@ -1825,8 +1825,7 @@ class InternalViewsetTests(IdentityRequest):
         # when
         response = self.client.get(
             f"/_private/api/utils/get_user_data/?username={username}",
-            **self.request.META,
-            content_type="application/json"
+            **self.request.META
         )
         
         resp = response.content.decode()
@@ -1874,6 +1873,35 @@ class InternalViewsetTests(IdentityRequest):
         self.assertIsInstance(resp_test_group_role2["permissions"], list, msg=msg)
         self.assertEqual(len(resp_test_group_role2["permissions"]), 2, msg=msg)
         self.assertListEqual(resp_test_group_role2["permissions"], ["app | res3 | read", "app | res3 | write"], msg=msg)
+
+   
+    def test_get_user_data_only_get_method_allowed(self):
+        # when
+        response = self.client.post(
+            f"/_private/api/utils/get_user_data/",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("Invalid http method", resp_body["error"])
+        
+    def test_get_user_data_no_input_provided(self):
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("you must provide either 'email' or 'username' as query params", resp_body["error"])
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
