@@ -374,7 +374,8 @@ def get_user_data(request):
     try:
         principal = Principal.objects.get(username=user["username"])
     except Exception as e:
-        return handle_error(f"Internal error - user exists in bop but not rbac", 500)
+        logger.warning(f"user '{username}' exists in bop but not rbac")
+        return handle_error(f"Internal error - user '{username}' exists in bop but not rbac", 500)
         
 
     # TODO: implement paging on groups
@@ -456,7 +457,10 @@ def get_user_from_bop(username, email):
     resp = PROXY.request_filtered_principals(principals=[principal], limit=1, offset=0, options=query_options)
 
     if isinstance(resp, dict) and "errors" in resp:
-        raise Exception(resp.get("errors"))
+        status = resp.get("status_code")
+        err = resp.get("errors")
+        logger.error(f"Unexpected error when querying bop for user '{query_by}={principal}' - status: '{status}', response: {err}")
+        raise Exception(f"unexpected status: '{status}' returned from bop")
 
     users = resp["data"]
 

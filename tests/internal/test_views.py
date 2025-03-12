@@ -1778,7 +1778,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertFalse(car.roles.filter(id=custom_role.id).exists())
 
 
-class InternalViewSetGetUserDataTests(BaseInternalViewsetTests):
+class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
     """Test the /api/utils/get_user_data/ endpoint from internal viewset"""
         
     @patch(
@@ -1882,6 +1882,46 @@ class InternalViewSetGetUserDataTests(BaseInternalViewsetTests):
         self.assertEqual(len(resp_test_group_role2["permissions"]), 2, msg=msg)
         self.assertListEqual(resp_test_group_role2["permissions"], ["app | res3 | read", "app | res3 | write"], msg=msg)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true"
+                }
+            ],
+        },
+    )    
+    def test_get_user_data_via_email(self, _):
+        # given
+        username = "test_user"
+        email = "test_user@redhat.com"
+        
+        # create a tenant and principal for our user
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Principal.objects.create(username=username, tenant=tenant)
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?email={email}",
+            **self.request.META
+        )
+        
+        resp = response.content.decode()
+        msg = f"[response from rbac: '{resp}']"
+        
+        # then
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=msg)
+        body = json.loads(resp)
+        
+        # check top level fields
+        self.assertTrue(("username" in body), msg=msg)
+        self.assertTrue(("email_address" in body), msg=msg)
+        self.assertEqual(body["username"], username, msg=msg)
+        self.assertEqual(body["email_address"], email, msg=msg)
    
     def test_get_user_data_only_get_method_allowed(self):
         # when
@@ -1910,6 +1950,193 @@ class InternalViewSetGetUserDataTests(BaseInternalViewsetTests):
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("you must provide either 'email' or 'username' as query params", resp_body["error"])
+        
+    def test_get_user_data_username_invalid(self):
+        # given
+        username = "   "
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?username={username}",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("username contains only whitespace", resp_body["error"])
+        
+    def test_get_user_data_email_invalid(self):
+        # given
+        email = "   "
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?email={email}",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("email contains only whitespace", resp_body["error"])
+        
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 500,
+            "errors": [
+                {"connection refused rip"}
+            ],
+        },
+    )    
+    def test_get_user_data_bop_returns_error(self, _):
+        # given
+        username = "test_user"
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?username={username}",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("unexpected status: '500' returned from bop", resp_body["error"])
+        
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [],
+        },
+    )    
+    def test_get_user_data_bop_returns_empty_set(self, _):
+        # given
+        username = "test_user"
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?username={username}",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("Not found", resp_body["error"])
+        
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true"
+                }
+            ],
+        },
+    )    
+    def test_get_user_data_bop_returns_user_without_username(self, _):
+        # given
+        email = "test_user@redhat.com"
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?email={email}",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("user found in bop but no username exists", resp_body["error"])
+        
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                }
+            ],
+        },
+    )    
+    def test_get_user_data_bop_returns_user_without_is_org_admin(self, _):
+        # given
+        email = "test_user@redhat.com"
+        
+        # create a tenant and principal for our user
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Principal.objects.create(username="test_user", tenant=tenant)
+        
+        # create platform & admin default groups
+        Group.objects.create(name="test_group_platform_default", tenant=self.tenant, system=True, admin_default=False, platform_default=True)
+        Group.objects.create(name="test_group_admin_default", tenant=self.tenant, system=True, admin_default=True, platform_default=False)
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?email={email}",
+            **self.request.META
+        )
+
+        # then - in this case it should default is_org_admin to false and continue request
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertTrue(("groups" in resp_body))
+        
+        resp_groups = resp_body["groups"]
+        self.assertIsInstance(resp_groups, list)
+    
+        group_names = [group["name"] for group in resp_groups]
+        self.assertNotIn("test_group_admin_default", group_names)
+        self.assertIn("test_group_platform_default", group_names)
+        
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                }
+            ],
+        },
+    )
+    def test_get_user_data_user_does_not_exist_in_rbac(self, _):
+        # given
+        username = "test_user"
+        # we don't add principal to rbac db
+        
+        # when
+        response = self.client.get(
+            f"/_private/api/utils/get_user_data/?username={username}",
+            **self.request.META
+        )
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("user 'test_user' exists in bop but not rbac", resp_body["error"])
+        
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
