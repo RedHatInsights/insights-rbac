@@ -693,7 +693,6 @@ class GroupViewSet(
             }
         """
         validate_uuid(uuid, "group uuid validation")
-        org_id = self.request.user.org_id
         group = self.get_object()
 
         # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
@@ -734,71 +733,12 @@ class GroupViewSet(
         # Store the principal type in the 'options' dict.
         options[PRINCIPAL_TYPE_KEY] = principalType
 
-        # Make sure we return early for service accounts.
         if principalType == Principal.Types.SERVICE_ACCOUNT:
-            # Get the service account's description and name filters, and the principal's username filter too.
-            # Finally, get the limit and offset parameters.
-            options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
-            options[SERVICE_ACCOUNT_NAME_KEY] = request.query_params.get(SERVICE_ACCOUNT_NAME_KEY)
+            response = self._list_service_accounts_in_group(request, group, options)
 
-            # Get the "principal username" parameter.
-            options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
+        elif principalType == Principal.Types.USER:
+            response = self._list_user_based_principals_in_group(request, group, options)
 
-            # Validate the token only if username_only is false (default value)
-            if username_only == "false":
-                token_validator = ITSSOTokenValidator()
-                request.user.bearer_token = token_validator.validate_token(
-                    request=request,
-                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
-                )
-            # Fetch the group's service accounts.
-            it_service = ITService()
-            try:
-                service_accounts = it_service.get_service_accounts_group(
-                    group=group, user=request.user, options=options
-                )
-            except (
-                requests.exceptions.ConnectionError,
-                UnexpectedStatusCodeFromITError,
-            ):
-                return Response(
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    data={
-                        "errors": [
-                            {
-                                "detail": "Unexpected internal error.",
-                                "source": "principals",
-                                "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                            }
-                        ]
-                    },
-                )
-
-            if username_only == "true":
-                resp = Response(status=200, data=service_accounts)
-                page = self.paginate_queryset(resp.data)
-                return self.get_paginated_response(page)
-
-            # Prettify the output payload and return it.
-            page = self.paginate_queryset(service_accounts)
-            serializer = ServiceAccountSerializer(page, many=True)
-
-            return self.get_paginated_response(serializer.data)
-
-        principals_from_params = self.filtered_principals(group, request)
-        username_list = [principal.username for principal in principals_from_params]
-
-        admin_only = validate_and_get_key(request.query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, False, False)
-        if admin_only == "true":
-            options[ADMIN_ONLY_KEY] = True
-
-        proxy = PrincipalProxy()
-        resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
-        if isinstance(resp, dict) and "errors" in resp:
-            return Response(status=resp.get("status_code"), data=resp.get("errors"))
-
-        page = self.paginate_queryset(resp.get("data"))
-        response = self.get_paginated_response(page)
 
         return response
 
@@ -1118,6 +1058,73 @@ class GroupViewSet(
                 "data": result,
             },
         )
+
+    def _list_service_accounts_in_group(self, request, group, options):
+        """List service account based principals in the group."""
+        # Get the service account's description and name filters, and the principal's username filter too.
+        # Finally, get the limit and offset parameters.
+        options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
+        options[SERVICE_ACCOUNT_NAME_KEY] = request.query_params.get(SERVICE_ACCOUNT_NAME_KEY)
+
+        # Get the "principal username" parameter.
+        options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
+
+        # Validate the token only if username_only is false (default value)
+        if options["username_only"] == "false":
+            token_validator = ITSSOTokenValidator()
+            request.user.bearer_token = token_validator.validate_token(
+                request=request,
+                additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+            )
+        # Fetch the group's service accounts.
+        it_service = ITService()
+        try:
+            service_accounts = it_service.get_service_accounts_group(group=group, user=request.user, options=options)
+        except (
+            requests.exceptions.ConnectionError,
+            UnexpectedStatusCodeFromITError,
+        ):
+            return Response(
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                data={
+                    "errors": [
+                        {
+                            "detail": "Unexpected internal error.",
+                            "source": "principals",
+                            "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                        }
+                    ]
+                },
+            )
+
+        if options["username_only"] == "true":
+            resp = Response(status=200, data=service_accounts)
+            page = self.paginate_queryset(resp.data)
+            return self.get_paginated_response(page)
+
+        # Prettify the output payload and return it.
+        page = self.paginate_queryset(service_accounts)
+        serializer = ServiceAccountSerializer(page, many=True)
+
+        return self.get_paginated_response(serializer.data)
+
+    def _list_user_based_principals_in_group(self, request, group, options):
+        """List user based principals in the group."""
+        principals_from_params = self.filtered_principals(group, request)
+        username_list = [principal.username for principal in principals_from_params]
+
+        admin_only = validate_and_get_key(request.query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, False, False)
+        if admin_only == "true":
+            options[ADMIN_ONLY_KEY] = True
+
+        proxy = PrincipalProxy()
+        org_id = self.request.user.org_id
+        resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
+        if isinstance(resp, dict) and "errors" in resp:
+            return Response(status=resp.get("status_code"), data=resp.get("errors"))
+
+        page = self.paginate_queryset(resp.get("data"))
+        return self.get_paginated_response(page)
 
     @action(detail=True, methods=["get", "post", "delete"])
     def roles(self, request, uuid=None, principals=None):
