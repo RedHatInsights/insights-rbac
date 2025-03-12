@@ -1269,7 +1269,7 @@
     "/api/utils/bootstrap_pending_tenants/": {
       "get": {
         "summary": "List tenants that are not bootstrapped",
-        "description": "Returns a list of tenant IDs that have not yet been bootstrapped.",
+        "description": "Returns a list of tenant org IDs that have not yet been bootstrapped.",
         "operationId": "bootstrapPendingTenants",
         "responses": {
           "200": {
