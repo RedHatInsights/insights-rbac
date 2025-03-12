@@ -19,7 +19,8 @@ import json
 import logging
 
 from django.conf import settings
-from kafka import KafkaError, KafkaProducer
+from kafka import KafkaProducer
+from kafka.errors import KafkaError
 
 logger = logging.getLogger("__name__")
 
