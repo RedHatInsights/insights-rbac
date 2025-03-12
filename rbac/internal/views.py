@@ -590,12 +590,14 @@ def bootstrap_pending_tenants(request):
     if request.method != "GET":
         return HttpResponse('Invalid method only "GET" is allowed.', status=405)
 
-    query = """SELECT t.id FROM api_tenant t
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    query = """SELECT t.org_id FROM api_tenant t
                LEFT JOIN management_tenantmapping m
-               ON t.id = m.tenant_id WHERE m.tenant_id IS NULL AND t.id <> 1;
+               ON t.id = m.tenant_id
+               WHERE m.tenant_id IS NULL AND t.id <> %s;
             """
     with connection.cursor() as cursor:
-        cursor.execute(query)
+        cursor.execute(query, [public_tenant.id])
         tenant_ids_to_bootstrap = [str(row[0]) for row in cursor.fetchall()] if cursor.rowcount > 0 else []
 
     response = {"org_ids": tenant_ids_to_bootstrap}

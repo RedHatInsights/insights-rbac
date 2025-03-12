@@ -2115,7 +2115,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         )
 
         expected_json = {
-            "org_ids": sorted([str(self.tenant.id), str(self.test_tenant.id), str(tenant.id)]),
+            "org_ids": sorted([str(self.tenant.org_id), str(self.test_tenant.org_id), str(tenant.org_id)]),
         }
 
         response_json = json.loads(response.content)
