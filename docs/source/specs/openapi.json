@@ -3827,18 +3827,10 @@
               {
                 "type": "array",
                 "items": {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "example": "value1"
-                    }
-                  ]
+                  "type": "string",
+                  "nullable": true
                 },
-                "example": [
-                  "value1",
-                  "value2"
-                ],
-                "nullable": true
+                "example": ["value1", null, "value2"]
               }
             ]
           }
