@@ -54,7 +54,6 @@ class RBACProducer:
                             raise AttributeError("Empty servers list")
                         else:
                             self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
-                        return self.producer
                     except KafkaError as e:
                         logger.error(f"Kafka error during initialization of Kafka producer: {e}")
                         retries += 1
@@ -66,6 +65,7 @@ class RBACProducer:
                         logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
                         if retries >= max_retries:
                             logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
+        return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):
         """Send message to kafka server."""
