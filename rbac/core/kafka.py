@@ -22,7 +22,7 @@ from django.conf import settings
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
-logger = logging.getLogger("__name__")
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class FakeKafkaProducer:
@@ -40,6 +40,7 @@ class RBACProducer:
         """Init method to return fake kafka when flag is set to false."""
         retries = 0
         max_retries = settings.KAFKA_AUTH.get("retries")
+        logger.info("logger test")
         if not hasattr(self, "producer"):
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 self.producer = FakeKafkaProducer()
@@ -57,7 +58,7 @@ class RBACProducer:
                             self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
                             break
                     except KafkaError as e:
-                        logger.error(f"Kafka error during initialization of Kafka producer: {e}")
+                        logger.error("Kafka error during initialization of Kafka producer")
                         retries += 1
                         if retries >= max_retries:
                             logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
@@ -65,7 +66,7 @@ class RBACProducer:
                         logger.info(f"Retrying Kafka producer initialization attempt {retries}")
                     except Exception as e:
                         retries += 1
-                        logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
+                        logger.error("Non Kafka error occurred during initialization of Kafka producer")
                         if retries >= max_retries:
                             logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
                             raise e
