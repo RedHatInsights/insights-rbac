@@ -341,12 +341,12 @@ def get_org_admin(request, org_or_account):
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
 
-def get_user_data(request):
+def user_lookup(request):
     """Get all groups, roles, and permissions for a provided user via username or email.
 
     If both params are provided, email is ignored and username is used.
 
-    GET /_private/api/utils/get_user_data/?username=foo&email=bar@redhat.com
+    GET /_private/api/utils/user_lookup/?username=foo&email=bar@redhat.com
     """
     if request.method != "GET":
         return handle_error("Invalid http method - only 'GET' is allowed", 405)
@@ -355,7 +355,7 @@ def get_user_data(request):
     email = request.GET.get("email")
 
     try:
-        validate_get_user_data_input(username, email)
+        validate_user_lookup_input(username, email)
     except ValueError as err:
         return handle_error(f"Invalid request input - {err}", 400)
 
@@ -424,8 +424,8 @@ def get_user_data(request):
     return HttpResponse(json.dumps(result, cls=DjangoJSONEncoder), content_type="application/json", status=200)
 
 
-def validate_get_user_data_input(username, email):
-    """Validate input from get_user_data endpoint."""
+def validate_user_lookup_input(username, email):
+    """Validate input from user_lookup endpoint."""
     if not username and not email:
         raise ValueError("you must provide either 'email' or 'username' as query params")
 

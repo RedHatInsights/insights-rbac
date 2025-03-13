@@ -1779,14 +1779,14 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertFalse(car.roles.filter(id=custom_role.id).exists())
 
 
-class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
-    """Test the /api/utils/get_user_data/ endpoint from internal viewset"""
+class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
+    """Test the /api/utils/user_lookup/ endpoint from internal viewset"""
     
     def setUp(self):
         """Set up the get user data tests"""
         super().setUp()
         
-        self.API_PATH = "/_private/api/utils/get_user_data/"
+        self.API_PATH = "/_private/api/utils/user_lookup/"
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1795,7 +1795,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
             "data": [{"username": "test_user", "email": "test_user@redhat.com", "is_org_admin": "true"}],
         },
     )
-    def test_get_user_data_happy_path(self, _):
+    def test_user_lookup_happy_path(self, _):
         # given (a lot of setup)
         # user data we want to query for
         username = "test_user"
@@ -1903,7 +1903,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
             "data": [{"username": "test_user", "email": "test_user@redhat.com", "is_org_admin": "true"}],
         },
     )
-    def test_get_user_data_via_email(self, _):
+    def test_user_lookup_via_email(self, _):
         # given
         username = "test_user"
         email = "test_user@redhat.com"
@@ -1928,7 +1928,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         self.assertEqual(body["username"], username, msg=msg)
         self.assertEqual(body["email_address"], email, msg=msg)
 
-    def test_get_user_data_only_get_method_allowed(self):
+    def test_user_lookup_only_get_method_allowed(self):
         # when
         response = self.client.post(f"{self.API_PATH}", **self.request.META)
 
@@ -1939,7 +1939,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("Invalid http method", resp_body["error"])
 
-    def test_get_user_data_no_input_provided(self):
+    def test_user_lookup_no_input_provided(self):
         # when
         response = self.client.get(f"{self.API_PATH}", **self.request.META)
 
@@ -1950,7 +1950,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("you must provide either 'email' or 'username' as query params", resp_body["error"])
 
-    def test_get_user_data_username_invalid(self):
+    def test_user_lookup_username_invalid(self):
         # given
         username = "   "
 
@@ -1964,7 +1964,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         self.assertIsNotNone(resp_body["error"])
         self.assertIn("username contains only whitespace", resp_body["error"])
 
-    def test_get_user_data_email_invalid(self):
+    def test_user_lookup_email_invalid(self):
         # given
         email = "   "
 
@@ -1985,7 +1985,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
             "errors": [{"connection refused rip"}],
         },
     )
-    def test_get_user_data_bop_returns_error(self, _):
+    def test_user_lookup_bop_returns_error(self, _):
         # given
         username = "test_user"
 
@@ -2006,7 +2006,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
             "data": [],
         },
     )
-    def test_get_user_data_bop_returns_empty_set(self, _):
+    def test_user_lookup_bop_returns_empty_set(self, _):
         # given
         username = "test_user"
 
@@ -2027,7 +2027,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
             "data": [{"email": "test_user@redhat.com", "is_org_admin": "true"}],
         },
     )
-    def test_get_user_data_bop_returns_user_without_username(self, _):
+    def test_user_lookup_bop_returns_user_without_username(self, _):
         # given
         email = "test_user@redhat.com"
 
@@ -2053,7 +2053,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
             ],
         },
     )
-    def test_get_user_data_bop_returns_user_without_is_org_admin(self, _):
+    def test_user_lookup_bop_returns_user_without_is_org_admin(self, _):
         # given
         email = "test_user@redhat.com"
 
@@ -2105,7 +2105,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
             ],
         },
     )
-    def test_get_user_data_user_does_not_exist_in_rbac(self, _):
+    def test_user_lookup_user_does_not_exist_in_rbac(self, _):
         # given
         username = "test_user"
         # we don't add principal to rbac db
