@@ -594,6 +594,7 @@ def bootstrap_pending_tenants(request):
     org_ids = list(
         Tenant.objects.filter(tenant_mapping__isnull=True)
         .exclude(id=public_tenant.id)
+        .exclude(org_id__isnull=True)
         .values_list("org_id", flat=True)
     )
 
