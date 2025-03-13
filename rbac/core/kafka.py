@@ -50,11 +50,12 @@ class RBACProducer:
                         if settings.KAFKA_AUTH:
                             self.producer = KafkaProducer(**settings.KAFKA_AUTH)
                             logger.info("Kafka producer initialized successfully")
+                            break
                         elif not settings.KAFKA_SERVERS:
                             raise AttributeError("Empty servers list")
                         else:
                             self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
-                        break
+                            break
                     except KafkaError as e:
                         logger.error(f"Kafka error during initialization of Kafka producer: {e}")
                         retries += 1
