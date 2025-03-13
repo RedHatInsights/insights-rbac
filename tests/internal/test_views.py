@@ -17,7 +17,6 @@
 """Test the internal viewset."""
 from abc import abstractmethod
 import logging
-from uuid import uuid4
 
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -1782,6 +1781,12 @@ class InternalViewsetTests(BaseInternalViewsetTests):
 
 class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
     """Test the /api/utils/get_user_data/ endpoint from internal viewset"""
+    
+    def setUp(self):
+        """Set up the get user data tests"""
+        super().setUp()
+        
+        self.API_PATH = "/_private/api/utils/get_user_data/"
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1839,7 +1844,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         Access.objects.create(permission=test_perm4, role=test_role2, tenant=tenant)
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
 
         resp = response.content.decode()
         msg = f"[response from rbac: '{resp}']"
@@ -1908,7 +1913,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         Principal.objects.create(username=username, tenant=tenant)
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?email={email}", **self.request.META)
 
         resp = response.content.decode()
         msg = f"[response from rbac: '{resp}']"
@@ -1925,7 +1930,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
 
     def test_get_user_data_only_get_method_allowed(self):
         # when
-        response = self.client.post(f"/_private/api/utils/get_user_data/", **self.request.META)
+        response = self.client.post(f"{self.API_PATH}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
@@ -1936,7 +1941,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
 
     def test_get_user_data_no_input_provided(self):
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -1950,7 +1955,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         username = "   "
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -1964,7 +1969,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         email = "   "
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?email={email}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -1985,7 +1990,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         username = "test_user"
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2006,7 +2011,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         username = "test_user"
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -2027,7 +2032,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         email = "test_user@redhat.com"
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?email={email}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2073,7 +2078,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         )
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?email={email}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?email={email}", **self.request.META)
 
         # then - in this case it should default is_org_admin to false and continue request
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -2106,7 +2111,7 @@ class InternalViewsetGetUserDataTests(BaseInternalViewsetTests):
         # we don't add principal to rbac db
 
         # when
-        response = self.client.get(f"/_private/api/utils/get_user_data/?username={username}", **self.request.META)
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
 
         # then
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
