@@ -2118,7 +2118,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
 
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
-        self.assertIn("user 'test_user' exists in bop but not rbac", resp_body["error"])
+        self.assertIn("failed to query rbac for user 'test_user'", resp_body["error"])
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):

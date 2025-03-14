@@ -372,10 +372,10 @@ def user_lookup(request):
     }
 
     try:
-        principal = Principal.objects.get(username=user["username"])
+        principal = Principal.objects.get(username__iexact=user["username"])
     except Exception as err:
-        logger.warning(f"user '{username}' exists in bop but not rbac, err: {err}")
-        return handle_error(f"Internal error - user '{username}' exists in bop but not rbac", 500)
+        logger.warning(f"error querying for principal '{username}' in rbac, err: {err}")
+        return handle_error(f"Internal error - failed to query rbac for user '{username}'", 500)
 
     # TODO: implement paging on groups
     # to page in the db: https://docs.djangoproject.com/en/5.1/topics/db/queries/#limiting-querysets
