@@ -56,6 +56,9 @@ def extract_header(request, header):
         Encoded(str): Base64 header
         Decoded(dict): Identity dictionary
     """
+    if header not in request.META:
+        raise KeyError(f"{header} not found on incoming request")
+    
     rh_auth_header = request.META[header]
     try:
         decoded_rh_auth = b64decode(rh_auth_header)

@@ -46,7 +46,7 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             return
         try:
             _, json_rh_auth = extract_header(request, self.header)
-        except (JSONDecodeError, binascii.Error):
+        except (JSONDecodeError, binascii.Error, KeyError):
             logger.exception("Invalid X-RH-Identity header.")
             return HttpResponseForbidden()
         user = build_internal_user(request, json_rh_auth)
