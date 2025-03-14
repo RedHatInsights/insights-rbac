@@ -382,7 +382,6 @@ if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
 
 # Internal API Configuration
 INTERNAL_API_PATH_PREFIXES = ["/_private/"]
-INTERNAL_API_NO_AUTH_PATHS = ENVIRONMENT.get_value("INTERNAL_API_NO_AUTH_PATHS", default="").split(",")
 
 try:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(

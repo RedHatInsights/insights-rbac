@@ -460,8 +460,6 @@ objects:
             value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
-          - name: INTERNAL_API_NO_AUTH_PATHS
-            value: ${INTERNAL_API_NO_AUTH_PATHS}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -1207,7 +1205,3 @@ parameters:
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
   value: '90'
-- name: INTERNAL_API_NO_AUTH_PATHS
-  description: Comma separated list of internal api paths to disable auth for
-  required: false
-  value: "user_lookup"

@@ -40,7 +40,7 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
     header = RH_IDENTITY_HEADER
 
     def __is_no_auth(self, request):
-        no_auth_list = settings.INTERNAL_API_NO_AUTH_PATHS
+        no_auth_list = ["user_lookup"]
         no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
         return no_auth
 
