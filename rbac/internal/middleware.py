@@ -38,7 +38,7 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
     """Middleware for the internal identity header."""
 
     header = RH_IDENTITY_HEADER
-    
+
     def __is_no_auth(self, request):
         no_auth_list = settings.INTERNAL_API_NO_AUTH_PATHS
         no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
@@ -49,10 +49,10 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
         if not any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # We are not in an internal API section
             return
-        
+
         if self.__is_no_auth(request):
             return
-        
+
         try:
             _, json_rh_auth = extract_header(request, self.header)
         except (JSONDecodeError, binascii.Error, KeyError):
