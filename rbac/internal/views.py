@@ -381,9 +381,6 @@ def user_lookup(request):
         logger.warning(f"multiple principles with username '{username}' exist in rbac")
         return handle_error(f"Internal error - multiple principles with username '{username}' exist in rbac", 500)
 
-    # TODO: implement paging on groups
-    # to page in the db: https://docs.djangoproject.com/en/5.1/topics/db/queries/#limiting-querysets
-
     groups = Group.platform_default_set()
     if user["is_org_admin"]:
         groups = groups | Group.admin_default_set()
