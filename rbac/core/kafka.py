@@ -40,7 +40,6 @@ class RBACProducer:
         """Init method to return fake kafka when flag is set to false."""
         retries = 0
         max_retries = settings.KAFKA_AUTH.get("retries")
-        logger.info("logger test")
         if not hasattr(self, "producer"):
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 self.producer = FakeKafkaProducer()
@@ -56,20 +55,20 @@ class RBACProducer:
                             raise AttributeError("Empty servers list")
                         else:
                             self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
+                            logger.info("Kafka producer initialized successfully")
                             break
                     except KafkaError as e:
-                        logger.error("Kafka error during initialization of Kafka producer")
+                        logger.error(f"Kafka error during initialization of Kafka producer: {e}")
                         retries += 1
                         if retries >= max_retries:
                             logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
-                            raise e
                         logger.info(f"Retrying Kafka producer initialization attempt {retries}")
                     except Exception as e:
                         retries += 1
-                        logger.error("Non Kafka error occurred during initialization of Kafka producer")
+                        logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
                         if retries >= max_retries:
                             logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
-                            raise e
+                        logger.info(f"Retrying Kafka producer initialization attempt {retries}")
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):

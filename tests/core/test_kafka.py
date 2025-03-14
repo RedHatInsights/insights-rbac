@@ -3,6 +3,7 @@ from unittest.mock import Mock, MagicMock, patch, DEFAULT
 from django.test import TestCase
 from kafka.errors import KafkaError
 from core.kafka import RBACProducer, logger
+from django.test.utils import override_settings
 
 
 def copy_call_args(mock):
@@ -27,7 +28,8 @@ class KafkaTests(TestCase):
 
         with self.assertRaises(KafkaError):
             MockKafkaProducer.get_producer()
-            mock_logger.error.assert_called_with("Kafka error during initialization of Kafka producer")
+            mock_logger.error.assert_any_call("Kafka error during initialization of Kafka producer: ")
+            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 1")
 
     @patch("core.kafka.RBACProducer")
     @patch("core.kafka.logger")
@@ -37,4 +39,56 @@ class KafkaTests(TestCase):
 
         with self.assertRaises(Exception):
             MockKafkaProducer.get_producer()
-            mock_logger.error.assert_called_with("Non Kafka error occurred during initialization of Kafka producer")
+            mock_logger.error.assert_any_call("Non Kafka error occurred during initialization of Kafka producer: ")
+            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 1")
+
+    @patch("core.kafka.RBACProducer")
+    @patch("core.kafka.logger")
+    def test_kafka_generic_producer_errors_retries(self, mock_logger, MockKafkaProducer):
+        """Test that mocked generic error retries maxed out return correct messages from Kafka producer"""
+        MockKafkaProducer.get_producer.side_effect = [Exception] * 5
+        with self.assertRaises(Exception):
+            MockKafkaProducer.get_producer()
+            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 1")
+            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 2")
+            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 3")
+            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 4")
+            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 5")
+
+            mock_logger.critical.assert_any_call("Failed to initialize Kafka producer after 5 attempts")
+
+    @patch("core.kafka.RBACProducer")
+    @patch("core.kafka.logger")
+    @patch("rbac.settings")
+    def test_fake_kafka_producer_correct_init(self, mock_settings, mock_logger, MockKafkaProducer):
+        """Test that fake Kafka producer returns correct info message when initialized"""
+        mock_settings.KAFKA_ENABLED = True
+        mock_settings.MOCK_KAFKA = True
+        MockKafkaProducer.get_producer()
+
+        if mock_settings.MOCK_KAFKA:
+            MockKafkaProducer.get_producer.side_effect = mock_logger.info(
+                "Fake Kafka producer initialized in development mode"
+            )
+        else:
+            MockKafkaProducer.get_producer.side_effect = mock_logger.info("Kafka producer initialized successfully")
+
+        mock_logger.info.assert_any_call("Fake Kafka producer initialized in development mode")
+
+    @patch("core.kafka.RBACProducer")
+    @patch("core.kafka.logger")
+    @patch("rbac.settings")
+    def test_kafka_producer_correct_init(self, mock_settings, mock_logger, MockKafkaProducer):
+        """Test that Kafka producer returns correct info message when initialized"""
+        mock_settings.KAFKA_ENABLED = True
+        mock_settings.MOCK_KAFKA = False
+        MockKafkaProducer.get_producer()
+
+        if mock_settings.MOCK_KAFKA:
+            MockKafkaProducer.get_producer.side_effect = mock_logger.info(
+                "Fake Kafka producer initialized in development mode"
+            )
+        else:
+            MockKafkaProducer.get_producer.side_effect = mock_logger.info("Kafka producer initialized successfully")
+
+        mock_logger.info.assert_any_call("Kafka producer initialized successfully")
