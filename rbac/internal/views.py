@@ -405,7 +405,7 @@ def user_lookup(request):
             user_roles.append(
                 {
                     "name": role.name,
-                    "display name": role.display_name,
+                    "display_name": role.display_name,
                     "description": role.description,
                     "uuid": role.uuid,
                     "platform_default": role.platform_default,
