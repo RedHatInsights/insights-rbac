@@ -2519,7 +2519,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_bootstrap_pending_tenants(self):
         tenant = Tenant.objects.create(org_id="111", account_id="111")
-
+        Tenant.objects.create(account_id="112")
         response = self.client.get(
             f"/_private/api/utils/bootstrap_pending_tenants/",
             **self.internal_request.META,
