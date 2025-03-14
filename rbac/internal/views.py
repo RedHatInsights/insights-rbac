@@ -372,24 +372,30 @@ def user_lookup(request):
     }
 
     try:
-        principal = Principal.objects.get(username__iexact=user["username"])
+        principals = Principal.objects.filter(username__iexact=user["username"])
     except Exception as err:
-        logger.warning(f"error querying for principal '{username}' in rbac, err: {err}")
+        logger.warning(f"error querying for principal with username: '{username}' in rbac, err: {err}")
         return handle_error(f"Internal error - failed to query rbac for user '{username}'", 500)
+
+    if len(principals) > 1:
+        logger.warning(f"multiple principles with username '{username}' exist in rbac")
+        return handle_error(f"Internal error - multiple principles with username '{username}' exist in rbac", 500)
 
     # TODO: implement paging on groups
     # to page in the db: https://docs.djangoproject.com/en/5.1/topics/db/queries/#limiting-querysets
 
-    groups = Group.objects.filter(principals=principal.id) | Group.platform_default_set()
+    groups = Group.platform_default_set()
     if user["is_org_admin"]:
         groups = groups | Group.admin_default_set()
+    if len(principals) == 1:
+        groups = groups | Group.objects.filter(principals=principals[0])
 
     user_groups = []
     for group in groups:
         roles = group.roles()
         user_roles = []
         for role in roles:
-            accesses = Access.objects.filter(role=role.id)
+            accesses = Access.objects.filter(role=role)
 
             permissions = []
             for access in accesses:

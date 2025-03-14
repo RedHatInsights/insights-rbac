@@ -1781,18 +1781,24 @@ class InternalViewsetTests(BaseInternalViewsetTests):
 
 class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
     """Test the /api/utils/user_lookup/ endpoint from internal viewset"""
-    
+
     def setUp(self):
         """Set up the get user data tests"""
         super().setUp()
-        
+
         self.API_PATH = "/_private/api/utils/user_lookup/"
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 200,
-            "data": [{"username": "test_user", "email": "test_user@redhat.com", "is_org_admin": "true"}],
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true",
+                }
+            ],
         },
     )
     def test_user_lookup_happy_path(self, _):
@@ -1808,14 +1814,14 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         # create platform & admin default groups
         Group.objects.create(
             name="test_group_platform_default",
-            tenant=self.tenant,
+            tenant=tenant,
             system=True,
             admin_default=False,
             platform_default=True,
         )
         Group.objects.create(
             name="test_group_admin_default",
-            tenant=self.tenant,
+            tenant=tenant,
             system=True,
             admin_default=True,
             platform_default=False,
@@ -1900,7 +1906,13 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 200,
-            "data": [{"username": "test_user", "email": "test_user@redhat.com", "is_org_admin": "true"}],
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true",
+                }
+            ],
         },
     )
     def test_user_lookup_via_email(self, _):
@@ -2024,7 +2036,12 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
             "status_code": 200,
-            "data": [{"email": "test_user@redhat.com", "is_org_admin": "true"}],
+            "data": [
+                {
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true",
+                }
+            ],
         },
     )
     def test_user_lookup_bop_returns_user_without_username(self, _):
@@ -2064,14 +2081,14 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         # create platform & admin default groups
         Group.objects.create(
             name="test_group_platform_default",
-            tenant=self.tenant,
+            tenant=tenant,
             system=True,
             admin_default=False,
             platform_default=True,
         )
         Group.objects.create(
             name="test_group_admin_default",
-            tenant=self.tenant,
+            tenant=tenant,
             system=True,
             admin_default=True,
             platform_default=False,
@@ -2109,6 +2126,52 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         # given
         username = "test_user"
         # we don't add principal to rbac db
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Group.objects.create(
+            name="test_group_platform_default",
+            tenant=tenant,
+            system=True,
+            admin_default=False,
+            platform_default=True,
+        )
+
+        # when
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
+
+        # then
+        # only groups that exist should be default
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        resp_body = json.loads(response.content.decode())
+        self.assertTrue(("groups" in resp_body))
+
+        resp_groups = resp_body["groups"]
+        self.assertIsInstance(resp_groups, list)
+        self.assertEqual(len(resp_groups), 1)
+        self.assertEqual(resp_groups[0]["name"], "test_group_platform_default")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true",
+                }
+            ],
+        },
+    )
+    def test_user_lookup_multiple_principals_exist_in_rbac(self, _):
+        # given
+        username = "test_user"
+
+        tenant1 = Tenant.objects.create(tenant_name="test_tenant1", org_id="12345")
+        Principal.objects.create(username=username, tenant=tenant1)
+
+        tenant2 = Tenant.objects.create(tenant_name="test_tenant2", org_id="123456")
+        Principal.objects.create(username=username, tenant=tenant2)
 
         # when
         response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
@@ -2118,7 +2181,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
 
         resp_body = json.loads(response.content.decode())
         self.assertIsNotNone(resp_body["error"])
-        self.assertIn("failed to query rbac for user 'test_user'", resp_body["error"])
+        self.assertIn(f"multiple principles with username '{username}' exist in rbac", resp_body["error"])
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
