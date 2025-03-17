@@ -1348,7 +1348,7 @@ class GroupViewsetTests(IdentityRequest):
                 "sort_order": None,
                 "username_only": "false",
                 "admin_only": True,
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
 
@@ -1821,7 +1821,7 @@ class GroupViewsetTests(IdentityRequest):
             options={
                 "sort_order": None,
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -1845,7 +1845,7 @@ class GroupViewsetTests(IdentityRequest):
             options={
                 "sort_order": None,
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -1869,7 +1869,7 @@ class GroupViewsetTests(IdentityRequest):
             options={
                 "sort_order": "asc",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
