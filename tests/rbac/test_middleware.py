@@ -485,7 +485,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         Workspace.objects.create(name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=root)
         request = self.request_context["request"]
         client = APIClient()
-        response = client.get(f"/_private/_s2s/hbi/{self.org_id}/ungrouped/", **request.META)
+        response = client.get(f"/_private/_s2s/workspaces/{self.org_id}/ungrouped/", **request.META)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
         # Request with psk
@@ -496,7 +496,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
             "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
         }
-        response = client.post(f"/_private/_s2s/hbi/{self.org_id}/ungrouped/", **self.service_headers)
+        response = client.post(f"/_private/_s2s/workspaces/{self.org_id}/ungrouped/", **self.service_headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Can not use psk to access apis other than _s2s

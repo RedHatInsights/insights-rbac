@@ -1153,7 +1153,7 @@ def principal_removal(request):
         return HttpResponse(f"Users deleted: {principal_usernames}", status=204)
 
 
-def hbi_ungrouped_workspace(request, org_id):
+def retrieve_ungrouped_workspace(request, org_id):
     """GET or create ungrouped workspace for HBI."""
     if request.method != "POST":
         return HttpResponse("Invalid request method, only POST is allowed.", status=405)
