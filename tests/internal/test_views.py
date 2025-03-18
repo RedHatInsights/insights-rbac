@@ -833,7 +833,7 @@ class InternalViewsetTests(IdentityRequest):
         self.assertIsNotNone(Workspace.objects.root(tenant=tenant))
         self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
         self.assertTrue(getattr(tenant, "tenant_mapping"))
-        self.assertEqual(len(tuples), 9)
+        self.assertEqual(len(tuples), 9 + 1)  # 1 for ungrouped hosts
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_multiple_tenants(self, replicate):
@@ -871,8 +871,8 @@ class InternalViewsetTests(IdentityRequest):
             self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
             self.assertTrue(getattr(tenant, "tenant_mapping"))
         self.assertEqual(
-            len(tuples), 9 + 9 + 9
-        )  # orgs: 3 for workspaces, 3 for default and 3 for admin default access
+            len(tuples), 9 + 9 + 9 + 3  # ungrouped hosts
+        )  # orgs: 3 for workspaces, 3 for default and 3 for admin default access 1
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
@@ -927,7 +927,7 @@ class InternalViewsetTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(tuples), 9)
+        self.assertEqual(len(tuples), 9 + 1)  # 1 ungrouped hosts
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):
@@ -977,6 +977,8 @@ class InternalViewsetTests(IdentityRequest):
         id_set = {str(workspace.id) for workspace in default_workspaces}
         for workspace in root_workspaces:
             id_set.add(str(workspace.id))
+        uh_workspaces = Workspace.objects.filter(type=Workspace.Types.UNGROUPED_HOSTS).values_list("id", flat=True)
+        id_set.update(str(uh_workspace) for uh_workspace in uh_workspaces)
         self.assertEqual(set(json.loads(response.getvalue())), id_set)
 
         response = self.client.get(
@@ -984,8 +986,10 @@ class InternalViewsetTests(IdentityRequest):
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        uh_workspace = Workspace.objects.get(type=Workspace.Types.UNGROUPED_HOSTS, tenant=another_tenant)
         self.assertEqual(
-            set(json.loads(response.getvalue())), {str(default_workspaces[1].id), str(root_workspaces[1].id)}
+            set(json.loads(response.getvalue())),
+            {str(default_workspaces[1].id), str(root_workspaces[1].id), str(uh_workspace.id)},
         )
 
         # Listing tenantmappings

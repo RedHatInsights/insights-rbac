@@ -283,7 +283,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         # o1 is already bootstrapped, should get 0
         # existing unbootstrapped custom group tenants get 6
         # new or otherwise unbootstrapped tenants get 9
-        num_tenant_bootstrapping_tuples = 0 + 9 + 6 + 9
+        num_tenant_bootstrapping_tuples = 0 + 9 + 6 + 9 + 3  # ungrouped_hosts
 
         self.assertEquals(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
 
@@ -480,7 +480,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         tenant = Tenant.objects.get(org_id=org_id)
         mapping = TenantMapping.objects.get(tenant=tenant)
         workspaces = list(Workspace.objects.filter(tenant=tenant))
-        self.assertEqual(len(workspaces), 2)
+        self.assertEqual(len(workspaces), 2 + 1)  # ungrouped hosts
         default = Workspace.objects.default(tenant=tenant)
         root = Workspace.objects.root(tenant=tenant)
 
