@@ -1266,6 +1266,133 @@
         }
       }
     },
+    "/api/utils/bootstrap_pending_tenants/": {
+      "get": {
+        "summary": "List tenants that are not bootstrapped",
+        "description": "Returns a list of tenant org IDs that have not yet been bootstrapped.",
+        "operationId": "bootstrapPendingTenants",
+        "responses": {
+          "200": {
+            "description": "Successful response with a list of unbootstrapped tenants.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "List of unbootstrapped tenant IDs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method. Only GET is allowed.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method only \"GET\" is allowed."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fetch_replication_data": {
+      "get": {
+        "summary": "Fetch replication data",
+        "operationId": "fetchReplicationData",
+        "description": "Retrieves replication-related information from the database.",
+        "responses": {
+          "200": {
+            "description": "Replication data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "replication_slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Slot name" },
+                          { "type": "string", "description": "Slot type" }
+                        ]
+                      }
+                    },
+                    "publications": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "integer", "description": "OID" },
+                          { "type": "string", "description": "Publication name" }
+                        ]
+                      }
+                    },
+                    "publication_tables": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Publication name" },
+                          { "type": "string", "description": "Table name" }
+                        ]
+                      }
+                    },
+                    "wal_lsn": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Current WAL LSN" },
+                          { "type": "string", "description": "Confirmed flush LSN" }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only GET is allowed",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method, only 'GET' is allowed."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/bindings/": {
       "get": {
         "tags": [
