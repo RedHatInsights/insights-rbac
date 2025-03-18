@@ -2150,7 +2150,7 @@ class InternalS2SViewsetTests(IdentityRequest):
         self.assertFalse(
             Workspace.objects.filter(tenant=bootstraped_tenant.tenant, type=Workspace.Types.UNGROUPED_HOSTS).exists()
         )
-        response = self.client.post(
+        response = self.client.get(
             f"/_private/_s2s/workspaces/{org_id}/ungrouped/",
             data=payload,
             **self.service_headers,
@@ -2170,7 +2170,7 @@ class InternalS2SViewsetTests(IdentityRequest):
         self.assertEqual(len(ungrouped_host_relation), 1)
 
         # Get existing ungrouped workspace
-        response = self.client.post(
+        response = self.client.get(
             f"/_private/_s2s/workspaces/{org_id}/ungrouped/",
             **self.service_headers,
         )

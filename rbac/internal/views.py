@@ -1155,8 +1155,8 @@ def principal_removal(request):
 
 def retrieve_ungrouped_workspace(request, org_id):
     """GET or create ungrouped workspace for HBI."""
-    if request.method != "POST":
-        return HttpResponse("Invalid request method, only POST is allowed.", status=405)
+    if request.method != "GET":
+        return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
     ungrouped_hosts = Workspace.objects.filter(tenant__org_id=org_id, type=Workspace.Types.UNGROUPED_HOSTS).first()
     if not ungrouped_hosts:

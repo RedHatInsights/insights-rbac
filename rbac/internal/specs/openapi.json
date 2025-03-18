@@ -2015,7 +2015,7 @@
         }
       }
     },
-    "/s2s/workspaces/{org_id}/ungrouped/": {
+    "/_s2s/workspaces/{org_id}/ungrouped/": {
       "post": {
         "tags": [
           "Get/create ungrouped hosts workspace"
