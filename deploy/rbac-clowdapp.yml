@@ -808,7 +808,7 @@ objects:
             name: users-data
       - name: workspace-populator
         podSpec:
-          image: quay.io/repository/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac:latest
+          image: quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac:latest
           command:
             - /opt/rbac/rbac/manage.py
             - import_workspace_data
