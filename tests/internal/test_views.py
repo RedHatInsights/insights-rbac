@@ -1815,14 +1815,14 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         # create platform & admin default groups
         Group.objects.create(
             name="test_group_platform_default",
-            tenant=tenant,
+            tenant=self.public_tenant,
             system=True,
             admin_default=False,
             platform_default=True,
         )
         Group.objects.create(
             name="test_group_admin_default",
-            tenant=tenant,
+            tenant=self.public_tenant,
             system=True,
             admin_default=True,
             platform_default=False,
