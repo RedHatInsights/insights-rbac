@@ -403,7 +403,7 @@ def user_lookup(request):
                 {
                     "name": role.name,
                     "display_name": role.display_name,
-                    "description": role.description,
+                    "description": role.description if role.description else "",
                     "permissions": permissions,
                 }
             )
