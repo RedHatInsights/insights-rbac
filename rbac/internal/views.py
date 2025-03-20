@@ -404,9 +404,6 @@ def user_lookup(request):
                     "name": role.name,
                     "display_name": role.display_name,
                     "description": role.description,
-                    "uuid": role.uuid,
-                    "platform_default": role.platform_default,
-                    "admin_default": role.admin_default,
                     "permissions": permissions,
                 }
             )
@@ -415,9 +412,6 @@ def user_lookup(request):
             {
                 "name": group.name,
                 "description": group.description if group.description else "",
-                "uuid": group.uuid,
-                "platform_default": group.platform_default,
-                "admin_default": group.admin_default,
                 "roles": user_roles,
             }
         )
@@ -483,7 +477,7 @@ def get_user_from_bop(username, email):
         logger.warning(
             f"""invalid data for user '{query_by}={principal}':
              user found in bop but does not contain required 'is_org_admin' field"""
-        )
+            )
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
 
