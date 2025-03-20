@@ -1942,7 +1942,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
             admin_default=True,
             platform_default=False,
         )
-        
+
         # create public platform & admin default groups
         Group.objects.create(
             name="test_group_platform_default_public",
@@ -2190,7 +2190,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         group_names = [group["name"] for group in resp_groups]
         self.assertNotIn("test_group_admin_default", group_names)
         self.assertIn("test_group_platform_default", group_names)
-        
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
