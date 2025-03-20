@@ -17,6 +17,7 @@
 """Test cases for Tenant bootstrapping logic."""
 
 from typing import Optional, Tuple
+import uuid
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
@@ -448,6 +449,38 @@ class V2TenantBootstrapServiceTest(TestCase):
                     resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
                     relation("member"),
                     subject("rbac", "principal", "localhost/u1"),
+                )
+            ),
+        )
+
+    def test_bulk_import_workspace(self):
+        ws_id_1 = uuid.uuid4()
+        ws_id_2 = uuid.uuid4()
+        root_id = uuid.uuid4()
+        default_id = uuid.uuid4()
+        self.tuples.clear()
+        pairs = [
+            (ws_id_1, root_id),
+            (ws_id_2, default_id),
+        ]
+        self.service.create_workspace_relationships(pairs)
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", ws_id_1),
+                    relation("parent"),
+                    subject("rbac", "workspace", root_id),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", ws_id_2),
+                    relation("parent"),
+                    subject("rbac", "workspace", default_id),
                 )
             ),
         )

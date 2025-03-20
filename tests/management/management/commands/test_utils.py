@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import mock_open, patch
 
 from django.db.utils import IntegrityError
@@ -9,9 +10,12 @@ from management.management.commands.utils import (
     populate_tenant_user_data,
     populate_service_account_data,
     process_batch,
+    populate_workspace_data,
+    batch_import_workspace,
 )
 from management.models import Principal
 from management.tenant_mapping.model import TenantMapping
+from management.workspace.model import Workspace
 
 
 class TestProcessBatch(TestCase):
@@ -184,3 +188,125 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
 
         self.assertEqual(Principal.objects.get(username="test_user_1").user_id, "1")
         self.assertEqual(Principal.objects.get(username="test_user_2").user_id, "2")
+
+    @patch("management.management.commands.utils.batch_import_workspace")
+    def test_populate_workspace_data(self, batch_mock):
+        mock_file_content = """id,account,org_id,name,ungrouped,created_on,modified_on
+47cd5563-0f55-4624-a182-9a69fa307c63,123456,987654,test_group_0,False,2025-03-18 15:19:53.509203+00:00,2025-03-18 15:19:53.509206+00:00
+7c5e11d2-0bda-4f90-ac78-2f99fc572573,123456,987654,test_group_1,False,2025-03-18 15:19:53.516576+00:00,2025-03-18 15:19:53.516579+00:00
+2c8b9e47-7c8a-40cc-81ed-326c5a41b045,123456,987654,test_group_2,False,2025-03-18 15:19:53.523742+00:00,2025-03-18 15:19:53.523743+00:00
+"""
+
+        with patch("builtins.open", mock_open(read_data=mock_file_content)):
+            populate_workspace_data("file_name", batch_size=2)
+
+        self.assertEqual(
+            batch_mock.call_args_list[0][0][0],
+            [
+                {
+                    "account": "123456",
+                    "created_on": "2025-03-18 15:19:53.509203+00:00",
+                    "id": "47cd5563-0f55-4624-a182-9a69fa307c63",
+                    "modified_on": "2025-03-18 15:19:53.509206+00:00",
+                    "name": "test_group_0",
+                    "org_id": "987654",
+                    "ungrouped": "False",
+                },
+                {
+                    "account": "123456",
+                    "created_on": "2025-03-18 15:19:53.516576+00:00",
+                    "id": "7c5e11d2-0bda-4f90-ac78-2f99fc572573",
+                    "modified_on": "2025-03-18 15:19:53.516579+00:00",
+                    "name": "test_group_1",
+                    "org_id": "987654",
+                    "ungrouped": "False",
+                },
+            ],
+        )
+        self.assertEqual(
+            batch_mock.call_args_list[1][0][0],
+            [
+                {
+                    "account": "123456",
+                    "created_on": "2025-03-18 15:19:53.523742+00:00",
+                    "id": "2c8b9e47-7c8a-40cc-81ed-326c5a41b045",
+                    "modified_on": "2025-03-18 15:19:53.523743+00:00",
+                    "name": "test_group_2",
+                    "org_id": "987654",
+                    "ungrouped": "False",
+                }
+            ],
+        )
+
+    @patch("management.management.commands.utils.BOOT_STRAP_SERVICE")
+    def test_batch_import_workspace(self, mock_bss):
+        org_id_1 = "987654"
+        workspace_id_1 = "47cd5563-0f55-4624-a182-9a69fa307c63"
+        org_id_2 = "456789"
+        workspace_id_2 = "7c5e11d2-0bda-4f90-ac78-2f99fc572573"
+        records = [
+            {
+                "account": "123456",
+                "created_on": "2025-03-18 15:19:53.509203+00:00",
+                "id": workspace_id_1,
+                "modified_on": "2025-03-18 15:19:53.509206+00:00",
+                "name": "test_group_0",
+                "org_id": org_id_1,
+                "ungrouped": "False",
+            },
+            {
+                "account": "123456",
+                "created_on": "2025-03-18 15:19:53.509203+00:00",
+                "id": workspace_id_2,
+                "modified_on": "2025-03-18 15:19:53.509206+00:00",
+                "name": "test_group_1",
+                "org_id": org_id_2,
+                "ungrouped": "True",
+            },
+        ]
+        tenants = Tenant.objects.bulk_create(
+            [
+                Tenant(org_id=org_id_1),
+                Tenant(org_id=org_id_2),
+            ]
+        )
+        roots = Workspace.objects.bulk_create(
+            [
+                Workspace(
+                    name="root",
+                    tenant=tenants[0],
+                    type=Workspace.Types.ROOT,
+                ),
+                Workspace(
+                    name="root",
+                    tenant=tenants[1],
+                    type=Workspace.Types.ROOT,
+                ),
+            ]
+        )
+        defaults = Workspace.objects.bulk_create(
+            [
+                Workspace(name="default", tenant=tenants[0], type=Workspace.Types.DEFAULT, parent=roots[0]),
+                Workspace(name="default", tenant=tenants[1], type=Workspace.Types.DEFAULT, parent=roots[1]),
+            ]
+        )
+        batch_import_workspace(records)
+        self.assertEqual(
+            mock_bss.create_workspace_relationships.call_args[0][0],
+            [(workspace_id_1, str(roots[0].id)), (workspace_id_2, str(defaults[1].id))],
+        )
+        self.assertEqual(Workspace.objects.filter(id__in=[workspace_id_1, workspace_id_2]).count(), 2)
+        # Should be idempotent
+        updated_name = "updated_name"
+        updated_time = "2026-03-18 15:19:53.509206+00:00"
+        records[1]["name"] = updated_name
+        records[1]["modified_on"] = updated_time
+        mock_bss.create_workspace_relationships.reset_mock()
+        batch_import_workspace(records)
+        self.assertEqual(
+            mock_bss.create_workspace_relationships.call_args[0][0],
+            [(workspace_id_1, str(roots[0].id)), (workspace_id_2, str(defaults[1].id))],
+        )
+        updated_ws = Workspace.objects.get(id=workspace_id_2)
+        self.assertEqual(updated_ws.name, updated_name)
+        self.assertEqual(updated_ws.modified, datetime.fromisoformat(updated_time))

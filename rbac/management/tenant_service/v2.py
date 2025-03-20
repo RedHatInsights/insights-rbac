@@ -604,3 +604,28 @@ class V2TenantBootstrapService:
             return self._admin_default_policy_uuid
         except Group.DoesNotExist:
             return None
+
+    def create_workspace_relationships(self, pairs):
+        """
+        Util for bulk creating workspace relationships based on pairs.
+
+        Input: pairs - List of tuples of (resource_id, subject_id)
+        """
+        relationships = []
+        for pair in pairs:
+            relationship = create_relationship(
+                ("rbac", "workspace"),
+                str(pair[0]),
+                ("rbac", "workspace"),
+                str(pair[1]),
+                "parent",
+            )
+            relationships.append(relationship)
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                info={},
+                partition_key=PartitionKey.byEnvironment(),
+                add=relationships,
+            )
+        )
