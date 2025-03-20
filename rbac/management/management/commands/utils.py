@@ -25,8 +25,10 @@ from management.principal.model import Principal
 from management.role.relation_api_dual_write_handler import OutboxReplicator
 from management.tenant_mapping.model import logger
 from management.tenant_service.v2 import V2TenantBootstrapService
+from management.workspace.model import Workspace
 
-from api.models import User
+
+from api.models import Tenant, User
 
 
 BOOT_STRAP_SERVICE = V2TenantBootstrapService(OutboxReplicator())
@@ -132,3 +134,77 @@ def populate_service_account_data(file_name):
         if user_id := id_mapping.get(principal.service_account_id):
             principal.user_id = user_id
             principal.save()
+
+
+def populate_workspace_data(file_name, batch_size=250):
+    """Populate workspace data from the downloaded file."""
+    file_path = get_file_path(file_name)
+    current_line = 0
+    with open(file_path, "r") as file:
+        csv_reader = csv.DictReader(file)
+        batch_data = []
+        for row in csv_reader:
+            current_line += 1
+            batch_data.append(row)
+            if len(batch_data) >= batch_size:
+                batch_import_workspace(batch_data)
+                logger.info(f"Processed batch ending at line {current_line}")
+                batch_data = []
+        # Process any remaining records
+        if batch_data:
+            batch_import_workspace(batch_data)
+            logger.info(f"Processed final batch ending at line {current_line}")
+    return
+
+
+def batch_import_workspace(records):
+    """Import workspace records in batch."""
+    with transaction.atomic():
+        workspaces = []
+        workspaces_to_update = []
+        pairs = []
+        tenants = Tenant.objects.filter(org_id__in=[record["org_id"] for record in records])
+        tenant_dict = {tenant.org_id: tenant for tenant in tenants}
+        workspace_ids = [record["id"] for record in records]
+        existing_wss = Workspace.objects.filter(id__in=workspace_ids)
+        existing_wss_dict = {str(existing_ws.id): existing_ws for existing_ws in existing_wss}
+        parent_workspaces = Workspace.objects.filter(
+            tenant__in=tenants, type__in=[Workspace.Types.DEFAULT, Workspace.Types.ROOT]
+        ).select_related("tenant")
+        parent_workspace_dict = {}
+        for workspace in parent_workspaces:
+            if workspace.tenant.org_id not in parent_workspace_dict:
+                parent_workspace_dict[workspace.tenant.org_id] = []
+            parent_workspace_dict[workspace.tenant.org_id].append(workspace)
+
+        for record in records:
+            root = None
+            default = None
+            is_ungrouped = record["ungrouped"].lower() == "true"
+            for parent in parent_workspace_dict[record["org_id"]]:
+                if parent.type == Workspace.Types.ROOT:
+                    root = parent
+                elif parent.type == Workspace.Types.DEFAULT:
+                    default = parent
+            workspace_type = Workspace.Types.UNGROUPED_HOSTS if is_ungrouped else Workspace.Types.STANDARD
+            parent = default if is_ungrouped else root
+
+            if record["id"] in existing_wss_dict:
+                workspace = existing_wss_dict[record["id"]]
+                workspace.name = record["name"]
+                workspace.modified = record["modified_on"]
+                workspaces_to_update.append(workspace)
+            else:
+                workspace = Workspace(
+                    id=record["id"],
+                    name=record["name"],
+                    tenant=tenant_dict[record["org_id"]],
+                    type=workspace_type,
+                    created=record["created_on"],
+                    modified=record["modified_on"],
+                )
+                workspaces.append(workspace)
+            pairs.append((str(workspace.id), str(parent.id)))
+        Workspace.objects.bulk_create(workspaces)
+        Workspace.objects.bulk_update(workspaces_to_update, ["name", "modified"])
+        BOOT_STRAP_SERVICE.create_workspace_relationships(pairs)
