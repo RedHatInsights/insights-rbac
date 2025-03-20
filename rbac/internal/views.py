@@ -390,7 +390,7 @@ def user_lookup(request):
         principal = get_principal(username, request, verify_principal=False, from_query=False)
     except Exception as err:
         logger.error(f"error querying for principal with username: '{username}' in rbac, err: {err}")
-        return handle_error(f"Internal error - failed to query rbac for user '{username}'", 500)
+        return handle_error(f"Internal error - failed to query rbac for user: '{username}'", 500)
 
     groups = groups_for_principal(principal, user_tenant, is_org_admin=user["is_org_admin"])
 

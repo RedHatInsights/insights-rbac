@@ -2226,6 +2226,35 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
                 {
                     "username": "test_user",
                     "email": "test_user@redhat.com",
+                    "is_org_admin": "false",
+                    "org_id": "12345",
+                }
+            ],
+        },
+    )
+    def test_user_lookup_tenant_does_not_exist_in_rbac(self, _):
+        # given
+        username = "test_user"
+
+        # when
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("failed to query rbac for tenant with org_id: '12345'", resp_body["error"])
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "false",
                     "org_id": "12345",
                 }
             ],
