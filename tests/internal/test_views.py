@@ -1873,8 +1873,8 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
 
         # check all our groups were returned
         group_names = [group["name"] for group in resp_groups]
-        self.assertListEqual(
-            group_names, ["test_group_platform_default", "test_group_admin_default", "test_group"], msg=msg
+        self.assertCountEqual(
+            group_names, ["test_group", "test_group_platform_default", "test_group_admin_default"], msg=msg
         )
 
         # check our test group has all its roles
@@ -1887,7 +1887,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         self.assertEqual(len(resp_test_group_roles), 2, msg=msg)
 
         role_names = [role["name"] for role in resp_test_group_roles]
-        self.assertListEqual(role_names, ["test_role1", "test_role2"], msg=msg)
+        self.assertCountEqual(role_names, ["test_role1", "test_role2"], msg=msg)
 
         # and finally check all our roles have all their permissions
         resp_test_group_role1 = resp_test_group_roles[0]
@@ -1895,12 +1895,89 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
 
         self.assertIsInstance(resp_test_group_role1["permissions"], list, msg=msg)
         self.assertEqual(len(resp_test_group_role1["permissions"]), 2)
-        self.assertListEqual(resp_test_group_role1["permissions"], ["app | res1 | *", "app | res2 | *"], msg=msg)
+        self.assertCountEqual(resp_test_group_role1["permissions"], ["app | res1 | *", "app | res2 | *"], msg=msg)
 
         self.assertIsInstance(resp_test_group_role2["permissions"], list, msg=msg)
         self.assertEqual(len(resp_test_group_role2["permissions"]), 2, msg=msg)
-        self.assertListEqual(
+        self.assertCountEqual(
             resp_test_group_role2["permissions"], ["app | res3 | read", "app | res3 | write"], msg=msg
+        )
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true",
+                    "org_id": "12345",
+                }
+            ],
+        },
+    )
+    def test_user_lookup_custom_default_groups(self, _):
+        # given (a lot of setup)
+        # user data we want to query for
+        username = "test_user"
+        email = "test_user@redhat.com"
+
+        # create a tenant and principal for our user
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        principal = Principal.objects.create(username=username, tenant=tenant)
+
+        # create custom platform & admin default groups
+        Group.objects.create(
+            name="test_group_platform_default_custom",
+            tenant=tenant,
+            system=True,
+            admin_default=False,
+            platform_default=True,
+        )
+        Group.objects.create(
+            name="test_group_admin_default_custom",
+            tenant=tenant,
+            system=True,
+            admin_default=True,
+            platform_default=False,
+        )
+        
+        # create public platform & admin default groups
+        Group.objects.create(
+            name="test_group_platform_default_public",
+            tenant=self.public_tenant,
+            system=True,
+            admin_default=False,
+            platform_default=True,
+        )
+        Group.objects.create(
+            name="test_group_admin_default_public",
+            tenant=self.public_tenant,
+            system=True,
+            admin_default=True,
+            platform_default=False,
+        )
+
+        # when
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
+
+        resp = response.content.decode()
+        msg = f"[response from rbac: '{resp}']"
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=msg)
+        body = json.loads(resp)
+
+        self.assertTrue(("groups" in body), msg=msg)
+        resp_groups = body["groups"]
+        self.assertIsInstance(resp_groups, list, msg=msg)
+        self.assertEqual(len(resp_groups), 2, msg=msg)
+
+        # the custom groups should be present, not the public ones
+        group_names = [group["name"] for group in resp_groups]
+        self.assertCountEqual(
+            group_names, ["test_group_platform_default_custom", "test_group_admin_default_custom"], msg=msg
         )
 
     @patch(
@@ -2113,6 +2190,33 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         group_names = [group["name"] for group in resp_groups]
         self.assertNotIn("test_group_admin_default", group_names)
         self.assertIn("test_group_platform_default", group_names)
+        
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true",
+                }
+            ],
+        },
+    )
+    def test_user_lookup_bop_returns_user_without_org_id(self, _):
+        # given
+        username = "test_user"
+
+        # when
+        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
+
+        # then
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        resp_body = json.loads(response.content.decode())
+        self.assertIsNotNone(resp_body["error"])
+        self.assertIn("user found in bop but no org_id exists", resp_body["error"])
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
