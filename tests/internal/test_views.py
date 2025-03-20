@@ -1797,6 +1797,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
                     "username": "test_user",
                     "email": "test_user@redhat.com",
                     "is_org_admin": "true",
+                    "org_id": "12345"
                 }
             ],
         },
@@ -1873,7 +1874,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         # check all our groups were returned
         group_names = [group["name"] for group in resp_groups]
         self.assertListEqual(
-            group_names, ["test_group", "test_group_admin_default", "test_group_platform_default"], msg=msg
+            group_names, ["test_group_platform_default", "test_group_admin_default", "test_group"], msg=msg
         )
 
         # check our test group has all its roles
@@ -1911,6 +1912,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
                     "username": "test_user",
                     "email": "test_user@redhat.com",
                     "is_org_admin": "true",
+                    "org_id": "12345",
                 }
             ],
         },
@@ -2040,6 +2042,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
                 {
                     "email": "test_user@redhat.com",
                     "is_org_admin": "true",
+                    "org_id": "12345",
                 }
             ],
         },
@@ -2066,6 +2069,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
                 {
                     "username": "test_user",
                     "email": "test_user@redhat.com",
+                    "org_id": "12345",
                 }
             ],
         },
@@ -2118,6 +2122,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
                 {
                     "username": "test_user",
                     "email": "test_user@redhat.com",
+                    "org_id": "12345",
                 }
             ],
         },
@@ -2149,39 +2154,6 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         self.assertIsInstance(resp_groups, list)
         self.assertEqual(len(resp_groups), 1)
         self.assertEqual(resp_groups[0]["name"], "test_group_platform_default")
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": 200,
-            "data": [
-                {
-                    "username": "test_user",
-                    "email": "test_user@redhat.com",
-                    "is_org_admin": "true",
-                }
-            ],
-        },
-    )
-    def test_user_lookup_multiple_principals_exist_in_rbac(self, _):
-        # given
-        username = "test_user"
-
-        tenant1 = Tenant.objects.create(tenant_name="test_tenant1", org_id="12345")
-        Principal.objects.create(username=username, tenant=tenant1)
-
-        tenant2 = Tenant.objects.create(tenant_name="test_tenant2", org_id="123456")
-        Principal.objects.create(username=username, tenant=tenant2)
-
-        # when
-        response = self.client.get(f"{self.API_PATH}?username={username}", **self.request.META)
-
-        # then
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        resp_body = json.loads(response.content.decode())
-        self.assertIsNotNone(resp_body["error"])
-        self.assertIn(f"multiple principles with username '{username}' exist in rbac", resp_body["error"])
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
