@@ -1797,7 +1797,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
                     "username": "test_user",
                     "email": "test_user@redhat.com",
                     "is_org_admin": "true",
-                    "org_id": "12345"
+                    "org_id": "12345",
                 }
             ],
         },
