@@ -55,6 +55,10 @@ from management.tasks import (
     run_sync_schemas_in_worker,
 )
 from management.tenant_service.v2 import V2TenantBootstrapService
+from management.utils import (
+    get_principal,
+    groups_for_principal,
+)
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
@@ -67,7 +71,6 @@ from api.tasks import (
     run_reset_imported_tenants,
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
-from management.utils import get_principal, groups_for_principal
 
 
 logger = logging.getLogger(__name__)
@@ -380,10 +383,10 @@ def user_lookup(request):
         logger.debug("queried rbac db for tenant: '%s' based on org_id: '%s'", user_tenant, user_org_id)
     except Exception as err:
         logger.error(f"error querying for tenant with org_id: '{user_org_id}' in rbac, err: {err}")
-        return handle_error(f"Internal error - failed to query rbac for tenant with org_id: '{user_org_id}'", 500)        
+        return handle_error(f"Internal error - failed to query rbac for tenant with org_id: '{user_org_id}'", 500)
 
     try:
-        request.tenant = user_tenant # little hack to be able to use the following method
+        request.tenant = user_tenant  # little hack to be able to use the following method
         principal = get_principal(username, request, verify_principal=False, from_query=False)
     except Exception as err:
         logger.error(f"error querying for principal with username: '{username}' in rbac, err: {err}")
@@ -482,11 +485,9 @@ def get_user_from_bop(username, email):
             f"""invalid data for user '{query_by}={principal}':
              user found in bop but does not contain required 'is_org_admin' field"""
         )
-        
+
     if "org_id" not in user:
-        raise Exception(
-            f"invalid user data for user '{query_by}={principal}': user found in bop but no org_id exists"
-        )
+        raise Exception(f"invalid user data for user '{query_by}={principal}': user found in bop but no org_id exists")
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
 
