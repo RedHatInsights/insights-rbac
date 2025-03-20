@@ -67,6 +67,7 @@ from api.tasks import (
     run_reset_imported_tenants,
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
+from management.utils import get_principal, groups_for_principal
 
 
 logger = logging.getLogger(__name__)
@@ -366,26 +367,29 @@ def user_lookup(request):
     except Exception as err:
         return handle_error(f"Internal error - couldn't get user from bop: {err}", 500)
 
+    username = user["username"]
+    user_org_id = user["org_id"]
+
     result = {
-        "username": user["username"],
+        "username": username,
         "email_address": user["email"],
     }
 
     try:
-        principals = Principal.objects.filter(username__iexact=user["username"])
+        user_tenant = Tenant.objects.get(org_id=user_org_id)
+        logger.debug("queried rbac db for tenant: '%s' based on org_id: '%s'", user_tenant, user_org_id)
     except Exception as err:
-        logger.warning(f"error querying for principal with username: '{username}' in rbac, err: {err}")
+        logger.error(f"error querying for tenant with org_id: '{user_org_id}' in rbac, err: {err}")
+        return handle_error(f"Internal error - failed to query rbac for tenant with org_id: '{user_org_id}'", 500)        
+
+    try:
+        request.tenant = user_tenant # little hack to be able to use the following method
+        principal = get_principal(username, request, verify_principal=False, from_query=False)
+    except Exception as err:
+        logger.error(f"error querying for principal with username: '{username}' in rbac, err: {err}")
         return handle_error(f"Internal error - failed to query rbac for user '{username}'", 500)
 
-    if len(principals) > 1:
-        logger.warning(f"multiple principles with username '{username}' exist in rbac")
-        return handle_error(f"Internal error - multiple principles with username '{username}' exist in rbac", 500)
-
-    groups = Group.platform_default_set()
-    if user["is_org_admin"]:
-        groups = groups | Group.admin_default_set()
-    if len(principals) == 1:
-        groups = groups | Group.objects.filter(principals=principals[0])
+    groups = groups_for_principal(principal, user_tenant, is_org_admin=user["is_org_admin"])
 
     user_groups = []
     for group in groups:
@@ -477,7 +481,12 @@ def get_user_from_bop(username, email):
         logger.warning(
             f"""invalid data for user '{query_by}={principal}':
              user found in bop but does not contain required 'is_org_admin' field"""
-            )
+        )
+        
+    if "org_id" not in user:
+        raise Exception(
+            f"invalid user data for user '{query_by}={principal}': user found in bop but no org_id exists"
+        )
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
 
