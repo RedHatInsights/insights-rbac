@@ -2014,6 +2014,124 @@
           }
         }
       }
+    },
+    "/api/utils/user_lookup/": {
+      "get":{
+        "summary": "Get user info",
+        "description": "Query for a user's groups, roles, and permissions based on their username or email. Only one of the params is required.",
+        "operationId": "userLookup",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "description": "Username of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
+            "required": true,
+            "schema":{
+              "type": "string"
+            }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "description": "Email address of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
+            "required": true,
+            "schema":{
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Result set of user groups, roles, and permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "username": { "type": "string", "example": "fake_user" },
+                    "email_address": { "type": "string", "example": "fake_user@redhat.com" },
+                    "groups":{
+                      "type": "array",
+                      "items":{
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string", "example": "Example group"},
+                          "description": { "type": "string", "example": "A group for some users" },
+                          "uuid": { "type": "string", "format":"uuid", "example": "1c4da003-569d-433f-8159-fd77e6984de1" },
+                          "platform_default": { "type": "boolean", "example": true },
+                          "admin_default": { "type": "boolean", "example": false },
+                          "roles":{
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": { "type": "string", "example": "Example Role" },
+                                "display_name": { "type": "string", "example": "Example Role Display" },
+                                "description": { "type": "string", "example": "An example role for the spec" },
+                                "uuid": { "type": "string", "format":"uuid", "example": "a8d33564-628f-4eba-bd59-6a2948bfb31e" },
+                                "platform_default": { "type": "boolean", "example": true },
+                                "admin_default": { "type": "boolean", "example": false },
+                                "permissions": {
+                                  "type": "array",
+                                  "items":{
+                                    "type": "string",
+                                    "example": "application | resource | verb"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": ["username", "email_address", "groups"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request - bad input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found - user not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method - invalid http method used, only GET allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error - unexpected internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -2073,6 +2191,17 @@
                 }
               }
             }
+          }
+        }
+      },
+      "ErrorSingle": {
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Invalid request - bad input provided"
           }
         }
       },

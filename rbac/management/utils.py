@@ -122,9 +122,9 @@ def get_principal(
 
 def verify_principal_with_proxy(username, request, verify_principal=True):
     """Verify username through the BOP."""
-    org_id = request.user.org_id
-    proxy = PrincipalProxy()
     if verify_principal:
+        org_id = request.user.org_id
+        proxy = PrincipalProxy()
         resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
 
         if isinstance(resp, dict) and "errors" in resp:
