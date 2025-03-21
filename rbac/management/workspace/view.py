@@ -147,10 +147,19 @@ class WorkspaceViewSet(BaseV2ViewSet):
                     message = f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep."
                     error = {"workspace": [message]}
                     raise serializers.ValidationError(error)
+                if self._violates_peer_restrictions(parent_id, tenant):
+                    message = "Sub-workspaces may only be created under the default workspace."
+                    error = {"workspace": [message]}
+                    raise serializers.ValidationError(error)
             except ObjectDoesNotExist:
                 message = f"Parent workspace '{parent_id}' doesn't exist in tenant"
                 error = {"workspace": [message]}
                 raise serializers.ValidationError(error)
+
+    def _violates_peer_restrictions(self, parent_id, tenant):
+        target_root_workspace = Workspace.objects.root(tenant=tenant)
+        if settings.WORKSPACE_RESTRICT_DEFAULT_PEERS and str(target_root_workspace.id) == parent_id:
+            return True
 
     def _exceeds_depth_limit(self, parent_id, tenant):
         target_parent_workspace = Workspace.objects.get(id=parent_id, tenant=tenant)
