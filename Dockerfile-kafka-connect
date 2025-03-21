@@ -1,0 +1,21 @@
+FROM registry.redhat.io/amq-streams/kafka-36-rhel9:2.7.0-17
+
+ARG CONNECT_PLUGIN_PATH="/opt/kafka/plugins"
+
+USER root:root
+
+RUN mkdir $CONNECT_PLUGIN_PATH
+
+WORKDIR $CONNECT_PLUGIN_PATH
+
+RUN curl -O 'https://maven.repository.redhat.com/ga/io/debezium/debezium-connector-postgres/2.5.4.Final-redhat-00001/debezium-connector-postgres-2.5.4.Final-redhat-00001-plugin.zip'
+RUN curl -O 'https://maven.repository.redhat.com/ga/io/debezium/debezium-scripting/2.5.4.Final-redhat-00001/debezium-scripting-2.5.4.Final-redhat-00001.zip'
+RUN curl -O 'https://repo1.maven.org/maven2/org/apache/groovy/groovy/4.0.22/groovy-4.0.22.jar'
+RUN curl -O 'https://repo1.maven.org/maven2/org/apache/groovy/groovy-jsr223/4.0.22/groovy-jsr223-4.0.22.jar'
+RUN curl -O 'https://repo1.maven.org/maven2/org/apache/groovy/groovy-json/4.0.22/groovy-json-4.0.22.jar'
+
+RUN unzip ./debezium-connector-postgres-2.5.4.Final-redhat-00001-plugin.zip
+RUN unzip ./debezium-scripting-2.5.4.Final-redhat-00001.zip
+
+USER 1001
+WORKDIR /opt/kafka/
