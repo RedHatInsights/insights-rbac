@@ -2260,11 +2260,14 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
             ],
         },
     )
-    @patch("internal.views.get_principal", side_effect=Exception("something went wrong"),)
+    @patch(
+        "internal.views.get_principal",
+        side_effect=Exception("something went wrong"),
+    )
     def test_user_lookup_get_principal_raises_exception(self, __, _):
         # given
         username = "test_user"
-        
+
         Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
 
         # when
