@@ -33,24 +33,14 @@ from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
+@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=100)
 class WorkspaceViewTests(IdentityRequest):
-    """Test the Workspace Model."""
+    """Test the Workspace view."""
 
     def setUp(self):
         """Set up the workspace model tests."""
         reload(urls)
         clear_url_caches()
-        super().setUp()
-
-    def tearDown(self):
-        """Tear down group model tests."""
-        Workspace.objects.update(parent=None)
-        Workspace.objects.all().delete()
-
-
-@override_settings(V2_APIS_ENABLED=True)
-class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
-    def setUp(self):
         super().setUp()
         self.root_workspace = Workspace.objects.create(
             name="Root Workspace",
@@ -71,6 +61,14 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             type=Workspace.Types.STANDARD,
         )
 
+    def tearDown(self):
+        """Tear down group model tests."""
+        Workspace.objects.update(parent=None)
+        Workspace.objects.all().delete()
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
     def test_create_workspace(self):
         """Test for creating a workspace."""
         workspace_data = {
@@ -600,23 +598,6 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 class TestsList(WorkspaceViewTests):
     """Tests for listing workspaces."""
 
-    def setUp(self):
-        """Set up the workspace model list tests."""
-        super().setUp()
-        self.root_workspace = Workspace.objects.create(name="Root Workspace", tenant=self.tenant, type="root")
-        self.default_workspace = Workspace.objects.create(
-            name="Default Workspace",
-            tenant=self.tenant,
-            type="default",
-            parent_id=self.root_workspace.id,
-        )
-        self.standard_workspace = Workspace.objects.create(
-            name="Standard Workspace",
-            tenant=self.tenant,
-            type="standard",
-            parent_id=self.default_workspace.id,
-        )
-
     def assertSuccessfulList(self, response, payload):
         """Common list success assertions."""
         self.assertIsInstance(payload.get("data"), list)
@@ -748,3 +729,48 @@ class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
         response = client.get(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
+class WorkspaceViewTestsWithHierarchyLimit(WorkspaceViewTests):
+    """Test workspace hierarchy limits."""
+
+    def test_create_nested_workspace_valid(self):
+        """Test creating a workspace with valid depth."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.default_workspace.id}
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_nested_workspace_invalid(self):
+        """Test creating a workspace with invalid depth."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.standard_workspace.id}
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep.")
+
+        self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+
+    def test_updated_nested_workspace_invalid(self):
+        """Test updating a workspace with invalid depth."""
+        sibling_workspace = Workspace.objects.create(
+            name="Sibling", tenant=self.tenant, type=Workspace.Types.STANDARD, parent=self.default_workspace
+        )
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": sibling_workspace.id})
+        client = APIClient()
+        workspace_data = {"parent_id": self.standard_workspace.id}
+        response = client.patch(url, workspace_data, format="json", **self.headers)
+
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep.")
+
+        self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
