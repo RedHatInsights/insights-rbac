@@ -45,7 +45,7 @@ from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
-@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=100)
+@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
 class WorkspaceViewTests(IdentityRequest):
     """Test the Workspace view."""
 
@@ -1212,6 +1212,42 @@ class WorkspaceViewTestsWithHierarchyLimit(WorkspaceViewTests):
         status_code = response.data.get("status")
         detail = response.data.get("detail")
         self.assertEqual(detail, f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep.")
+
+        self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+
+
+@override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
+class WorkspaceViewTestsWithPeerRestrictions(WorkspaceViewTests):
+    """Test workspace peer restrictions."""
+
+    def test_create_nested_workspace_against_root(self):
+        """Test creating a workspace with root as the parent."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.root_workspace.id}
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Sub-workspaces may only be created under the default workspace.")
+
+        self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+
+    def test_updated_nested_workspace_against_root(self):
+        """Test updating a workspace with peer restrictions."""
+        sibling_workspace = Workspace.objects.create(
+            name="Sibling", tenant=self.tenant, type=Workspace.Types.STANDARD, parent=self.default_workspace
+        )
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": sibling_workspace.id})
+        client = APIClient()
+        workspace_data = {"parent_id": self.root_workspace.id}
+        response = client.patch(url, workspace_data, format="json", **self.headers)
+
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Sub-workspaces may only be created under the default workspace.")
 
         self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.get("content-type"), "application/problem+json")
