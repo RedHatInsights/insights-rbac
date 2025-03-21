@@ -233,6 +233,8 @@ objects:
             value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -460,6 +462,8 @@ objects:
             value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -725,6 +729,8 @@ objects:
               value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -932,6 +938,8 @@ objects:
               value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1366,3 +1374,6 @@ parameters:
 - name: RBAC_HBI_S3_AWS_BUCKET
   description: The bucket name for accessing HBI S3
   value: 'hbi-kessel-s3-stage'
+- name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+  description: The limit of workspace hierarchy depth
+  value: '2'
