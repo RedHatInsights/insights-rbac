@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
@@ -140,7 +142,26 @@ class WorkspaceViewSet(BaseV2ViewSet):
             self.validate_required_fields(request, REQUIRED_PUT_FIELDS)
         if parent_id:
             validate_uuid(parent_id)
-            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
+            try:
+                if self._exceeds_depth_limit(parent_id, tenant):
+                    message = f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep."
+                    error = {"workspace": [message]}
+                    raise serializers.ValidationError(error)
+                if self._violates_peer_restrictions(parent_id, tenant):
+                    message = "Sub-workspaces may only be created under the default workspace."
+                    error = {"workspace": [message]}
+                    raise serializers.ValidationError(error)
+            except ObjectDoesNotExist:
                 message = f"Parent workspace '{parent_id}' doesn't exist in tenant"
                 error = {"workspace": [message]}
                 raise serializers.ValidationError(error)
+
+    def _violates_peer_restrictions(self, parent_id, tenant):
+        target_root_workspace = Workspace.objects.root(tenant=tenant)
+        if settings.WORKSPACE_RESTRICT_DEFAULT_PEERS and str(target_root_workspace.id) == parent_id:
+            return True
+
+    def _exceeds_depth_limit(self, parent_id, tenant):
+        target_parent_workspace = Workspace.objects.get(id=parent_id, tenant=tenant)
+        max_depth_for_workspace = len(target_parent_workspace.ancestors()) + 1
+        return max_depth_for_workspace > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT
