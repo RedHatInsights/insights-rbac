@@ -75,7 +75,7 @@ class V2TenantBootstrapService:
         """Util for creating ungrouped workspace. Can be removed once ungrouped workspace has gone."""
         tenant = Tenant.objects.get(org_id=org_id)
         default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-        ungrouped_hosts = Workspace.objects.create(
+        ungrouped_hosts, _ = Workspace.objects.get_or_create(
             tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=default
         )
 
@@ -88,7 +88,7 @@ class V2TenantBootstrapService:
         )
         self._replicator.replicate(
             ReplicationEvent(
-                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                event_type=ReplicationEventType.CREATE_UNGROUPED_HOSTS_WORKSPACE,
                 info={"org_id": tenant.org_id, "ungrouped_hosts_id": str(ungrouped_hosts.id)},
                 partition_key=PartitionKey.byEnvironment(),
                 add=[relationship],

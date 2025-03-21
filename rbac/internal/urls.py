@@ -63,7 +63,7 @@ integration_urlpatterns = [
 ]
 
 s2s_urlpatterns = [
-    path("_s2s/workspaces/<str:org_id>/ungrouped/", views.retrieve_ungrouped_workspace),
+    path("_s2s/workspaces/ungrouped/", views.retrieve_ungrouped_workspace),
 ]
 
 urlpatterns = [

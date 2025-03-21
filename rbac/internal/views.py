@@ -1153,14 +1153,18 @@ def principal_removal(request):
         return HttpResponse(f"Users deleted: {principal_usernames}", status=204)
 
 
-def retrieve_ungrouped_workspace(request, org_id):
+def retrieve_ungrouped_workspace(request):
     """GET or create ungrouped workspace for HBI."""
     if request.method != "GET":
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
-    ungrouped_hosts = Workspace.objects.filter(tenant__org_id=org_id, type=Workspace.Types.UNGROUPED_HOSTS).first()
-    if not ungrouped_hosts:
-        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-        ungrouped_hosts = bootstrap_service.create_ungrouped_workspace(org_id)
-    data = WorkspaceSerializer(ungrouped_hosts).data
-    return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+    org_id = request.user.org_id
+    try:
+        ungrouped_hosts = Workspace.objects.filter(tenant__org_id=org_id, type=Workspace.Types.UNGROUPED_HOSTS).first()
+        if not ungrouped_hosts:
+            bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+            ungrouped_hosts = bootstrap_service.create_ungrouped_workspace(org_id)
+        data = WorkspaceSerializer(ungrouped_hosts).data
+        return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+    except Exception as e:
+        return HttpResponse(str(e), status=500)
