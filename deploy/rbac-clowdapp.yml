@@ -235,6 +235,8 @@ objects:
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -464,6 +466,8 @@ objects:
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -731,6 +735,8 @@ objects:
               value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -940,6 +946,8 @@ objects:
               value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1377,3 +1385,6 @@ parameters:
 - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
   description: The limit of workspace hierarchy depth
   value: '2'
+- name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+  description: The limit of workspace hierarchy depth
+  value: 'True'
