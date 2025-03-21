@@ -134,6 +134,11 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Validate a workspace."""
         parent_id = request.data.get("parent_id")
         tenant = request.tenant
+        workspace_type = request.data.get("type", Workspace.Types.STANDARD)
+        if workspace_type != Workspace.Types.STANDARD:
+            message = f"Only workspace type {Workspace.Types.STANDARD} is allowed."
+            error = {"workspace": [_(message)]}
+            raise serializers.ValidationError(error)
         if action == "create":
             self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
         elif action == "put":
