@@ -761,10 +761,10 @@ objects:
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
             - name: WORKSPACE_HIERARCHY_ENABLED
               value: ${WORKSPACE_HIERARCHY_ENABLED}
-          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
-            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
-          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
-            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+              value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+            - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+              value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -980,10 +980,10 @@ objects:
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
             - name: WORKSPACE_HIERARCHY_ENABLED
               value: ${WORKSPACE_HIERARCHY_ENABLED}
-          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
-            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
-          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
-            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+              value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+            - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+              value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
