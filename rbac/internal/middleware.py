@@ -39,18 +39,10 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
 
     header = RH_IDENTITY_HEADER
 
-    def __is_no_auth(self, request):
-        no_auth_list = ["user_lookup"]
-        no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
-        return no_auth
-
     def process_request(self, request):
         """Process request for internal identity middleware."""
         if not any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # We are not in an internal API section
-            return
-
-        if self.__is_no_auth(request):
             return
 
         try:
