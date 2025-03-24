@@ -21,17 +21,20 @@ from api.models import Tenant, User
 from management.models import Access, Group, Permission, Principal, Policy, Role
 from management.utils import (
     access_for_principal,
+    get_principal_from_request,
     groups_for_principal,
     policies_for_principal,
     roles_for_principal,
     account_id_for_tenant,
     get_principal,
+    validate_and_get_key,
 )
-from rest_framework.exceptions import ValidationError
 from tests.identity_request import IdentityRequest
 
 from unittest import mock
 from unittest.mock import Mock
+
+from rest_framework import serializers
 
 SERVICE_ACCOUNT_KEY = "service-account"
 
@@ -229,3 +232,117 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.service_account_id, str(client_id))
         self.assertEqual(created_service_account.type, "service-account")
         self.assertEqual(created_service_account.username, service_account_username)
+
+    @mock.patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_principal_from_request_created(self, mock_request_principals):
+        """Test that when a principal does not exist in the database, it gets created."""
+        username = "abcde"
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.user = User()
+        request.user.username = username
+        request.query_params = {}
+
+        # Attempt to fetch the principal from the database. Since it does not exist, it should create one.
+        get_principal_from_request(request=request)
+
+        # Assert that the principal was properly created in the database.
+        created_principal = Principal.objects.get(username=username)
+        self.assertEqual(created_principal.type, "user")
+        self.assertEqual(created_principal.username, username)
+
+    def test_validate_and_get_key_success(self):
+        """Test we can validate the query param value."""
+        query_key = "type"
+        query_value = "service-account"
+        params = {query_key: query_value}
+        valid_values = ["user", "service-account"]
+        default_value = "user"
+        required = False
+        result = validate_and_get_key(params, query_key, valid_values, default_value, required)
+
+        self.assertEqual(result, query_value)
+
+    def test_validate_and_get_key_invalid(self):
+        """Test we get error with invalid query param value."""
+        query_key = "type"
+        query_value = "foo"
+        params = {query_key: query_value}
+        valid_values = ["user", "service-account"]
+        default_value = "user"
+        required = False
+        with self.assertRaises(serializers.ValidationError) as assertion:
+            validate_and_get_key(params, query_key, valid_values, default_value, required)
+
+        expected_err = (
+            f"{query_key} query parameter value '{query_value}' is invalid. {valid_values} are valid inputs."
+        )
+        self.assertEqual(assertion.exception.detail.get("detail"), expected_err)
+
+    def test_validate_and_get_key_required_invalid(self):
+        """Test we get error with missing required query parameter value."""
+        query_key = "type"
+        params = {}
+        valid_values = ["user", "service-account"]
+        required = True
+        with self.assertRaises(serializers.ValidationError) as assertion:
+            validate_and_get_key(params, query_key, valid_values, required=required)
+
+        expected_err = f"Query parameter '{query_key}' is required."
+        self.assertEqual(assertion.exception.detail.get("detail"), expected_err)
+
+    def test_validate_and_get_key_required_success(self):
+        """Test we get the default value if the mandatory parameter is not provided."""
+        query_key = "type"
+        params = {}
+        valid_values = ["user", "service-account"]
+        default_value = "user"
+        required = True
+
+        result = validate_and_get_key(params, query_key, valid_values, default_value=default_value, required=required)
+        self.assertEqual(result, default_value)
+
+    def test_validate_and_get_key_param_not_provided(self):
+        """Test we get None if the optional parameter is not provided (without default value)."""
+        query_key = "type"
+        params = {}
+        valid_values = ["user", "service-account"]
+        required = False
+
+        result = validate_and_get_key(params, query_key, valid_values, required=required)
+        self.assertIsNone(result)
+
+    def test_validate_and_get_key_param_default_value(self):
+        """Test we get the default value if the optional parameter is not provided."""
+        query_key = "type"
+        params = {}
+        valid_values = ["user", "service-account"]
+        default_value = "user"
+        required = False
+
+        result = validate_and_get_key(params, query_key, valid_values, default_value=default_value, required=required)
+        self.assertEqual(result, default_value)
+
+        # The default value is used even if the query key is part of the request
+        # for example /principals/?type=
+        params = {query_key: ""}
+
+        result = validate_and_get_key(params, query_key, valid_values, default_value=default_value, required=required)
+        self.assertEqual(result, default_value)

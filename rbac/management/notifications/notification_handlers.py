@@ -57,7 +57,7 @@ def notify_all(event_type, payload):
     """Notify all tenants."""
     # To avoid memory overloaded, use iterator:
     # https://docs.djangoproject.com/en/4.0/ref/models/querysets/#django.db.models.query.QuerySet.iterator
-    for tenant in Tenant.objects.exclude(tenant_name="public").iterator():
+    for tenant in Tenant.objects.exclude(tenant_name="public").filter(ready=True).iterator():
         # Tenant name pattern is acct12345
         notify(event_type, payload, tenant.org_id)
 

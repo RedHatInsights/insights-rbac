@@ -880,6 +880,84 @@
         }
       }
     },
+    "/api/utils/cars/clean/": {
+      "get": {
+        "tags": [
+          "Cars Clean"
+        ],
+        "summary": "Get info of cars with custom roles",
+        "description": "Get info of cars with custom roles",
+        "operationId": "getCars",
+        "responses": {
+          "200": {
+            "description": "Info of cars with custom roles."
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Cars Clean"
+        ],
+        "summary": "Clean up custom roles in cars",
+        "description": "Clean up custom roles in cars",
+        "operationId": "cleanCars",
+        "responses": {
+          "200": {
+            "description": "Deleted cars with custom roles."
+          },
+          "400": {
+            "description": "Destructive operations disallowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/get_org_admin/{org_or_account}/": {
       "get": {
         "tags": [
@@ -958,7 +1036,7 @@
         }
       }
     },
-    "/api/utils/roles/": {
+    "/api/utils/role/": {
       "delete": {
         "tags": [
           "Role"
@@ -1111,6 +1189,732 @@
         }
       }
     },
+    "/api/utils/bootstrap_tenant/": {
+      "post": {
+        "tags": [
+          "Tenant bootstrap"
+        ],
+        "summary": "Bootstrap a tenants by org ids",
+        "description": "Bootstrap a tenants by org ids",
+        "operationId": "TenantBootstrap",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "A list of organization IDs to bootstrap."
+                  }
+                },
+                "required": ["org_ids"]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "description": "Whether or not to force replication to happen, even if the Tenant is already bootstrapped. Cannot be 'true' if replication is on, due to inconsistency risk.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bootstrap tenant with org_id finished."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'org_id' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/bootstrap_pending_tenants/": {
+      "get": {
+        "summary": "List tenants that are not bootstrapped",
+        "description": "Returns a list of tenant org IDs that have not yet been bootstrapped.",
+        "operationId": "bootstrapPendingTenants",
+        "responses": {
+          "200": {
+            "description": "Successful response with a list of unbootstrapped tenants.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "List of unbootstrapped tenant IDs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method. Only GET is allowed.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method only \"GET\" is allowed."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fetch_replication_data": {
+      "get": {
+        "summary": "Fetch replication data",
+        "operationId": "fetchReplicationData",
+        "description": "Retrieves replication-related information from the database.",
+        "responses": {
+          "200": {
+            "description": "Replication data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "replication_slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Slot name" },
+                          { "type": "string", "description": "Slot type" }
+                        ]
+                      }
+                    },
+                    "publications": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "integer", "description": "OID" },
+                          { "type": "string", "description": "Publication name" }
+                        ]
+                      }
+                    },
+                    "publication_tables": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Publication name" },
+                          { "type": "string", "description": "Table name" }
+                        ]
+                      }
+                    },
+                    "wal_lsn": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Current WAL LSN" },
+                          { "type": "string", "description": "Confirmed flush LSN" }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only GET is allowed",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method, only 'GET' is allowed."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/bindings/": {
+      "get": {
+        "tags": [
+          "Binding list for a role"
+        ],
+        "summary": "List bindingmappings for a role",
+        "description": "List bindingmappings for a role.",
+        "operationId": "ListBinding",
+        "parameters": [
+          {
+            "name": "role_uuid",
+            "in": "query",
+            "required": true,
+            "description": "Defines the uuid of the role.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of bindingmappings for a role."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'role_uuid' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'GET' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/binding/{binding_id}/clean/": {
+      "post": {
+        "tags": [
+          "Clean binding"
+        ],
+        "summary": "Clean binding for a given id",
+        "description": "Clean binding for a given id",
+        "operationId": "CleanBinding",
+        "parameters": [
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "description": "To clean the field users or groups.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "users",
+                "groups"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mappings of the binding."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'users' or 'groups' in field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/migration_resources/": {
+      "delete": {
+        "tags": [
+          "Delete migration resources"
+        ],
+        "summary": "Delete migration resources",
+        "description": "Delete migration resources, including binding mappings, tenant mappings, and workspaces.",
+        "operationId": "DeleteMigrationResources",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "query",
+            "required": true,
+            "description": "The resource type to be deleted.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "binding",
+                "mapping",
+                "workspace"
+              ]
+            }
+          },
+          {
+            "name": "org_id",
+            "in": "query",
+            "required": false,
+            "description": "The org id identifies deleting the resource within which org. But it can not be used for binding.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Resource deletion is running in a background worker."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'resource' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "List migration resources"
+        ],
+        "summary": "List migration resources",
+        "description": "List migration resources, including binding mappings, tenant mappings, and workspaces.",
+        "operationId": "ListMigrationResources",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "query",
+            "required": true,
+            "description": "The resource type to be listed.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "binding",
+                "mapping",
+                "workspace"
+              ]
+            }
+          },
+          {
+            "name": "org_id",
+            "in": "query",
+            "required": false,
+            "description": "The org id identifies listing the resource within which org. But it can not be used for binding.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listing the list of resource ids."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'resource' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/set_tenant_ready/": {
+      "get": {
+        "tags": [
+          "Set tenant ready"
+        ],
+        "summary": "View count of tenants with ready flag false",
+        "description": "View count of tenants with ready flag false.",
+        "operationId": "ViewTenantReadyFalse",
+        "responses": {
+          "200": {
+            "description": "Total of tenants not set to be ready."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Set tenant ready"
+        ],
+        "summary": "Set ready flag of tenants to true",
+        "description": "Set ready flag of tenants to true.",
+        "operationId": "SetTenantReady",
+        "parameters": [
+          {
+            "name": "max_expected",
+            "in": "query",
+            "required": true,
+            "description": "Defines the max number of not ready tenants to be updated.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "0 tenant with ready flag equal to false."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'max_expected' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/reset_imported_tenants/": {
+      "delete": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Remove tenants imported via user import job",
+        "description": "Remove tenants with the flag ready=false or tenants without related objects. To use this endpoint, destructive API operations must be enabled.",
+        "operationId": "RemoveImportedTenants",
+        "parameters": [
+          {
+            "name": "exclude_id",
+            "in": "query",
+            "required": false,
+            "description": "IDs of tenants to exclude from the reset operation. Can be specified multiple times.",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "only_ready_false_flag",
+            "in": "query",
+            "required": false,
+            "description": "If set to true, the query searches for tenants with the 'ready=false' flag; otherwise, it looks for tenants without related objects.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Parameter for selecting the amount of data removed.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenants deleting in worker."
+          },
+          "400": {
+            "description": "Destructive operations disallowed."
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Get count of tenants imported via user import job",
+        "description": "Returns the count of tenants with the flag ready=false or tenants without related objects.",
+        "operationId": "CountOfImportedTenants",
+        "parameters": [
+          {
+            "name": "exclude_id",
+            "in": "query",
+            "required": false,
+            "description": "IDs of tenants to exclude from the reset operation. Can be specified multiple times.",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "only_ready_false_flag",
+            "in": "query",
+            "required": false,
+            "description": "If set to true, the query searches for tenants with the 'ready=false' flag; otherwise, it looks for tenants without related objects.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Parameter for selecting the amount of data returned.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenants count that would be deleted.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "2 tenants would be deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/principal/": {
+      "delete": {
+        "tags": [
+          "Principal"
+        ],
+        "summary": "Delete principals without user_id and inactive.",
+        "description": "Delete principals without principals and inactive..",
+        "operationId": "DeletePrincipal",
+        "parameters": [
+          {
+            "name": "usernames",
+            "in": "query",
+            "required": true,
+            "description": "Comma separated list of usernames of the principals to be deleted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_type",
+            "in": "query",
+            "required": true,
+            "description": "The user type to search principals.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "service-account"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Principals deleted"
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "tags": [
@@ -1126,6 +1930,119 @@
               "application/json": {
                 "schema": {
                   "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/username_lower/": {
+      "get": {
+        "tags": [
+          "List username"
+        ],
+        "summary": "List uppercase username",
+        "description": "List uppercase username.",
+        "operationId": "ListUsername",
+        "responses": {
+          "200": {
+            "description": "List of uppercase username."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Update username"
+        ],
+        "summary": "Update uppercase username to lowercase",
+        "description": "Update uppercase username to lowercase.",
+        "operationId": "LowerUsername",
+        "responses": {
+          "200": {
+            "description": "All uppercase username updated to lowercase."
+          },
+          "400":{
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_s2s/workspaces/ungrouped/": {
+      "post": {
+        "tags": [
+          "Get/create ungrouped hosts workspace"
+        ],
+        "summary": "Get or create ungrouped hosts workspace",
+        "description": "ungrouped hosts workspace.",
+        "operationId": "GetUngrouped",
+        "responses": {
+          "201": {
+            "description": "The ungrouped hosts workspace of the org."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1502,7 +2419,7 @@
           }
         }
       },
-            "ServiceAccount": {
+      "ServiceAccount": {
         "required": [
           "clientId",
           "username",

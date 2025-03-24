@@ -60,6 +60,6 @@ class StatusViewTest(TestCase):
 
     def test_status_endpoint(self):
         """Test the status endpoint."""
-        url = reverse("server-status")
+        url = reverse("v1_api:server-status")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)

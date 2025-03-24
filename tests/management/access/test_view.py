@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from datetime import timedelta
 from management.cache import TenantCache
-from management.models import Group, Permission, Principal, Policy, Role, Access
+from management.models import Group, Permission, Principal, Policy, Role, Access, Workspace
 from tests.identity_request import IdentityRequest
 
 
@@ -42,11 +42,11 @@ class AccessViewTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         user.org_id = self.customer_data["org_id"]
         request.user = user
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
 
         self.access_data = {
             "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
         }
 
         test_tenant_org_id = "100001"
@@ -74,6 +74,15 @@ class AccessViewTests(IdentityRequest):
         )
         request = request_context["request"]
         self.test_headers = request.META
+        test_tenant_root_workspace = Workspace.objects.create(
+            name="Test Tenant Root Workspace", type=Workspace.Types.ROOT, tenant=self.test_tenant
+        )
+        Workspace.objects.create(
+            name="Test Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=test_tenant_root_workspace,
+            tenant=self.test_tenant,
+        )
 
         self.principal = Principal(username=user.username, tenant=self.tenant)
         self.principal.save()
@@ -85,6 +94,18 @@ class AccessViewTests(IdentityRequest):
         self.group.save()
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
         Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
+        tenant_root_workspace = Workspace.objects.create(
+            name="root",
+            description="Root workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        Workspace.objects.create(
+            name="Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=tenant_root_workspace,
+            tenant=self.tenant,
+        )
 
     def tearDown(self):
         """Tear down access view tests."""
@@ -92,6 +113,8 @@ class AccessViewTests(IdentityRequest):
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
 
     def create_role(self, role_name, headers, in_access_data=None):
         """Create a role."""
@@ -101,7 +124,7 @@ class AccessViewTests(IdentityRequest):
         test_data = {"name": role_name, "access": [access_data]}
 
         # create a role
-        url = reverse("role-list")
+        url = reverse("v1_management:role-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -128,8 +151,8 @@ class AccessViewTests(IdentityRequest):
         )
         default_group.policies.add(default_policy)
 
-    def create_role_and_permission(self, role_name, permission):
-        role = Role.objects.create(name=role_name, tenant=self.tenant)
+    def create_role_and_permission(self, role_name, permission, system=False):
+        role = Role.objects.create(name=role_name, tenant=self.tenant, system=system)
         assigned_permission = Permission.objects.create(permission=permission, tenant=self.tenant)
         access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
         return role
@@ -148,7 +171,7 @@ class AccessViewTests(IdentityRequest):
         self.create_platform_default_resource()
 
         # Test that we can retrieve the principal access
-        url = "{}?application={}".format(reverse("access"), "app")
+        url = "{}?application={}".format(reverse("v1_management:access"), "app")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -159,7 +182,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(self.access_data, response.data.get("data")[0])
 
         # the platform default permission could also be retrieved
-        url = "{}?application={}".format(reverse("access"), "default")
+        url = "{}?application={}".format(reverse("v1_management:access"), "default")
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
@@ -185,7 +208,7 @@ class AccessViewTests(IdentityRequest):
         self.create_policy(policy_name, self.group.uuid, [role_b_uuid], tenant=self.tenant)
 
         # Test that we can retrieve the principal access
-        url = "{}?application={}".format(reverse("access"), "app")
+        url = "{}?application={}".format(reverse("v1_management:access"), "app")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -200,16 +223,63 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(Access.objects.filter(permission__id=self.permission.id).count(), 3)
 
         # the platform default permission could also be retrieved
-        url = "{}?application={}".format(reverse("access"), "default")
+        url = "{}?application={}".format(reverse("v1_management:access"), "default")
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
+
+    def test_access_for_cross_account_principal_return_permissions_based_on_assigned_system_role(self):
+        self.create_platform_default_resource()
+        client = APIClient()
+        url = "{}?application=".format(reverse("v1_management:access"))
+        account_id = self.customer_data["account_id"]
+        org_id = self.customer_data["org_id"]
+        user_id = "123456"
+        user_name = f"{account_id}-{user_id}"
+
+        # create system role with access
+        system_role = Role.objects.create(name="Test Role one", tenant=self.public_tenant, system=True)
+        assigned_permission = Permission.objects.create(
+            permission="test:assigned:permission1", tenant=self.public_tenant
+        )
+        Access.objects.create(role=system_role, permission=assigned_permission, tenant=self.tenant)
+
+        cross_account_request = CrossAccountRequest.objects.create(
+            target_account=account_id,
+            user_id=user_id,
+            target_org=org_id,
+            end_date=timezone.now() + timedelta(10),
+            status="approved",
+        )
+        cross_account_request.roles.add(system_role)
+
+        # create non-system role with access and same name as system role
+        role = Role.objects.create(name="Test Role one", tenant=self.tenant, system=False)
+        assigned_permission = Permission.objects.create(
+            permission="test:assigned:permission2", tenant=self.public_tenant
+        )
+        Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
+
+        # Create cross_account principal and role, permission in the account
+        user_data = {"username": user_name, "email": "test@gmail.com"}
+        request_context = self._create_request_context(self.customer_data, user_data, is_org_admin=False)
+        request = request_context["request"]
+        self.test_headers = request.META
+        Principal.objects.create(username=user_name, cross_account=True, tenant=self.tenant)
+
+        response = client.get(url, **self.test_headers)
+
+        # only assigned role permissions without platform default permission
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        self.assertEqual(response.data.get("data")[0]["permission"], "test:assigned:permission1")
 
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_role(self):
         """Test that the expected access for cross account principal return permissions based on assigned role."""
         # setup default group/role
         self.create_platform_default_resource()
         client = APIClient()
-        url = "{}?application=".format(reverse("access"))
+        url = "{}?application=".format(reverse("v1_management:access"))
         account_id = self.customer_data["account_id"]
         org_id = self.customer_data["org_id"]
         user_id = "123456"
@@ -217,7 +287,7 @@ class AccessViewTests(IdentityRequest):
 
         # setup cross account request, role and permission in public schema
         ## This CAR will provide permission: "test:assigned:permission"
-        role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
+        role = self.create_role_and_permission("Test Role one", "test:assigned:permission1", True)
         cross_account_request = CrossAccountRequest.objects.create(
             target_account=account_id,
             user_id=user_id,
@@ -227,7 +297,7 @@ class AccessViewTests(IdentityRequest):
         )
         cross_account_request.roles.add(role)
         ## CAR below will provide permission: "app:*:*"
-        role = self.create_role_and_permission("Test Role two", "test:assigned:permission2")
+        role = self.create_role_and_permission("Test Role two", "test:assigned:permission2", True)
         cross_account_request = CrossAccountRequest.objects.create(
             target_account=account_id,
             user_id=user_id,
@@ -276,7 +346,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -284,7 +354,7 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
         self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
-        url = "{}?application=&username={}".format(reverse("access"), self.test_principal.username)
+        url = "{}?application=&username={}".format(reverse("v1_management:access"), self.test_principal.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -317,7 +387,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -325,7 +395,7 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
         self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
-        url = "{}?application={}&username={}".format(reverse("access"), "app,app2", "test_user")
+        url = "{}?application={}&username={}".format(reverse("v1_management:access"), "app,app2", "test_user")
         client = APIClient()
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -356,7 +426,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -364,7 +434,9 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
         self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
-        url = "{}?application={}&username={}".format(reverse("access"), "ap", self.test_principal.username)
+        url = "{}?application={}&username={}".format(
+            reverse("v1_management:access"), "ap", self.test_principal.username
+        )
         client = APIClient()
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -397,7 +469,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -405,7 +477,9 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
         self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
-        url = "{}?application={}&username={}".format(reverse("access"), "appfoo", self.test_principal.username)
+        url = "{}?application={}&username={}".format(
+            reverse("v1_management:access"), "appfoo", self.test_principal.username
+        )
         client = APIClient()
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -452,7 +526,7 @@ class AccessViewTests(IdentityRequest):
 
         #### Sort by application ####
         url = "{}?application=&username={}&order_by={}".format(
-            reverse("access"), self.test_principal.username, "application"
+            reverse("v1_management:access"), self.test_principal.username, "application"
         )
         response = client.get(url, **self.test_headers)
 
@@ -466,7 +540,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
 
         url = "{}?application=&username={}&order_by={}".format(
-            reverse("access"), self.test_principal.username, "-application"
+            reverse("v1_management:access"), self.test_principal.username, "-application"
         )
         response = client.get(url, **self.test_headers)
         get_policy.assert_called_with(principal_id, "&order:-application")
@@ -480,7 +554,7 @@ class AccessViewTests(IdentityRequest):
 
         #### Sort by resource_type ####
         url = "{}?application=&username={}&order_by={}".format(
-            reverse("access"), self.test_principal.username, "resource_type"
+            reverse("v1_management:access"), self.test_principal.username, "resource_type"
         )
         response = client.get(url, **self.test_headers)
 
@@ -494,7 +568,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
 
         url = "{}?application=&username={}&order_by={}".format(
-            reverse("access"), self.test_principal.username, "-resource_type"
+            reverse("v1_management:access"), self.test_principal.username, "-resource_type"
         )
         response = client.get(url, **self.test_headers)
         get_policy.assert_called_with(principal_id, "&order:-resource_type")
@@ -507,7 +581,9 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
 
         #### Sort by verb ####
-        url = "{}?application=&username={}&order_by={}".format(reverse("access"), self.test_principal.username, "verb")
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("v1_management:access"), self.test_principal.username, "verb"
+        )
         response = client.get(url, **self.test_headers)
 
         # Cache is called saved with sub_key ""
@@ -520,7 +596,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
 
         url = "{}?application=&username={}&order_by={}".format(
-            reverse("access"), self.test_principal.username, "-verb"
+            reverse("v1_management:access"), self.test_principal.username, "-verb"
         )
         response = client.get(url, **self.test_headers)
         # Cache is called saved with sub_key ""
@@ -534,7 +610,9 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
 
         #### Sort by nothing still works ####
-        url = "{}?application=&username={}&order_by=".format(reverse("access"), self.test_principal.username)
+        url = "{}?application=&username={}&order_by=".format(
+            reverse("v1_management:access"), self.test_principal.username
+        )
         response = client.get(url, **self.test_headers)
         # Cache is called saved with sub_key ""
         get_policy.assert_called_with(principal_id, "")
@@ -568,7 +646,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -576,7 +654,9 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
         self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
-        url = "{}?application={}&username={}".format(reverse("access"), "test_foo", self.test_principal.username)
+        url = "{}?application={}&username={}".format(
+            reverse("v1_management:access"), "test_foo", self.test_principal.username
+        )
         client = APIClient()
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -613,7 +693,9 @@ class AccessViewTests(IdentityRequest):
         response = self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
         # test that we can retrieve the principal access
-        url = "{}?application={}&username={}&limit=1".format(reverse("access"), "app", self.test_principal.username)
+        url = "{}?application={}&username={}&limit=1".format(
+            reverse("v1_management:access"), "app", self.test_principal.username
+        )
         client = APIClient()
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -626,7 +708,7 @@ class AccessViewTests(IdentityRequest):
 
     def test_missing_query_params(self):
         """Test that we get expected failure when missing required query params."""
-        url = "{}?page={}".format(reverse("access"), "3")
+        url = "{}?page={}".format(reverse("v1_management:access"), "3")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -637,7 +719,7 @@ class AccessViewTests(IdentityRequest):
     )
     def test_missing_invalid_username(self, mock_request):
         """Test that we get expected failure when missing required query params."""
-        url = "{}?application={}&username={}".format(reverse("access"), "app", "test_user")
+        url = "{}?application={}&username={}".format(reverse("v1_management:access"), "app", "test_user")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -679,7 +761,7 @@ class AccessViewTests(IdentityRequest):
 
         ######## access_policy are cached with desired sub_key ############
         url = "{}?application={}&username={}&offset=1&limit=1".format(
-            reverse("access"), "app", self.test_principal.username
+            reverse("v1_management:access"), "app", self.test_principal.username
         )
         response = client.get(url, **self.test_headers)
 
@@ -695,7 +777,9 @@ class AccessViewTests(IdentityRequest):
         ###################################################################
 
         #### access_policy are cached properly when application is empty ####
-        url = "{}?application=&username={}&limit=1".format(reverse("access"), self.test_principal.username)
+        url = "{}?application=&username={}&limit=1".format(
+            reverse("v1_management:access"), self.test_principal.username
+        )
         response = client.get(url, **self.test_headers)
 
         # Cache is called saved with sub_key ""
@@ -712,8 +796,32 @@ class AccessViewTests(IdentityRequest):
 
         client = APIClient()
         url = "{}?application={}&username={}&order_by={}".format(
-            reverse("access"), "app", self.test_principal.username, "invalid_value"
+            reverse("v1_management:access"), "app", self.test_principal.username, "invalid_value"
         )
         response = client.get(url, **self.test_headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_access_with_invalid_limit(self):
+        """Test that we get expected value of limit when invalid limit value is provided in the request."""
+        # Create platform default group with default roles
+        self.create_platform_default_resource()
+
+        client = APIClient()
+        default_limit = 10
+        expected_count = 1
+
+        # Request query without 'limit' query param => default value 'limit=10' in the response
+        url = f"{reverse('v1_management:access')}?application="
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("limit"), expected_count)
+        self.assertEqual(response.data.get("meta").get("count"), expected_count)
+
+        # Request query with invalid value of 'limit' query param => default value 'limit=10 'in the response
+        for limit in ["", 0, -10, "xxxxx"]:
+            url = f"{reverse('v1_management:access')}?application=&limit={limit}"
+            response = client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+            self.assertEqual(response.data.get("meta").get("count"), expected_count)

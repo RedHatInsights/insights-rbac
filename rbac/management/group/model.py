@@ -17,6 +17,7 @@
 
 """Model for group management."""
 import logging
+from typing import Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -25,12 +26,14 @@ from django.db.models import signals
 from django.utils import timezone
 from internal.integration import chrome_handlers
 from internal.integration import sync_handlers
-from management.cache import AccessCache
+from kessel.relations.v1beta1.common_pb2 import Relationship
+from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
+from migration_tool.utils import create_relationship
 
-from api.models import TenantAwareModel
+from api.models import FilterQuerySet, TenantAwareModel, User
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -48,6 +51,32 @@ class Group(TenantAwareModel):
     platform_default = models.BooleanField(default=False)
     system = models.BooleanField(default=False)
     admin_default = models.BooleanField(default=False)
+    objects = FilterQuerySet.as_manager()
+
+    @staticmethod
+    def relationship_to_principal_for_group(
+        group: "Group", principal: Union[Principal, User]
+    ) -> Optional[Relationship]:
+        """Create a relationship between a group and a principal given a Principal or User."""
+        if isinstance(principal, Principal):
+            id = principal.principal_resource_id()
+            if id is None:
+                return None
+        elif (user_id := principal.user_id) is not None:
+            id = Principal.user_id_to_principal_resource_id(user_id)
+        else:
+            return None
+        return create_relationship(("rbac", "group"), str(group.uuid), ("rbac", "principal"), id, "member")
+
+    @staticmethod
+    def relationship_to_user_id_for_group(group_uuid: str, user_id: str) -> Relationship:
+        """Create a relationship between a group and a user ID."""
+        id = Principal.user_id_to_principal_resource_id(user_id)
+        return create_relationship(("rbac", "group"), group_uuid, ("rbac", "principal"), id, "member")
+
+    def relationship_to_principal(self, principal: Union[Principal, User]) -> Optional[Relationship]:
+        """Create a relationship between a group and a principal given a Principal or User."""
+        return Group.relationship_to_principal_for_group(self, principal)
 
     def roles(self):
         """Roles for a group."""
@@ -80,6 +109,8 @@ class Group(TenantAwareModel):
 
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler to purge principal caches when a Group is deleted."""
+    if skip_purging_cache_for_public_tenant(instance.tenant):
+        return
     logger.info("Handling signal for deleted group %s - invalidating policy cache for users in group", instance)
     cache = AccessCache(instance.tenant.org_id)
     for principal in instance.principals.all():
@@ -90,6 +121,8 @@ def principals_to_groups_cache_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
 ):
     """Signal handler to purge caches when Group membership changes."""
+    if skip_purging_cache_for_public_tenant(instance.tenant):
+        return
     cache = AccessCache(instance.tenant.org_id)
     if action in ("post_add", "pre_remove"):
         logger.info("Handling signal for %s group membership change - invalidating policy cache", instance)

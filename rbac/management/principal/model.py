@@ -16,8 +16,10 @@
 #
 
 """Model for principal management."""
+from typing import Optional
 from uuid import uuid4
 
+from django.conf import settings
 from django.db import models
 
 from api.models import TenantAwareModel
@@ -30,12 +32,29 @@ class Principal(TenantAwareModel):
         USER = "user", "User"
         SERVICE_ACCOUNT = "service-account", "Service Account"
 
+    @staticmethod
+    def user_id_to_principal_resource_id(user_id: str) -> str:
+        """Convert a user ID to a principal resource ID suitable for use in the Kessel access graph."""
+        domain = settings.PRINCIPAL_USER_DOMAIN
+        return f"{domain}/{user_id}"
+
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     username = models.CharField(max_length=150)
     cross_account = models.BooleanField(default=False)
-    type = models.CharField(null=False, default=Types.USER, choices=Types.choices, max_length=20)
-    service_account_id = models.TextField(null=True)
+    type = models.CharField(null=False, default=Types.USER, choices=Types.choices, max_length=20, db_index=True)
+    service_account_id = models.TextField(null=True, db_index=True)
     user_id = models.CharField(max_length=256, null=True, db_index=True)
+
+    def principal_resource_id(self) -> Optional[str]:
+        """Return the principal resource ID suitable for use in the Kessel access graph."""
+        if self.user_id is None:
+            return None
+        return Principal.user_id_to_principal_resource_id(self.user_id)
+
+    def save(self, *args, **kwargs):
+        """Override save to only store lower case username."""
+        self.username = self.username.lower()
+        super(Principal, self).save(*args, **kwargs)
 
     class Meta:
         ordering = ["username"]

@@ -19,7 +19,11 @@
 
 import logging
 
+from django.db import transaction
 from django.urls import resolve
+from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 
 from api.models import User
 
@@ -40,3 +44,43 @@ def build_internal_user(request, json_rh_auth):
         return user
     except KeyError:
         return None
+
+
+def delete_bindings(bindings):
+    """
+    Delete the provided bindings and replicate the deletion event.
+
+    Args:
+        bindings (QuerySet): A Django QuerySet of binding objects to be deleted.
+
+    Returns:
+        dict: A dictionary containing information about the deleted bindings, including:
+            - mappings (list): A list of mappings for each binding.
+            - role_ids (list): A list of role IDs for each binding.
+            - resource_ids (list): A list of resource IDs for each binding.
+            - resource_types (list): A list of resource type names for each binding.
+            - relations (list): A list of tuples representing the relations to be removed.
+    """
+    replicator = OutboxReplicator()
+    info = {
+        "mappings": [binding.mappings for binding in bindings],
+        "role_ids": [binding.role_id for binding in bindings],
+        "resource_ids": [binding.resource_id for binding in bindings],
+        "resource_types": [binding.resource_type_name for binding in bindings],
+    }
+    if bindings:
+        with transaction.atomic():
+            relations_to_remove = []
+            for binding in bindings:
+                relations_to_remove.extend(binding.as_tuples())
+            replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.DELETE_BINDING_MAPPINGS,
+                    info=info,
+                    partition_key=PartitionKey.byEnvironment(),
+                    remove=relations_to_remove,
+                ),
+            )
+            bindings.delete()
+        info["relations"] = [stringify_spicedb_relationship(relation) for relation in relations_to_remove]
+    return info
