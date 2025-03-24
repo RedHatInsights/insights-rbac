@@ -52,6 +52,7 @@ from migration_tool.in_memory_tuples import (
 from migration_tool.utils import create_relationship
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
+from tests.rbac.test_middleware import EnvironmentVarGuard
 
 
 class BaseInternalViewsetTests(IdentityRequest):
@@ -2672,3 +2673,59 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         response_json["org_ids"].sort()
 
         self.assertEqual(response_json, expected_json)
+
+
+class InternalS2SViewsetTests(IdentityRequest):
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
+    def test_create_ungrouped_workspace(self, replicate):
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        fixture = RbacFixture(V2TenantBootstrapService(replicator))
+
+        org_id = "12345"
+        payload = {"org_ids": [org_id]}
+        bootstraped_tenant = fixture.new_tenant(org_id)
+        tuples.clear()
+        self.env = EnvironmentVarGuard()
+        self.env.set("SERVICE_PSKS", '{"hbi": {"secret": "abc123"}}')
+        self.service_headers = {
+            "HTTP_X_RH_RBAC_PSK": "abc123",
+            "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
+            "HTTP_X_RH_RBAC_ORG_ID": org_id,
+        }
+
+        self.assertFalse(
+            Workspace.objects.filter(tenant=bootstraped_tenant.tenant, type=Workspace.Types.UNGROUPED_HOSTS).exists()
+        )
+        response = self.client.get(
+            f"/_private/_s2s/workspaces/ungrouped/",
+            data=payload,
+            **self.service_headers,
+            content_type="application/json",
+        )
+
+        default = Workspace.objects.get(tenant=bootstraped_tenant.tenant, type=Workspace.Types.DEFAULT)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        ungrouped_hosts = response.json()
+        ungrouped_host_relation = tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", ungrouped_hosts["id"]),
+                relation("parent"),
+                subject("rbac", "workspace", str(default.id)),
+            )
+        )
+        self.assertEqual(len(ungrouped_host_relation), 1)
+
+        # Get existing ungrouped workspace
+        response = self.client.get(
+            f"/_private/_s2s/workspaces/ungrouped/",
+            **self.service_headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        ungrouped_hosts.pop("modified")
+        data = response.json()
+        data.pop("modified")
+        self.assertEqual(data, ungrouped_hosts)

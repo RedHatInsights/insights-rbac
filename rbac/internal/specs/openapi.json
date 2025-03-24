@@ -2132,6 +2132,41 @@
           }
         }
       }
+    },
+    "/_s2s/workspaces/ungrouped/": {
+      "post": {
+        "tags": [
+          "Get/create ungrouped hosts workspace"
+        ],
+        "summary": "Get or create ungrouped hosts workspace",
+        "description": "ungrouped hosts workspace.",
+        "operationId": "GetUngrouped",
+        "responses": {
+          "201": {
+            "description": "The ungrouped hosts workspace of the org."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

@@ -30,7 +30,8 @@ from rest_framework import serializers
 from rest_framework.request import Request
 from rest_framework.serializers import ValidationError
 
-from api.models import Tenant
+from api.common import RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_ORG_ID, RH_RBAC_PSK
+from api.models import Tenant, User
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
@@ -49,6 +50,25 @@ def validate_psk(psk, client_id):
         return psk == primary_key or psk == alt_key
 
     return False
+
+
+def build_user_from_psk(request):
+    """Build a user from the PSK."""
+    user = None
+    request_psk = request.META.get(RH_RBAC_PSK)
+    account = request.META.get(RH_RBAC_ACCOUNT)
+    org_id = request.META.get(RH_RBAC_ORG_ID)
+    client_id = request.META.get(RH_RBAC_CLIENT_ID)
+    has_system_auth_headers = request_psk and org_id and client_id
+
+    if has_system_auth_headers and validate_psk(request_psk, client_id):
+        user = User()
+        user.username = client_id
+        user.account = account
+        user.org_id = org_id
+        user.admin = True
+        user.system = True
+    return user
 
 
 def get_principal_from_request(request):
