@@ -1830,7 +1830,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         )
 
         # create a test group and add our user to it
-        test_group = Group.objects.create(name="test_group", tenant=self.tenant)
+        test_group = Group.objects.create(name="test_group", tenant=tenant)
         test_group.principals.add(principal)
 
         # add some roles to our test group

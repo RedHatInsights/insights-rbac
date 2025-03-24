@@ -18,6 +18,7 @@
 import json
 import os
 import uuid
+from typing import Optional
 from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
@@ -92,7 +93,7 @@ def get_principal(
     request: Request,
     verify_principal: bool = True,
     from_query: bool = False,
-    user_tenant: Tenant = None,
+    user_tenant: Optional[Tenant] = None,
 ) -> Principal:
     """Get principals from username.
 
