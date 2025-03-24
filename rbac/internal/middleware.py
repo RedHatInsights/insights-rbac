@@ -46,7 +46,6 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             # We are not in an internal API section
             return
 
-
         user = None
         # If the path starts with /_private/_s2s/, it is using psk to authenticate
         if request.path.startswith("/_private/_s2s/"):
