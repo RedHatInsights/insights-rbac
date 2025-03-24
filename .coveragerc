@@ -2,25 +2,17 @@
 [run]
 branch = True
 omit =
-  .tox/*
-  *virtualenv/*
-  *virtualenvs/*
-  *manage.py
-  *database.py
-  *settings.py
-  *urls.py
-  *wsgi.py
-  *migrations/*
-  *tests/*
-  */tests_*.py
-  *provider_interface.py
-  *dev_middleware.py
+  */migrations/*
 
 [paths]
 source = rbac
 
 [report]
 # Regexes for lines to exclude from consideration
+ignore_errors = True
+sort = Cover
+skip_covered = True
+skip_empty = True
 exclude_lines =
     # Have to re-enable the standard pragma
     pragma: no cover
@@ -36,5 +28,3 @@ exclude_lines =
     # Don't complain if non-runnable code isn't run:
     if 0:
     if __name__ == .__main__.:
-
-ignore_errors = True
