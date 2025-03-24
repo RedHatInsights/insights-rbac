@@ -386,8 +386,7 @@ def user_lookup(request):
         return handle_error(f"Internal error - failed to query rbac for tenant with org_id: '{user_org_id}'", 500)
 
     try:
-        request.tenant = user_tenant  # little hack to be able to use the following method
-        principal = get_principal(username, request, verify_principal=False, from_query=False)
+        principal = get_principal(username, request, verify_principal=False, from_query=False, user_tenant=user_tenant)
     except Exception as err:
         logger.error(f"error querying for principal with username: '{username}' in rbac, err: {err}")
         return handle_error(f"Internal error - failed to query rbac for user: '{username}'", 500)

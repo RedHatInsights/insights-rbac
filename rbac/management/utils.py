@@ -68,7 +68,11 @@ def get_principal_from_request(request):
 
 
 def get_principal(
-    username: str, request: Request, verify_principal: bool = True, from_query: bool = False
+    username: str,
+    request: Request,
+    verify_principal: bool = True,
+    from_query: bool = False,
+    user_tenant: Tenant = None,
 ) -> Principal:
     """Get principals from username.
 
@@ -92,7 +96,7 @@ def get_principal(
     - DELETE /groups/{uuid}/principals/?service-account=<uuid>.
     """
     # First check if principal exist on our side, if not call BOP to check if user exist in the account.
-    tenant: Tenant = request.tenant
+    tenant: Tenant = request.tenant if not user_tenant else user_tenant
     is_username_service_account = ITService.is_username_service_account(username)
 
     try:
