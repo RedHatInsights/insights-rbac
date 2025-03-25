@@ -18,6 +18,7 @@
 import json
 import os
 import uuid
+from typing import Optional
 from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
@@ -88,7 +89,11 @@ def get_principal_from_request(request):
 
 
 def get_principal(
-    username: str, request: Request, verify_principal: bool = True, from_query: bool = False
+    username: str,
+    request: Request,
+    verify_principal: bool = True,
+    from_query: bool = False,
+    user_tenant: Optional[Tenant] = None,
 ) -> Principal:
     """Get principals from username.
 
@@ -112,7 +117,7 @@ def get_principal(
     - DELETE /groups/{uuid}/principals/?service-account=<uuid>.
     """
     # First check if principal exist on our side, if not call BOP to check if user exist in the account.
-    tenant: Tenant = request.tenant
+    tenant: Tenant = request.tenant if not user_tenant else user_tenant
     is_username_service_account = ITService.is_username_service_account(username)
 
     try:
@@ -142,9 +147,9 @@ def get_principal(
 
 def verify_principal_with_proxy(username, request, verify_principal=True):
     """Verify username through the BOP."""
-    org_id = request.user.org_id
-    proxy = PrincipalProxy()
     if verify_principal:
+        org_id = request.user.org_id
+        proxy = PrincipalProxy()
         resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
 
         if isinstance(resp, dict) and "errors" in resp:

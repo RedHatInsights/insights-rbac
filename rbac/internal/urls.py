@@ -96,6 +96,7 @@ urlpatterns = [
     path("api/utils/reset_imported_tenants/", views.reset_imported_tenants),
     path("api/utils/resource_definitions/", views.correct_resource_definitions),
     path("api/utils/principal/", views.principal_removal),
+    path("api/utils/user_lookup/", views.user_lookup),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
