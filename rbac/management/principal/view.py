@@ -145,10 +145,9 @@ class PrincipalView(APIView):
                     count = data.get("userCount")
                     data = data.get("users")
                 elif isinstance(data, list):
-                    count = len(data)
+                    count = resp.get("userCount", len(data))
             elif principal_type == ALL_KEY:
                 count = resp.get("userCount")
-
             else:
                 count = None
 
