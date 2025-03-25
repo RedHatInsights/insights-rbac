@@ -53,12 +53,12 @@ def download_data_from_S3(file_name):
 
     if os.path.exists(file_path):
         os.remove(file_path)
-        logger.info(f"Removed existing user data file: {file_path}")
+        logger.info(f"Removed existing data file: {file_path}")
 
     bucket = os.environ.get("S3_AWS_BUCKET")
     logger.info(f"Downloading file from S3 bucket: {bucket}")
     try:
-        s3_client.download_file(f"{bucket}", f"users_data/{file_name}", file_path)
+        s3_client.download_file(f"{bucket}", f"{file_name}", file_path)
         logger.info("File downloaded successfully.")
     except ClientError as e:
         logger.info(f"Error downloading file: {e}")

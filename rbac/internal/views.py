@@ -30,7 +30,7 @@ from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.utils import delete_bindings
 from management.cache import TenantCache
-from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
+from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -52,6 +52,7 @@ from management.tasks import (
     run_sync_schemas_in_worker,
 )
 from management.tenant_service.v2 import V2TenantBootstrapService
+from management.workspace.serializer import WorkspaceSerializer
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
@@ -1150,3 +1151,20 @@ def principal_removal(request):
                 bootstrap_service.update_user(user)
 
         return HttpResponse(f"Users deleted: {principal_usernames}", status=204)
+
+
+def retrieve_ungrouped_workspace(request):
+    """GET or create ungrouped workspace for HBI."""
+    if request.method != "GET":
+        return HttpResponse("Invalid request method, only GET is allowed.", status=405)
+
+    org_id = request.user.org_id
+    try:
+        ungrouped_hosts = Workspace.objects.filter(tenant__org_id=org_id, type=Workspace.Types.UNGROUPED_HOSTS).first()
+        if not ungrouped_hosts:
+            bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+            ungrouped_hosts = bootstrap_service.create_ungrouped_workspace(org_id)
+        data = WorkspaceSerializer(ungrouped_hosts).data
+        return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+    except Exception as e:
+        return HttpResponse(str(e), status=500)
