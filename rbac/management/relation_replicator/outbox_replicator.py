@@ -25,9 +25,11 @@ from google.protobuf import json_format
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
 from management.relation_replicator.relation_replicator import (
+    AggregateTypes,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
+    WorkspaceEvent,
 )
 from prometheus_client import Counter
 
@@ -37,6 +39,9 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 relations_replication_event_total = Counter(
     "relations_replication_event_total", "Total count of relations replication events"
 )
+workspace_replication_event_total = Counter(
+    "workspace_replication_event_total", "Total count of workspace replication events"
+)
 
 
 class ReplicationEventPayload(TypedDict):
@@ -44,6 +49,13 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+
+
+class WorkspaceEventPayload(TypedDict):
+    """Typed dictionary for WorkspaceEvent payload."""
+
+    org_id: str
+    workspace: Dict[str, str]
 
 
 class OutboxReplicator(RelationReplicator):
@@ -57,6 +69,11 @@ class OutboxReplicator(RelationReplicator):
         """Replicate the given event to Kessel Relations via the Outbox."""
         payload = self._build_replication_event(event.add, event.remove)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
+
+    def replicate_workspace(self, event: WorkspaceEvent):
+        """Replicate the event of workspace."""
+        payload = {"org_id": event.org_id, "workspace": event.workspace}
+        self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
     def _build_replication_event(
         self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
@@ -106,7 +123,25 @@ class OutboxReplicator(RelationReplicator):
 
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox = Outbox(
-            aggregatetype="relations-replication-event",
+            aggregatetype=AggregateTypes.RELATIONS,
+            aggregateid=aggregateid,
+            event_type=event_type,
+            payload=payload,
+        )
+
+        self._log.log(outbox)
+
+    def _save_workspace_event(
+        self,
+        payload: WorkspaceEventPayload,
+        event_type: ReplicationEventType,
+        aggregateid: str,
+    ):
+        """Save replication event."""
+        transaction.on_commit(workspace_replication_event_total.inc)
+
+        outbox = Outbox(
+            aggregatetype=AggregateTypes.WORKSPACE,
             aggregateid=aggregateid,
             event_type=event_type,
             payload=payload,
