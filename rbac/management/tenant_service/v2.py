@@ -623,7 +623,7 @@ class V2TenantBootstrapService:
             relationships.append(relationship)
         self._replicator.replicate(
             ReplicationEvent(
-                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                event_type=ReplicationEventType.WORKSPACE_IMPORT,
                 info={},
                 partition_key=PartitionKey.byEnvironment(),
                 add=relationships,

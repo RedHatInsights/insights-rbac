@@ -168,26 +168,17 @@ def batch_import_workspace(records):
         workspace_ids = [record["id"] for record in records]
         existing_wss = Workspace.objects.filter(id__in=workspace_ids)
         existing_wss_dict = {str(existing_ws.id): existing_ws for existing_ws in existing_wss}
-        parent_workspaces = Workspace.objects.filter(
-            tenant__in=tenants, type__in=[Workspace.Types.DEFAULT, Workspace.Types.ROOT]
-        ).select_related("tenant")
+        parent_workspaces = Workspace.objects.filter(tenant__in=tenants, type=Workspace.Types.DEFAULT).select_related(
+            "tenant"
+        )
         parent_workspace_dict = {}
         for workspace in parent_workspaces:
-            if workspace.tenant.org_id not in parent_workspace_dict:
-                parent_workspace_dict[workspace.tenant.org_id] = []
-            parent_workspace_dict[workspace.tenant.org_id].append(workspace)
+            parent_workspace_dict[workspace.tenant.org_id] = workspace
 
         for record in records:
-            root = None
-            default = None
             is_ungrouped = record["ungrouped"].lower() == "true"
-            for parent in parent_workspace_dict[record["org_id"]]:
-                if parent.type == Workspace.Types.ROOT:
-                    root = parent
-                elif parent.type == Workspace.Types.DEFAULT:
-                    default = parent
+            parent = parent_workspace_dict[record["org_id"]]
             workspace_type = Workspace.Types.UNGROUPED_HOSTS if is_ungrouped else Workspace.Types.STANDARD
-            parent = default if is_ungrouped else root
 
             if record["id"] in existing_wss_dict:
                 workspace = existing_wss_dict[record["id"]]

@@ -293,7 +293,7 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
         batch_import_workspace(records)
         self.assertEqual(
             mock_bss.create_workspace_relationships.call_args[0][0],
-            [(workspace_id_1, str(roots[0].id)), (workspace_id_2, str(defaults[1].id))],
+            [(workspace_id_1, str(defaults[0].id)), (workspace_id_2, str(defaults[1].id))],
         )
         self.assertEqual(Workspace.objects.filter(id__in=[workspace_id_1, workspace_id_2]).count(), 2)
         # Should be idempotent
@@ -305,7 +305,7 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
         batch_import_workspace(records)
         self.assertEqual(
             mock_bss.create_workspace_relationships.call_args[0][0],
-            [(workspace_id_1, str(roots[0].id)), (workspace_id_2, str(defaults[1].id))],
+            [(workspace_id_1, str(defaults[0].id)), (workspace_id_2, str(defaults[1].id))],
         )
         updated_ws = Workspace.objects.get(id=workspace_id_2)
         self.assertEqual(updated_ws.name, updated_name)
