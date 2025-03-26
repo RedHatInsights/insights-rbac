@@ -446,6 +446,36 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_edit_workspace_not_allowed_type(self):
+        """Test for creating a workspace."""
+        root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
+
+        workspace = {
+            "name": "New Workspace",
+            "description": "Workspace",
+            "parent_id": str(root.id),
+            "type": Workspace.Types.UNGROUPED_HOSTS,
+        }
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # Create is not allowed
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        workspace["type"] = Workspace.Types.DEFAULT
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Update is not allowed
+        workspace["type"] = Workspace.Types.STANDARD
+        created_workspace = Workspace.objects.create(**workspace, tenant=self.tenant)
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": created_workspace.id})
+        client = APIClient()
+        workspace["type"] = Workspace.Types.UNGROUPED_HOSTS
+        response = client.put(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_get_workspace(self):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
