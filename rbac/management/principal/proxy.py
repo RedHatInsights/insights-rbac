@@ -95,6 +95,11 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 params["queryBy"] = "userId"
             else:
                 params["queryBy"] = options["query_by"]
+        if "include_permissions" in options:
+            if options["include_permissions"]:
+                params["include_permissions"] = "true"
+            else:
+                params["include_permissions"] = "false"
 
         return params
 
@@ -276,7 +281,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             return {"status_code": status.HTTP_200_OK, "data": []}
         filtered_principals_path = "/v1/users"
         params = self._create_params(limit, offset, options)
-        payload = {"users": principals, "include_permissions": False}
+        payload = {"users": principals}
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, filtered_principals_path)
 
         return_id = False if options.get("return_id") is None else True

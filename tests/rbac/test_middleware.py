@@ -500,8 +500,8 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Can not use psk to access apis other than _s2s
-        with self.assertRaises(Exception):
-            response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
+        response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class AccessHandlingTest(TestCase):

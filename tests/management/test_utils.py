@@ -233,6 +233,23 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.type, "service-account")
         self.assertEqual(created_service_account.username, service_account_username)
 
+    def test_get_principal_user_tenant_passed(self):
+        """Test that user tenant is honored when it is passed to get principal."""
+        username = "test_user"
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # create a different tenant and add a principal to it
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Principal.objects.create(username=username, tenant=tenant)
+
+        principal = get_principal(username=username, request=request, user_tenant=tenant)
+
+        # Assert that the service account was properly created in the database.
+        self.assertEqual(principal.username, username)
+
     @mock.patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
