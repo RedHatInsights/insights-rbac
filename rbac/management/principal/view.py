@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 
 from api.common.pagination import StandardResultsSetPagination
 from .it_service import ITService
+from .model import Principal
 from .proxy import PrincipalProxy
 from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 from ..permissions.principal_access import PrincipalAccessPermission
@@ -42,10 +43,8 @@ ADMIN_ONLY_KEY = "admin_only"
 VALID_BOOLEAN_VALUE = ["true", "false"]
 USERNAME_ONLY_KEY = "username_only"
 PRINCIPAL_TYPE_KEY = "type"
-USER_KEY = "user"
-SA_KEY = "service-account"
 ALL_KEY = "all"
-VALID_PRINCIPAL_TYPE_VALUE = [SA_KEY, USER_KEY, ALL_KEY]
+VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER, ALL_KEY]
 
 
 class PrincipalView(APIView):
@@ -118,15 +117,25 @@ class PrincipalView(APIView):
         # Attempt validating and obtaining the "principal type" query
         # parameter.
         principal_type = validate_and_get_key(
-            query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, default_value=USER_KEY, required=False
+            query_params,
+            PRINCIPAL_TYPE_KEY,
+            VALID_PRINCIPAL_TYPE_VALUE,
+            default_value=Principal.Types.USER,
+            required=False,
         )
         options["principal_type"] = principal_type
 
+        # Optional query parameters for service account specific filtering & sorting
+        params = ["name", "description", "owner", "order_by"]
+        for param in params:
+            if query_params.get(param):
+                options[param] = query_params[param]
+
         # Get either service accounts or user principals or all, depending on what the user specified.
-        if principal_type == USER_KEY:
+        if principal_type == Principal.Types.USER:
             resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
 
-        elif principal_type == SA_KEY:
+        elif principal_type == Principal.Types.SERVICE_ACCOUNT:
             resp, usernames_filter = self.service_accounts_from_it_service(request, user, query_params, options)
 
         elif principal_type == ALL_KEY:
@@ -138,9 +147,9 @@ class PrincipalView(APIView):
         response_data = {}
         if status_code == status.HTTP_200_OK:
             data = resp.get("data", [])
-            if principal_type == SA_KEY:
+            if principal_type == Principal.Types.SERVICE_ACCOUNT:
                 count = resp.get("saCount")
-            elif principal_type == USER_KEY:
+            elif principal_type == Principal.Types.USER:
                 if isinstance(data, dict):
                     count = data.get("userCount")
                     data = data.get("users")
