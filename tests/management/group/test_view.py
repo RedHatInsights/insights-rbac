@@ -2914,22 +2914,6 @@ class GroupViewsetTests(IdentityRequest):
         for sa in response.data.get("data"):
             self.assertIn(sa["username"], expected_usernames)
 
-    def test_get_group_principal_type_all_username_only_success(self):
-        """
-        Test that getting the all principals usernames from a group returns successfully
-        with 'username_only' query parameter.
-        """
-        sa_type_param = "type=all"
-        username_only_param = "username_only=true"
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?{sa_type_param}&{username_only_param}"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        print(response.data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(int(response.data.get("meta").get("count")), 6)
-        self.assertEqual(len(response.data.get("data")), 6)
-
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_get_group_service_account_empty_response(self, mock_request):

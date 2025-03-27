@@ -43,8 +43,6 @@ ADMIN_ONLY_KEY = "admin_only"
 VALID_BOOLEAN_VALUE = ["true", "false"]
 USERNAME_ONLY_KEY = "username_only"
 PRINCIPAL_TYPE_KEY = "type"
-USER_KEY = "user"
-SA_KEY = "service-account"
 ALL_KEY = "all"
 VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER, ALL_KEY]
 
