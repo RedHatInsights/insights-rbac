@@ -106,3 +106,28 @@ class Workspace(TenantAwareModel):
         """,
             [self.id],
         )
+
+    def descendants(self):
+        """Return a list of descendants for a Workspace instance."""
+        descendant_ids = [d.id for d in self._descendant_queryset() if d.id != self.id]
+        descendants = Workspace.objects.filter(id__in=descendant_ids)
+        return descendants
+
+    def _descendant_queryset(self):
+        """Return a raw queryset on the workspace model for descendants."""
+        return Workspace.objects.raw(
+            """
+            WITH RECURSIVE descendants AS
+              (SELECT id,
+                      parent_id
+               FROM management_workspace
+               WHERE id = %s
+               UNION SELECT w.id,
+                                w.parent_id
+               FROM management_workspace w
+               JOIN descendants d ON w.parent_id = d.id)
+            SELECT id
+            FROM descendants
+        """,
+            [self.id],
+        )

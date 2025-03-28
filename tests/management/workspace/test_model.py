@@ -112,6 +112,17 @@ class WorkspaceModelTests(WorkspaceBaseTestCase):
         tenant_2 = Tenant.objects.create(tenant_name="Name/Parent uniqueness 2")
         Workspace.objects.create(name="root", tenant=tenant_2, type=Workspace.Types.ROOT)
 
+    def test_descendants(self):
+        """Test descendants on a workspace"""
+        root = Workspace.objects.create(name="Root", tenant=self.tenant, parent=None, type=Workspace.Types.ROOT)
+        level_1 = Workspace.objects.create(name="Level 1", tenant=self.tenant, parent=root)
+        level_2 = Workspace.objects.create(name="Level 2", tenant=self.tenant, parent=level_1)
+        level_3 = Workspace.objects.create(name="Level 3", tenant=self.tenant, parent=level_2)
+        level_4a = Workspace.objects.create(name="Level 4a", tenant=self.tenant, parent=level_3)
+        level_4b = Workspace.objects.create(name="Level 4b", tenant=self.tenant, parent=level_3)
+        self.assertCountEqual(level_1.descendants(), [level_2, level_3, level_4a, level_4b])
+        self.assertCountEqual(level_4a.descendants(), [])
+
 
 class Types(WorkspaceBaseTestCase):
     """Test types on a workspace."""
