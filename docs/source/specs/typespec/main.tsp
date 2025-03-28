@@ -124,7 +124,7 @@ namespace Workspaces {
 
     model CreateWorkspaceRequest extends BasicWorkspace{
         @doc("Parent ID of Workspace A")
-        parent_id: UUID = "Parent ID of Workspace A";
+        parent_id?: UUID = "Parent ID of Workspace A";
     }
 
     model CreateWorkspaceResponse extends Workspace{
