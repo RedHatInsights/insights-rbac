@@ -161,7 +161,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         """Send request to proxy service."""
         metrics_method = method.__name__.upper()
         if params and params.get("username_only") == "true":
-            principals = Principal.objects.filter(type="user", tenant__org_id=org_id)
+            principals = Principal.objects.filter(type="user", tenant__org_id=org_id, cross_account=False)
             offset = params.get("offset", 0)
             limit = params.get("limit", StandardResultsSetPagination.default_limit)
             userList = [dict(username=principal.username) for principal in principals]
@@ -171,7 +171,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []
             if data is None:
-                for principal in Principal.objects.filter(type="user", tenant__org_id=org_id):
+                for principal in Principal.objects.filter(type="user", tenant__org_id=org_id, cross_account=False):
                     to_return.append(
                         dict(
                             username=principal.username,
