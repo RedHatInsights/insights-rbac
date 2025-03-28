@@ -16,10 +16,14 @@
 #
 
 """View for internal tenant management."""
-
+import http.client
 import json
 import logging
+import os
+from contextlib import contextmanager
 
+import grpc
+import redis
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
@@ -30,7 +34,10 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.errors import SentryDiagnosticError, UserNotFoundError
-from internal.utils import delete_bindings
+from internal.utils import delete_bindings, get_jwt_from_redis
+from kessel.relations.v1beta1 import common_pb2
+from kessel.relations.v1beta1 import lookup_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc
 from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
 from management.principal.proxy import (
@@ -73,10 +80,43 @@ from api.tasks import (
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
+# environment variables
+HOST = os.getenv("HOST")
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
+scopes = os.getenv("SCOPES")
+url = os.getenv("URL")
+grant_type = os.getenv("GRANT_TYPE")
+relations_api_server = os.getenv("relation_api_gRPC_server")
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 PROXY = PrincipalProxy()
+
+# Create redis client
+redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
+conn = None
+# Create http client
+if HOST is not None:
+    conn = http.client.HTTPSConnection(HOST)
+
+if conn is not None:
+    token = get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url)
+
+relation_api_gRPC_server = relations_api_server
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    # Call credential object will be invoked for every single RPC
+    call_credentials = grpc.access_token_call_credentials(token)
+
+    combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
+
+    secure_channel = grpc.secure_channel(addr, combined_credentials)
+
+    yield secure_channel
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -1325,3 +1365,32 @@ def retrieve_ungrouped_workspace(request):
         return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:
         return HttpResponse(str(e), status=500)
+
+
+def lookup_resource(request):
+    """GET resource from relations api."""
+    # Request parameters for resource lookup on relations api
+    resource_type_name = "group"
+    resource_type_namespace = "rbac"
+    resource_subject_name = "principal"
+    resource_subject_id = "bob"
+
+    with create_client_channel(relation_api_gRPC_server) as channel:
+        stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+        request = lookup_pb2.LookupResourcesRequest(
+            resource_type=common_pb2.ObjectType(
+                name=resource_type_name,
+                namespace=resource_type_namespace,
+            ),
+            relation="member",
+            subject=common_pb2.SubjectReference(
+                subject=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
+                    id=resource_subject_id,
+                ),
+            ),
+        )
+    responses = stub.LookupResources(request)
+    for r in responses:
+        return HttpResponse(r.resource)

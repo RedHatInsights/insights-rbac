@@ -17,8 +17,11 @@
 
 """Utilities for Internal RBAC use."""
 
+import json
 import logging
+import os
 
+import redis
 from django.db import transaction
 from django.urls import resolve
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
@@ -29,6 +32,14 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
+
+HOST = os.getenv("HOST")
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
+scopes = os.getenv("SCOPES")
+url = os.getenv("URL")
+grant_type = os.getenv("GRANT_TYPE")
+relations_api_server = os.getenv("relation_api_gRPC_server")
 
 
 def build_internal_user(request, json_rh_auth):
@@ -91,3 +102,40 @@ def delete_bindings(bindings):
             bindings.delete()
         info["relations"] = [stringify_spicedb_relationship(relation) for relation in relations_to_remove]
     return info
+
+
+def get_jwt_token(conn, grant_type, client_id, client_secret, scopes, url):
+    """Retrieve jwt token from Redhat SSO."""
+    payload = f"grant_type={grant_type}&client_id={client_id}&client_secret={client_secret}&scope={scopes}"
+
+    headers = {"content-type": "application/x-www-form-urlencoded"}
+
+    conn.request("POST", url, payload, headers)
+
+    res = conn.getresponse()
+    data = res.read()
+    json_data = json.loads(data)
+
+    token = json_data["access_token"]
+    return token
+
+
+def get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url):
+    """Retrieve jwt token from redis or generate from Redhat SSO if not exists in redis."""
+    # Test the connection
+    try:
+        redis_client.ping()
+        print("Connected to Redis!")
+    except redis.ConnectionError:
+        print("Unable to connect to Redis.")
+
+    # Store JWT in redis if its not cached
+    if not redis_client.exists("jwt_token"):
+        jwt_token = get_jwt_token(conn, grant_type, client_id, client_secret, scopes, url)
+
+        redis_client.setex("jwt_token", 3600, jwt_token)
+        print("JWT not found in Redis, token added to Redis.")
+    else:
+        access_token = redis_client.get("jwt_token")
+        print("JWT found in Redis, retrieving.")
+        return access_token
