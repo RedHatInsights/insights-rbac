@@ -99,8 +99,9 @@ redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=T
 # Create http client
 if HOST is not None:
     conn = http.client.HTTPSConnection(HOST)
-
-token = get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url)
+    token = get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url)
+else:
+    conn=None
 
 relation_api_gRPC_server = relations_api_server
 
