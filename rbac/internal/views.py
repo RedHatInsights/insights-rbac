@@ -97,7 +97,10 @@ PROXY = PrincipalProxy()
 redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
 
 # Create http client
-conn = http.client.HTTPSConnection(HOST)
+if HOST is not None:
+    conn = http.client.HTTPSConnection(HOST)
+else:
+    raise ValueError("HOST is None. A valid host is required.")
 
 token = get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url)
 
