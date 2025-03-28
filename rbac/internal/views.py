@@ -95,7 +95,7 @@ PROXY = PrincipalProxy()
 
 # Create redis client
 redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
-
+conn = None
 # Create http client
 if HOST is not None:
     conn = http.client.HTTPSConnection(HOST)
