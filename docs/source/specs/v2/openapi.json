@@ -12,9 +12,6 @@
   "paths": {
     "/workspaces/": {
       "get": {
-        "tags": [
-          "Workspaces"
-        ],
         "operationId": "Workspaces_list",
         "summary": "List workspaces in a tenant",
         "description": "List workspaces in a tenant",
@@ -27,7 +24,8 @@
               "type": "integer",
               "format": "int64",
               "default": 10
-            }
+            },
+            "explode": false
           },
           {
             "name": "offset",
@@ -37,7 +35,8 @@
               "type": "integer",
               "format": "int64",
               "default": 0
-            }
+            },
+            "explode": false
           },
           {
             "name": "type",
@@ -47,7 +46,8 @@
             "schema": {
               "$ref": "#/components/schemas/Workspaces.WorkspaceTypesQueryParam",
               "default": "all"
-            }
+            },
+            "explode": false
           },
           {
             "name": "name",
@@ -56,7 +56,8 @@
             "description": "Case sensitive exact match of workspace by name.",
             "schema": {
               "type": "string"
-            }
+            },
+            "explode": false
           }
         ],
         "responses": {
@@ -142,12 +143,12 @@
               }
             }
           }
-        }
-      },
-      "post": {
+        },
         "tags": [
           "Workspaces"
-        ],
+        ]
+      },
+      "post": {
         "operationId": "Workspaces_create",
         "summary": "Create workspace in tenant",
         "description": "Create workspace in tenant",
@@ -246,6 +247,9 @@
             }
           }
         },
+        "tags": [
+          "Workspaces"
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -260,9 +264,6 @@
     },
     "/workspaces/{id}/": {
       "get": {
-        "tags": [
-          "Workspaces"
-        ],
         "operationId": "Workspaces_read",
         "summary": "Get a workspace in tenant",
         "description": "Get a workspace in tenant",
@@ -283,7 +284,8 @@
             "description": "When true, the response will include the ancestry of the workspace.",
             "schema": {
               "type": "boolean"
-            }
+            },
+            "explode": false
           }
         ],
         "responses": {
@@ -386,12 +388,12 @@
               }
             }
           }
-        }
-      },
-      "put": {
+        },
         "tags": [
           "Workspaces"
-        ],
+        ]
+      },
+      "put": {
         "operationId": "Workspaces_update",
         "summary": "Edit the workspace name or description",
         "description": "Edit a workspace",
@@ -521,6 +523,9 @@
             }
           }
         },
+        "tags": [
+          "Workspaces"
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -533,9 +538,6 @@
         }
       },
       "patch": {
-        "tags": [
-          "Workspaces"
-        ],
         "operationId": "Workspaces_patch",
         "parameters": [
           {
@@ -663,6 +665,9 @@
             }
           }
         },
+        "tags": [
+          "Workspaces"
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -675,9 +680,6 @@
         }
       },
       "delete": {
-        "tags": [
-          "Workspaces"
-        ],
         "operationId": "Workspaces_delete",
         "summary": "Delete the workspace",
         "description": "Delete a workspace",
@@ -778,7 +780,10 @@
               }
             }
           }
-        }
+        },
+        "tags": [
+          "Workspaces"
+        ]
       }
     }
   },
@@ -1016,9 +1021,6 @@
       },
       "Workspaces.CreateWorkspaceRequest": {
         "type": "object",
-        "required": [
-          "parent_id"
-        ],
         "properties": {
           "parent_id": {
             "allOf": [
@@ -1080,29 +1082,29 @@
         "properties": {
           "first": {
             "type": "string",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0",
             "format": "uri",
-            "description": "The first link in pagination"
+            "description": "The first link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
           },
           "next": {
             "type": "string",
             "nullable": true,
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=10",
             "format": "uri",
-            "description": "The next link in pagination"
+            "description": "The next link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=10"
           },
           "previous": {
             "type": "string",
             "nullable": true,
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0",
             "format": "uri",
-            "description": "The previous link in pagination"
+            "description": "The previous link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
           },
           "last": {
             "type": "string",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=20",
             "format": "uri",
-            "description": "The last link in pagination"
+            "description": "The last link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=20"
           }
         }
       },
@@ -1117,21 +1119,21 @@
           "count": {
             "type": "integer",
             "format": "int64",
-            "example": 10,
-            "description": "Total count of objects"
+            "description": "Total count of objects",
+            "example": 10
           },
           "limit": {
             "type": "integer",
             "format": "int64",
-            "example": 10,
             "description": "Limit of returned objects",
+            "example": 10,
             "default": 10
           },
           "offset": {
             "type": "integer",
             "format": "int64",
-            "example": 10,
-            "description": "Offset of returned objects"
+            "description": "Offset of returned objects",
+            "example": 10
           }
         }
       },
