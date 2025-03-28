@@ -12,6 +12,7 @@
 !tests/
 !Makefile
 !mypy.ini
+!.coveragerc
 
 # keep the test files out of the final image
 #**/*test*

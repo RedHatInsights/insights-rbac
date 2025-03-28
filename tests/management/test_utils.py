@@ -19,6 +19,7 @@ import uuid
 
 from api.models import Tenant, User
 from management.models import Access, Group, Permission, Principal, Policy, Role
+from management.principal.view import VALID_PRINCIPAL_TYPE_VALUE
 from management.utils import (
     access_for_principal,
     get_principal_from_request,
@@ -233,6 +234,23 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.type, "service-account")
         self.assertEqual(created_service_account.username, service_account_username)
 
+    def test_get_principal_user_tenant_passed(self):
+        """Test that user tenant is honored when it is passed to get principal."""
+        username = "test_user"
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # create a different tenant and add a principal to it
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Principal.objects.create(username=username, tenant=tenant)
+
+        principal = get_principal(username=username, request=request, user_tenant=tenant)
+
+        # Assert that the service account was properly created in the database.
+        self.assertEqual(principal.username, username)
+
     @mock.patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -346,3 +364,22 @@ class UtilsTests(IdentityRequest):
 
         result = validate_and_get_key(params, query_key, valid_values, default_value=default_value, required=required)
         self.assertEqual(result, default_value)
+
+    def test_validate_and_get_key_param_invalid_type_query_param(self):
+        """
+        Test we get error with missing required query parameter value
+        as strings for 'type' query param which values are class instances.
+        """
+        query_key = "type"
+        query_value = "foo"
+        params = {query_key: query_value}
+        valid_values = VALID_PRINCIPAL_TYPE_VALUE
+        default_value = "user"
+        required = False
+        with self.assertRaises(serializers.ValidationError) as assertion:
+            validate_and_get_key(params, query_key, valid_values, default_value, required)
+
+        expected_err = (
+            f"type query parameter value 'foo' is invalid. {[str(v) for v in valid_values]} are valid inputs."
+        )
+        self.assertEqual(assertion.exception.detail.get("detail"), expected_err)
