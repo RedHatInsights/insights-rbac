@@ -17,8 +17,10 @@
 from django.test import TestCase
 from unittest.mock import Mock
 from api.models import Tenant
-from management.models import Permission
-from management.role.serializer import RoleSerializer
+from management.models import Permission, Workspace
+from management.role.serializer import RoleSerializer, ResourceDefinitionSerializer
+
+import random
 
 
 class RoleSerializerTest(TestCase):
@@ -82,3 +84,86 @@ class RoleSerializerTest(TestCase):
         serializer = self.prepare_serializer(role_data)
         # Update the role
         self.assertRaises(Permission.DoesNotExist, serializer.update, role, serializer.validated_data)
+
+
+class ResourceDefinitionTest(TestCase):
+    """Test the resource definition serializer"""
+
+    def test_get_with_inventory_groups_filter(self):
+        """Return the hierarchy locally."""
+
+        tenant = Tenant.objects.create(tenant_name="Test")
+        root_workspace = Workspace.objects.create(name="Root", tenant=tenant, parent=None, type=Workspace.Types.ROOT)
+        default_workspace = Workspace.objects.create(
+            name="Default", tenant=tenant, parent=root_workspace, type=Workspace.Types.DEFAULT
+        )
+        standard_workspace = Workspace.objects.create(name="Standard", tenant=tenant, parent=default_workspace)
+        sub_workspace_a = Workspace.objects.create(name="Sub a", tenant=tenant, parent=standard_workspace)
+        sub_workspace_b = Workspace.objects.create(name="Sub b", tenant=tenant, parent=standard_workspace)
+        permission_str = "inventory:groups:read"
+        role_data = {
+            "name": "Inventory Group Role",
+            "access": [
+                {
+                    "permission": permission_str,
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "in",
+                                "value": [str(default_workspace.id)],
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        # Serialize the input
+        role_serializer = RoleSerializerTest.prepare_serializer(RoleSerializerTest, role_data)
+        Permission.objects.create(permission=permission_str, tenant=Tenant.objects.get(tenant_name="public"))
+
+        # Create the role
+        role = role_serializer.create(role_serializer.validated_data)
+
+        # Get the Resource Definition
+        access = role.access.last()
+        resource_definition = access.resourceDefinitions.last()
+        resource_definition_serializer = ResourceDefinitionSerializer(resource_definition)
+        actual = set(resource_definition_serializer.data.get("attributeFilter").get("value"))
+        expected = set(
+            [str(default_workspace.id), str(standard_workspace.id), str(sub_workspace_a.id), str(sub_workspace_b.id)]
+        )
+        self.assertEqual(actual, expected)
+
+    def test_get_with_other_filter(self):
+        """Return correct filter values."""
+
+        resource_value = str(random.randint(1, 1000))
+        permission_str = "foo:bar:baz"
+        role_data = {
+            "name": "Inventory Group Role",
+            "access": [
+                {
+                    "permission": permission_str,
+                    "resourceDefinitions": [
+                        {"attributeFilter": {"key": "group.id", "operation": "in", "value": [resource_value]}}
+                    ],
+                }
+            ],
+        }
+
+        # Serialize the input
+        role_serializer = RoleSerializerTest.prepare_serializer(RoleSerializerTest, role_data)
+        Permission.objects.create(permission=permission_str, tenant=Tenant.objects.get(tenant_name="public"))
+
+        # Create the role
+        role = role_serializer.create(role_serializer.validated_data)
+
+        # Get the Resource Definition
+        access = role.access.last()
+        resource_definition = access.resourceDefinitions.last()
+        resource_definition_serializer = ResourceDefinitionSerializer(resource_definition)
+        actual = set(resource_definition_serializer.data.get("attributeFilter").get("value"))
+        expected = set([resource_value])
+        self.assertEqual(actual, expected)
