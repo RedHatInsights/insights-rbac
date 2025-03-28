@@ -162,6 +162,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         metrics_method = method.__name__.upper()
         if params and params.get("username_only") == "true":
             principals = Principal.objects.filter(type="user", tenant__org_id=org_id, cross_account=False)
+            if data and "users" in data:
+                principals = principals.filter(username__in=data["users"])
             offset = params.get("offset", 0)
             limit = params.get("limit", StandardResultsSetPagination.default_limit)
             userList = [dict(username=principal.username) for principal in principals]
