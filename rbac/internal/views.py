@@ -101,7 +101,7 @@ if HOST is not None:
     conn = http.client.HTTPSConnection(HOST)
     token = get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url)
 else:
-    conn=None
+    conn = None
 
 relation_api_gRPC_server = relations_api_server
 
