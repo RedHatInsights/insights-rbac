@@ -2562,7 +2562,7 @@ class GroupViewsetTests(IdentityRequest):
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
             al_list = retrieve_data
-            print(al_list)
+
             for al_record in al_list:
                 if al_record["action"] == "remove":
                     al_dict = al_record
