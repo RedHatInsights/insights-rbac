@@ -212,7 +212,7 @@ class Types(WorkspaceBaseTestCase):
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
         self.assertEqual(
-            {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
+            {"default_parent": ["Default workspace must have a parent workspace."]},
             assertion.exception.message_dict,
         )
 
@@ -222,7 +222,7 @@ class Types(WorkspaceBaseTestCase):
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Ungrouped Hosts", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant)
         self.assertEqual(
-            {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
+            {"ungrouped_hosts": ["Ungrouped Hosts workspaces must have a parent workspace."]},
             assertion.exception.message_dict,
         )
 
@@ -248,13 +248,11 @@ class Types(WorkspaceBaseTestCase):
         """Test root/default workspace creation with parent"""
         tenant = Tenant.objects.create(tenant_name="Root with parent")
         root = Workspace.objects.create(name="Root", type=Workspace.Types.ROOT, tenant=tenant)
-        # Standard workspace and not be created without parent
-        with self.assertRaises(ValidationError) as assertion:
-            Workspace.objects.create(name="Standard", type=Workspace.Types.STANDARD, tenant=tenant)
+        # Default cannot be created without parent
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
-        default = Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
 
+        default = Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
         with self.assertRaises(ValidationError) as assertion:
             root.parent = default
             root.save()

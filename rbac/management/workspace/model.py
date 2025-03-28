@@ -64,11 +64,23 @@ class Workspace(TenantAwareModel):
         if self.type == self.Types.ROOT:
             if self.parent is not None:
                 raise ValidationError({"root_parent": ("Root workspace must not have a parent.")})
-        elif self.parent_id is None:
-            self.parent_id = self.id
-            # raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
-        elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
-            raise ValidationError({"default_parent": ("Default workspace must have a root parent.")})
+
+        elif self.type == self.Types.DEFAULT:
+            if self.parent is None:
+                raise ValidationError({"default_parent": ("Default workspace must have a parent workspace.")})
+            if self.parent.type != self.Types.ROOT:
+                raise ValidationError({"default_parent": ("Default workspace must have a root parent.")})
+        elif self.type == self.Types.STANDARD:
+            if self.parent_id is None:
+                workspace_object = Workspace.objects.get(type=self.Types.DEFAULT, tenant=self.tenant_id)
+                self.parent = workspace_object
+                self.parent_id = workspace_object.id
+
+        elif self.type == self.Types.UNGROUPED_HOSTS:
+            if self.parent is None:
+                raise ValidationError(
+                    {"ungrouped_hosts": ("Ungrouped Hosts workspaces must have a parent workspace.")}
+                )
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
