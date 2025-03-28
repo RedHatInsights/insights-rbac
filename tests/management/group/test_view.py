@@ -1881,7 +1881,7 @@ class GroupViewsetTests(IdentityRequest):
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_principal_get_ordering_nonusername_fail(self, mock_request):
-        """Test that passing a username order_by parameter calls the proxy correctly."""
+        """Test that passing a username order_by parameter with invalid value returns 400."""
         url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=best_joke"
         client = APIClient()
         response = client.get(url, **self.headers)
