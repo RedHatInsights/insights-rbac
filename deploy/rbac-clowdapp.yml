@@ -422,6 +422,25 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
+            #Relations API variables
+          - name: RBAC_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-sa-client-id
+                name: rbac-relations-secrets
+                optional: true
+          - name: RBAC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-sa-client-secret
+                name: rbac-relations-secrets
+                optional: true
+          - name: SCOPES
+            value: 'openid'
+          - name: TOKEN_GRANT_TYPE
+            value: 'client_credentials'
+          - name: RELATIONS_API_GRPC_SERVER
+            value: 'localhost:9000'
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
