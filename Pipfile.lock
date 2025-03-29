@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "becd7ec8de7f14f4c2bf91919cab772ee32fd68f6bf88bb561f2a6941e5cfc3a"
+            "sha256": "9687699352ac0fe901ee64a71b5d03a4f628d4a24123f44a320fd775cdc2c9ca"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -74,11 +74,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:184db7c9314d13002bc827f511a5140574b5da1acda342d51e093dad6317de98",
-                "sha256:b3b26f1a90236bcd17d4092f8c85a256b44e9955a16b633319a2f5678d605e9f"
+                "sha256:3a249c950cef9ee9ed7b2278500ad83a4ad6456bc433a43abd1864d1b61b2acb",
+                "sha256:ffbe1f5958adb1c50d72d3ad1018cb265fe349248c08782d334601c0814f0e38"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.37.22"
+            "version": "==1.37.23"
         },
         "celery": {
             "hashes": [
@@ -610,11 +610,11 @@
         },
         "kafka-python": {
             "hashes": [
-                "sha256:2a31ecfe4bb91d6009dd97593dcbe8dc7ba161accde2cb9342583a8f862abda7",
-                "sha256:446235fdce7ed5d9ff48de2c31651a85659105a8d2ac0b4abb249f7758d8cfc6"
+                "sha256:23340cdcd403d4f73564c068fd3b1f4b4be3fc1a89f3ef1a76d46ea889878190",
+                "sha256:7e45be44cc7eb3dcad8b432cc514411454d05971ad26411092577584ee15d67a"
             ],
             "index": "pypi",
-            "version": "==2.1.2"
+            "version": "==2.1.4"
         },
         "kombu": {
             "hashes": [
