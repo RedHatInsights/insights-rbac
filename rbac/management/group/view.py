@@ -25,6 +25,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
+from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.authorization.scope_claims import ScopeClaims
@@ -1356,10 +1357,11 @@ class GroupViewSet(
         # If there is a difference in the sets, then we know that the user specified service accounts
         # that did not exist in the database.
         service_account_ids_diff = set(service_accounts).difference(valid_service_account_ids)
+
         if service_account_ids_diff:
             logger.info(f"Service accounts {service_account_ids_diff} not found for org id {org_id}.")
 
-            raise ValueError(f"Service account(s) {service_account_ids_diff} not found in the group '{group.name}'")
+            raise Http404(f"Service account(s) {service_account_ids_diff} not found in the group '{group.name}'")
 
         removed_service_accounts = []
         # Remove service accounts from the group.
