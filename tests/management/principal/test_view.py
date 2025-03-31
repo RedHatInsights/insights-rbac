@@ -131,6 +131,17 @@ class PrincipalViewsetTests(IdentityRequest):
         self.principal = Principal(username="test_user", tenant=self.tenant)
         self.principal.save()
 
+        # Create second tenant with 2 user based principals
+        customer_data = self._create_customer_data()
+        self.tenant_B = Tenant.objects.create(
+            tenant_name="tenantB",
+            account_id=customer_data["account_id"],
+            org_id=customer_data["org_id"],
+            ready=True,
+        )
+        self.principal_B1 = Principal.objects.create(username="test_user_B1", tenant=self.tenant_B)
+        self.principal_B2 = Principal.objects.create(username="test_user_B2", tenant=self.tenant_B)
+
     def tearDown(self):
         """Tear down principal viewset tests."""
         Principal.objects.all().delete()
@@ -199,6 +210,9 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertCountEqual(list(principal.keys()), ["username"])
         self.assertIsNotNone(principal.get("username"))
         self.assertEqual(principal.get("username"), self.principal.username)
+
+        # Check we list only 1 principal even we have 3 in db (rest 2 belongs to different tenant)
+        self.assertEqual(len(Principal.objects.all()), 3)
 
     @override_settings(BYPASS_BOP_VERIFICATION=True)
     def test_read_principal_list_username_only_false_success(self):
