@@ -229,6 +229,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             ).get("org_id")
 
             user_info = json_rh_auth.get("identity", {}).get("user")
+            logger.info(f"{request.req_id}: user info: {user_info}")
             if user_info:
                 user.username = user_info["username"]
                 user.admin = user_info.get("is_org_admin")

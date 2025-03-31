@@ -16,6 +16,8 @@
 #
 
 """View for principal access."""
+import logging
+
 from management.cache import AccessCache
 from management.models import Access
 from management.querysets import get_access_queryset
@@ -36,6 +38,8 @@ ORDER_FIELD = "order_by"
 VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
 STATUS_KEY = "status"
 VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
+
+logger = logging.getLogger(__name__)
 
 
 class AccessView(APIView):
@@ -120,15 +124,18 @@ class AccessView(APIView):
             return Response(status=status.HTTP_400_BAD_REQUEST, data=e)
 
         principal = get_principal_from_request(request)
+        logger.info("Request username: %s Principal: %s", request.user.username, principal.username)
         cache = AccessCache(request.tenant.org_id)
         access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
             queryset = self.get_queryset(ordering)
             access_policy = self.serializer_class(queryset, many=True).data
             cache.save_policy(principal.uuid, sub_key, access_policy)
+        logger.info("Request username: %s Access policy: %s", request.user.username, access_policy)
 
         page = self.paginate_queryset(access_policy)
         if page is not None:
+            logger.info(f"request username: {request.user.username}, page {page}")
             return self.get_paginated_response(page)
         return Response({"data": access_policy})
 
