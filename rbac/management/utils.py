@@ -271,7 +271,7 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
     elif value.lower() not in valid_values:
         key = "detail"
         message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
-            query_key, value, valid_values
+            query_key, value, [str(v) for v in valid_values]
         )
         raise serializers.ValidationError({key: _(message)})
     return value.lower()

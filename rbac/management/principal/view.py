@@ -154,10 +154,9 @@ class PrincipalView(APIView):
                     count = data.get("userCount")
                     data = data.get("users")
                 elif isinstance(data, list):
-                    count = len(data)
+                    count = resp.get("userCount", len(data))
             elif principal_type == ALL_KEY:
                 count = resp.get("userCount")
-
             else:
                 count = None
 
@@ -282,6 +281,7 @@ class PrincipalView(APIView):
         # Calculate new limit and offset for the user base principals query
         sa_count_total = sa_resp.get("saCount")
         sa_count = len(sa_resp.get("data", []))
+
         remaining_limit = limit - sa_count
         if remaining_limit == 0:
             new_limit = 1
@@ -303,8 +303,10 @@ class PrincipalView(APIView):
         userCount = 0
         if usernames_filter and user_resp["data"]:
             userCount += len(user_resp["data"])
-        elif user_resp["data"]:
-            userCount += int(user_resp.get("data").get("userCount"))
+        elif "userCount" in user_resp:
+            userCount += int(user_resp["userCount"])
+        elif "userCount" in user_resp["data"]:
+            userCount += int(user_resp["data"]["userCount"])
         userCount += sa_resp.get("saCount")
 
         # Put together the response

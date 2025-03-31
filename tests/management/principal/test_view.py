@@ -2657,3 +2657,62 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 6)
         self.assertEqual(response.data.get("meta").get("limit"), limit)
         self.assertEqual(response.data.get("meta").get("offset"), offset)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_username_only(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request username only."""
+        # Create 3 SA in the database and mock the Service Accounts return value
+        sa_client_ids = [
+            "06494bcb-1409-401b-b210-0303c810f6b3",
+            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
+            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_sa = []
+        for uuid in sa_client_ids:
+            mocked_sa.append(
+                {
+                    "username": "service_account-" + uuid,
+                }
+            )
+
+        mock_sa.return_value = mocked_sa, 3
+
+        # Mock the User based Principals return value
+        mock_user.return_value = {
+            "status_code": 200,
+            "data": {
+                "userCount": "3",
+                "users": [
+                    {"username": "test_user1"},
+                    {"username": "test_user2"},
+                    {"username": "test_user3"},
+                ],
+            },
+        }
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&username_only=true"
+        response = client.get(url, **self.headers)
+        print(response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 3)
+        self.assertEqual(len(users), 3)
+
+        self.assertEqual(response.data.get("meta").get("count"), 6)

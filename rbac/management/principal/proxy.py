@@ -162,17 +162,11 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         metrics_method = method.__name__.upper()
         if params and params.get("username_only") == "true":
             principals = Principal.objects.filter(type="user")
-            if data and "users" in data:
-                principals = principals.filter(username__in=data["users"])
-
             offset = params.get("offset", 0)
             limit = params.get("limit", StandardResultsSetPagination.default_limit)
-
             userList = [dict(username=principal.username) for principal in principals]
             paginatedUserList = userList[offset : offset + limit]  # noqa: E203
-            data = {"userCount": len(userList), "users": paginatedUserList}
-
-            return dict(data=data, status_code=200)
+            return dict(data=paginatedUserList, userCount=len(userList), status_code=200)
 
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []
