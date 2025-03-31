@@ -72,7 +72,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate_workspace(self, event: WorkspaceEvent):
         """Replicate the event of workspace."""
-        payload = {"org_id": event.org_id, "workspace": event.workspace}
+        payload = WorkspaceEventPayload(org_id=event.org_id, workspace=event.workspace)
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
     def _build_replication_event(
