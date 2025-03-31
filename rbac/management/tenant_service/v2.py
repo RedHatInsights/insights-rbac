@@ -71,6 +71,31 @@ class V2TenantBootstrapService:
         except TenantMapping.DoesNotExist:
             return self._bootstrap_tenant(tenant)
 
+    def create_ungrouped_workspace(self, org_id) -> Workspace:
+        """Util for creating ungrouped workspace. Can be removed once ungrouped workspace has gone."""
+        tenant = Tenant.objects.get(org_id=org_id)
+        default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+        ungrouped_hosts, _ = Workspace.objects.get_or_create(
+            tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=default
+        )
+
+        relationship = create_relationship(
+            ("rbac", "workspace"),
+            str(ungrouped_hosts.id),
+            ("rbac", "workspace"),
+            str(default.id),
+            "parent",
+        )
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.CREATE_UNGROUPED_HOSTS_WORKSPACE,
+                info={"org_id": tenant.org_id, "ungrouped_hosts_id": str(ungrouped_hosts.id)},
+                partition_key=PartitionKey.byEnvironment(),
+                add=[relationship],
+            )
+        )
+        return ungrouped_hosts
+
     def update_user(
         self,
         user: User,
@@ -579,3 +604,28 @@ class V2TenantBootstrapService:
             return self._admin_default_policy_uuid
         except Group.DoesNotExist:
             return None
+
+    def create_workspace_relationships(self, pairs):
+        """
+        Util for bulk creating workspace relationships based on pairs.
+
+        Input: pairs - List of tuples of (resource_id, subject_id)
+        """
+        relationships = []
+        for pair in pairs:
+            relationship = create_relationship(
+                ("rbac", "workspace"),
+                str(pair[0]),
+                ("rbac", "workspace"),
+                str(pair[1]),
+                "parent",
+            )
+            relationships.append(relationship)
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.WORKSPACE_IMPORT,
+                info={},
+                partition_key=PartitionKey.byEnvironment(),
+                add=relationships,
+            )
+        )
