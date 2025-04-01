@@ -163,8 +163,6 @@ You can also send a request *with* the identity header explicitly in the curl co
 Generating v2 openAPI specification
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
-
 OpenAPI v2 specification is located in `docs/source/specs/v2/openapi.yaml`.
 This OpenAPI v2 specification is generated from TypeSpec file which is located in `docs/source/specs/typespec/main.tsp`
 
@@ -192,6 +190,40 @@ To run unit tests specifically::
 To lint the code base ::
 
     tox -e lint
+
+
+Feature Flags
+---------------
+You can configure Unleash for feature flag support in RBAC. In a Clowder environment,
+this should be initialized automatically if FeatureFlags are enabled in the ClowdApp.
+
+Locally, you can configure Unleash by setting the following:
+
+.. code-block:: bash
+
+  FEATURE_FLAGS_TOKEN # your Unleash API token
+  FEATURE_FLAGS_URL # your Unleash url, defaulting to http://localhost:4242/api
+  FEATURE_FLAGS_CACHE_DIR # filesystem cache location, defaulting to '/tmp/unleash_cache'
+
+Start a `local Unleash server <https://docs.getunleash.io/quickstart>`_.
+
+You can enforce feature flags, including custom constraints to allow gradual rollout
+to orgs by using the following pattern, assuming you've defined a context field `orgId`
+in Unleash, and are using that as a constraint in a flag's strategy to set an allow list:
+
+.. code-block:: python
+
+    from feature_flags import FEATURE_FLAGS
+
+    # org-specific rollout with context fields
+    show_alpha_feature = FEATURE_FLAGS.is_enabled("rbac.alpha_feature", {"orgId": request.user.org_id})
+    if show_alpha_feature:
+        print("Awesome alpha feature!")
+
+    # no context fields
+    show_beta_feature = FEATURE_FLAGS.is_enabled("rbac.beta_feature")
+    if show_beta_feature:
+        print("Awesome beta feature!")
 
 Caveats
 -------
