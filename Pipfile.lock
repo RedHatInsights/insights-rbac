@@ -74,11 +74,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:184db7c9314d13002bc827f511a5140574b5da1acda342d51e093dad6317de98",
-                "sha256:b3b26f1a90236bcd17d4092f8c85a256b44e9955a16b633319a2f5678d605e9f"
+                "sha256:a0bcc3c376a371f2c11afcbcc9917010c1c0a701d0e45d1ea3ec3bddeb06a8ff",
+                "sha256:f1a55332cca85a6556af8941cccdaf5d2d00336647d9e89f31174f2361ffb4f2"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.37.22"
+            "version": "==1.37.24"
         },
         "celery": {
             "hashes": [
@@ -1964,11 +1964,11 @@
         },
         "virtualenv": {
             "hashes": [
-                "sha256:3e3d00f5807e83b234dfb6122bf37cfadf4be216c53a49ac059d02414f819170",
-                "sha256:95e39403fcf3940ac45bc717597dba16110b74506131845d9b687d5e73d947ac"
+                "sha256:800863162bcaa5450a6e4d721049730e7f2dae07720e0902b0e4040bd6f9ada8",
+                "sha256:e34302959180fca3af42d1800df014b35019490b119eba981af27f2fa486e5d6"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==20.29.3"
+            "version": "==20.30.0"
         }
     }
 }
