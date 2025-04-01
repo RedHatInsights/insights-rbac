@@ -123,6 +123,7 @@ namespace Workspaces {
     }
 
     model CreateWorkspaceRequest extends BasicWorkspace{
+        //if parent_id is not stated within the request for standard workspaces, it is automatically populated from default workspace.
         @doc("Parent ID of Workspace A")
         parent_id?: UUID = "Parent ID of Workspace A";
     }

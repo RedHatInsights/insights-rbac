@@ -212,7 +212,7 @@ class Types(WorkspaceBaseTestCase):
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
         self.assertEqual(
-            {"default_parent": ["Default workspace must have a parent workspace."]},
+            {"workspace": ["default workspaces must have a parent workspace."]},
             assertion.exception.message_dict,
         )
 
@@ -222,7 +222,7 @@ class Types(WorkspaceBaseTestCase):
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Ungrouped Hosts", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant)
         self.assertEqual(
-            {"ungrouped_hosts": ["Ungrouped Hosts workspaces must have a parent workspace."]},
+            {"workspace": ["ungrouped-hosts workspaces must have a parent workspace."]},
             assertion.exception.message_dict,
         )
 
