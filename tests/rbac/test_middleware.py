@@ -478,6 +478,31 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_s2s_can_be_accessed_through_psk(self):
+        self.org_id = "4321"
+        tenant = Tenant.objects.create(org_id=self.org_id)
+        root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
+        Workspace.objects.create(name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=root)
+        request = self.request_context["request"]
+        client = APIClient()
+        response = client.post(f"/_private/_s2s/workspaces/ungrouped/", **request.META)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Request with psk
+        self.env = EnvironmentVarGuard()
+        self.env.set("SERVICE_PSKS", '{"hbi": {"secret": "abc123"}}')
+        self.service_headers = {
+            "HTTP_X_RH_RBAC_PSK": "abc123",
+            "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
+            "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+        }
+        response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Can not use psk to access apis other than _s2s
+        response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
 
 class AccessHandlingTest(TestCase):
     """Tests against getting user access in the IdentityHeaderMiddleware."""
@@ -706,9 +731,9 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
             self.assertIsNotNone(mapping)
             workspaces = list(Workspace.objects.filter(tenant=tenant))
             self.assertEqual(len(workspaces), 2)
-            default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+            default = Workspace.objects.default(tenant=tenant)
             self.assertIsNotNone(default)
-            root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+            root = Workspace.objects.root(tenant=tenant)
             self.assertIsNotNone(root)
 
             platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
@@ -797,7 +822,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
             # Change the user's org so we create a new tenant
             self.request.user.org_id = "12345"
             self.org_id = "12345"
-            self.request.user.id = None
+            self.request.user.user_id = None
             mock_request = self.request
             tenant_cache = TenantCache()
             tenant_cache.delete_tenant(self.org_id)
@@ -806,13 +831,15 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
             self.assertEqual(result.org_id, mock_request.user.org_id)
             tenant = Tenant.objects.get(org_id=self.org_id)
             self.assertIsNotNone(tenant)
+            princial = Principal.objects.get(username=self.request.user.username, tenant=tenant)
+            self.assertEqual(princial.user_id, "u1")
             mapping = TenantMapping.objects.get(tenant=tenant)
             self.assertIsNotNone(mapping)
             workspaces = list(Workspace.objects.filter(tenant=tenant))
             self.assertEqual(len(workspaces), 2)
-            default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+            default = Workspace.objects.default(tenant=tenant)
             self.assertIsNotNone(default)
-            root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+            root = Workspace.objects.root(tenant=tenant)
             self.assertIsNotNone(root)
 
 

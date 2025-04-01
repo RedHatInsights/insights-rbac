@@ -14,7 +14,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Base viewset for v2 APIs."""
-from django.apps import apps
 from rest_framework import mixins, viewsets
 from rest_framework.settings import api_settings
 
@@ -35,5 +34,4 @@ class BaseV2ViewSet(
 
     def get_queryset(self):
         """Dynamic override of the default queryset for v2 APIs."""
-        model = apps.get_model("management", self.basename)
-        return model.objects.filter(tenant=self.request.tenant)
+        return super().get_queryset().filter(tenant=self.request.tenant).order_by("name", "-modified")

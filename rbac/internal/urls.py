@@ -62,6 +62,10 @@ integration_urlpatterns = [
     path("api/v1/openapi.json", openapi, name="openapi"),
 ]
 
+s2s_urlpatterns = [
+    path("_s2s/workspaces/ungrouped/", views.retrieve_ungrouped_workspace),
+]
+
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/", views.list_tenants),
@@ -71,6 +75,7 @@ urlpatterns = [
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
     path("api/cars/expire/", views.car_expiry),
+    path("api/cars/clean/", views.cars_clean),
     path("api/sentry_debug/", views.trigger_error),
     path("api/utils/sync_schemas/", views.sync_schemas),
     path("api/utils/set_tenant_ready/", views.set_tenant_ready),
@@ -83,10 +88,16 @@ urlpatterns = [
     path("api/utils/username_lower/", views.username_lower),
     path("api/utils/data_migration/", views.data_migration),
     path("api/utils/bindings/<role_uuid>/", views.list_or_delete_bindings_for_role),
+    path("api/utils/binding/<binding_id>/clean/", views.clean_binding_mapping),
     path("api/utils/bootstrap_tenant/", views.bootstrap_tenant),
+    path("api/utils/bootstrap_pending_tenants/", views.bootstrap_pending_tenants),
     path("api/utils/migration_resources/", views.migration_resources),
+    path("api/utils/fetch_replication_data/", views.fetch_replication_data),
     path("api/utils/reset_imported_tenants/", views.reset_imported_tenants),
     path("api/utils/resource_definitions/", views.correct_resource_definitions),
+    path("api/utils/principal/", views.principal_removal),
+    path("api/utils/user_lookup/", views.user_lookup),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
+urlpatterns.extend(s2s_urlpatterns)

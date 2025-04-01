@@ -446,6 +446,36 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_edit_workspace_not_allowed_type(self):
+        """Test for creating a workspace."""
+        root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
+
+        workspace = {
+            "name": "New Workspace",
+            "description": "Workspace",
+            "parent_id": str(root.id),
+            "type": Workspace.Types.UNGROUPED_HOSTS,
+        }
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # Create is not allowed
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        workspace["type"] = Workspace.Types.DEFAULT
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Update is not allowed
+        workspace["type"] = Workspace.Types.STANDARD
+        created_workspace = Workspace.objects.create(**workspace, tenant=self.tenant)
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": created_workspace.id})
+        client = APIClient()
+        workspace["type"] = Workspace.Types.UNGROUPED_HOSTS
+        response = client.put(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_get_workspace(self):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
@@ -702,6 +732,42 @@ class TestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertEqual(payload.get("data")[0]["id"], str(self.root_workspace.id))
         self.assertType(payload, "root")
+
+    def test_workspace_list_filter_by_name(self):
+        """List workspaces filtered by name."""
+        ws_name = "Workspace for filter"
+        workspaces = Workspace.objects.bulk_create(
+            [
+                Workspace(
+                    name=ws_name,
+                    tenant=self.tenant,
+                    type="standard",
+                    parent_id=self.default_workspace.id,
+                ),
+                Workspace(
+                    name=ws_name,
+                    tenant=self.tenant,
+                    type="standard",
+                    parent_id=self.default_workspace.id,
+                ),
+                Workspace(
+                    name=ws_name.upper(),
+                    tenant=self.tenant,
+                    type="standard",
+                    parent_id=self.default_workspace.id,
+                ),
+            ]
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?name=Workspace for filter", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 2)
+        self.assertType(payload, "standard")
+        assert payload.get("data")[0]["name"] == payload.get("data")[1]["name"] == ws_name
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):

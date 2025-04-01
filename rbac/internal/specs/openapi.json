@@ -880,6 +880,84 @@
         }
       }
     },
+    "/api/utils/cars/clean/": {
+      "get": {
+        "tags": [
+          "Cars Clean"
+        ],
+        "summary": "Get info of cars with custom roles",
+        "description": "Get info of cars with custom roles",
+        "operationId": "getCars",
+        "responses": {
+          "200": {
+            "description": "Info of cars with custom roles."
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Cars Clean"
+        ],
+        "summary": "Clean up custom roles in cars",
+        "description": "Clean up custom roles in cars",
+        "operationId": "cleanCars",
+        "responses": {
+          "200": {
+            "description": "Deleted cars with custom roles."
+          },
+          "400": {
+            "description": "Destructive operations disallowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/get_org_admin/{org_or_account}/": {
       "get": {
         "tags": [
@@ -1116,19 +1194,30 @@
         "tags": [
           "Tenant bootstrap"
         ],
-        "summary": "Bootstrap a tennat by org id",
-        "description": "Bootstrap a tenant by org id",
+        "summary": "Bootstrap a tenants by org ids",
+        "description": "Bootstrap a tenants by org ids",
         "operationId": "TenantBootstrap",
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "query",
-            "required": true,
-            "description": "Defines the org id of the tenant to bootstrap.",
-            "schema": {
-              "type": "string"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "A list of organization IDs to bootstrap."
+                  }
+                },
+                "required": ["org_ids"]
+              }
             }
-          },
+          }
+        },
+        "parameters": [
           {
             "name": "force",
             "in": "query",
@@ -1177,6 +1266,133 @@
         }
       }
     },
+    "/api/utils/bootstrap_pending_tenants/": {
+      "get": {
+        "summary": "List tenants that are not bootstrapped",
+        "description": "Returns a list of tenant org IDs that have not yet been bootstrapped.",
+        "operationId": "bootstrapPendingTenants",
+        "responses": {
+          "200": {
+            "description": "Successful response with a list of unbootstrapped tenants.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "List of unbootstrapped tenant IDs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method. Only GET is allowed.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method only \"GET\" is allowed."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fetch_replication_data": {
+      "get": {
+        "summary": "Fetch replication data",
+        "operationId": "fetchReplicationData",
+        "description": "Retrieves replication-related information from the database.",
+        "responses": {
+          "200": {
+            "description": "Replication data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "replication_slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Slot name" },
+                          { "type": "string", "description": "Slot type" }
+                        ]
+                      }
+                    },
+                    "publications": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "integer", "description": "OID" },
+                          { "type": "string", "description": "Publication name" }
+                        ]
+                      }
+                    },
+                    "publication_tables": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Publication name" },
+                          { "type": "string", "description": "Table name" }
+                        ]
+                      }
+                    },
+                    "wal_lsn": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Current WAL LSN" },
+                          { "type": "string", "description": "Confirmed flush LSN" }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only GET is allowed",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method, only 'GET' is allowed."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/bindings/": {
       "get": {
         "tags": [
@@ -1212,6 +1428,66 @@
           },
           "405": {
             "description": "Invalid method, only 'GET' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/binding/{binding_id}/clean/": {
+      "post": {
+        "tags": [
+          "Clean binding"
+        ],
+        "summary": "Clean binding for a given id",
+        "description": "Clean binding for a given id",
+        "operationId": "CleanBinding",
+        "parameters": [
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "description": "To clean the field users or groups.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "users",
+                "groups"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mappings of the binding."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'users' or 'groups' in field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1573,6 +1849,58 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/utils/principal/": {
+      "delete": {
+        "tags": [
+          "Principal"
+        ],
+        "summary": "Delete principals without user_id and inactive.",
+        "description": "Delete principals without principals and inactive..",
+        "operationId": "DeletePrincipal",
+        "parameters": [
+          {
+            "name": "usernames",
+            "in": "query",
+            "required": true,
+            "description": "Comma separated list of usernames of the principals to be deleted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_type",
+            "in": "query",
+            "required": true,
+            "description": "The user type to search principals.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "service-account"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Principals deleted"
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "500": {
             "description": "Unexpected Error",
@@ -1686,6 +2014,159 @@
           }
         }
       }
+    },
+    "/api/utils/user_lookup/": {
+      "get":{
+        "summary": "Get user info",
+        "description": "Query for a user's groups, roles, and permissions based on their username or email. Only one of the params is required.",
+        "operationId": "userLookup",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "description": "Username of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
+            "required": true,
+            "schema":{
+              "type": "string"
+            }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "description": "Email address of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
+            "required": true,
+            "schema":{
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Result set of user groups, roles, and permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "username": { "type": "string", "example": "fake_user" },
+                    "email_address": { "type": "string", "example": "fake_user@redhat.com" },
+                    "groups":{
+                      "type": "array",
+                      "items":{
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string", "example": "Example group"},
+                          "description": { "type": "string", "example": "A group for some users" },
+                          "uuid": { "type": "string", "format":"uuid", "example": "1c4da003-569d-433f-8159-fd77e6984de1" },
+                          "platform_default": { "type": "boolean", "example": true },
+                          "admin_default": { "type": "boolean", "example": false },
+                          "roles":{
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": { "type": "string", "example": "Example Role" },
+                                "display_name": { "type": "string", "example": "Example Role Display" },
+                                "description": { "type": "string", "example": "An example role for the spec" },
+                                "uuid": { "type": "string", "format":"uuid", "example": "a8d33564-628f-4eba-bd59-6a2948bfb31e" },
+                                "platform_default": { "type": "boolean", "example": true },
+                                "admin_default": { "type": "boolean", "example": false },
+                                "permissions": {
+                                  "type": "array",
+                                  "items":{
+                                    "type": "string",
+                                    "example": "application | resource | verb"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": ["username", "email_address", "groups"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request - bad input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found - user not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method - invalid http method used, only GET allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error - unexpected internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_s2s/workspaces/ungrouped/": {
+      "post": {
+        "tags": [
+          "Get/create ungrouped hosts workspace"
+        ],
+        "summary": "Get or create ungrouped hosts workspace",
+        "description": "ungrouped hosts workspace.",
+        "operationId": "GetUngrouped",
+        "responses": {
+          "201": {
+            "description": "The ungrouped hosts workspace of the org."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -1745,6 +2226,17 @@
                 }
               }
             }
+          }
+        }
+      },
+      "ErrorSingle": {
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Invalid request - bad input provided"
           }
         }
       },

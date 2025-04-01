@@ -23,6 +23,7 @@ from management.utils import validate_and_get_key, validate_uuid
 from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
 
+
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
@@ -72,9 +73,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
         queryset = self.get_queryset()
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
+        name = request.query_params.get("name")
 
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)
+        if name:
+            queryset = queryset.filter(name=name)
 
         serializer = self.get_serializer(queryset, many=True)
         page = self.paginate_queryset(serializer.data)
@@ -130,6 +134,11 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Validate a workspace."""
         parent_id = request.data.get("parent_id")
         tenant = request.tenant
+        workspace_type = request.data.get("type", Workspace.Types.STANDARD)
+        if workspace_type != Workspace.Types.STANDARD:
+            message = f"Only workspace type {Workspace.Types.STANDARD} is allowed."
+            error = {"workspace": [_(message)]}
+            raise serializers.ValidationError(error)
         if action == "create":
             self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
         elif action == "put":

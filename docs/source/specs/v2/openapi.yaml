@@ -34,6 +34,12 @@ paths:
           schema:
             $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
             default: all
+        - name: name
+          in: query
+          required: false
+          description: Case sensitive exact match of workspace by name.
+          schema:
+            type: string
       responses:
         '200':
           description: The request has succeeded.
@@ -849,6 +855,7 @@ components:
         - root
         - default
         - standard
+        - ungrouped-hosts
     Workspaces.WorkspaceTypesQueryParam:
       type: string
       enum:
@@ -856,6 +863,7 @@ components:
         - root
         - default
         - standard
+        - ungrouped-hosts
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server
