@@ -245,6 +245,8 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: FEATURE_FLAGS_CACHE_DIR
+            value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -505,6 +507,8 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: FEATURE_FLAGS_CACHE_DIR
+            value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -786,6 +790,8 @@ objects:
               value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
               value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: FEATURE_FLAGS_CACHE_DIR
+              value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1005,6 +1011,8 @@ objects:
               value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
               value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: FEATURE_FLAGS_CACHE_DIR
+              value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1471,3 +1479,6 @@ parameters:
 - name: REDHAT_SSO
   description: The SSO url for rbac environment
   value: 'sso.stage.redhat.com'
+- name: FEATURE_FLAGS_CACHE_DIR
+  description: The cache dir for unleash
+  value: '/tmp/unleash_cache'
