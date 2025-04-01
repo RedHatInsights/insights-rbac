@@ -49,9 +49,11 @@ class FeatureFlags:
 
         if settings.FEATURE_FLAGS_URL and settings.FEATURE_FLAGS_TOKEN:
             client.initialize_client()
-            print(f"FeatureFlags initialized using Unleash on {settings.FEATURE_FLAGS_URL}")
+            logger.info(f"FeatureFlags initialized using Unleash on {settings.FEATURE_FLAGS_URL}")
         else:
-            print("FEATURE_FLAGS_URL and/or FEATURE_FLAGS_TOKEN were not set, skipping FeatureFlags initialization.")
+            logger.info(
+                "FEATURE_FLAGS_URL and/or FEATURE_FLAGS_TOKEN were not set, skipping FeatureFlags initialization."
+            )
 
         return client
 
