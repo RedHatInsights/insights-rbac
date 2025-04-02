@@ -29,7 +29,7 @@ from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_CREATE_FIELDS = ["name", "parent_id"]
+REQUIRED_CREATE_FIELDS = ["name"]
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
