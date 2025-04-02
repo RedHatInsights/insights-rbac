@@ -1,10 +1,5 @@
 from copy import deepcopy
-from unittest.mock import Mock, MagicMock, patch, DEFAULT
-from django.test import TestCase
-from kafka.errors import KafkaError
-from core.kafka import RBACProducer, logger
-from django.test.utils import override_settings
-
+from unittest.mock import Mock, patch, DEFAULT
 
 def copy_call_args(mock):
     kafka_mock = Mock()
