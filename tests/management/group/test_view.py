@@ -22,7 +22,7 @@ from uuid import uuid4
 import json
 from django.db import transaction
 from django.conf import settings
-from django.urls import reverse, resolve
+from django.urls import reverse
 from django.utils import timezone
 from django.test.utils import override_settings
 from rest_framework import status
@@ -58,7 +58,6 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
-from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
@@ -938,7 +937,7 @@ class GroupViewsetTests(IdentityRequest):
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_failure_adding_principals_to_admin_default(self, mock_request):
-        """Test that adding a principal to a admin default group will fail."""
+        """Test that adding a principal to an admin default group will fail."""
         url = reverse("v1_management:group-principals", kwargs={"uuid": self.adminGroup.uuid})
         client = APIClient()
         username = "test_user"
@@ -1081,8 +1080,8 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("v1_management:group-detail", kwargs={"uuid": self.emptyGroup.uuid})
             mock_method.reset_mock()
 
-            respone = client.delete(url, **self.headers)
-            self.assertEqual(respone.status_code, status.HTTP_204_NO_CONTENT)
+            response = client.delete(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             mock_method.assert_not_called()
             self.assertEqual(Group.objects.filter(id=self.emptyGroup.id).exists(), False)
 
