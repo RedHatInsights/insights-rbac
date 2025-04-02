@@ -99,3 +99,16 @@ class Workspace(TenantAwareModel):
         """,
             [self.id],
         )
+
+
+    def get_all_descendant_ids(self, parent_id):
+        return Workspace.objects.raw(
+            """
+                WITH RECURSIVE descendants AS (
+                    SELECT id, parent_id FROM management_workspace WHERE id = %s
+                    UNION ALL
+                    SELECT w.id, w.parent_id
+                    FROM management_workspace w
+                    INNER JOIN descendants d ON w.parent_id = d.id
+                )
+            """, [self.id])

@@ -17,10 +17,19 @@
 """Defines the Audit Log Access Permissions class."""
 from rest_framework import permissions
 
+from management.workspace.utils import is_user_allowed
+
 
 class WorkspaceAccessPermission(permissions.BasePermission):
     """Determines if a user is an Account Admin."""
 
     def has_permission(self, request, view):
         """Check permission based on Account Admin property."""
-        return request.user.admin
+        # Would exist for update/delete/retrive workspace
+        workspace_id = view.kwargs.get("pk")
+        if request.method in permissions.SAFE_METHODS:
+            required_operation = "read"
+        else:
+            required_operation = "write"
+
+        return is_user_allowed(request, required_operation, workspace_id)
