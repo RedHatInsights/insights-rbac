@@ -20,6 +20,9 @@ from unittest.mock import patch
 from django.test import TestCase
 from rest_framework import status
 import requests
+
+from api.models import Tenant
+from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 
 
@@ -218,3 +221,40 @@ class PrincipalProxyTest(TestCase):
             "errors": [{"detail": "Unexpected error.", "status": "500", "source": "principals"}],
         }
         self.assertEqual(expected, result)
+
+    def test__request_principals_username_only(self):
+        """Test the request with 'username_only=true' in params returns only usernames from db."""
+        proxy = PrincipalProxy()
+
+        # Tenant A with 2 principals + 1 cross account principal
+        # Tenant B with 1 principal + 1 cross account principal
+        tenantA = Tenant.objects.create(tenant_name="tenantA", account_id=11111, org_id=11111)
+        Principal.objects.create(tenant=tenantA, username="user1")
+        Principal.objects.create(tenant=tenantA, username="user2")
+        Principal.objects.create(tenant=tenantA, username="cross-account-principal_A", cross_account=True)
+
+        self.assertEqual(len(Principal.objects.filter(tenant=tenantA)), 3)
+
+        tenantB = Tenant.objects.create(tenant_name="tenantB", account_id=22222, org_id=22222)
+        Principal.objects.create(tenant=tenantB, username="user3")
+        Principal.objects.create(tenant=tenantB, username="cross-account-principal_B", cross_account=True)
+
+        self.assertEqual(len(Principal.objects.filter(tenant=tenantB)), 2)
+
+        params = {"username_only": "true"}
+        # URL and METHOD not needed for this request type but required by method
+        result = proxy._request_principals(
+            org_id=tenantA.org_id, params=params, method=mocked_requests_get_200_except, url="xxx"
+        )
+
+        # Expected result = only tenant A principals in the response
+        self.assertIsInstance(result, dict)
+        for key in ["data", "userCount", "status_code"]:
+            self.assertIn(key, result)
+        self.assertEqual(result.get("status_code"), 200)
+        self.assertEqual(result.get("userCount"), 2)
+        self.assertEqual(len(result.get("data")), 2)
+        usernames = [v.get("username") for v in result.get("data")]
+        usernames.sort()
+        expected = ["user1", "user2"]
+        self.assertEqual(usernames, expected)
