@@ -1,6 +1,7 @@
 from copy import deepcopy
 from unittest.mock import Mock, patch, DEFAULT
 
+
 def copy_call_args(mock):
     kafka_mock = Mock()
 
