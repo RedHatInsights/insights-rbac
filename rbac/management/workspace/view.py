@@ -18,7 +18,7 @@
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
-from management.permissions import WorkspaceAccessPermission
+from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key, validate_uuid
 from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
