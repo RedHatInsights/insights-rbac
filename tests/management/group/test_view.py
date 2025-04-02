@@ -565,6 +565,68 @@ class GroupViewsetTests(IdentityRequest):
         group = response.data.get("data")[0]
         self.assertEqual(group["principalCount"], 1)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_group_principal_count_username_filter(self, mock_request):
+        "Test that when filtering a group with a username filter that principalCount is returned"
+        url = reverse("v1_management:group-list")
+        url = "{}?username={}".format(url, self.test_principal.username)
+        client = APIClient()
+        response = client.get(url, **self.test_headers)
+
+        principalCount = response.data.get("data")[0]["principalCount"]
+        self.assertEqual(principalCount, 2)
+
+    def test_get_group_principal_count_exclude_username_filter(self):
+        "Test that when filtering a group with the exclude_username filter that principalCount is returned"
+        # Create test group
+        group_name = "TestGroup"
+        group = Group(name=group_name, tenant=self.tenant)
+        group.save()
+
+        # Create user principal
+        principal_name = "username_filter_test"
+        user_principal = Principal(username=principal_name, tenant=self.test_tenant)
+        user_principal.save()
+
+        # Add principal to group
+        group.principals.add(user_principal)
+        group.save()
+
+        # Create user principal
+        principal_name = "username_filter_test_2"
+        user_principal_2 = Principal(username=principal_name, tenant=self.test_tenant)
+        user_principal_2.save()
+
+        # Add principal to group
+        group.principals.add(user_principal_2)
+        group.save()
+
+        # Test that principal count exists & is correct when filtering groups when excluding user
+        url = f"{reverse('v1_management:group-list')}"
+        url = "{}?exclude_username={}".format(url, "True")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        principalCount = response.data.get("data")[0]["principalCount"]
+        self.assertEqual(principalCount, 2)
+
     def test_get_group_by_partial_name_by_default(self):
         """Test that getting groups by name returns partial match by default."""
         url = reverse("v1_management:group-list")
@@ -1348,7 +1410,7 @@ class GroupViewsetTests(IdentityRequest):
                 "sort_order": None,
                 "username_only": "false",
                 "admin_only": True,
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
 
@@ -1378,6 +1440,27 @@ class GroupViewsetTests(IdentityRequest):
             url = "{}?usernames={}".format(url, "test_user")
             response = client.delete(url, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+            # test whether correctly added to audit logs
+            al_url = "/api/rbac/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            for al_record in al_list:
+                if al_record["action"] == "remove":
+                    al_dict = al_record
+                    break
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "remove")
 
             send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
@@ -1469,7 +1552,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.test_principal.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
 
         # Return bad request when user does not exist
         url = reverse("v1_management:group-list")
@@ -1502,7 +1585,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.principalC.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1558,7 +1641,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
@@ -1800,7 +1883,7 @@ class GroupViewsetTests(IdentityRequest):
             options={
                 "sort_order": None,
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -1824,7 +1907,7 @@ class GroupViewsetTests(IdentityRequest):
             options={
                 "sort_order": None,
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -1848,7 +1931,7 @@ class GroupViewsetTests(IdentityRequest):
             options={
                 "sort_order": "asc",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -1860,7 +1943,7 @@ class GroupViewsetTests(IdentityRequest):
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_principal_get_ordering_nonusername_fail(self, mock_request):
-        """Test that passing a username order_by parameter calls the proxy correctly."""
+        """Test that passing a username order_by parameter with invalid value returns 400."""
         url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=best_joke"
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -2486,6 +2569,27 @@ class GroupViewsetTests(IdentityRequest):
         self.assertCountEqual([self.role, self.roleB], list(self.groupB.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+        # test whether correctly added to audit logs
+        al_url = "/api/rbac/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        for al_record in al_list:
+            if al_record["action"] == "remove":
+                al_dict = al_record
+                break
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "remove")
+
     def test_remove_admin_default_group_roles(self):
         """Test that admin_default groups' roles are protected from removal"""
         url = reverse("v1_management:group-roles", kwargs={"uuid": self.adminGroup.uuid})
@@ -2513,6 +2617,28 @@ class GroupViewsetTests(IdentityRequest):
 
             self.assertCountEqual([], list(self.group.roles()))
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+            # test whether correctly added to audit logs
+            al_url = "/api/rbac/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+
+            for al_record in al_list:
+                if al_record["action"] == "remove":
+                    al_dict = al_record
+                    break
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "remove")
 
             notification_messages = [
                 call(
@@ -2767,6 +2893,66 @@ class GroupViewsetTests(IdentityRequest):
                 self.assertEqual(sa.get("owner"), mock_sa["owner"])
                 self.assertEqual(sa.get("type"), "service-account")
                 self.assertEqual(sa.get("username"), mock_sa["username"])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_remove_group_service_account_success(self, mock_request):
+        """Test that getting the "service-account" type principals from a nonempty group returns successfully."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        remove_sa = []
+        for sa in mocked_values:
+            remove_sa.append(sa["clientId"])
+        sa_line = ",".join(remove_sa)
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service-accounts={sa_line}"
+        )
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # test whether correctly added to audit logs
+        al_url = "/api/rbac/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        for al_record in al_list:
+            if al_record["action"] == "remove":
+                al_dict = al_record
+                break
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "remove")
 
     def test_get_group_service_account_username_only_success(self):
         """
@@ -3300,6 +3486,47 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(int(response.data.get("meta").get("count")), 0)
         self.assertEqual(len(response.data.get("data")), 0)
+
+    def test_get_group_user_principals_username_only(self):
+        """Test we can list only usernames for principals in a group."""
+        # Create a group with 2 user based principals
+        group_name = "TestGroup"
+        group = Group.objects.create(name=group_name, tenant=self.tenant)
+        principal1 = Principal.objects.create(tenant=self.tenant, username="user1")
+        principal2 = Principal.objects.create(tenant=self.tenant, username="user2")
+        group.principals.add(principal1, principal2)
+
+        # Test that /groups/{uuid}/principals/?username_only=true returns correct data with default limit and offset
+        base_url = f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
+        url = base_url + "?username_only=true"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 2)
+        self.assertEqual(int(response.data.get("meta").get("limit")), 10)
+        self.assertEqual(int(response.data.get("meta").get("offset")), 0)
+        self.assertEqual(len(response.data.get("data")), 2)
+
+        # Test that /groups/{uuid}/principals/?username_only=true returns correct data for given offset and limit
+        test_data = [
+            {"limit": 10, "offset": 2, "expected_data_count": 0},
+            {"limit": 10, "offset": 1, "expected_data_count": 1},
+            {"limit": 1, "offset": 0, "expected_data_count": 1},
+        ]
+        for item in test_data:
+            limit = item["limit"]
+            offset = item["offset"]
+            expected_data_count = item["expected_data_count"]
+            url = base_url + f"?username_only=true&limit={limit}&offset={offset}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 2)
+            self.assertEqual(int(response.data.get("meta").get("limit")), limit)
+            self.assertEqual(int(response.data.get("meta").get("offset")), offset)
+            self.assertEqual(len(response.data.get("data")), expected_data_count)
 
 
 class GroupViewNonAdminTests(IdentityRequest):
@@ -6094,9 +6321,7 @@ class GroupReplicationTests(IdentityRequest):
 
         # Check that the roles are now bound to the user in the target account (default workspace)
         # and the group
-        default_workspace_id = Workspace.objects.get(
-            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
-        ).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
@@ -6203,9 +6428,7 @@ class GroupReplicationTests(IdentityRequest):
 
         # Check that the roles are now bound to the user in the target account (default workspace)
         # and the group
-        default_workspace_id = Workspace.objects.get(
-            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
-        ).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))

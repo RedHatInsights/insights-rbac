@@ -175,7 +175,7 @@ data:
                 "h": 7,
                 "w": 9,
                 "x": 0,
-                "y": 1
+                "y": 10
               },
               "id": 47,
               "options": {
@@ -247,7 +247,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 9,
-                "y": 1
+                "y": 10
               },
               "id": 49,
               "options": {
@@ -312,7 +312,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 12,
-                "y": 1
+                "y": 10
               },
               "id": 51,
               "options": {
@@ -427,7 +427,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 2
+                "y": 11
               },
               "id": 11,
               "options": {
@@ -524,7 +524,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 2
+                "y": 11
               },
               "id": 15,
               "options": {
@@ -632,7 +632,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 11
+                "y": 20
               },
               "id": 9,
               "options": {
@@ -730,7 +730,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 11
+                "y": 20
               },
               "id": 19,
               "options": {
@@ -825,8 +825,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -842,7 +841,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 20
+                "y": 29
               },
               "id": 17,
               "options": {
@@ -879,7 +878,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "PD776AFABBE26000A"
+                "uid": "$datasource"
               },
               "refId": "A"
             }
@@ -888,10 +887,10 @@ data:
           "type": "row"
         },
         {
-          "collapsed": true,
+          "collapsed": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "PD776AFABBE26000A"
+            "uid": "$datasource"
           },
           "gridPos": {
             "h": 1,
@@ -900,729 +899,12 @@ data:
             "y": 2
           },
           "id": 23,
-          "panels": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "",
-              "fieldConfig": {
-                "defaults": {
-                  "mappings": [],
-                  "noValue": "0",
-                  "thresholds": {
-                    "mode": "percentage",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      }
-                    ]
-                  },
-                  "unit": "reqps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 5,
-                "w": 4,
-                "x": 0,
-                "y": 3
-              },
-              "id": 4,
-              "interval": "",
-              "options": {
-                "minVizHeight": 75,
-                "minVizWidth": 75,
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "last"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "showThresholdLabels": false,
-                "showThresholdMarkers": true,
-                "sizing": "auto"
-              },
-              "pluginVersion": "10.4.1",
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"2..\"}[$__rate_interval]))",
-                  "instant": false,
-                  "interval": "",
-                  "legendFormat": "",
-                  "refId": "A"
-                }
-              ],
-              "title": "2XX Response Rate",
-              "type": "gauge"
-            },
-            {
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "description": "",
-              "fieldConfig": {
-                "defaults": {
-                  "mappings": [],
-                  "noValue": "0",
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      },
-                      {
-                        "color": "red",
-                        "value": 10
-                      }
-                    ]
-                  },
-                  "unit": "reqps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 5,
-                "w": 4,
-                "x": 4,
-                "y": 3
-              },
-              "id": 6,
-              "options": {
-                "minVizHeight": 75,
-                "minVizWidth": 75,
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "showThresholdLabels": false,
-                "showThresholdMarkers": true,
-                "sizing": "auto"
-              },
-              "pluginVersion": "10.4.1",
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"4..\"}[$__rate_interval]))",
-                  "instant": false,
-                  "interval": "",
-                  "legendFormat": "",
-                  "refId": "A"
-                }
-              ],
-              "title": "4XX Response Rate",
-              "type": "gauge"
-            },
-            {
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "description": "",
-              "fieldConfig": {
-                "defaults": {
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "percentage",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      },
-                      {
-                        "color": "red",
-                        "value": 5
-                      }
-                    ]
-                  },
-                  "unit": "reqps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 5,
-                "w": 4,
-                "x": 8,
-                "y": 3
-              },
-              "id": 5,
-              "options": {
-                "minVizHeight": 75,
-                "minVizWidth": 75,
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "showThresholdLabels": false,
-                "showThresholdMarkers": true,
-                "sizing": "auto"
-              },
-              "pluginVersion": "10.4.1",
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"5..\"}[$__rate_interval]))",
-                  "instant": false,
-                  "interval": "",
-                  "legendFormat": "",
-                  "refId": "A"
-                }
-              ],
-              "title": "5XX Response Rate",
-              "type": "gauge"
-            },
-            {
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "percentage",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      }
-                    ]
-                  },
-                  "unit": "reqps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 5,
-                "w": 4,
-                "x": 12,
-                "y": 3
-              },
-              "id": 14,
-              "interval": "",
-              "options": {
-                "minVizHeight": 75,
-                "minVizWidth": 75,
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "mean"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "showThresholdLabels": false,
-                "showThresholdMarkers": true,
-                "sizing": "auto"
-              },
-              "pluginVersion": "10.4.1",
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(rate(rbac_req_type_total{behalf=\"principal\"}[$__rate_interval]))",
-                  "interval": "",
-                  "legendFormat": "",
-                  "refId": "A"
-                }
-              ],
-              "title": "Principal Behalf",
-              "type": "gauge"
-            },
-            {
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "percentage",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      }
-                    ]
-                  },
-                  "unit": "reqps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 5,
-                "w": 4,
-                "x": 16,
-                "y": 3
-              },
-              "id": 25,
-              "options": {
-                "minVizHeight": 75,
-                "minVizWidth": 75,
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "mean"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "showThresholdLabels": false,
-                "showThresholdMarkers": true,
-                "sizing": "auto"
-              },
-              "pluginVersion": "10.4.1",
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(rate(rbac_req_type_total{behalf=\"system\"}[$__rate_interval]))",
-                  "instant": false,
-                  "interval": "",
-                  "legendFormat": "",
-                  "refId": "A"
-                }
-              ],
-              "title": "System/Service Behalf",
-              "type": "gauge"
-            },
-            {
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "drawStyle": "bars",
-                    "fillOpacity": 100,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 9,
-                "w": 12,
-                "x": 0,
-                "y": 8
-              },
-              "id": 8,
-              "maxDataPoints": 25,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "displayMode": "table",
-                  "placement": "right",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "10.4.1",
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(rate(django_http_responses_total_by_status_view_method_total{job=\"rbac-service\"}[$__rate_interval])) by (method, status, view)",
-                  "interval": "",
-                  "legendFormat": "{{method}}: {{view}} -- {{status}}",
-                  "refId": "A"
-                }
-              ],
-              "title": "Request Status/method/view",
-              "type": "timeseries"
-            },
-            {
-              "cards": {},
-              "color": {
-                "cardColor": "#b4ff00",
-                "colorScale": "sqrt",
-                "colorScheme": "interpolateRdYlGn",
-                "exponent": 0.5,
-                "mode": "spectrum"
-              },
-              "dataFormat": "tsbuckets",
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "custom": {
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "scaleDistribution": {
-                      "type": "linear"
-                    }
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 9,
-                "w": 12,
-                "x": 12,
-                "y": 8
-              },
-              "heatmap": {},
-              "hideZeroBuckets": false,
-              "highlightCards": true,
-              "id": 2,
-              "interval": "",
-              "legend": {
-                "show": false
-              },
-              "maxDataPoints": 25,
-              "options": {
-                "calculate": false,
-                "calculation": {},
-                "cellGap": 2,
-                "cellValues": {},
-                "color": {
-                  "exponent": 0.5,
-                  "fill": "#b4ff00",
-                  "mode": "scheme",
-                  "reverse": false,
-                  "scale": "exponential",
-                  "scheme": "RdYlGn",
-                  "steps": 128
-                },
-                "exemplars": {
-                  "color": "rgba(255,0,255,0.7)"
-                },
-                "filterValues": {
-                  "le": 1e-9
-                },
-                "legend": {
-                  "show": false
-                },
-                "rowsFrame": {
-                  "layout": "auto"
-                },
-                "showValue": "never",
-                "tooltip": {
-                  "mode": "single",
-                  "showColorScale": false,
-                  "yHistogram": false
-                },
-                "yAxis": {
-                  "axisPlacement": "left",
-                  "reverse": false,
-                  "unit": "s"
-                }
-              },
-              "pluginVersion": "10.4.1",
-              "reverseYBuckets": false,
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(increase(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\"}[$__interval])) by (le)",
-                  "format": "heatmap",
-                  "interval": "",
-                  "legendFormat": "{{le}}",
-                  "refId": "A"
-                }
-              ],
-              "title": "Endpoint Latency ($Endpoint)",
-              "tooltip": {
-                "show": true,
-                "showHistogram": false
-              },
-              "type": "heatmap",
-              "xAxis": {
-                "show": true
-              },
-              "yAxis": {
-                "format": "s",
-                "logBase": 1,
-                "show": true
-              },
-              "yBucketBound": "auto"
-            },
-            {
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "drawStyle": "bars",
-                    "fillOpacity": 100,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 17
-              },
-              "id": 16,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "table",
-                  "placement": "right",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "10.4.1",
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(rate(bop_request_status_total{}[$__rate_interval])) by (method, status)",
-                  "interval": "",
-                  "legendFormat": "{{method}}: {{status}}",
-                  "refId": "A"
-                }
-              ],
-              "title": "BOP Request/Status",
-              "type": "timeseries"
-            },
-            {
-              "cards": {},
-              "color": {
-                "cardColor": "#b4ff00",
-                "colorScale": "sqrt",
-                "colorScheme": "interpolateRdYlGn",
-                "exponent": 0.5,
-                "mode": "spectrum"
-              },
-              "dataFormat": "tsbuckets",
-              "datasource": {
-                "uid": "$datasource"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "custom": {
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "scaleDistribution": {
-                      "type": "linear"
-                    }
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 17
-              },
-              "heatmap": {},
-              "hideZeroBuckets": false,
-              "highlightCards": true,
-              "id": 12,
-              "legend": {
-                "show": false
-              },
-              "maxDataPoints": 25,
-              "options": {
-                "calculate": false,
-                "calculation": {},
-                "cellGap": 2,
-                "cellValues": {},
-                "color": {
-                  "exponent": 0.5,
-                  "fill": "#b4ff00",
-                  "mode": "scheme",
-                  "reverse": false,
-                  "scale": "exponential",
-                  "scheme": "RdYlGn",
-                  "steps": 128
-                },
-                "exemplars": {
-                  "color": "rgba(255,0,255,0.7)"
-                },
-                "filterValues": {
-                  "le": 1e-9
-                },
-                "legend": {
-                  "show": false
-                },
-                "rowsFrame": {
-                  "layout": "auto"
-                },
-                "showValue": "never",
-                "tooltip": {
-                  "mode": "single",
-                  "showColorScale": false,
-                  "yHistogram": false
-                },
-                "yAxis": {
-                  "axisPlacement": "left",
-                  "reverse": false,
-                  "unit": "s"
-                }
-              },
-              "pluginVersion": "10.4.1",
-              "reverseYBuckets": false,
-              "targets": [
-                {
-                  "datasource": {
-                    "uid": "$datasource"
-                  },
-                  "expr": "sum(increase(rbac_proxy_request_processing_seconds_bucket{}[$__interval])) by (le)",
-                  "format": "heatmap",
-                  "interval": "",
-                  "legendFormat": "{{le}}",
-                  "refId": "A"
-                }
-              ],
-              "title": "RBAC to BOP Latency",
-              "tooltip": {
-                "show": true,
-                "showHistogram": false
-              },
-              "type": "heatmap",
-              "xAxis": {
-                "show": true
-              },
-              "yAxis": {
-                "format": "s",
-                "logBase": 1,
-                "show": true
-              },
-              "yBucketBound": "auto"
-            }
-          ],
+          "panels": [],
           "targets": [
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "PD776AFABBE26000A"
+                "uid": "$datasource"
               },
               "refId": "A"
             }
@@ -1631,16 +913,732 @@ data:
           "type": "row"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "noValue": "0",
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 0,
+            "y": 3
+          },
+          "id": 4,
+          "interval": "",
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "last"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "10.4.1",
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"2..\"}[$__rate_interval]))",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "2XX Response Rate",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 4,
+            "y": 3
+          },
+          "id": 6,
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "10.4.1",
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"4..\"}[$__rate_interval]))",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "4XX Response Rate",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 5
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 8,
+            "y": 3
+          },
+          "id": 5,
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "10.4.1",
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"5..\"}[$__rate_interval]))",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "5XX Response Rate",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 12,
+            "y": 3
+          },
+          "id": 14,
+          "interval": "",
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "mean"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "10.4.1",
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(rate(rbac_req_type_total{behalf=\"principal\"}[$__rate_interval]))",
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Principal Behalf",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 16,
+            "y": 3
+          },
+          "id": 25,
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "mean"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "10.4.1",
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(rate(rbac_req_type_total{behalf=\"system\"}[$__rate_interval]))",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "System/Service Behalf",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 100,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "id": 8,
+          "maxDataPoints": 25,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.4.1",
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(rate(django_http_responses_total_by_status_view_method_total{job=\"rbac-service\"}[$__rate_interval])) by (method, status, view)",
+              "interval": "",
+              "legendFormat": "{{method}}: {{view}} -- {{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Request Status/method/view",
+          "type": "timeseries"
+        },
+        {
+          "cards": {},
+          "color": {
+            "cardColor": "#b4ff00",
+            "colorScale": "sqrt",
+            "colorScheme": "interpolateRdYlGn",
+            "exponent": 0.5,
+            "mode": "spectrum"
+          },
+          "dataFormat": "tsbuckets",
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "scaleDistribution": {
+                  "type": "linear"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "heatmap": {},
+          "hideZeroBuckets": false,
+          "highlightCards": true,
+          "id": 2,
+          "interval": "",
+          "legend": {
+            "show": false
+          },
+          "maxDataPoints": 25,
+          "options": {
+            "calculate": false,
+            "calculation": {},
+            "cellGap": 2,
+            "cellValues": {},
+            "color": {
+              "exponent": 0.5,
+              "fill": "#b4ff00",
+              "mode": "scheme",
+              "reverse": false,
+              "scale": "exponential",
+              "scheme": "RdYlGn",
+              "steps": 128
+            },
+            "exemplars": {
+              "color": "rgba(255,0,255,0.7)"
+            },
+            "filterValues": {
+              "le": 1e-9
+            },
+            "legend": {
+              "show": false
+            },
+            "rowsFrame": {
+              "layout": "auto"
+            },
+            "showValue": "never",
+            "tooltip": {
+              "mode": "single",
+              "showColorScale": false,
+              "yHistogram": false
+            },
+            "yAxis": {
+              "axisPlacement": "left",
+              "reverse": false,
+              "unit": "s"
+            }
+          },
+          "pluginVersion": "10.4.1",
+          "reverseYBuckets": false,
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(increase(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\"}[$__interval])) by (le)",
+              "format": "heatmap",
+              "interval": "",
+              "legendFormat": "{{le}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Endpoint Latency ($Endpoint)",
+          "tooltip": {
+            "show": true,
+            "showHistogram": false
+          },
+          "type": "heatmap",
+          "xAxis": {
+            "show": true
+          },
+          "yAxis": {
+            "format": "s",
+            "logBase": 1,
+            "show": true
+          },
+          "yBucketBound": "auto"
+        },
+        {
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 100,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 17
+          },
+          "id": 16,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.4.1",
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(rate(bop_request_status_total{}[$__rate_interval])) by (method, status)",
+              "interval": "",
+              "legendFormat": "{{method}}: {{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "BOP Request/Status",
+          "type": "timeseries"
+        },
+        {
+          "cards": {},
+          "color": {
+            "cardColor": "#b4ff00",
+            "colorScale": "sqrt",
+            "colorScheme": "interpolateRdYlGn",
+            "exponent": 0.5,
+            "mode": "spectrum"
+          },
+          "dataFormat": "tsbuckets",
+          "datasource": {
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "scaleDistribution": {
+                  "type": "linear"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 17
+          },
+          "heatmap": {},
+          "hideZeroBuckets": false,
+          "highlightCards": true,
+          "id": 12,
+          "legend": {
+            "show": false
+          },
+          "maxDataPoints": 25,
+          "options": {
+            "calculate": false,
+            "calculation": {},
+            "cellGap": 2,
+            "cellValues": {},
+            "color": {
+              "exponent": 0.5,
+              "fill": "#b4ff00",
+              "mode": "scheme",
+              "reverse": false,
+              "scale": "exponential",
+              "scheme": "RdYlGn",
+              "steps": 128
+            },
+            "exemplars": {
+              "color": "rgba(255,0,255,0.7)"
+            },
+            "filterValues": {
+              "le": 1e-9
+            },
+            "legend": {
+              "show": false
+            },
+            "rowsFrame": {
+              "layout": "auto"
+            },
+            "showValue": "never",
+            "tooltip": {
+              "mode": "single",
+              "showColorScale": false,
+              "yHistogram": false
+            },
+            "yAxis": {
+              "axisPlacement": "left",
+              "reverse": false,
+              "unit": "s"
+            }
+          },
+          "pluginVersion": "10.4.1",
+          "reverseYBuckets": false,
+          "targets": [
+            {
+              "datasource": {
+                "uid": "$datasource"
+              },
+              "expr": "sum(increase(rbac_proxy_request_processing_seconds_bucket{}[$__interval])) by (le)",
+              "format": "heatmap",
+              "interval": "",
+              "legendFormat": "{{le}}",
+              "refId": "A"
+            }
+          ],
+          "title": "RBAC to BOP Latency",
+          "tooltip": {
+            "show": true,
+            "showHistogram": false
+          },
+          "type": "heatmap",
+          "xAxis": {
+            "show": true
+          },
+          "yAxis": {
+            "format": "s",
+            "logBase": 1,
+            "show": true
+          },
+          "yBucketBound": "auto"
+        },
+        {
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "PD776AFABBE26000A"
+            "uid": "$datasource"
           },
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 3
+            "y": 25
           },
           "id": 21,
           "panels": [
@@ -1709,7 +1707,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 4
+                "y": 5
               },
               "id": 3,
               "options": {
@@ -1807,7 +1805,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 4
+                "y": 5
               },
               "id": 13,
               "options": {
@@ -1869,7 +1867,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 13
+                "y": 14
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1952,7 +1950,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "PD776AFABBE26000A"
+                "uid": "$datasource"
               },
               "refId": "A"
             }
@@ -1966,7 +1964,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 4
+            "y": 26
           },
           "id": 29,
           "panels": [
@@ -2214,7 +2212,6 @@ data:
                   "links": [],
                   "mappings": [],
                   "max": 100,
-                  "min": 98,
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2431,7 +2428,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 5
+            "y": 27
           },
           "id": 74,
           "panels": [
@@ -2444,7 +2441,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 0,
-                "y": 6
+                "y": 14
               },
               "id": 38,
               "options": {
@@ -2477,8 +2474,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -2494,7 +2490,7 @@ data:
                 "h": 7,
                 "w": 4,
                 "x": 3,
-                "y": 6
+                "y": 14
               },
               "id": 40,
               "options": {
@@ -2580,8 +2576,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       },
                       {
                         "color": "red",
@@ -2597,7 +2592,7 @@ data:
                 "h": 7,
                 "w": 13,
                 "x": 7,
-                "y": 6
+                "y": 14
               },
               "id": 41,
               "options": {
@@ -2682,8 +2677,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -2699,7 +2693,7 @@ data:
                 "h": 10,
                 "w": 20,
                 "x": 0,
-                "y": 13
+                "y": 21
               },
               "id": 43,
               "options": {
@@ -2776,8 +2770,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -2792,7 +2785,7 @@ data:
                 "h": 6,
                 "w": 7,
                 "x": 0,
-                "y": 23
+                "y": 31
               },
               "id": 53,
               "options": {
@@ -2876,8 +2869,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -2893,7 +2885,7 @@ data:
                 "h": 6,
                 "w": 13,
                 "x": 7,
-                "y": 23
+                "y": 31
               },
               "id": 55,
               "options": {
@@ -2935,7 +2927,306 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 6
+            "y": 28
+          },
+          "id": 75,
+          "panels": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 7
+              },
+              "id": 77,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_total_by_method_total{service=\"rbac-service\", method=~\"POST|PUT|PATCH|DELETE\"}[1m])) by (method)",
+                  "instant": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "HTTP requests total (write)",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 15
+              },
+              "id": 76,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_total_by_method_total{service=\"rbac-service\", method=~\"GET|HEAD|OPTIONS\"}[1m])) by (method)",
+                  "instant": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "HTTP requests total (read)",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 23
+              },
+              "id": 78,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_total_by_method_total{service=\"rbac-service\"}[1m]))",
+                  "instant": false,
+                  "legendFormat": "all methods",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "HTTP requests total",
+              "type": "timeseries"
+            }
+          ],
+          "title": "RBAC count of read / write requests",
+          "type": "row"
+        },
+        {
+          "collapsed": true,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 29
           },
           "id": 57,
           "panels": [
@@ -2972,7 +3263,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 7
+                "y": 15
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -3104,8 +3395,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -3117,7 +3407,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 7
+                "y": 15
               },
               "id": 61,
               "options": {
@@ -3250,8 +3540,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3263,7 +3552,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 0,
-                "y": 16
+                "y": 24
               },
               "id": 63,
               "options": {
@@ -3345,8 +3634,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3358,7 +3646,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 12,
-                "y": 16
+                "y": 24
               },
               "id": 65,
               "options": {
@@ -3440,8 +3728,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3453,7 +3740,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 0,
-                "y": 23
+                "y": 31
               },
               "id": 67,
               "options": {
@@ -3535,8 +3822,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3548,7 +3834,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 12,
-                "y": 23
+                "y": 31
               },
               "id": 69,
               "options": {
@@ -3598,8 +3884,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -3615,7 +3900,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 0,
-                "y": 30
+                "y": 38
               },
               "id": 71,
               "options": {
@@ -3704,8 +3989,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -3721,7 +4005,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 12,
-                "y": 30
+                "y": 38
               },
               "id": 73,
               "options": {
@@ -3905,7 +4189,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 9,
+      "version": 10,
       "weekStart": ""
     }
 kind: ConfigMap
