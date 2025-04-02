@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "4bdb50083289ce1d1b097ff9a94e77f3c666dcb2c29e5f3f527a7f7b6686f03f"
+            "sha256": "e18eeb9b864cec0649298c90bfc839d96d88557c8a8f92e0296375ec5cc2e733"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -65,20 +65,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:3e7c2056b0e7950818c4b8695ac0da3a7933cf9f4f45d67f8804ce37fdef8a7b",
-                "sha256:f4ae383aca1799061d83c0097e9ccd7b494a71b36d72226628ad0fde1b95b7c9"
+                "sha256:00a025c621198508dc20c45224baaa7bd2a695323d999cce08b0d4deab5ada6f",
+                "sha256:23e9cbad028ef3723567f4556411ee8d0f732594316b4c78c174a03ba3ca3159"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.37.17"
+            "version": "==1.37.25"
         },
         "botocore": {
             "hashes": [
-                "sha256:a0bcc3c376a371f2c11afcbcc9917010c1c0a701d0e45d1ea3ec3bddeb06a8ff",
-                "sha256:f1a55332cca85a6556af8941cccdaf5d2d00336647d9e89f31174f2361ffb4f2"
+                "sha256:6f8cefd769df170809816d66bde2e12c43f557ca6cf18c807922003319b52991",
+                "sha256:e35f10df0c3bcf42f4680439148462073fe6445d8938679f0576eb189fb034d7"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.37.24"
+            "version": "==1.37.25"
         },
         "celery": {
             "hashes": [
@@ -1938,12 +1938,12 @@
         },
         "types-pyyaml": {
             "hashes": [
-                "sha256:7f07622dbd34bb9c8b264fe860a17e0efcad00d50b5f27e93984909d9363498c",
-                "sha256:fa4d32565219b68e6dee5f67534c722e53c00d1cfc09c435ef04d7353e1e96e6"
+                "sha256:5e2d86d8706697803f361ba0b8188eef2999e1c372cd4faee4ebb0844b8a4190",
+                "sha256:961871cfbdc1ad8ae3cb6ae3f13007262bcfc168adc513119755a6e4d5d7ed65"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==6.0.12.20241230"
+            "markers": "python_version >= '3.9'",
+            "version": "==6.0.12.20250326"
         },
         "typing-extensions": {
             "hashes": [
