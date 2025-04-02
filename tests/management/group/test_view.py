@@ -3658,6 +3658,43 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data").get("users")), 1)
         self.assertTrue("serviceAccounts" not in response.data.get("data"))
 
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_principal_both_types_usernames_only(self, sa_mock):
+        """Test we can list only usernames of both principal types."""
+        mocked_sa_list = []
+        for uuid in self.sa_client_ids:
+            mocked_sa_list.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+        sa_mock.return_value = mocked_sa_list
+
+        # Check the principal count in database
+        principals = Group.objects.get(uuid=self.group.uuid).principals.all()
+        sa_count = [p.type for p in principals].count("service-account")
+        user_count = [p.type for p in principals].count("user")
+
+        client = APIClient()
+        url_base = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=all"
+
+        url = url_base + f"&username_only=true"
+        response = client.get(url, **self.headers)
+
+        print(response.json())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data").get("serviceAccounts")), sa_count)
+        self.assertEqual(len(response.data.get("data").get("users")), user_count)
+        self.assertEqual(int(response.data.get("meta").get("count")), sa_count + user_count)
+
 
 class GroupViewNonAdminTests(IdentityRequest):
     """Test the group view for nonadmin user."""
