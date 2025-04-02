@@ -16,13 +16,9 @@
 #
 """Producer to send messages to kafka server."""
 import json
-import logging
 
 from django.conf import settings
 from kafka import KafkaProducer
-from kafka.errors import KafkaError
-
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class FakeKafkaProducer:
@@ -38,37 +34,16 @@ class RBACProducer:
 
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
-        retries = 0
-        max_retries = settings.KAFKA_AUTH.get("retries")
         if not hasattr(self, "producer"):
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 self.producer = FakeKafkaProducer()
-                logger.info("Fake Kafka producer initialized in development mode")
             else:
-                while retries <= max_retries:
-                    try:
-                        if settings.KAFKA_AUTH:
-                            self.producer = KafkaProducer(**settings.KAFKA_AUTH)
-                            logger.info("Kafka producer initialized successfully")
-                            break
-                        elif not settings.KAFKA_SERVERS:
-                            raise AttributeError("Empty servers list")
-                        else:
-                            self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
-                            logger.info("Kafka producer initialized successfully")
-                            break
-                    except KafkaError as e:
-                        logger.error(f"Kafka error during initialization of Kafka producer: {e}")
-                        retries += 1
-                        if retries >= max_retries:
-                            logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
-                        logger.info(f"Retrying Kafka producer initialization attempt {retries}")
-                    except Exception as e:
-                        retries += 1
-                        logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
-                        if retries >= max_retries:
-                            logger.critical(f"Failed to initialize Kafka producer after {retries} attempts")
-                        logger.info(f"Retrying Kafka producer initialization attempt {retries}")
+                if settings.KAFKA_AUTH:
+                    self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                elif not settings.KAFKA_SERVERS:
+                    raise AttributeError("Empty servers list")
+                else:
+                    self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):
