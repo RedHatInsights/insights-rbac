@@ -87,6 +87,9 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Get a list of workspaces."""
         all_types = "all"
         queryset = self.get_queryset()
+        if getattr(request, "permission_tuples", None):
+            permitted_wss = [tuple[1] for tuple in request.permission_tuples]
+            queryset = queryset.filter(id__in=permitted_wss)
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
