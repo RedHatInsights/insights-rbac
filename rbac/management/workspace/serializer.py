@@ -19,15 +19,16 @@
 from rest_framework import serializers
 
 from .model import Workspace
+from .validation_service import WorkspaceValidationService
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
     """Serializer for the Workspace model."""
 
     id = serializers.UUIDField(read_only=True, required=False)
-    name = serializers.CharField(required=False, max_length=255)
+    name = serializers.CharField(required=True, max_length=255)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
-    parent_id = serializers.UUIDField(allow_null=True, required=False)
+    parent_id = serializers.UUIDField(required=True)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
     type = serializers.CharField(read_only=True)
@@ -52,6 +53,25 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
         workspace = Workspace.objects.create(**validated_data)
         return workspace
+
+    def validate(self, attrs):
+        """Validate on POST, PUT and PATCH."""
+        request = self.context.get("request")
+        type = request.data.get("type", Workspace.Types.STANDARD)
+
+        WorkspaceValidationService.validate_type(type)
+        WorkspaceValidationService.validate_parent_id(tenant=request.tenant, parent_id=attrs.get("parent_id"))
+
+        return attrs
+
+
+class WorkspacePatchSerializer(WorkspaceSerializer):
+    """Serializer for patching the Workspace model."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in ["name", "parent_id"]:
+            self.fields[field].required = False
 
 
 class WorkspaceAncestrySerializer(serializers.ModelSerializer):

@@ -16,12 +16,12 @@
 #
 """Model for workspace management."""
 import uuid_utils.compat as uuid
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
 from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
+from .validation_service import WorkspaceValidationService
 
 from api.models import TenantAwareModel
 
@@ -61,13 +61,10 @@ class Workspace(TenantAwareModel):
 
     def clean(self):
         """Validate the model."""
-        if self.type == self.Types.ROOT:
-            if self.parent is not None:
-                raise ValidationError({"root_parent": ("Root workspace must not have a parent.")})
-        elif self.parent_id is None:
-            raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
-        elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
-            raise ValidationError({"default_parent": ("Default workspace must have a root parent.")})
+        WorkspaceValidationService.root_workspace_validation(self)
+        WorkspaceValidationService.non_root_workspace_validation(self)
+        WorkspaceValidationService.default_workspace_validation(self)
+        WorkspaceValidationService.parent_validation(self)
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
