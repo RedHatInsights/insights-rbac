@@ -2390,18 +2390,16 @@ class PrincipalViewsetServiceAccountTests(IdentityRequest):
 class PrincipalViewsetAllTypesTests(IdentityRequest):
     """Tests the principal view set - only tests with 'type=all' query param."""
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.proxy.PrincipalProxy.request_principals")
-    @patch("management.principal.it_service.ITService.get_service_accounts")
-    def test_read_principal_all(self, mock_sa, mock_user):
-        """Test that we can read both principal types in one request."""
-        # Create 3 SA in the database and mock the Service Accounts return value
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
+    def setUp(self):
+        """Set up the principal viewset tests for service accounts."""
+        super().setUp()
+        self.sa_client_ids = [
+            "1c8d4c5a-1602-4ba3-8766-0c894612d4f5",
+            "d907e308-fe91-41e4-8282-686d7dd56b13",
+            "ae50f3e0-4b37-45f4-a3db-1d684d4b39bd",
         ]
-        for uuid in sa_client_ids:
+
+        for uuid in self.sa_client_ids:
             Principal.objects.create(
                 username="service_account-" + uuid,
                 tenant=self.tenant,
@@ -2409,14 +2407,13 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
                 service_account_id=uuid,
             )
 
-        # create a return value for the mock
-        mocked_sa = []
-        for uuid in sa_client_ids:
-            mocked_sa.append(
+        self.mocked_service_accounts = []
+        for uuid in self.sa_client_ids:
+            self.mocked_service_accounts.append(
                 {
                     "clientId": uuid,
-                    "name": f"sa_name_{uuid.split('-')[0]}",
-                    "description": f"SA description {uuid.split('-')[0]}",
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
                     "username": "service_account-" + uuid,
                     "time_created": 1706784741,
@@ -2424,10 +2421,7 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
                 }
             )
 
-        mock_sa.return_value = mocked_sa, 3
-
-        # Mock the User based Principals return value
-        mock_user.return_value = {
+        self.mocked_users = {
             "status_code": 200,
             "data": {
                 "userCount": "3",
@@ -2438,6 +2432,18 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
                 ],
             },
         }
+
+    def tearDown(self):
+        """Tear down principal viewset tests for service accounts."""
+        Principal.objects.all().delete()
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request."""
+        mock_sa.return_value = self.mocked_service_accounts, 3
+        mock_user.return_value = self.mocked_users
 
         client = APIClient()
         url = f"{reverse('v1_management:principals')}?type=all"
@@ -2460,38 +2466,10 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_all_pagination(self, mock_sa, mock_user):
         """Test the pagination when we read both principal types in one request."""
-        # Create 3 SA in the database and mock the Service Accounts return value
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_sa = []
-        for uuid in sa_client_ids:
-            mocked_sa.append(
-                {
-                    "clientId": uuid,
-                    "name": f"sa_name_{uuid.split('-')[0]}",
-                    "description": f"SA description {uuid.split('-')[0]}",
-                    "owner": "jsmith",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_sa.return_value = mocked_sa
+        mock_sa.return_value = self.mocked_service_accounts
 
         # Mock the User based Principals return value
+        # Because of limit and offset, we return only 2 user based principals from 3 existing
         mock_user.return_value = {
             "status_code": 200,
             "data": {
@@ -2561,23 +2539,9 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_username_only(self, mock_sa, mock_user):
         """Test that we can read both principal types in one request username only."""
-        # Create 3 SA in the database and mock the Service Accounts return value
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
+        # Create a return value for the mock
         mocked_sa = []
-        for uuid in sa_client_ids:
+        for uuid in self.sa_client_ids:
             mocked_sa.append(
                 {
                     "username": "service_account-" + uuid,
@@ -2587,17 +2551,7 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         mock_sa.return_value = mocked_sa, 3
 
         # Mock the User based Principals return value
-        mock_user.return_value = {
-            "status_code": 200,
-            "data": {
-                "userCount": "3",
-                "users": [
-                    {"username": "test_user1"},
-                    {"username": "test_user2"},
-                    {"username": "test_user3"},
-                ],
-            },
-        }
+        mock_user.return_value = self.mocked_users
 
         client = APIClient()
         url = f"{reverse('v1_management:principals')}?type=all&username_only=true"
