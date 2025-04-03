@@ -960,6 +960,18 @@ class PrincipalViewsetTests(IdentityRequest):
 
         cross_account_principal.delete()
 
+    def test_read_principal_invalid_type(self):
+        """Test that an invalid principal's type returns an error response."""
+        invalid_type = "invalid_value"
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type={invalid_type}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        error_message = response.json().get("errors")[0].get("detail")
+        expected_substring = f"type query parameter value '{invalid_type}' is invalid."
+        self.assertIn(expected_substring, error_message)
+
 
 class PrincipalViewsetServiceAccountTests(IdentityRequest):
     """Tests the principal view set - only service accounts tests"""
