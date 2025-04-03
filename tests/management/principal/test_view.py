@@ -2595,3 +2595,39 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         self.assertEqual(len(users), 1)
 
         self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_filtered_principal_all_username_only(self, mock_sa, mock_user):
+        """Test that we can read filtered list of both principal types usernames in one request."""
+        mocked_sa = [
+            {
+                "username": "service_account-" + self.sa_client_ids[0],
+            }
+        ]
+        mock_sa.return_value = mocked_sa, 1
+        mock_user.return_value = {"status_code": 200, "data": [{"username": "test_user1"}]}
+
+        client = APIClient()
+        sa_username = f"service-account-{self.sa_client_ids[0]}"
+        user_username = "test_user1"
+        usernames = f"usernames={sa_username},{user_username}"
+        username_only = "username_only=true"
+        url = f"{reverse('v1_management:principals')}?type=all&{usernames}&{username_only}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        user = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 1)
+        self.assertEqual(len(user), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+        # Only "usernames" in the response
+        self.assertEqual(list(sa[0].keys()), ["username"])
+        self.assertEqual(list(user[0].keys()), ["username"])
