@@ -18,6 +18,7 @@
 """Common exception handler class."""
 import copy
 
+from django.core import exceptions
 from django.db import IntegrityError
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
@@ -25,6 +26,8 @@ from management.authorization.unable_meet_prerequisites import UnableMeetPrerequ
 from management.utils import api_path_prefix, v2response_error_from_errors
 from rest_framework import status
 from rest_framework.views import Response, exception_handler
+from rest_framework.response import Response as DRFResponse
+from api.common.problem_json_response import ProblemJsonResponse
 
 
 def _generate_errors_from_list(data, **kwargs):
@@ -85,6 +88,18 @@ def _generate_error_data_payload_response(detail: str, context, http_status_code
         data["errors"][0]["source"] = view.basename
 
     return data
+
+
+def problem_json_exception_handler(exc, context):
+    response = exception_handler(exc, context)
+    if isinstance(exc, exceptions.ValidationError):
+        data = exc.message_dict or exc.error_list
+        response = DRFResponse(data=data, status=status.HTTP_400_BAD_REQUEST)
+
+    if response:
+        return ProblemJsonResponse(response)
+
+    return response
 
 
 def custom_exception_handler_v2(exc, context):
@@ -151,7 +166,8 @@ def exception_version_handler(exc, context):
     """Select handler according to version."""
     request = context.get("request")
     if f"{api_path_prefix()}v2/" in request.path:
-        return custom_exception_handler_v2(exc, context)
+        # return custom_exception_handler_v2(exc, context)
+        return problem_json_exception_handler(exc, context)
     else:
         return custom_exception_handler(exc, context)
 
