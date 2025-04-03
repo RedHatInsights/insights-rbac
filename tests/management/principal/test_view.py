@@ -2355,6 +2355,37 @@ class PrincipalViewsetServiceAccountTests(IdentityRequest):
         # The function is called three times in this test.
         self.assertEqual(mock_request.call_count, 3)
 
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_read_principal_service_account_usernames_only_filtered_list(self, mock_request):
+        """Test we can read filtered list of service account usernames."""
+        mock_request.return_value = self.mocked_values
+
+        # Without the 'usernames' filter we get all usernames
+        client = APIClient()
+        username_only = "username_only=true&"
+        url = f"{reverse('v1_management:principals')}?type=service-account&{username_only}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+        for record in response.data.get("data"):
+            self.assertEqual(list(record.keys()), ["username"])
+
+        # With the 'usernames' filter we get only filtered values
+        sa1 = self.mocked_values[0]
+        usernames = f"usernames={sa1['username']}"
+        url = f"{reverse('v1_management:principals')}?type=service-account&{username_only}&{usernames}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+        sa = response.data.get("data")[0]
+        self.assertEqual(list(sa.keys()), ["username"])
+        self.assertEqual(sa["username"], sa1["username"])
+
 
 class PrincipalViewsetAllTypesTests(IdentityRequest):
     """Tests the principal view set - only tests with 'type=all' query param."""
