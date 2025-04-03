@@ -64,8 +64,14 @@ class Workspace(TenantAwareModel):
         if self.type == self.Types.ROOT:
             if self.parent is not None:
                 raise ValidationError({"root_parent": ("Root workspace must not have a parent.")})
-        elif self.parent_id is None:
-            raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
+        elif self.parent is None:
+            if self.type == self.Types.STANDARD:
+                if self.parent_id is None:
+                    workspace_object = Workspace.objects.get(type=self.Types.DEFAULT, tenant=self.tenant_id)
+                    self.parent = workspace_object
+                    self.parent_id = workspace_object.id
+            else:
+                raise ValidationError({"workspace": (f"{self.type} workspaces must have a parent workspace.")})
         elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
             raise ValidationError({"default_parent": ("Default workspace must have a root parent.")})
 

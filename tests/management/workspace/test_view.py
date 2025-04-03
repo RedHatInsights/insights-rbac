@@ -124,21 +124,29 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         data.pop("parent_id")
         self.assertEqual(workspace_event.workspace, data)
 
-    def test_create_workspace_without_parent(self):
-        """Test for creating a workspace."""
-        workspace = {"name": "New Workspace", "description": "Workspace"}
+    def test_create_workspace_assign_parent_id(self):
+        """Test for creating a workspace without parent id."""
+        workspace = {
+            "name": "New Workspace",
+            "description": "Workspace",
+        }
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
-        response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        status_code = response.data.get("status")
-        detail = response.data.get("detail")
-        self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Field 'parent_id' is required.")
 
-        self.assertEqual(status_code, 400)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+
+        self.assertEqual(data.get("name"), "New Workspace")
+        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEquals(data.get("parent_id"), data.get("id"))
+        self.assertIsNotNone(data.get("id"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("description"), "Workspace")
+        self.assertEquals(data.get("type"), "standard")
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
