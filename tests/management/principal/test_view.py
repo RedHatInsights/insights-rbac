@@ -380,6 +380,52 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_read_principal_filtered_list_username_only_success_without_cross_account_user(self, mock_request):
+        """Test that we can list usernames only for filtered principals without cross account user."""
+        # Create a cross_account user
+        cross_account_principal = Principal.objects.create(
+            username="cross_account_user", cross_account=True, tenant=self.tenant
+        )
+        base_url = f'{reverse("v1_management:principals")}'
+        username_only = "username_only=true"
+        filter_principals = "usernames=test_user,cross_account_user"
+        url = base_url + f"?{filter_principals}&{username_only}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            ["test_user", "cross_account_user"],
+            org_id=ANY,
+            limit=10,
+            offset=0,
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "true",
+                "principal_type": "user",
+            },
+        )
+        # Cross account user won't be returned.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertEqual(len(principal.keys()), 1)  # we return only usernames, no other fields
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), "test_user")
+
+        cross_account_principal.delete()
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user1"}, {"username": "test_user2"}]},
     )
     def test_read_principal_filtered_list_with_untrimmed_values(self, mock_request):
