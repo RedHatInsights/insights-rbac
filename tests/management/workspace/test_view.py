@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the Audit Logs Model."""
+import json
 from django.test.utils import override_settings
 from django.urls import clear_url_caches
 from importlib import reload
@@ -186,7 +187,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_duplicate_create_workspace(self):
-        """Test that creating a duplicate workspace is allowed."""
+        """Test that creating a duplicate workspace within same parent is not allowed."""
         workspace_data = {
             "name": "New Workspace",
             "description": "New Workspace - description",
@@ -201,8 +202,9 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_body = json.loads(response.content.decode())
+        self.assertEqual(resp_body.get("detail"), "Can't create workspace with same name within same workspace")
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
