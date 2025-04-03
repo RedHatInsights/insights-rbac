@@ -33,10 +33,10 @@ class BaseV2ViewSetTest(IdentityRequest):
         self.c = Workspace.objects.create(name="C", type="root", tenant=self.tenant)
         self.a = Workspace.objects.create(name="A", type="default", parent=self.c, tenant=self.tenant)
         self.b1 = Workspace.objects.create(
-            name="B", description="B1", type="standard", parent=self.a, tenant=self.tenant
+            name="B1", description="B1", type="standard", parent=self.a, tenant=self.tenant
         )
         self.b2 = Workspace.objects.create(
-            name="B", description="B2", type="standard", parent=self.a, tenant=self.tenant
+            name="B2", description="B2", type="standard", parent=self.a, tenant=self.tenant
         )
 
         reload(urls)
@@ -55,7 +55,7 @@ class BaseV2ViewSetTest(IdentityRequest):
         response = client.get(url, None, format="json", **self.headers)
         payload = response.data
         ordered_payload_ids = [w["id"] for w in payload["data"]]
-        ordered_workspace_ids = [str(self.a.id), str(self.b2.id), str(self.b1.id), str(self.c.id)]
+        ordered_workspace_ids = [str(self.a.id), str(self.b1.id), str(self.b2.id), str(self.c.id)]
         self.assertEqual(ordered_payload_ids, ordered_workspace_ids)
 
     def test_base_queryset_ordering_when_modified(self):
