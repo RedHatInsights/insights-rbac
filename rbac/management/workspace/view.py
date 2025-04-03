@@ -15,14 +15,16 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+from django.db import transaction
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_uuid
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
-
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
@@ -91,7 +93,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
             message = "Unable to delete due to workspace dependencies"
             error = {"workspace": [_(message)]}
             raise serializers.ValidationError(error)
-        return super().destroy(request=request, args=args, kwargs=kwargs)
+        with transaction.atomic():
+            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
+            response = super().destroy(request=request, args=args, kwargs=kwargs)
+            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
+            dual_write_handler.replicate_deleted_workspace()
+        return response
 
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
