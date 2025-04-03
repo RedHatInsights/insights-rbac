@@ -15,20 +15,27 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the Audit Logs Model."""
-from django.db import transaction
-from django.test import TestCase
 from django.test.utils import override_settings
-from django.conf import settings
 from django.urls import clear_url_caches
 from importlib import reload
-from unittest.mock import Mock
+from unittest.mock import patch
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api.models import Tenant
 from management.models import Workspace
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.workspace.serializer import WorkspaceEventSerializer
+from migration_tool.in_memory_tuples import (
+    all_of,
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    relation,
+    resource,
+    subject,
+)
+from migration_tool.utils import create_relationship
 from rbac import urls
 from tests.identity_request import IdentityRequest
 
@@ -70,9 +77,15 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             parent=self.default_workspace,
             type=Workspace.Types.STANDARD,
         )
+        self.tuples = InMemoryTuples()
+        self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
 
-    def test_create_workspace(self):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    def test_create_workspace(self, replicate_workspace, replicate):
         """Test for creating a workspace."""
+        replicate.side_effect = self.in_memory_replicator.replicate
         workspace_data = {
             "name": "New Workspace",
             "description": "New Workspace - description",
@@ -96,22 +109,44 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEquals(data.get("description"), "Workspace")
         self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", data.get("id")),
+                relation("parent"),
+                subject("rbac", "workspace", str(parent_workspace.id)),
+            )
+        )
+        self.assertEqual(len(tuples), 1)
+        workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.org_id, self.tenant.org_id)
+        self.assertEqual(workspace_event.event_type, ReplicationEventType.CREATE_WORKSPACE)
+        data.pop("description")
+        data.pop("parent_id")
+        self.assertEqual(workspace_event.workspace, data)
 
-    def test_create_workspace_without_parent(self):
-        """Test for creating a workspace."""
-        workspace = {"name": "New Workspace", "description": "Workspace"}
+    def test_create_workspace_assign_parent_id(self):
+        """Test for creating a workspace without parent id."""
+        workspace = {
+            "name": "New Workspace",
+            "description": "Workspace",
+        }
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
-        response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        status_code = response.data.get("status")
-        detail = response.data.get("detail")
-        self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Field 'parent_id' is required.")
 
-        self.assertEqual(status_code, 400)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+
+        self.assertEqual(data.get("name"), "New Workspace")
+        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEquals(data.get("parent_id"), data.get("id"))
+        self.assertIsNotNone(data.get("id"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("description"), "Workspace")
+        self.assertEquals(data.get("type"), "standard")
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
@@ -169,8 +204,12 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.get("content-type"), "application/json")
 
-    def test_update_workspace(self):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    def test_update_workspace(self, replicate_workspace, replicate):
         """Test for updating a workspace."""
+        replicate.side_effect = self.in_memory_replicator.replicate
         workspace_data = {
             "name": "New Workspace",
             "description": "New Workspace - description",
@@ -201,6 +240,15 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEquals(update_workspace.name, "Updated name")
         self.assertEquals(update_workspace.description, "Updated description")
         self.assertEqual(response.get("content-type"), "application/json")
+
+        self.assertEqual(len(self.tuples), 0)
+        self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
+        workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.org_id, self.tenant.org_id)
+        self.assertEqual(workspace_event.event_type, ReplicationEventType.UPDATE_WORKSPACE)
+        data.pop("description")
+        data.pop("parent_id")
+        self.assertEqual(workspace_event.workspace, data)
 
     def test_partial_update_workspace_with_put_method(self):
         """Test for updating a workspace."""
@@ -575,16 +623,26 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
-    def test_delete_workspace(self):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    def test_delete_workspace(self, replicate_workspace, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
         workspace_data = {
             "name": "Workspace for delete",
             "description": "Workspace for delete - description",
             "tenant_id": self.tenant.id,
             "parent_id": self.root_workspace.id,
         }
-
         workspace = Workspace.objects.create(**workspace_data)
-
+        relationship = create_relationship(
+            ("rbac", "workspace"),
+            str(workspace.id),
+            ("rbac", "workspace"),
+            str(self.root_workspace.id),
+            "parent",
+        )
+        self.tuples.write([relationship], [])
         url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
         client = APIClient()
         test_headers = self.headers.copy()
@@ -595,6 +653,14 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.headers.get("content-type"), None)
         deleted_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertIsNone(deleted_workspace)
+
+        self.assertEqual(len(self.tuples), 0)
+        self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
+        workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.org_id, self.tenant.org_id)
+        self.assertEqual(workspace_event.event_type, ReplicationEventType.DELETE_WORKSPACE)
+        deleted_workspace = WorkspaceEventSerializer(workspace).data
+        self.assertEqual(workspace_event.workspace["id"], deleted_workspace["id"])
 
     def test_delete_workspace_not_found(self):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": "XXXX"})
