@@ -960,6 +960,10 @@ class PrincipalViewsetTests(IdentityRequest):
 
         cross_account_principal.delete()
 
+
+class PrincipalViewsetServiceAccountTests(IdentityRequest):
+    """Tests the principal view set - only service accounts tests"""
+
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_name(self, mock_request):
@@ -2552,6 +2556,10 @@ class PrincipalViewsetTests(IdentityRequest):
         # The function is called three times in this test.
         self.assertEqual(mock_request.call_count, 3)
 
+
+class PrincipalViewsetAllTypesTests(IdentityRequest):
+    """Tests the principal view set - only tests with 'type=all' query param."""
+
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
@@ -2764,7 +2772,7 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         url = f"{reverse('v1_management:principals')}?type=all&username_only=true"
         response = client.get(url, **self.headers)
-        print(response.data)
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         for key in response.data.get("data").keys():
