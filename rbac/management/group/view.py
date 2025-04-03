@@ -1021,7 +1021,7 @@ class GroupViewSet(
                 if isinstance(resp, dict) and "errors" in resp:
                     return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
 
-                # Save the informationto audit logs
+                # Save the information to audit logs
                 for users_info in users_to_remove:
                     auditlog = AuditLog()
                     auditlog.log_group_remove(
