@@ -21,9 +21,9 @@ import json
 import logging
 import os
 
-import redis
 from django.db import transaction
 from django.urls import resolve
+from management.cache import JWTCache
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
@@ -40,6 +40,7 @@ scopes = os.getenv("SCOPES")
 url = os.getenv("URL")
 grant_type = os.getenv("GRANT_TYPE")
 relations_api_server = os.getenv("relation_api_gRPC_server")
+JWT = JWTCache()
 
 
 def build_internal_user(request, json_rh_auth):
@@ -120,22 +121,29 @@ def get_jwt_token(conn, grant_type, client_id, client_secret, scopes, url):
     return token
 
 
-def get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url):
+def get_jwt_from_redis(conn, grant_type, client_id, client_secret, scopes, url):
     """Retrieve jwt token from redis or generate from Redhat SSO if not exists in redis."""
     # Test the connection
+    if conn is None:
+        return None
     try:
-        redis_client.ping()
-        print("Connected to Redis!")
-    except redis.ConnectionError:
-        print("Unable to connect to Redis.")
+        # Try retrieve token from redis
+        token = JWT.get_jwt_response()
 
-    # Store JWT in redis if its not cached
-    if not redis_client.exists("jwt_token"):
-        jwt_token = get_jwt_token(conn, grant_type, client_id, client_secret, scopes, url)
+        # If token not is redis
+        if not token:
+            token = get_jwt_token(conn, grant_type, client_id, client_secret, scopes, url)
+            # Token obtained store it in redis
+            if token:
+                JWT.set_jwt_response(token)
+                logger.info("Token stored in redis.")
+            else:
+                logger.error("Failed to store jwt token in redis.")
+        else:
+            # Token exists return it
+            logger.info("Token retrieved from redis.")
+        return token
 
-        redis_client.setex("jwt_token", 3600, jwt_token)
-        print("JWT not found in Redis, token added to Redis.")
-    else:
-        access_token = redis_client.get("jwt_token")
-        print("JWT found in Redis, retrieving.")
-        return access_token
+    except Exception as e:
+        logger.error(f"error occurred when trying to retrieve JWT token. {e}")
+        return None

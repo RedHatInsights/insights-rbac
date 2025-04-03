@@ -23,7 +23,6 @@ import os
 from contextlib import contextmanager
 
 import grpc
-import redis
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
@@ -38,7 +37,7 @@ from internal.utils import delete_bindings, get_jwt_from_redis
 from kessel.relations.v1beta1 import common_pb2
 from kessel.relations.v1beta1 import lookup_pb2
 from kessel.relations.v1beta1 import lookup_pb2_grpc
-from management.cache import TenantCache
+from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -92,16 +91,15 @@ relations_api_server = os.getenv("relation_api_gRPC_server")
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 PROXY = PrincipalProxy()
+JWT = JWTCache()
 
-# Create redis client
-redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
+
 conn = None
 # Create http client
 if HOST is not None:
     conn = http.client.HTTPSConnection(HOST)
 
-if conn is not None:
-    token = get_jwt_from_redis(redis_client, conn, grant_type, client_id, client_secret, scopes, url)
+token = get_jwt_from_redis(conn, grant_type, client_id, client_secret, scopes, url)
 
 relation_api_gRPC_server = relations_api_server
 
@@ -1392,5 +1390,8 @@ def lookup_resource(request):
             ),
         )
     responses = stub.LookupResources(request)
-    for r in responses:
-        return HttpResponse(r.resource)
+    if responses:
+        for r in responses:
+            return HttpResponse(r.resource)
+
+    return HttpResponse("No resource found")
