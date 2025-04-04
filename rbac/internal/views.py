@@ -21,7 +21,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-from grpc import RpcError
+
 import grpc
 import requests
 from core.utils import destructive_ok
@@ -32,6 +32,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.utils import delete_bindings, get_jwt_from_redis
 from kessel.relations.v1beta1 import common_pb2
@@ -1369,13 +1370,13 @@ def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
-    
+
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
     resource_type_namespace = req_data["resource_type"]["namespace"]
     resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
     resource_subject_id = req_data["subject"]["subject"]["id"]
-    
+
     try:
         with create_client_channel(relation_api_gRPC_server) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
@@ -1394,7 +1395,7 @@ def lookup_resource(request):
                 ),
             )
         responses = stub.LookupResources(request)
-        
+
         if responses:
             for r in responses:
                 return HttpResponse(r.resource)
