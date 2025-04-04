@@ -16,9 +16,14 @@
 #
 """Producer to send messages to kafka server."""
 import json
+import logging
 
 from django.conf import settings
 from kafka import KafkaProducer
+from kafka.errors import KafkaError
+
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class FakeKafkaProducer:
@@ -37,13 +42,20 @@ class RBACProducer:
         if not hasattr(self, "producer"):
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 self.producer = FakeKafkaProducer()
+                logger.info("Fake Kafka producer initialized in development mode")
             else:
-                if settings.KAFKA_AUTH:
-                    self.producer = KafkaProducer(**settings.KAFKA_AUTH)
-                elif not settings.KAFKA_SERVERS:
-                    raise AttributeError("Empty servers list")
-                else:
-                    self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
+                try:
+                    if settings.KAFKA_AUTH:
+                        self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                        logger.info("Kafka producer initialized successfully")
+                    elif not settings.KAFKA_SERVERS:
+                        raise AttributeError("Empty servers list")
+                    else:
+                        self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
+                except KafkaError as e:
+                    logger.error(f"Kafka error during initialization of Kafka producer: {e}")
+                except Exception as e:
+                    logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):
