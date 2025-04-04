@@ -791,10 +791,7 @@ class GroupViewSet(
         admin_only = validate_and_get_key(request.query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, False, False)
         if admin_only == "true":
             options[ADMIN_ONLY_KEY] = True
-            
-        # Set limit and offset
-        options["limit"] = request.query_params.get("limit")
-        options["offset"] = request.query_params.get("offset")
+
         proxy = PrincipalProxy()
         resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
         if isinstance(resp, dict) and "errors" in resp:
