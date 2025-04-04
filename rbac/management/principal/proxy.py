@@ -164,8 +164,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             principals = Principal.objects.filter(type="user", tenant__org_id=org_id, cross_account=False)
             if data and "users" in data:
                 principals = principals.filter(username__in=data["users"])
-            offset = params.get("offset", 0)
-            limit = params.get("limit", StandardResultsSetPagination.default_limit)
+            offset = int(params.get("offset", 0))
+            limit = int(params.get("limit", 10))
             userList = [dict(username=principal.username) for principal in principals]
             paginatedUserList = userList[offset : offset + limit]  # noqa: E203
             return dict(data=paginatedUserList, userCount=len(userList), status_code=200)
@@ -283,6 +283,12 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             org_id_filter = True
         if not principals:
             return {"status_code": status.HTTP_200_OK, "data": []}
+        # limit param
+        limit = options.get("limit", 10)
+            
+        # offset param
+        offset = options.get("offset", 0)
+            
         filtered_principals_path = "/v1/users"
         params = self._create_params(limit, offset, options)
         payload = {"users": principals}
