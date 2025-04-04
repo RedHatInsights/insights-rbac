@@ -380,6 +380,52 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_read_principal_filtered_list_username_only_success_without_cross_account_user(self, mock_request):
+        """Test that we can list usernames only for filtered principals without cross account user."""
+        # Create a cross_account user
+        cross_account_principal = Principal.objects.create(
+            username="cross_account_user", cross_account=True, tenant=self.tenant
+        )
+        base_url = f'{reverse("v1_management:principals")}'
+        username_only = "username_only=true"
+        filter_principals = "usernames=test_user,cross_account_user"
+        url = base_url + f"?{filter_principals}&{username_only}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            ["test_user", "cross_account_user"],
+            org_id=ANY,
+            limit=10,
+            offset=0,
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "true",
+                "principal_type": "user",
+            },
+        )
+        # Cross account user won't be returned.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertEqual(len(principal.keys()), 1)  # we return only usernames, no other fields
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), "test_user")
+
+        cross_account_principal.delete()
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user1"}, {"username": "test_user2"}]},
     )
     def test_read_principal_filtered_list_with_untrimmed_values(self, mock_request):
@@ -914,17 +960,32 @@ class PrincipalViewsetTests(IdentityRequest):
 
         cross_account_principal.delete()
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts")
-    def test_principal_service_account_filter_by_name(self, mock_request):
-        """Test that we can filter service accounts by name"""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+    def test_read_principal_invalid_type(self):
+        """Test that an invalid principal's type returns an error response."""
+        invalid_type = "invalid_value"
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type={invalid_type}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        error_message = response.json().get("errors")[0].get("detail")
+        expected_substring = f"type query parameter value '{invalid_type}' is invalid."
+        self.assertIn(expected_substring, error_message)
+
+
+class PrincipalViewsetServiceAccountTests(IdentityRequest):
+    """Tests the principal view set - only service accounts tests"""
+
+    def setUp(self):
+        """Set up the principal viewset tests for service accounts."""
+        super().setUp()
+        self.sa_client_ids = [
+            "1c8d4c5a-1602-4ba3-8766-0c894612d4f5",
+            "d907e308-fe91-41e4-8282-686d7dd56b13",
+            "ae50f3e0-4b37-45f4-a3db-1d684d4b39bd",
         ]
-        for uuid in sa_client_ids:
+
+        for uuid in self.sa_client_ids:
             Principal.objects.create(
                 username="service_account-" + uuid,
                 tenant=self.tenant,
@@ -932,10 +993,9 @@ class PrincipalViewsetTests(IdentityRequest):
                 service_account_id=uuid,
             )
 
-        # create a return value for the mock
-        mocked_values = []
-        for uuid in sa_client_ids:
-            mocked_values.append(
+        self.mocked_values = []
+        for uuid in self.sa_client_ids:
+            self.mocked_values.append(
                 {
                     "clientId": uuid,
                     "name": f"service_account_name_{uuid.split('-')[0]}",
@@ -947,9 +1007,19 @@ class PrincipalViewsetTests(IdentityRequest):
                 }
             )
 
-        mock_request.return_value = mocked_values
+    def tearDown(self):
+        """Tear down principal viewset tests for service accounts."""
+        Principal.objects.all().delete()
 
-        url = f"{reverse('v1_management:principals')}?type=service-account&name=service_account_name_b6636c60"
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_filter_by_name(self, mock_request):
+        """Test that we can filter service accounts by name"""
+        mock_request.return_value = self.mocked_values
+
+        sa_id = self.sa_client_ids[0]
+        test_name = f"service_account_name_{sa_id.split('-')[0]}"
+        url = f"{reverse('v1_management:principals')}?type=service-account&name={test_name}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -961,49 +1031,24 @@ class PrincipalViewsetTests(IdentityRequest):
             list(sa.keys()),
             ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
-        self.assertEqual(sa.get("clientId"), sa_client_ids[0])
-        self.assertEqual(sa.get("name"), f"service_account_name_{sa_client_ids[0].split('-')[0]}")
-        self.assertEqual(sa.get("description"), f"Service Account description {sa_client_ids[0].split('-')[0]}")
+        sa_id = self.sa_client_ids[0]
+        self.assertEqual(sa.get("clientId"), sa_id)
+        self.assertEqual(sa.get("name"), f"service_account_name_{sa_id.split('-')[0]}")
+        self.assertEqual(sa.get("description"), f"Service Account description {sa_id.split('-')[0]}")
         self.assertEqual(sa.get("owner"), "jsmith")
         self.assertEqual(sa.get("type"), "service-account")
-        self.assertEqual(sa.get("username"), "service_account-" + sa_client_ids[0])
+        self.assertEqual(sa.get("username"), "service_account-" + sa_id)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_owner(self, mock_request):
         """Test that we can filter service accounts by owner"""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_values = []
-        for uuid in sa_client_ids:
-            mocked_values.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "jsmith_" + uuid,
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
+        mocked_values = self.mocked_values
+        mocked_values[0]["owner"] = "test_owner"
         mock_request.return_value = mocked_values
 
-        url = f"{reverse('v1_management:principals')}?type=service-account&owner=jsmith_b6636c60-a31d-013c-b93d-6aa2427b506c"
+        test_owner = "test_owner"
+        url = f"{reverse('v1_management:principals')}?type=service-account&owner={test_owner}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1015,47 +1060,19 @@ class PrincipalViewsetTests(IdentityRequest):
             list(sa.keys()),
             ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
-        self.assertEqual(sa.get("clientId"), sa_client_ids[0])
-        self.assertEqual(sa.get("name"), f"service_account_name_{sa_client_ids[0].split('-')[0]}")
-        self.assertEqual(sa.get("description"), f"Service Account description {sa_client_ids[0].split('-')[0]}")
-        self.assertEqual(sa.get("owner"), "jsmith_" + sa_client_ids[0])
+        sa_id1 = self.sa_client_ids[0]
+        self.assertEqual(sa.get("clientId"), sa_id1)
+        self.assertEqual(sa.get("name"), f"service_account_name_{sa_id1.split('-')[0]}")
+        self.assertEqual(sa.get("description"), f"Service Account description {sa_id1.split('-')[0]}")
+        self.assertEqual(sa.get("owner"), test_owner)
         self.assertEqual(sa.get("type"), "service-account")
-        self.assertEqual(sa.get("username"), "service_account-" + sa_client_ids[0])
+        self.assertEqual(sa.get("username"), "service_account-" + sa_id1)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_owner_wrong_returns_empty(self, mock_request):
         """Test that we can filter service accounts by owner with wrong input returns an empty array"""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_values = []
-        for uuid in sa_client_ids:
-            mocked_values.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "jsmith_" + uuid,
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_values
+        mock_request.return_value = self.mocked_values
 
         url = f"{reverse('v1_management:principals')}?type=service-account&owner=wrong_owner"
         client = APIClient()
@@ -1104,39 +1121,9 @@ class PrincipalViewsetTests(IdentityRequest):
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_owner_with_limit_offset(self, mock_request):
-        """Test that we can filter service accounts by owner with limit and offset provided"""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_values = []
-        for uuid in sa_client_ids:
-            mocked_values.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "ecasey",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_values
-
-        url = f"{reverse('v1_management:principals')}?type=service-account&owner=ecasey&limit=2&offset=1"
+        mock_request.return_value = self.mocked_values
+        test_owner = "jsmith"
+        url = f"{reverse('v1_management:principals')}?type=service-account&owner={test_owner}&limit=2&offset=1"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1150,61 +1137,36 @@ class PrincipalViewsetTests(IdentityRequest):
             list(sa.keys()),
             ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
-        self.assertEqual(sa.get("clientId"), sa_client_ids[1])
-        self.assertEqual(sa.get("name"), f"service_account_name_{sa_client_ids[1].split('-')[0]}")
-        self.assertEqual(sa.get("description"), f"Service Account description {sa_client_ids[1].split('-')[0]}")
-        self.assertEqual(sa.get("owner"), "ecasey")
+        sa_id = self.sa_client_ids[1]
+        self.assertEqual(sa.get("clientId"), sa_id)
+        self.assertEqual(sa.get("name"), f"service_account_name_{sa_id.split('-')[0]}")
+        self.assertEqual(sa.get("description"), f"Service Account description {sa_id.split('-')[0]}")
+        self.assertEqual(sa.get("owner"), test_owner)
         self.assertEqual(sa.get("type"), "service-account")
-        self.assertEqual(sa.get("username"), "service_account-" + sa_client_ids[1])
+        self.assertEqual(sa.get("username"), "service_account-" + sa_id)
 
         sa2 = response.data.get("data")[1]
         self.assertCountEqual(
             list(sa.keys()),
             ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
-        self.assertEqual(sa2.get("clientId"), sa_client_ids[2])
-        self.assertEqual(sa2.get("name"), f"service_account_name_{sa_client_ids[2].split('-')[0]}")
-        self.assertEqual(sa2.get("description"), f"Service Account description {sa_client_ids[2].split('-')[0]}")
-        self.assertEqual(sa2.get("owner"), "ecasey")
+        sa_id2 = self.sa_client_ids[2]
+        self.assertEqual(sa2.get("clientId"), sa_id2)
+        self.assertEqual(sa2.get("name"), f"service_account_name_{sa_id2.split('-')[0]}")
+        self.assertEqual(sa2.get("description"), f"Service Account description {sa_id2.split('-')[0]}")
+        self.assertEqual(sa2.get("owner"), test_owner)
         self.assertEqual(sa2.get("type"), "service-account")
-        self.assertEqual(sa2.get("username"), "service_account-" + sa_client_ids[2])
+        self.assertEqual(sa2.get("username"), "service_account-" + sa_id2)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_description(self, mock_request):
         """Test that we can filter service accounts by description"""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
+        mock_request.return_value = self.mocked_values
 
-        # create a return value for the mock
-        mocked_values = []
-        for uuid in sa_client_ids:
-            mocked_values.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "ecasey",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_values
-
-        url = f"{reverse('v1_management:principals')}?type=service-account&description=Service Account description b6636c60"
+        sa_id = self.sa_client_ids[0]
+        test_description = f"Service Account description {sa_id.split('-')[0]}"
+        url = f"{reverse('v1_management:principals')}?type=service-account&description={test_description}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1218,49 +1180,24 @@ class PrincipalViewsetTests(IdentityRequest):
             list(sa.keys()),
             ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
-        self.assertEqual(sa.get("clientId"), sa_client_ids[0])
-        self.assertEqual(sa.get("name"), "service_account_name_b6636c60")
-        self.assertEqual(sa.get("description"), "Service Account description b6636c60")
-        self.assertEqual(sa.get("owner"), "ecasey")
+        self.assertEqual(sa.get("clientId"), sa_id)
+        self.assertEqual(sa.get("name"), f"service_account_name_{sa_id.split('-')[0]}")
+        self.assertEqual(sa.get("description"), test_description)
+        self.assertEqual(sa.get("owner"), "jsmith")
         self.assertEqual(sa.get("type"), "service-account")
-        self.assertEqual(sa.get("username"), "service_account-b6636c60-a31d-013c-b93d-6aa2427b506c")
+        self.assertEqual(sa.get("username"), f"service_account-{sa_id}")
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_owner_name_description(self, mock_request):
         """Test that we can filter service accounts by all filter options"""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
+        mock_request.return_value = self.mocked_values
 
-        # create a return value for the mock
-        mocked_values = []
-        for uuid in sa_client_ids:
-            mocked_values.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "ecasey",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_values
-
-        url = f"{reverse('v1_management:principals')}?type=service-account&name=service_account_name_b6636c60&owner=ecasey&description=Service"
+        sa_id = self.sa_client_ids[0]
+        test_name = f"service_account_name_{sa_id.split('-')[0]}"
+        test_owner = "jsmith"
+        test_description = f"Service Account description {sa_id.split('-')[0]}"
+        url = f"{reverse('v1_management:principals')}?type=service-account&name={test_name}&owner={test_owner}&description={test_description}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1274,12 +1211,12 @@ class PrincipalViewsetTests(IdentityRequest):
             list(sa.keys()),
             ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
-        self.assertEqual(sa.get("clientId"), sa_client_ids[0])
-        self.assertEqual(sa.get("name"), "service_account_name_b6636c60")
-        self.assertEqual(sa.get("description"), "Service Account description b6636c60")
-        self.assertEqual(sa.get("owner"), "ecasey")
+        self.assertEqual(sa.get("clientId"), sa_id)
+        self.assertEqual(sa.get("name"), test_name)
+        self.assertEqual(sa.get("description"), test_description)
+        self.assertEqual(sa.get("owner"), test_owner)
         self.assertEqual(sa.get("type"), "service-account")
-        self.assertEqual(sa.get("username"), "service_account-b6636c60-a31d-013c-b93d-6aa2427b506c")
+        self.assertEqual(sa.get("username"), f"service_account-{sa_id}")
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
@@ -1309,7 +1246,6 @@ class PrincipalViewsetTests(IdentityRequest):
         )
 
         mocked_values = []
-
         mocked_values.append(
             {
                 "clientId": sa_client_ids[0],
@@ -2213,36 +2149,7 @@ class PrincipalViewsetTests(IdentityRequest):
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_service_account_valid_limit_offset(self, mock_request):
         """Test that we can read a list of service accounts according to the given limit and offset."""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "b6636c60-a31d-013c-b93d-6aa2427b506c",
-            "69a116a0-a3d4-013c-b940-6aa2427b506c",
-            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_values = []
-        for uuid in sa_client_ids:
-            mocked_values.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "jsmith",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_values
+        mock_request.return_value = self.mocked_values
 
         # without limit and offset the default values are used
         # limit=10, offset=0
@@ -2391,36 +2298,7 @@ class PrincipalViewsetTests(IdentityRequest):
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_service_account_filtered_list_success(self, mock_request):
         """Test that we can read a filtered list of service accounts."""
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_sa = []
-        for uuid in sa_client_ids:
-            mocked_sa.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "jsmith",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_sa
+        mock_request.return_value = self.mocked_values
 
         # Without the 'usernames' filter we get all values
         client = APIClient()
@@ -2432,7 +2310,7 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 3)
 
         # With the 'usernames' filter we get only filtered values
-        sa1 = mocked_sa[0]
+        sa1 = self.mocked_values[0]
         url = f"{reverse('v1_management:principals')}?type=service-account&usernames={sa1['username']}"
         response = client.get(url, **self.headers)
 
@@ -2447,40 +2325,11 @@ class PrincipalViewsetTests(IdentityRequest):
         Test that we can read a filtered list of service accounts
         and username values are processed as trimmed values.
         """
-        # Create 3 SA in the database
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_sa = []
-        for uuid in sa_client_ids[:2]:
-            mocked_sa.append(
-                {
-                    "clientId": uuid,
-                    "name": f"sa_name_{uuid.split('-')[0]}",
-                    "description": f"SA description {uuid.split('-')[0]}",
-                    "owner": "jsmith",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_sa, 2
+        mock_request.return_value = self.mocked_values[:2], 2
 
         client = APIClient()
-        sa1 = mocked_sa[0]
-        sa2 = mocked_sa[1]
+        sa1 = self.mocked_values[0]
+        sa2 = self.mocked_values[1]
         for gap in ("", " ", "     "):
             url = f"{reverse('v1_management:principals')}?type=service-account&usernames={sa1['username']},{gap}{sa2['username']}"
             response = client.get(url, **self.headers)
@@ -2507,17 +2356,50 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(mock_request.call_count, 3)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.proxy.PrincipalProxy.request_principals")
-    @patch("management.principal.it_service.ITService.get_service_accounts")
-    def test_read_principal_all(self, mock_sa, mock_user):
-        """Test that we can read both principal types in one request."""
-        # Create 3 SA in the database and mock the Service Accounts return value
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_read_principal_service_account_usernames_only_filtered_list(self, mock_request):
+        """Test we can read filtered list of service account usernames."""
+        mock_request.return_value = self.mocked_values
+
+        # Without the 'usernames' filter we get all usernames
+        client = APIClient()
+        username_only = "username_only=true&"
+        url = f"{reverse('v1_management:principals')}?type=service-account&{username_only}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+        for record in response.data.get("data"):
+            self.assertEqual(list(record.keys()), ["username"])
+
+        # With the 'usernames' filter we get only filtered values
+        sa1 = self.mocked_values[0]
+        usernames = f"usernames={sa1['username']}"
+        url = f"{reverse('v1_management:principals')}?type=service-account&{username_only}&{usernames}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+        sa = response.data.get("data")[0]
+        self.assertEqual(list(sa.keys()), ["username"])
+        self.assertEqual(sa["username"], sa1["username"])
+
+
+class PrincipalViewsetAllTypesTests(IdentityRequest):
+    """Tests the principal view set - only tests with 'type=all' query param."""
+
+    def setUp(self):
+        """Set up the principal viewset tests for service accounts."""
+        super().setUp()
+        self.sa_client_ids = [
+            "1c8d4c5a-1602-4ba3-8766-0c894612d4f5",
+            "d907e308-fe91-41e4-8282-686d7dd56b13",
+            "ae50f3e0-4b37-45f4-a3db-1d684d4b39bd",
         ]
-        for uuid in sa_client_ids:
+
+        for uuid in self.sa_client_ids:
             Principal.objects.create(
                 username="service_account-" + uuid,
                 tenant=self.tenant,
@@ -2525,14 +2407,13 @@ class PrincipalViewsetTests(IdentityRequest):
                 service_account_id=uuid,
             )
 
-        # create a return value for the mock
-        mocked_sa = []
-        for uuid in sa_client_ids:
-            mocked_sa.append(
+        self.mocked_service_accounts = []
+        for uuid in self.sa_client_ids:
+            self.mocked_service_accounts.append(
                 {
                     "clientId": uuid,
-                    "name": f"sa_name_{uuid.split('-')[0]}",
-                    "description": f"SA description {uuid.split('-')[0]}",
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
                     "username": "service_account-" + uuid,
                     "time_created": 1706784741,
@@ -2540,10 +2421,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 }
             )
 
-        mock_sa.return_value = mocked_sa, 3
-
-        # Mock the User based Principals return value
-        mock_user.return_value = {
+        self.mocked_users = {
             "status_code": 200,
             "data": {
                 "userCount": "3",
@@ -2554,6 +2432,18 @@ class PrincipalViewsetTests(IdentityRequest):
                 ],
             },
         }
+
+    def tearDown(self):
+        """Tear down principal viewset tests for service accounts."""
+        Principal.objects.all().delete()
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request."""
+        mock_sa.return_value = self.mocked_service_accounts, 3
+        mock_user.return_value = self.mocked_users
 
         client = APIClient()
         url = f"{reverse('v1_management:principals')}?type=all"
@@ -2576,38 +2466,10 @@ class PrincipalViewsetTests(IdentityRequest):
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_all_pagination(self, mock_sa, mock_user):
         """Test the pagination when we read both principal types in one request."""
-        # Create 3 SA in the database and mock the Service Accounts return value
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
-        mocked_sa = []
-        for uuid in sa_client_ids:
-            mocked_sa.append(
-                {
-                    "clientId": uuid,
-                    "name": f"sa_name_{uuid.split('-')[0]}",
-                    "description": f"SA description {uuid.split('-')[0]}",
-                    "owner": "jsmith",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_sa.return_value = mocked_sa
+        mock_sa.return_value = self.mocked_service_accounts
 
         # Mock the User based Principals return value
+        # Because of limit and offset, we return only 2 user based principals from 3 existing
         mock_user.return_value = {
             "status_code": 200,
             "data": {
@@ -2677,23 +2539,9 @@ class PrincipalViewsetTests(IdentityRequest):
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_username_only(self, mock_sa, mock_user):
         """Test that we can read both principal types in one request username only."""
-        # Create 3 SA in the database and mock the Service Accounts return value
-        sa_client_ids = [
-            "06494bcb-1409-401b-b210-0303c810f6b3",
-            "e8e388c3-eebb-4a58-a806-28bd7a1958f9",
-            "355a0f5f-0aa4-4064-855f-3e6cef2fd785",
-        ]
-        for uuid in sa_client_ids:
-            Principal.objects.create(
-                username="service_account-" + uuid,
-                tenant=self.tenant,
-                type="service-account",
-                service_account_id=uuid,
-            )
-
-        # create a return value for the mock
+        # Create a return value for the mock
         mocked_sa = []
-        for uuid in sa_client_ids:
+        for uuid in self.sa_client_ids:
             mocked_sa.append(
                 {
                     "username": "service_account-" + uuid,
@@ -2703,22 +2551,12 @@ class PrincipalViewsetTests(IdentityRequest):
         mock_sa.return_value = mocked_sa, 3
 
         # Mock the User based Principals return value
-        mock_user.return_value = {
-            "status_code": 200,
-            "data": {
-                "userCount": "3",
-                "users": [
-                    {"username": "test_user1"},
-                    {"username": "test_user2"},
-                    {"username": "test_user3"},
-                ],
-            },
-        }
+        mock_user.return_value = self.mocked_users
 
         client = APIClient()
         url = f"{reverse('v1_management:principals')}?type=all&username_only=true"
         response = client.get(url, **self.headers)
-        print(response.data)
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         for key in response.data.get("data").keys():
@@ -2730,3 +2568,66 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(users), 3)
 
         self.assertEqual(response.data.get("meta").get("count"), 6)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_filtered_principal_all(self, mock_sa, mock_user):
+        """Test that we can read filtered list of both principal types in one request."""
+        mock_sa.return_value = [self.mocked_service_accounts[0]], 1
+        mock_user.return_value = {"status_code": 200, "data": [{"username": "test_user1"}]}
+
+        client = APIClient()
+        sa_username = f"service-account-{self.sa_client_ids[0]}"
+        user_username = "test_user1"
+        usernames = f"usernames={sa_username},{user_username}"
+        url = f"{reverse('v1_management:principals')}?type=all&{usernames}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 1)
+        self.assertEqual(len(users), 1)
+
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_filtered_principal_all_username_only(self, mock_sa, mock_user):
+        """Test that we can read filtered list of both principal types usernames in one request."""
+        mocked_sa = [
+            {
+                "username": "service_account-" + self.sa_client_ids[0],
+            }
+        ]
+        mock_sa.return_value = mocked_sa, 1
+        mock_user.return_value = {"status_code": 200, "data": [{"username": "test_user1"}]}
+
+        client = APIClient()
+        sa_username = f"service-account-{self.sa_client_ids[0]}"
+        user_username = "test_user1"
+        usernames = f"usernames={sa_username},{user_username}"
+        username_only = "username_only=true"
+        url = f"{reverse('v1_management:principals')}?type=all&{usernames}&{username_only}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        user = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 1)
+        self.assertEqual(len(user), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+        # Only "usernames" in the response
+        self.assertEqual(list(sa[0].keys()), ["username"])
+        self.assertEqual(list(user[0].keys()), ["username"])
