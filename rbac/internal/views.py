@@ -21,7 +21,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-
+from grpc import RpcError
 import grpc
 import requests
 from core.utils import destructive_ok
@@ -1366,32 +1366,42 @@ def retrieve_ungrouped_workspace(request):
 
 
 def lookup_resource(request):
-    """GET resource from relations api."""
-    # Request parameters for resource lookup on relations api
-    resource_type_name = "group"
-    resource_type_namespace = "rbac"
-    resource_subject_name = "principal"
-    resource_subject_id = "bob"
+    """POST to retrieve resource details from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+    
+    # Request parameters for resource lookup on relations api from post request
+    resource_type_name = req_data["resource_type"]["name"]
+    resource_type_namespace = req_data["resource_type"]["namespace"]
+    resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
+    resource_subject_id = req_data["subject"]["subject"]["id"]
+    
+    try:
+        with create_client_channel(relation_api_gRPC_server) as channel:
+            stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
 
-    with create_client_channel(relation_api_gRPC_server) as channel:
-        stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
-
-        request = lookup_pb2.LookupResourcesRequest(
-            resource_type=common_pb2.ObjectType(
-                name=resource_type_name,
-                namespace=resource_type_namespace,
-            ),
-            relation="member",
-            subject=common_pb2.SubjectReference(
-                subject=common_pb2.ObjectReference(
-                    type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
-                    id=resource_subject_id,
+            request = lookup_pb2.LookupResourcesRequest(
+                resource_type=common_pb2.ObjectType(
+                    name=resource_type_name,
+                    namespace=resource_type_namespace,
                 ),
-            ),
-        )
-    responses = stub.LookupResources(request)
-    if responses:
-        for r in responses:
-            return HttpResponse(r.resource)
-
-    return HttpResponse("No resource found")
+                relation="member",
+                subject=common_pb2.SubjectReference(
+                    subject=common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
+                        id=resource_subject_id,
+                    ),
+                ),
+            )
+        responses = stub.LookupResources(request)
+        
+        if responses:
+            for r in responses:
+                return HttpResponse(r.resource)
+        return HttpResponse("No resource found")
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return HttpResponse("Error occurred in gRPC call", status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return HttpResponse(f"Error occurred in call to lookup resources endpoint: {str(e)}", status=500)
