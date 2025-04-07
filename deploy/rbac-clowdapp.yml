@@ -426,7 +426,7 @@ objects:
           - name: REDHAT_SSO_HOST
             value: ${REDHAT_SSO_HOST}
           - name: CLIENT_ID
-            value: "" 
+            value: ""
           - name: CLIENT_SECRET
             value: ""
           - name: SCOPES
