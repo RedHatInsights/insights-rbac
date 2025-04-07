@@ -1045,7 +1045,7 @@ objects:
 parameters:
 - description: Image name
   name: IMAGE
-  value: quay.io/cloudservices/rbac
+  value: quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac
 - description: Determines Clowder deployment
   name: CLOWDER_ENABLED
   value: "true"
