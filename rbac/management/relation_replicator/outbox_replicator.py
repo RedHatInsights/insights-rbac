@@ -43,6 +43,12 @@ workspace_replication_event_total = Counter(
     "workspace_replication_event_total", "Total count of workspace replication events"
 )
 
+OPERATION_MAPPING = {
+    ReplicationEventType.CREATE_WORKSPACE: "create",
+    ReplicationEventType.DELETE_WORKSPACE: "delete",
+    ReplicationEventType.UPDATE_WORKSPACE: "update",
+}
+
 
 class ReplicationEventPayload(TypedDict):
     """Typed dictionary for ReplicationEvent payload."""
@@ -56,7 +62,7 @@ class WorkspaceEventPayload(TypedDict):
 
     org_id: str
     workspace: Dict[str, str]
-    event_type: ReplicationEventType
+    operation: str
 
 
 class OutboxReplicator(RelationReplicator):
@@ -73,8 +79,10 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate_workspace(self, event: WorkspaceEvent):
         """Replicate the event of workspace."""
-        payload = WorkspaceEventPayload(org_id=event.org_id, workspace=event.workspace, event_type=event.event_type)
-        self._save_workspace_event(payload, str(event.partition_key))
+        payload = WorkspaceEventPayload(
+            org_id=event.org_id, workspace=event.workspace, operation=OPERATION_MAPPING[event.event_type]
+        )
+        self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
     def _build_replication_event(
         self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
@@ -135,6 +143,7 @@ class OutboxReplicator(RelationReplicator):
     def _save_workspace_event(
         self,
         payload: WorkspaceEventPayload,
+        event_type: ReplicationEventType,
         aggregateid: str,
     ):
         """Save replication event."""
@@ -143,7 +152,7 @@ class OutboxReplicator(RelationReplicator):
         outbox = Outbox(
             aggregatetype=AggregateTypes.WORKSPACE,
             aggregateid=aggregateid,
-            event_type=payload["event_type"].value,
+            event_type=event_type,
             payload=payload,
         )
 
