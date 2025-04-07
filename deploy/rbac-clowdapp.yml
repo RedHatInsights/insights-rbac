@@ -422,6 +422,21 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
+            #Relations API variables
+          - name: REDHAT_SSO_HOST
+            value: ${REDHAT_SSO_HOST}
+          - name: CLIENT_ID
+            value: "" 
+          - name: CLIENT_SECRET
+            value: ""
+          - name: SCOPES
+            value: ${SCOPES}
+          - name: OPENID_TOKEN_URL
+            value: ${OPENID_TOKEN_URL}
+          - name: TOKEN_GRANT_TYPE
+            value: ${TOKEN_GRANT_TYPE}
+          - name: RELATIONS_API_GRPC_SERVER
+            value: ${RELATIONS_API_GRPC_SERVER}
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
