@@ -1368,6 +1368,9 @@ def retrieve_ungrouped_workspace(request):
 
 def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
+    if client_id is None or client_secret is None:
+        raise Exception("Missing client_id or client_secret in environment file.")
+
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 
