@@ -276,7 +276,7 @@ class JWTCache(BasicCache):
 
     def set_jwt_response(self, response):
         """Save the JWT token response in Redis."""
-        super().save(self.JWT_CACHE_KEY, response, "JWKS response")
+        super().save(self.JWT_CACHE_KEY, response, "JWT response")
 
 
 def skip_purging_cache_for_public_tenant(tenant):
