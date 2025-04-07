@@ -16,10 +16,13 @@
 #
 
 """View for internal tenant management."""
-
+import http.client
 import json
 import logging
+import os
+from contextlib import contextmanager
 
+import grpc
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
@@ -29,9 +32,13 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
-from internal.utils import delete_bindings
-from management.cache import TenantCache
+from internal.utils import delete_bindings, get_jwt_from_redis
+from kessel.relations.v1beta1 import common_pb2
+from kessel.relations.v1beta1 import lookup_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc
+from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -74,10 +81,42 @@ from api.tasks import (
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
+# environment variables
+HOST = os.getenv("HOST")
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
+scopes = os.getenv("SCOPES")
+url = os.getenv("URL")
+grant_type = os.getenv("GRANT_TYPE")
+relations_api_server = os.getenv("relation_api_gRPC_server")
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 PROXY = PrincipalProxy()
+JWT = JWTCache()
+
+
+conn = None
+# Create http client
+if HOST is not None:
+    conn = http.client.HTTPSConnection(HOST)
+
+token = get_jwt_from_redis(conn, grant_type, client_id, client_secret, scopes, url)
+
+relation_api_gRPC_server = relations_api_server
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    # Call credential object will be invoked for every single RPC
+    call_credentials = grpc.access_token_call_credentials(token)
+
+    combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
+
+    secure_channel = grpc.secure_channel(addr, combined_credentials)
+
+    yield secure_channel
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -1338,3 +1377,38 @@ def retrieve_ungrouped_workspace(request):
             return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:
         return HttpResponse(str(e), status=500)
+
+
+def lookup_subjects(request):
+    """POST to retrieve subject details from relations api."""
+    if client_id is None or client_secret is None:
+        raise Exception("Missing client_id or client_secret in environment file.")
+    try:
+        # Parse JSON data from the POST request body
+        req_data = json.loads(request.body)
+
+        # Request parameters for subject lookup on relations api from post request
+        subject_type_name = req_data["resource_type"]["name"]
+        subject_type_namespace = req_data["resource_type"]["namespace"]
+        subject_name = req_data["subject"]["subject"]["type"]["name"]
+        subject_id = req_data["subject"]["subject"]["id"]
+
+        with create_client_channel(relation_api_gRPC_server) as channel:
+            stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+            request = lookup_pb2.LookupSubjectsRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace=subject_type_namespace, name=subject_type_name), id=subject_id
+                ),
+                relation="member",
+                subject_type=common_pb2.ObjectType(namespace=subject_type_namespace, name=subject_name),
+            )
+            responses = stub.LookupSubjects(request)
+            for r in responses:
+                return HttpResponse(r)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return HttpResponse("Error occurred in gRPC call", status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return HttpResponse(f"Error occurred in call to lookup subject endpoint: {str(e)}", status=500)
