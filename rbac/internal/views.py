@@ -1388,10 +1388,10 @@ def lookup_subjects(request):
         req_data = json.loads(request.body)
 
         # Request parameters for subject lookup on relations api from post request
-        subject_type_name = req_data["resource_type"]["name"]
-        subject_type_namespace = req_data["resource_type"]["namespace"]
-        subject_name = req_data["subject"]["subject"]["type"]["name"]
-        subject_id = req_data["subject"]["subject"]["id"]
+        subject_type_name = req_data["resource"]["type"]["name"]
+        subject_type_namespace = req_data["resource"]["type"]["namespace"]
+        subject_name = req_data["subject_type"]["name"]
+        subject_id = req_data["resource"]["id"]
 
         with create_client_channel(relation_api_gRPC_server) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
