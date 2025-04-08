@@ -15,8 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal viewset."""
-
+from datetime import datetime
 from unittest.mock import patch, ANY
+from uuid import uuid4
 
 from django.urls import reverse
 from django.test.utils import override_settings
@@ -2506,6 +2507,66 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         """Tear down principal viewset tests for service accounts."""
         Principal.objects.all().delete()
 
+    def generate_tenant_and_headers(self):
+        customer_data = self._create_customer_data()
+        user_data = self._create_user_data()
+        request_context = self._create_request_context(customer_data, user_data)
+        tenant_name = customer_data.get("tenant_name")
+        tenant = Tenant.objects.create(
+            tenant_name=tenant_name,
+            account_id=customer_data["account_id"],
+            org_id=customer_data["org_id"],
+            ready=True,
+        )
+        headers = request_context["request"].META
+        return tenant, headers
+
+    @staticmethod
+    def generate_user_based_principals(tenant, user_count, limit=10, incl_mock_return_value=True):
+        for i in range(user_count):
+            Principal.objects.create(username=f"test_user_{i + 1}", tenant=tenant)
+
+        return_value = None
+        if incl_mock_return_value:
+            users = [
+                {"username": f"test_user_{i + 1}", "org_id": tenant.org_id, "is_active": True}
+                for i in range(min(limit, user_count))
+            ]
+            return_value = {
+                "status_code": 200,
+                "data": {"userCount": user_count, "users": users},
+            }
+
+        return return_value
+
+    @staticmethod
+    def generate_service_accounts(tenant, sa_count=3, limit=10, incl_mock_return_value=True):
+        sa_client_ids = [str(uuid4()) for _ in range(sa_count)]
+        for sa_id in sa_client_ids:
+            Principal.objects.create(
+                username=f"service_account-{sa_id}",
+                tenant=tenant,
+                type="service-account",
+                service_account_id=sa_id,
+            )
+
+        mocked_service_accounts = []
+        if incl_mock_return_value:
+            for sa_id in sa_client_ids[: min(limit, sa_count)]:
+                mocked_service_accounts.append(
+                    {
+                        "clientId": sa_id,
+                        "name": f"service_account_name_{sa_id.split('-')[0]}",
+                        "description": f"Service Account description {sa_id.split('-')[0]}",
+                        "owner": "jsmith",
+                        "username": "service_account-" + sa_id,
+                        "time_created": int(datetime.now().timestamp()),
+                        "type": "service-account",
+                    }
+                )
+
+        return mocked_service_accounts
+
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
@@ -2700,3 +2761,89 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         # Only "usernames" in the response
         self.assertEqual(list(sa[0].keys()), ["username"])
         self.assertEqual(list(user[0].keys()), ["username"])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_many_principals_limit_10(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request for many principals and limit=10."""
+        tenant, headers = self.generate_tenant_and_headers()
+        sa_count = user_count = 15
+
+        limit = 10
+        mock_sa.return_value = self.generate_service_accounts(tenant, limit=limit, sa_count=sa_count), sa_count
+        mock_user.return_value = self.generate_user_based_principals(tenant, limit=limit, user_count=user_count)
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        self.assertEqual(len(sa), limit)
+
+        self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_many_principals_limit_20(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request for many principals and limit=20."""
+        tenant, headers = self.generate_tenant_and_headers()
+        sa_count = user_count = 15
+
+        limit = 20
+        mock_sa.return_value = self.generate_service_accounts(tenant, limit=limit, sa_count=sa_count), sa_count
+        mock_user.return_value = self.generate_user_based_principals(
+            tenant, limit=limit - sa_count, user_count=user_count
+        )
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 15)
+        self.assertEqual(len(users), 5)
+
+        self.assertEqual(response.data.get("meta").get("count"), 30)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_many_principals_limit_1000(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request for many principals and limit=1000."""
+        tenant, headers = self.generate_tenant_and_headers()
+        sa_count = user_count = 15
+
+        limit = 1000
+        mock_sa.return_value = self.generate_service_accounts(tenant, limit=limit, sa_count=sa_count), sa_count
+        mock_user.return_value = self.generate_user_based_principals(
+            tenant, limit=limit - sa_count, user_count=user_count
+        )
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa = response.data.get("data").get("serviceAccounts")
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(sa), 15)
+        self.assertEqual(len(users), 15)
+
+        self.assertEqual(response.data.get("meta").get("count"), 30)
