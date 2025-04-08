@@ -2968,3 +2968,56 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
             self.assertEqual(list(user.keys())[0], "username")
 
         self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_without_service_accounts(self, mock_sa, mock_user):
+        """Test that we can read list of both principal types when only user based principals present."""
+        tenant, headers = self.generate_tenant_and_headers()
+        user_count = 15
+        limit = 10
+        mock_sa.return_value = [], 0
+        mock_user.return_value = self.generate_user_based_principals(
+            tenant, limit=limit, user_count=user_count, username_only=True
+        )
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&username_only=true"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["users"])
+
+        users_list = response.data.get("data").get("users")
+        self.assertEqual(len(users_list), 10)
+
+        self.assertEqual(response.data.get("meta").get("count"), user_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_without_service_accounts_limit_100(self, mock_sa, mock_user):
+        """Test that we can read list of both principal types when only user based principals present."""
+        tenant, headers = self.generate_tenant_and_headers()
+        user_count = 15
+        limit = 100
+        mock_sa.return_value = [], 0
+        mock_user.return_value = self.generate_user_based_principals(
+            tenant, limit=limit, user_count=user_count, username_only=True
+        )
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&username_only=true"
+        client = APIClient()
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["users"])
+
+        users_list = response.data.get("data").get("users")
+        self.assertEqual(len(users_list), user_count)
+
+        self.assertEqual(response.data.get("meta").get("count"), user_count)
