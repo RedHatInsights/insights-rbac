@@ -20,6 +20,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
+from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
 
 from api.models import TenantAwareModel
@@ -32,22 +33,24 @@ class Workspace(TenantAwareModel):
         STANDARD = "standard"
         DEFAULT = "default"
         ROOT = "root"
+        UNGROUPED_HOSTS = "ungrouped-hosts"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, db_index=True)
     parent = models.ForeignKey("self", on_delete=models.PROTECT, related_name="children", null=True, blank=True)
     description = models.CharField(max_length=255, null=True, blank=True, editable=True)
     type = models.CharField(choices=Types.choices, default=Types.STANDARD, null=False)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
 
+    objects = WorkspaceManager()
+
     class Meta:
-        ordering = ["name", "modified"]
         constraints = [
             UniqueConstraint(
                 fields=["tenant_id", "type"],
                 name="unique_default_root_workspace_per_tenant",
-                condition=Q(type__in=["root", "default"]),
+                condition=Q(type__in=["root", "default", "ungrouped-hosts"]),
             )
         ]
 
@@ -58,8 +61,19 @@ class Workspace(TenantAwareModel):
 
     def clean(self):
         """Validate the model."""
-        if self.type != self.Types.ROOT and self.parent_id is None:
-            raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
+        if self.type == self.Types.ROOT:
+            if self.parent is not None:
+                raise ValidationError({"root_parent": "Root workspace must not have a parent."})
+        elif self.parent is None:
+            if self.type == self.Types.STANDARD:
+                if self.parent_id is None:
+                    workspace_object = Workspace.objects.get(type=self.Types.DEFAULT, tenant=self.tenant_id)
+                    self.parent = workspace_object
+                    self.parent_id = workspace_object.id
+            else:
+                raise ValidationError({"workspace": f"{self.type} workspaces must have a parent workspace."})
+        elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
+            raise ValidationError({"default_parent": "Default workspace must have a root parent."})
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""

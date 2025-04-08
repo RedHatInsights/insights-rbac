@@ -15,11 +15,14 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+from django.db import transaction
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_uuid
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
 
@@ -28,7 +31,7 @@ from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_CREATE_FIELDS = ["name", "parent_id"]
+REQUIRED_CREATE_FIELDS = ["name"]
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
@@ -72,9 +75,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
         queryset = self.get_queryset()
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
+        name = request.query_params.get("name")
 
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)
+        if name:
+            queryset = queryset.filter(name=name)
 
         serializer = self.get_serializer(queryset, many=True)
         page = self.paginate_queryset(serializer.data)
@@ -87,7 +93,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
             message = "Unable to delete due to workspace dependencies"
             error = {"workspace": [_(message)]}
             raise serializers.ValidationError(error)
-        return super().destroy(request=request, args=args, kwargs=kwargs)
+        with transaction.atomic():
+            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
+            response = super().destroy(request=request, args=args, kwargs=kwargs)
+            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
+            dual_write_handler.replicate_deleted_workspace()
+        return response
 
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
@@ -130,6 +141,11 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Validate a workspace."""
         parent_id = request.data.get("parent_id")
         tenant = request.tenant
+        workspace_type = request.data.get("type", Workspace.Types.STANDARD)
+        if workspace_type != Workspace.Types.STANDARD:
+            message = f"Only workspace type {Workspace.Types.STANDARD} is allowed."
+            error = {"workspace": [_(message)]}
+            raise serializers.ValidationError(error)
         if action == "create":
             self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
         elif action == "put":

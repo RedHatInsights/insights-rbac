@@ -17,6 +17,7 @@
 """Test cases for Tenant bootstrapping logic."""
 
 from typing import Optional, Tuple
+import uuid
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
@@ -452,6 +453,38 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
+    def test_bulk_import_workspace(self):
+        ws_id_1 = uuid.uuid4()
+        ws_id_2 = uuid.uuid4()
+        root_id = uuid.uuid4()
+        default_id = uuid.uuid4()
+        self.tuples.clear()
+        pairs = [
+            (ws_id_1, root_id),
+            (ws_id_2, default_id),
+        ]
+        self.service.create_workspace_relationships(pairs)
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", ws_id_1),
+                    relation("parent"),
+                    subject("rbac", "workspace", root_id),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", ws_id_2),
+                    relation("parent"),
+                    subject("rbac", "workspace", default_id),
+                )
+            ),
+        )
+
     def assertAddedToDefaultGroup(self, user_id: str, tenant_mapping: TenantMapping, and_admin_group: bool = False):
         self.assertEqual(
             1,
@@ -481,8 +514,8 @@ class V2TenantBootstrapServiceTest(TestCase):
         mapping = TenantMapping.objects.get(tenant=tenant)
         workspaces = list(Workspace.objects.filter(tenant=tenant))
         self.assertEqual(len(workspaces), 2)
-        default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
-        root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+        default = Workspace.objects.default(tenant=tenant)
+        root = Workspace.objects.root(tenant=tenant)
 
         platform_default_policy = Policy.objects.get(
             group=Group.objects.get(platform_default=True, tenant=self.fixture.public_tenant)

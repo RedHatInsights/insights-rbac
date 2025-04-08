@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""RelationReplicator which just loggs added tuples."""
+"""RelationReplicator which just logs added tuples."""
 
 import logging
 

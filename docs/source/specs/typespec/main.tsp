@@ -99,7 +99,8 @@ namespace Workspaces {
     enum WorkspaceTypes {
         "root",
         "default",
-        "standard"
+        "standard",
+        "ungrouped-hosts"
     }
 
     enum WorkspaceTypesQueryParam {
@@ -122,8 +123,9 @@ namespace Workspaces {
     }
 
     model CreateWorkspaceRequest extends BasicWorkspace{
+        //if parent_id is not stated within the request for standard workspaces, it is automatically populated from default workspace.
         @doc("Parent ID of Workspace A")
-        parent_id: UUID = "Parent ID of Workspace A";
+        parent_id?: UUID = "Parent ID of Workspace A";
     }
 
     model CreateWorkspaceResponse extends Workspace{
@@ -226,6 +228,8 @@ namespace Workspaces {
 
         @doc("Defaults to all when param is not supplied.")
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
+        @doc("Case sensitive exact match of workspace by name.")
+        @query name?: string;
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")

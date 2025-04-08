@@ -23,14 +23,16 @@ import logging
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.utils import delete_bindings
 from management.cache import TenantCache
-from management.models import Group, Permission, Principal, ResourceDefinition, Role
+from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -42,6 +44,8 @@ from management.principal.proxy import (
     bop_request_time_tracking,
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -51,9 +55,16 @@ from management.tasks import (
     run_sync_schemas_in_worker,
 )
 from management.tenant_service.v2 import V2TenantBootstrapService
+from management.utils import (
+    get_principal,
+    groups_for_principal,
+)
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.workspace.serializer import WorkspaceSerializer
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
+from api.cross_access.model import CrossAccountRequest, RequestsRoles
 from api.models import Tenant, User
 from api.tasks import (
     cross_account_cleanup,
@@ -336,6 +347,162 @@ def get_org_admin(request, org_or_account):
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
 
+def user_lookup(request):
+    """Get all groups, roles, and permissions for a provided user via username or email.
+
+    If both params are provided, email is ignored and username is used.
+
+    GET /_private/api/utils/user_lookup/?username=foo&email=bar@redhat.com
+    """
+    if request.method != "GET":
+        return handle_error("Invalid http method - only 'GET' is allowed", 405)
+
+    username = request.GET.get("username")
+    email = request.GET.get("email")
+
+    try:
+        validate_user_lookup_input(username, email)
+    except ValueError as err:
+        return handle_error(f"Invalid request input - {err}", 400)
+
+    try:
+        user = get_user_from_bop(username, email)
+    except UserNotFoundError as err:
+        return handle_error(f"Not found - {err}", 404)
+    except Exception as err:
+        return handle_error(f"Internal error - couldn't get user from bop: {err}", 500)
+
+    username = user["username"]
+    user_org_id = user["org_id"]
+
+    result = {
+        "username": username,
+        "email_address": user["email"],
+    }
+
+    try:
+        user_tenant = Tenant.objects.get(org_id=user_org_id)
+        logger.debug("queried rbac db for tenant: '%s' based on org_id: '%s'", user_tenant, user_org_id)
+    except Exception as err:
+        logger.error(f"error querying for tenant with org_id: '{user_org_id}' in rbac, err: {err}")
+        return handle_error(f"Internal error - failed to query rbac for tenant with org_id: '{user_org_id}'", 500)
+
+    try:
+        principal = get_principal(username, request, verify_principal=False, from_query=False, user_tenant=user_tenant)
+    except Exception as err:
+        logger.error(f"error querying for principal with username: '{username}' in rbac, err: {err}")
+        return handle_error(f"Internal error - failed to query rbac for user: '{username}'", 500)
+
+    groups = groups_for_principal(principal, user_tenant, is_org_admin=user["is_org_admin"])
+
+    user_groups = []
+    for group in groups:
+        roles = group.roles()
+        user_roles = []
+        for role in roles:
+            accesses = Access.objects.filter(role=role)
+
+            permissions = []
+            for access in accesses:
+                permission = access.permission
+                permissions.append(f"{permission.application} | {permission.resource_type} | {permission.verb}")
+
+            user_roles.append(
+                {
+                    "name": role.name,
+                    "display_name": role.display_name,
+                    "description": role.description if role.description else "",
+                    "permissions": permissions,
+                }
+            )
+
+        user_groups.append(
+            {
+                "name": group.name,
+                "description": group.description if group.description else "",
+                "roles": user_roles,
+            }
+        )
+
+    result["groups"] = user_groups
+
+    return HttpResponse(json.dumps(result, cls=DjangoJSONEncoder), content_type="application/json", status=200)
+
+
+def validate_user_lookup_input(username, email):
+    """Validate input from user_lookup endpoint."""
+    if not username and not email:
+        raise ValueError("you must provide either 'email' or 'username' as query params")
+
+    if username and username.isspace():
+        raise ValueError("username contains only whitespace")
+
+    if not username and email.isspace():
+        raise ValueError("email contains only whitespace")
+
+
+def get_user_from_bop(username, email):
+    """Retrieve user from bop via username or email."""
+    principal = ""
+    query_by = ""
+
+    if username:
+        principal = username
+        query_by = "principal"
+    elif email and not username:
+        principal = email
+        query_by = "email"
+    else:
+        raise Exception("must provide username or email to query bop for user")
+
+    query_options = {"query_by": query_by, "include_permissions": True}
+    logger.debug(f"querying bop for user with options: '{query_options}' and principal: '{principal}'")
+
+    resp = PROXY.request_filtered_principals(principals=[principal], limit=1, offset=0, options=query_options)
+
+    if isinstance(resp, dict) and "errors" in resp:
+        status = resp.get("status_code")
+        err = resp.get("errors")
+        logger.error(
+            f"Unexpected error when querying bop for user '{query_by}={principal}', status: '{status}', response: {err}"
+        )
+        raise Exception(f"unexpected status: '{status}' returned from bop")
+
+    users = resp["data"]
+
+    if len(users) == 0:
+        raise UserNotFoundError(f"user with '{query_by}={principal}' not found in bop")
+
+    user = users[0]
+
+    if ("username" not in user) or (not user["username"]) or (user["username"].isspace()):
+        logger.error(
+            f"""invalid data for user '{query_by}={principal}':
+             user found in bop but does not contain required 'username' field"""
+        )
+        raise Exception(
+            f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
+        )
+
+    if "is_org_admin" not in user:
+        user["is_org_admin"] = False
+        logger.warning(
+            f"""invalid data for user '{query_by}={principal}':
+             user found in bop but does not contain required 'is_org_admin' field"""
+        )
+
+    if "org_id" not in user:
+        logger.error(
+            f"""invalid data for user '{query_by}={principal}':
+             user found in bop but does not contain required 'org_id' field"""
+        )
+        raise Exception(f"invalid user data for user '{query_by}={principal}': user found in bop but no org_id exists")
+
+    logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
+
+    return user
+
+
 def run_seeds(request):
     """View method for running seeds.
 
@@ -367,6 +534,35 @@ def car_expiry(request):
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def cars_clean(request):
+    """View or update cross-account request associated with custom roles.
+
+    GET or POST /_private/api/cars/clean/
+    """
+    if request.method not in ("GET", "POST"):
+        return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
+    if request.method == "POST" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    with transaction.atomic():
+        request_roles = RequestsRoles.objects.filter(role__system=False).prefetch_related(
+            "role", "cross_account_request"
+        )
+        if request.method == "GET":
+            result = {
+                str(request_role.cross_account_request.request_id): (
+                    request_role.role.id,
+                    request_role.role.display_name,
+                )
+                for request_role in request_roles
+            }
+            return HttpResponse(json.dumps(result), status=200)
+        else:
+            logger.info("Cleaning up cars.")
+            request_roles.delete()
+            return HttpResponse("Cars cleaned up.", status=200)
 
 
 def set_tenant_ready(request):
@@ -551,6 +747,69 @@ def data_migration(request):
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
 
 
+def bootstrap_pending_tenants(request):
+    """List tenants which are not bootstrapped.
+
+    GET /_private/api/utils/bootstrap_pending_tenants/
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method only "GET" is allowed.', status=405)
+
+    public_tenant = Tenant._get_public_tenant()
+    org_ids = list(
+        Tenant.objects.filter(tenant_mapping__isnull=True)
+        .exclude(id=public_tenant.id)
+        .exclude(org_id__isnull=True)
+        .values_list("org_id", flat=True)
+    )
+
+    response = {"org_ids": org_ids}
+
+    return JsonResponse(response, content_type="application/json", status=200)
+
+
+def fetch_replication_data(request):
+    """
+    Handle a GET request to fetch PostgreSQL replication-related data.
+
+    This function executes multiple queries to retrieve information about:
+    - Replication slots
+    - Publications
+    - Publication tables
+    - Write-Ahead Log (WAL) LSN status for Debezium
+
+    Returns:
+        JsonResponse: A JSON object containing query results for each key.
+        If an error occurs during query execution, returns a JSON response with the error message.
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    wal_lsn_query = """
+                    SELECT pg_current_wal_lsn(), confirmed_flush_lsn
+                    FROM pg_replication_slots
+                    WHERE slot_name = 'debezium';
+                    """
+    queries = {
+        "replication_slots": "SELECT slot_name, slot_type FROM pg_replication_slots;",
+        "publications": "SELECT oid, pubname FROM pg_publication;",
+        "publication_tables": "SELECT pubname, tablename FROM pg_publication_tables;",
+        "wal_lsn": wal_lsn_query,
+    }
+
+    results = {}
+
+    try:
+        with connection.cursor() as cursor:
+            for key, query in queries.items():
+                cursor.execute(query)
+                results[key] = cursor.fetchall()
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse(results, safe=False)
+
+
 def bootstrap_tenant(request):
     """View method for bootstrapping a tenant.
 
@@ -591,12 +850,6 @@ def bootstrap_tenant(request):
     return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
 
-class SentryDiagnosticError(Exception):
-    """Raise this to create an event in Sentry."""
-
-    pass
-
-
 def list_or_delete_bindings_for_role(request, role_uuid):
     """View method for listing bindings for a role.
 
@@ -627,6 +880,100 @@ def list_or_delete_bindings_for_role(request, role_uuid):
     else:
         info = delete_bindings(bindings)
         return HttpResponse(json.dumps(info), status=200)
+
+
+def clean_binding_mapping(request, binding_id):
+    """Clean bindingmapping for a role, delete not associated role anymore.
+
+    POST /_private/api/utils/bindings/<binding_id>/clean
+    Params:
+        field=users or groups
+    """
+    if not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    field = request.GET.get("field")
+    if not field or field not in ("users", "groups"):
+        return HttpResponse(
+            'Invalid request, must supply the "users" or "groups" in field.',
+            status=400,
+        )
+
+    replicator = OutboxReplicator()
+    try:
+        with transaction.atomic():
+            mapping = (
+                BindingMapping.objects.select_for_update()
+                .filter(
+                    id=binding_id,
+                )
+                .get()
+            )
+            if field == "users":
+                relations_to_remove = []
+                # Check if the user should be removed
+                if (
+                    CrossAccountRequest.objects.filter(user_id__in=mapping.mappings["users"])
+                    .filter(roles__id=mapping.role.id)
+                    .filter(status="approved")
+                    .exists()
+                ):
+                    raise Exception(
+                        f"User(s) {mapping.mappings['users']} are still related to approved cross account reqeusts."
+                    )
+                # After migration, if it is still old format with duplication, means
+                # it only binds with expired cars, which we can remove
+                mapping.update_data_format_for_user(relations_to_remove)
+                if relations_to_remove:
+                    replicator.replicate(
+                        ReplicationEvent(
+                            event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
+                            info={
+                                "users": mapping.mappings["users"],
+                            },
+                            partition_key=PartitionKey.byEnvironment(),
+                            remove=relations_to_remove,
+                            add=[],
+                        ),
+                    )
+            else:
+                relations_to_remove = []
+                if not mapping.role.system:
+                    raise Exception("Groups can only be cleaned for system roles")
+                # Get the list of group UUIDs from the mapping
+                group_uuids = mapping.mappings.get("groups", [])
+
+                # Get existing groups from the database
+                existing_groups = {
+                    str(group_uuid)
+                    for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
+                }
+
+                # Find missing groups
+                missing_groups = set(group_uuids) - existing_groups
+                if not missing_groups:
+                    raise Exception("No groups to clean")
+                for group in missing_groups:
+                    removal = mapping.unassign_group(group)
+                    if removal is not None:
+                        relations_to_remove.append(removal)
+                if relations_to_remove:
+                    replicator.replicate(
+                        ReplicationEvent(
+                            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
+                            info={
+                                "groups": missing_groups,
+                            },
+                            partition_key=PartitionKey.byEnvironment(),
+                            remove=relations_to_remove,
+                            add=[],
+                        ),
+                    )
+            mapping.save()
+        return HttpResponse(f"Binding mapping {json.dumps(mapping.mappings)} cleaned.", status=200)
+    except Exception as e:
+        return handle_error(str(e), 400)
 
 
 def migration_resources(request):
@@ -962,3 +1309,32 @@ def principal_removal(request):
                 bootstrap_service.update_user(user)
 
         return HttpResponse(f"Users deleted: {principal_usernames}", status=204)
+
+
+def retrieve_ungrouped_workspace(request):
+    """GET or create ungrouped workspace for HBI."""
+    if request.method != "GET":
+        return HttpResponse("Invalid request method, only GET is allowed.", status=405)
+
+    org_id = request.user.org_id
+    try:
+        with transaction.atomic():
+            tenant = Tenant.objects.get(org_id=org_id)
+            ungrouped_hosts = Workspace.objects.select_for_update().filter(
+                tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS
+            )
+            if not ungrouped_hosts.exists():
+                default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+                ungrouped_hosts, _ = Workspace.objects.get_or_create(
+                    tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=default
+                )
+                dual_write_handler = RelationApiDualWriteWorkspacepHandler(
+                    ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
+                )
+                dual_write_handler.replicate_new_workspace()
+            else:
+                ungrouped_hosts = ungrouped_hosts.get()
+            data = WorkspaceSerializer(ungrouped_hosts).data
+            return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+    except Exception as e:
+        return HttpResponse(str(e), status=500)

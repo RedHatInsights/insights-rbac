@@ -1602,7 +1602,10 @@ class RoleViewsetTests(IdentityRequest):
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
             al_list = retrieve_data
-            al_dict = al_list[1]
+            for al_record in al_list:
+                if al_record["action"] == "delete":
+                    al_dict = al_record
+                    break
 
             al_dict_principal_username = al_dict["principal_username"]
             al_dict_description = al_dict["description"]

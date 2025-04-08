@@ -59,6 +59,11 @@ class ReplicationEventType(str, Enum):
     EXPIRE_CROSS_ACCOUNT_REQUEST = "expire_cross_account_request"
     MIGRATE_CROSS_ACCOUNT_REQUEST = "migrate_cross_account_request"
     DELETE_BINDING_MAPPINGS = "delete_binding_mappings"
+    CREATE_UNGROUPED_HOSTS_WORKSPACE = "create_ungrouped_hosts_workspace"
+    WORKSPACE_IMPORT = "workspace_import"
+    CREATE_WORKSPACE = "create_workspace"
+    UPDATE_WORKSPACE = "update_workspace"
+    DELETE_WORKSPACE = "delete_workspace"
 
 
 class ReplicationEvent:
@@ -84,6 +89,31 @@ class ReplicationEvent:
         self.add = add
         self.remove = remove
         self.event_info = info
+
+
+class WorkspaceEvent:
+    """Workspace event."""
+
+    org_id: str
+    workspace: dict[str, str]
+    event_type: ReplicationEventType
+    partition_key: "PartitionKey"
+
+    def __init__(
+        self, org_id: str, workspace: dict[str, str], event_type: ReplicationEventType, partition_key: "PartitionKey"
+    ):
+        """Initialize WorkspaceEvent."""
+        self.org_id = org_id
+        self.workspace = workspace
+        self.event_type = event_type
+        self.partition_key = partition_key
+
+
+class AggregateTypes(str, Enum):
+    """Aggregate types for outbox events."""
+
+    RELATIONS = "relations-replication-event"
+    WORKSPACE = "workspace"
 
 
 class RelationReplicator(ABC):
