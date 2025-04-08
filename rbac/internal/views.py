@@ -115,8 +115,11 @@ def create_client_channel(addr):
     combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
 
     secure_channel = grpc.secure_channel(addr, combined_credentials)
-
-    yield secure_channel
+    
+    try:
+        yield secure_channel
+    finally:
+        secure_channel.close()
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
