@@ -28,7 +28,7 @@ class BaseV2ViewSet(
     mixins.ListModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Base views to be inhertied for v2 API views."""
+    """Base views to be inherited for v2 API views."""
 
     renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES + [ProblemJSONRenderer]
 
