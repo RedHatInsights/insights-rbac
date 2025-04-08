@@ -51,7 +51,12 @@ class Workspace(TenantAwareModel):
                 fields=["tenant_id", "type"],
                 name="unique_default_root_workspace_per_tenant",
                 condition=Q(type__in=["root", "default", "ungrouped-hosts"]),
-            )
+            ),
+            UniqueConstraint(
+                fields=["name", "parent"],
+                name="unique_workspace_name_per_parent",
+                condition=Q(parent__isnull=False),
+            ),
         ]
 
     def save(self, *args, **kwargs):
