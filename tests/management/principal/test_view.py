@@ -972,6 +972,75 @@ class PrincipalViewsetTests(IdentityRequest):
         expected_substring = f"type query parameter value '{invalid_type}' is invalid."
         self.assertIn(expected_substring, error_message)
 
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    def test_read_principal_100(self, mock_request):
+        """Test we can read 100 principals in one query."""
+        # Principal Proxy mock that returns 100 principals
+        principals_mock_100 = [
+            {"username": f"test_user_{i}", "account_number": self.tenant.account_id, "org_id": self.tenant.org_id}
+            for i in range(1, 101)
+        ]
+        mock_request.return_value = {"status_code": 200, "data": principals_mock_100}
+
+        url = reverse("v1_management:principals") + "?limit=100"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            limit=100,
+            offset=0,
+            options={
+                "limit": 100,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "admin_only": "false",
+                "username_only": "false",
+                "principal_type": "user",
+            },
+            org_id=self.tenant.org_id,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 100)
+        self.assertEqual(len(response.data.get("data")), 100)
+
+    def test_read_principal_username_only_100(self):
+        """Test we can read username only for 100 principals."""
+        # Create 100 principals for the test in database.
+        principals_count_we_need_to_create = 100 - len(Principal.objects.filter(tenant=self.tenant))
+
+        created_principals = []
+        for i in range(principals_count_we_need_to_create):
+            principal = Principal.objects.create(username=f"test_user_{i + 1}", tenant=self.tenant)
+            created_principals.append(principal)
+
+        client = APIClient()
+        # with different limit we get same count
+        count = 100
+        for limit in (1000, 100, 20, 11, 10, 9, 5, 1):
+            url = reverse("v1_management:principals") + f"?username_only=true&limit={limit}"
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), count)
+            expected_count = min(limit, count)
+            self.assertEqual(len(response.data.get("data")), expected_count)
+
+        # with different offset we get same count
+        count = 100
+        for offset in (1000, 100, 99, 20, 11, 10, 9, 5, 1, 0):
+            url = reverse("v1_management:principals") + f"?username_only=true&offset={offset}"
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), count)
+            expected_count = min(10, count - offset) if count - offset > 0 else 0
+            self.assertEqual(len(response.data.get("data")), expected_count)
+
+        # Remove created principals
+        for principal in created_principals:
+            principal.delete()
+
 
 class PrincipalViewsetServiceAccountTests(IdentityRequest):
     """Tests the principal view set - only service accounts tests"""
