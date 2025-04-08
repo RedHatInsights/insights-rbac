@@ -39,7 +39,6 @@ class KafkaTests(TestCase):
         with self.assertRaises(Exception):
             MockKafkaProducer.get_producer()
             mock_logger.error.assert_any_call("Non Kafka error occurred during initialization of Kafka producer: ")
-            mock_logger.info.assert_any_call("Retrying Kafka producer initialization attempt 1")
 
     @patch("core.kafka.RBACProducer")
     @patch("core.kafka.logger")
