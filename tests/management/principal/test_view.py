@@ -2522,25 +2522,27 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         return tenant, headers
 
     @staticmethod
-    def generate_user_based_principals(tenant, user_count, limit=10, incl_mock_return_value=True):
+    def generate_user_based_principals(tenant, user_count, limit=10, incl_mock_return_value=True, username_only=False):
         for i in range(user_count):
             Principal.objects.create(username=f"test_user_{i + 1}", tenant=tenant)
 
         return_value = None
         if incl_mock_return_value:
-            users = [
-                {"username": f"test_user_{i + 1}", "org_id": tenant.org_id, "is_active": True}
-                for i in range(min(limit, user_count))
-            ]
+            if username_only:
+                users = [{"username": f"test_user_{i + 1}"} for i in range(min(limit, user_count))]
+            else:
+                users = [
+                    {"username": f"test_user_{i + 1}", "org_id": tenant.org_id, "is_active": True}
+                    for i in range(min(limit, user_count))
+                ]
             return_value = {
                 "status_code": 200,
                 "data": {"userCount": user_count, "users": users},
             }
-
         return return_value
 
     @staticmethod
-    def generate_service_accounts(tenant, sa_count=3, limit=10, incl_mock_return_value=True):
+    def generate_service_accounts(tenant, sa_count=3, limit=10, incl_mock_return_value=True, username_only=False):
         sa_client_ids = [str(uuid4()) for _ in range(sa_count)]
         for sa_id in sa_client_ids:
             Principal.objects.create(
@@ -2552,19 +2554,22 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         mocked_service_accounts = []
         if incl_mock_return_value:
-            for sa_id in sa_client_ids[: min(limit, sa_count)]:
-                mocked_service_accounts.append(
-                    {
-                        "clientId": sa_id,
-                        "name": f"service_account_name_{sa_id.split('-')[0]}",
-                        "description": f"Service Account description {sa_id.split('-')[0]}",
-                        "owner": "jsmith",
-                        "username": "service_account-" + sa_id,
-                        "time_created": int(datetime.now().timestamp()),
-                        "type": "service-account",
-                    }
-                )
-
+            if username_only:
+                for sa_id in sa_client_ids[: min(limit, sa_count)]:
+                    mocked_service_accounts.append({"username": "service_account-" + sa_id})
+            else:
+                for sa_id in sa_client_ids[: min(limit, sa_count)]:
+                    mocked_service_accounts.append(
+                        {
+                            "clientId": sa_id,
+                            "name": f"service_account_name_{sa_id.split('-')[0]}",
+                            "description": f"Service Account description {sa_id.split('-')[0]}",
+                            "owner": "jsmith",
+                            "username": "service_account-" + sa_id,
+                            "time_created": int(datetime.now().timestamp()),
+                            "type": "service-account",
+                        }
+                    )
         return mocked_service_accounts
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
@@ -2847,3 +2852,119 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         self.assertEqual(len(users), 15)
 
         self.assertEqual(response.data.get("meta").get("count"), 30)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_username_only_many_principals_limit_10(self, mock_sa, mock_user):
+        """Test that we can read usernames only for both principal types or many principals and limit=10."""
+        tenant, headers = self.generate_tenant_and_headers()
+        sa_count = user_count = 15
+
+        limit = 10
+        mock_sa.return_value = (
+            self.generate_service_accounts(tenant, limit=limit, sa_count=sa_count, username_only=True),
+            sa_count,
+        )
+        mock_user.return_value = self.generate_user_based_principals(
+            tenant, limit=limit, user_count=user_count, username_only=True
+        )
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&username_only=true"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts"])
+
+        sa_list = response.data.get("data").get("serviceAccounts")
+        self.assertEqual(len(sa_list), limit)
+        for sa in sa_list:
+            self.assertEqual(len(sa.keys()), 1)
+            self.assertEqual(list(sa.keys())[0], "username")
+
+        self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_username_only_many_principals_limit_20(self, mock_sa, mock_user):
+        """Test that we can read usernames only for both principal types or many principals and limit=20."""
+        tenant, headers = self.generate_tenant_and_headers()
+        sa_count = user_count = 15
+
+        limit = 20
+        mock_sa.return_value = (
+            self.generate_service_accounts(tenant, limit=limit, sa_count=sa_count, username_only=True),
+            sa_count,
+        )
+        mock_user.return_value = self.generate_user_based_principals(
+            tenant, limit=limit - sa_count, user_count=user_count, username_only=True
+        )
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&username_only=true"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa_list = response.data.get("data").get("serviceAccounts")
+        users_list = response.data.get("data").get("users")
+
+        self.assertEqual(len(sa_list), 15)
+        for sa in sa_list:
+            self.assertEqual(len(sa.keys()), 1)
+            self.assertEqual(list(sa.keys())[0], "username")
+
+        self.assertEqual(len(users_list), 5)
+        for user in users_list:
+            self.assertEqual(len(user.keys()), 1)
+            self.assertEqual(list(user.keys())[0], "username")
+
+        self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_username_only_many_principals_limit_1000(self, mock_sa, mock_user):
+        """Test that we can read usernames only for both principal types or many principals and limit=1000."""
+        tenant, headers = self.generate_tenant_and_headers()
+        sa_count = user_count = 15
+
+        limit = 1000
+        mock_sa.return_value = (
+            self.generate_service_accounts(tenant, limit=limit, sa_count=sa_count, username_only=True),
+            sa_count,
+        )
+        mock_user.return_value = self.generate_user_based_principals(
+            tenant, limit=limit - sa_count, user_count=user_count, username_only=True
+        )
+
+        client = APIClient()
+        url = f"{reverse('v1_management:principals')}?type=all&limit={limit}&username_only=true"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+
+        sa_list = response.data.get("data").get("serviceAccounts")
+        users_list = response.data.get("data").get("users")
+
+        self.assertEqual(len(sa_list), 15)
+        for sa in sa_list:
+            self.assertEqual(len(sa.keys()), 1)
+            self.assertEqual(list(sa.keys())[0], "username")
+
+        self.assertEqual(len(users_list), 15)
+        for user in users_list:
+            self.assertEqual(len(user.keys()), 1)
+            self.assertEqual(list(user.keys())[0], "username")
+
+        self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
