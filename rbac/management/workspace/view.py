@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
@@ -24,6 +25,7 @@ from management.relation_replicator.relation_replicator import ReplicationEventT
 from management.utils import validate_and_get_key, validate_uuid
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter
 
 from .model import Workspace
@@ -64,6 +66,21 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Create a Workspace."""
         self.validate_workspace(request)
         return super().create(request=request, args=args, kwargs=kwargs)
+
+    def perform_create(self, serializer):
+        """Perform create operation."""
+        try:
+            return super().perform_create(serializer)
+        except DjangoValidationError as e:
+            # Use structured error checking by inspecting error codes
+            message = e.message_dict
+            if hasattr(e, "error_dict") and "__all__" in e.error_dict:
+                for error in e.error_dict["__all__"]:
+                    for msg in error.messages:
+                        if "unique_workspace_name_per_parent" in msg:
+                            message = "Can't create workspace with same name within same parent workspace"
+                            break
+            raise ValidationError(message)
 
     def retrieve(self, request, *args, **kwargs):
         """Get a workspace."""

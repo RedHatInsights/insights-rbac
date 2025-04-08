@@ -75,6 +75,33 @@ class WorkspaceModelTests(WorkspaceBaseTestCase):
         level_4 = Workspace.objects.create(name="Level 4", tenant=self.tenant, parent=level_3)
         self.assertCountEqual(level_3.ancestors(), [root, level_1, level_2])
 
+    def test_unique_name_parent(self):
+        """"""
+        tenant = Tenant.objects.create(tenant_name="Name/Parent uniqueness")
+        root = Workspace.objects.create(name="root", tenant=tenant, type=Workspace.Types.ROOT)
+        default = Workspace.objects.create(name="default", tenant=tenant, type=Workspace.Types.DEFAULT, parent=root)
+
+        # Create a child with the same name as the parent
+        Workspace.objects.create(name="Child", tenant=tenant, parent=default, type=Workspace.Types.STANDARD)
+        self.assertRaises(
+            ValidationError,
+            Workspace.objects.create,
+            name="Child",
+            tenant=tenant,
+            parent=default,
+            type=Workspace.Types.STANDARD,
+        )
+
+        # Create a child with the same name but different parent
+        parent_2 = Workspace.objects.create(
+            name="Parent 2", tenant=tenant, type=Workspace.Types.STANDARD, parent=default
+        )
+        Workspace.objects.create(name="Child", tenant=tenant, parent=parent_2, type=Workspace.Types.STANDARD)
+
+        # If parent is null, it is allowed to have same name
+        tenant_2 = Tenant.objects.create(tenant_name="Name/Parent uniqueness 2")
+        Workspace.objects.create(name="root", tenant=tenant_2, type=Workspace.Types.ROOT)
+
 
 class Types(WorkspaceBaseTestCase):
     """Test types on a workspace."""
