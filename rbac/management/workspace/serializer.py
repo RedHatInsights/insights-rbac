@@ -16,6 +16,9 @@
 #
 
 """Serializer for workspace management."""
+from django.db import transaction
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from rest_framework import serializers
 
 from .model import Workspace
@@ -50,8 +53,24 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         """Create the workspace object in the database."""
         validated_data["tenant"] = self.context["request"].tenant
 
-        workspace = Workspace.objects.create(**validated_data)
+        with transaction.atomic():
+            workspace = Workspace.objects.create(**validated_data)
+            dual_write_handler = RelationApiDualWriteWorkspacepHandler(
+                workspace, ReplicationEventType.CREATE_WORKSPACE
+            )
+            dual_write_handler.replicate_new_workspace()
         return workspace
+
+    def update(self, instance, validated_data):
+        """Update the workspace object in the database."""
+        with transaction.atomic():
+            # Lock the data
+            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
+            previous_parent = instance.parent
+            instance = super().update(instance, validated_data)
+            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
+            dual_write_handler.replicate_updated_workspace(previous_parent)
+        return instance
 
 
 class WorkspaceAncestrySerializer(serializers.ModelSerializer):
@@ -83,3 +102,32 @@ class WorkspaceWithAncestrySerializer(WorkspaceSerializer):
         """Serialize the workspace's ancestors."""
         ancestors = obj.ancestors().only("name", "id", "parent_id")
         return WorkspaceAncestrySerializer(ancestors, many=True).data
+
+
+class WorkspaceEventSerializer(serializers.ModelSerializer):
+    """Serializer for the Workspace model for sending event."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    type = serializers.CharField()
+    created = serializers.DateTimeField()
+    modified = serializers.DateTimeField()
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Workspace
+        fields = (
+            "name",
+            "id",
+            "created",
+            "modified",
+            "type",
+        )
+        read_only_fields = (
+            "name",
+            "id",
+            "created",
+            "modified",
+            "type",
+        )
