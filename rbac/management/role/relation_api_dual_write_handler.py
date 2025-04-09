@@ -30,7 +30,7 @@ from management.relation_replicator.relation_replicator import DualWriteExceptio
 from management.relation_replicator.relation_replicator import RelationReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import BindingMapping, Role
+from management.role.model import BindingMapping, Permission, Role
 from migration_tool.migrate_role import migrate_role
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
 from migration_tool.utils import create_relationship
@@ -76,18 +76,28 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     _public_tenant: Optional[Tenant] = None
     _platform_default_policy_uuid: Optional[str] = None
     _admin_default_policy_uuid: Optional[str] = None
+    role: Optional[Role] = None
 
-    def prepare_for_update(self, role: Role):
+    def __init__(self, role: Optional[Role] = None, replicator: Optional[RelationReplicator] = None):
+        """Initialize SeedingRelationApiDualWriteHandler."""
+        super().__init__(replicator)
+        self.role = role
+
+    def prepare_for_update(self, role: Role = None):
         """Generate & store role's current relations."""
         if not self.replication_enabled():
             return
+        if not role:
+            role = self.role
         self._current_role_relations = self._generate_relations_for_role(role)
 
-    def replicate_update_system_role(self, role: Role):
+    def replicate_update_system_role(self, role: Role = None):
         """Replicate update of system role."""
         if not self.replication_enabled():
             return
 
+        if not role:
+            role = self.role
         self._replicate(
             ReplicationEventType.UPDATE_SYSTEM_ROLE,
             self._create_metadata_from_role(role),
@@ -122,7 +132,6 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     def _generate_relations_for_role(self, role: Role) -> list[common_pb2.Relationship]:
         """Generate system role permissions."""
         relations = []
-
         admin_default = self._get_admin_default_policy_uuid()
         platform_default = self._get_platform_default_policy_uuid()
 
@@ -350,3 +359,25 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 f"Failed to generate relations and mappings for role {self.role.name}, UUID :{self.role.uuid}: {e}"
             )
             raise DualWriteException(e)
+
+
+def delete_permission(permission: Permission):
+    """Delete a permission and handles relations cleanning."""
+    roles = Role.objects.filter(access__permission=permission).distinct()
+    dual_write_handlers = []
+    for role in roles:
+        role = Role.objects.filter(id=role.id).select_for_update().get()
+        dual_write_handler = (
+            SeedingRelationApiDualWriteHandler(role=role)
+            if role.system
+            else RelationApiDualWriteHandler(role, ReplicationEventType.UPDATE_CUSTOM_ROLE)
+        )
+        dual_write_handler.prepare_for_update()
+        dual_write_handlers.append(dual_write_handler)
+    permission.delete()
+    for dual_write_handler in dual_write_handlers:
+        role = dual_write_handler.role
+        if role.system:
+            dual_write_handler.replicate_update_system_role(role)
+        else:
+            dual_write_handler.replicate_new_or_updated_role(role)
