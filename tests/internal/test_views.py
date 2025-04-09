@@ -36,6 +36,7 @@ from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ResourceDefinition
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
@@ -2677,9 +2678,10 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
 class InternalS2SViewsetTests(IdentityRequest):
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
-    def test_create_ungrouped_workspace(self, replicate):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_create_ungrouped_workspace(self, replicate, replicate_workspace):
         tuples = InMemoryTuples()
         replicator = InMemoryRelationReplicator(tuples)
         replicate.side_effect = replicator.replicate
@@ -2718,6 +2720,10 @@ class InternalS2SViewsetTests(IdentityRequest):
             )
         )
         self.assertEqual(len(ungrouped_host_relation), 1)
+        workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.org_id, org_id)
+        self.assertEqual(workspace_event.event_type, ReplicationEventType.CREATE_WORKSPACE)
+        self.assertEqual(workspace_event.workspace["type"], str(Workspace.Types.UNGROUPED_HOSTS))
 
         # Get existing ungrouped workspace
         response = self.client.get(
@@ -2726,6 +2732,6 @@ class InternalS2SViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         ungrouped_hosts.pop("modified")
-        data = response.json()
-        data.pop("modified")
-        self.assertEqual(data, ungrouped_hosts)
+        payload_get = response.json()
+        payload_get.pop("modified")
+        self.assertEqual(ungrouped_hosts, payload_get)
