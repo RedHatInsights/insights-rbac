@@ -59,6 +59,7 @@ from management.utils import (
     get_principal,
     groups_for_principal,
 )
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from management.workspace.serializer import WorkspaceSerializer
 from rest_framework import status
 
@@ -1317,11 +1318,23 @@ def retrieve_ungrouped_workspace(request):
 
     org_id = request.user.org_id
     try:
-        ungrouped_hosts = Workspace.objects.filter(tenant__org_id=org_id, type=Workspace.Types.UNGROUPED_HOSTS).first()
-        if not ungrouped_hosts:
-            bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-            ungrouped_hosts = bootstrap_service.create_ungrouped_workspace(org_id)
-        data = WorkspaceSerializer(ungrouped_hosts).data
-        return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+        with transaction.atomic():
+            tenant = Tenant.objects.get(org_id=org_id)
+            ungrouped_hosts = Workspace.objects.select_for_update().filter(
+                tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS
+            )
+            if not ungrouped_hosts.exists():
+                default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+                ungrouped_hosts, _ = Workspace.objects.get_or_create(
+                    tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=default
+                )
+                dual_write_handler = RelationApiDualWriteWorkspacepHandler(
+                    ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
+                )
+                dual_write_handler.replicate_new_workspace()
+            else:
+                ungrouped_hosts = ungrouped_hosts.get()
+            data = WorkspaceSerializer(ungrouped_hosts).data
+            return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:
         return HttpResponse(str(e), status=500)

@@ -15,21 +15,25 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_uuid
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter
-
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_CREATE_FIELDS = ["name", "parent_id"]
+REQUIRED_CREATE_FIELDS = ["name"]
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
@@ -63,6 +67,21 @@ class WorkspaceViewSet(BaseV2ViewSet):
         self.validate_workspace(request)
         return super().create(request=request, args=args, kwargs=kwargs)
 
+    def perform_create(self, serializer):
+        """Perform create operation."""
+        try:
+            return super().perform_create(serializer)
+        except DjangoValidationError as e:
+            # Use structured error checking by inspecting error codes
+            message = e.message_dict
+            if hasattr(e, "error_dict") and "__all__" in e.error_dict:
+                for error in e.error_dict["__all__"]:
+                    for msg in error.messages:
+                        if "unique_workspace_name_per_parent" in msg:
+                            message = "Can't create workspace with same name within same parent workspace"
+                            break
+            raise ValidationError(message)
+
     def retrieve(self, request, *args, **kwargs):
         """Get a workspace."""
         return super().retrieve(request=request, args=args, kwargs=kwargs)
@@ -91,7 +110,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
             message = "Unable to delete due to workspace dependencies"
             error = {"workspace": [_(message)]}
             raise serializers.ValidationError(error)
-        return super().destroy(request=request, args=args, kwargs=kwargs)
+        with transaction.atomic():
+            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
+            response = super().destroy(request=request, args=args, kwargs=kwargs)
+            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
+            dual_write_handler.replicate_deleted_workspace()
+        return response
 
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
