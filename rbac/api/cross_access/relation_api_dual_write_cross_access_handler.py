@@ -54,7 +54,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             default_workspace = Workspace.objects.default(tenant=tenant)
             super().__init__(default_workspace, event_type, replicator)
         except Exception as e:
-            logger.error("Error occurred intializing RelationApiDualWriteCrossAccessHandler", e)
+            logger.error(f"Error occurred intializing RelationApiDualWriteCrossAccessHandler for request id: {self.cross_account_request.request_id}")
             raise DualWriteException(e)
 
     def _replicate(self):
