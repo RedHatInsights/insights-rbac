@@ -55,6 +55,7 @@ from management.principal.proxy import (
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.model import Access
+from management.role.relation_api_dual_write_handler import delete_permission
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -714,7 +715,7 @@ def permission_removal(request):
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
-                permission_obj.delete()
+                delete_permission(permission_obj)
                 return HttpResponse(f"Permission '{permission}' deleted.", status=204)
             except Exception:
                 return HttpResponse("Permission cannot be deleted.", status=400)
