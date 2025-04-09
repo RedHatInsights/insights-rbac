@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "0f9ecc780680b6bcf96a35763116484773f6476e274a053fabf2927efa22d875"
+            "sha256": "6d8d69e9d540066ba29787f333c6840a4b732d20abcd84a191e3a911e93cd616"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -74,11 +74,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:092c41e346df37a8d7cf60a799791f8225ad3a5ba7cda749047eb31d1440b9c5",
-                "sha256:728c1ef3b66a0f79bc08008a59f6fd6bef2a0a0195e5b3b9e9bef255df519890"
+                "sha256:2f43b61e0231abbb4fbe8917acb1af98cb83dbab8c264c0d1f5ca0f16fdbf219",
+                "sha256:d8ca899962d2079acd52483581f607322513910337a69bdae697766404b85b7d"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.37.29"
+            "version": "==1.37.30"
         },
         "celery": {
             "hashes": [
@@ -1007,11 +1007,11 @@
         },
         "wheel": {
             "hashes": [
-                "sha256:661e1abd9198507b1409a20c02106d9670b2576e916d58f520316666abca6729",
-                "sha256:708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248"
+                "sha256:f796f65d72750ccde090663e466d0ca37cd72b62870f7520b96d34cdc07d86d8",
+                "sha256:fd477efb5da0f7df1d3c76c73c14394002c844451bd63229d8570f376f5e6a38"
             ],
-            "markers": "python_version >= '3.8'",
-            "version": "==0.45.1"
+            "markers": "python_version >= '3.9'",
+            "version": "==0.46.1"
         },
         "whitenoise": {
             "hashes": [
@@ -1401,12 +1401,12 @@
         },
         "faker": {
             "hashes": [
-                "sha256:170ead9d0d140916168b142df69c44722b8f622ced2070802d0af9c476f0cb84",
-                "sha256:977ad0b7aa7a61ed57287d6a0723a827e9d3dd1f8cc82aaf08707f281b33bacc"
+                "sha256:801d1a2d71f1fc54d332de2ab19de7452454309937233ea2f7485402882d67b3",
+                "sha256:84bcf92bb725dd7341336eea4685df9a364f16f2470c4d29c1d7e6c5fd5a457d"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.7'",
-            "version": "==18.4.0"
+            "version": "==18.13.0"
         },
         "filelock": {
             "hashes": [
