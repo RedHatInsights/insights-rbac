@@ -54,6 +54,11 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             default_workspace = Workspace.objects.default(tenant=tenant)
             super().__init__(default_workspace, event_type, replicator)
         except Exception as e:
+            logger.error(
+                f"Error initializing RelationApiDualWriteCrossAccessHandler for request id: "
+                f"{self.cross_account_request.request_id}"
+            )
+
             raise DualWriteException(e)
 
     def _replicate(self):
@@ -74,6 +79,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
                 ),
             )
         except Exception as e:
+            logger.error("Error occurred in cross account replicate event", e)
             raise DualWriteException(e)
 
     def generate_relations_to_add_roles(self, roles: Iterable[Role]):
