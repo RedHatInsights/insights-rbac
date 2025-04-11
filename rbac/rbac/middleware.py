@@ -102,7 +102,7 @@ def get_user_id(user: User):
     return user.user_id
 
 
-class IdentityHeaderMiddleware(MiddlewareMixin):
+class IdentityHeaderMiddleware:
     """A subclass of RemoteUserMiddleware.
 
     Processes the provided identity found on the request.
@@ -113,12 +113,21 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
     def __init__(self, get_response):
         """Initialize the middleware."""
-        super().__init__(get_response)
+        self.get_response = get_response
         # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
         # In this case the replicator needs to include a precondition
         # which does not add the tuples if any others already exist for the tenant
         # (the tx will be rolled back in that case)
         self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator(), get_user_id)
+        
+    def __call__(self, request):
+        self.process_request(request)
+
+        response = self.get_response(request)
+
+        self.process_response(request, response)
+        
+        return response
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
