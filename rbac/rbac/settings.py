@@ -438,6 +438,7 @@ if KAFKA_ENABLED:
                         "sasl_plain_password": kafka_brokers[broker_index].sasl.password,
                         "sasl_mechanism": kafka_brokers[broker_index].sasl.saslMechanism.upper(),
                         "security_protocol": kafka_brokers[broker_index].sasl.securityProtocol.upper(),
+                        "retries": 5,
                     }
                 )
             if kafka_brokers[broker_index].cacert:
