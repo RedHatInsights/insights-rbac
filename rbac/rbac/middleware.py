@@ -102,7 +102,7 @@ def get_user_id(user: User):
     return user.user_id
 
 
-class IdentityHeaderMiddleware:
+class IdentityHeaderMiddleware(MiddlewareMixin):
     """A subclass of RemoteUserMiddleware.
 
     Processes the provided identity found on the request.
@@ -113,21 +113,12 @@ class IdentityHeaderMiddleware:
 
     def __init__(self, get_response):
         """Initialize the middleware."""
-        self.get_response = get_response
+        super().__init__(get_response)
         # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
         # In this case the replicator needs to include a precondition
         # which does not add the tuples if any others already exist for the tenant
         # (the tx will be rolled back in that case)
         self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator(), get_user_id)
-        
-    def __call__(self, request):
-        self.process_request(request)
-
-        response = self.get_response(request)
-
-        self.process_response(request, response)
-        
-        return response
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
@@ -453,24 +444,40 @@ class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
         setattr(request, "_dont_enforce_csrf_checks", True)
 
 
-class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class ReadOnlyApiMiddleware:
     """Middleware to enable read-only on APIs when configured."""
+
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
+
+    def __call__(self, request):
+        """Code to be executed for each request before the view is called."""
+        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
+            return self._read_only_response()
+        return self.get_response(request)
 
     def _is_write_request(self, request):
         """Determine whether or not the request is a write request."""
-        write_methods = ["POST", "PUT", "PATCH", "DELETE"]
+        write_methods = {"POST", "PUT", "PATCH", "DELETE"}
         return request.method in write_methods
 
     def _should_deny_all_writes(self, request):
         """Determine whether or not to deny all API writes."""
-        resolver = resolve(request.path)
-        api_namespace = resolver.app_name if resolver else ""
+        try:
+            resolver = resolve(request.path)
+            api_namespace = resolver.app_name or ""
+        except Exception:
+            api_namespace = ""
         return settings.READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace != "internal"
 
     def _should_deny_v2_writes(self, request):
         """Determine whether or not to deny v2 writes."""
-        resolver = resolve(request.path)
-        api_namespace = resolver.app_name if resolver else ""
+        try:
+            resolver = resolve(request.path)
+            api_namespace = resolver.app_name or ""
+        except Exception:
+            api_namespace = ""
         return settings.V2_READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace == "v2_management"
 
     def _read_only_response(self):
@@ -480,8 +487,3 @@ class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-
             content_type="application/json",
             status=405,
         )
-
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request ReadOnlyApiMiddleware."""
-        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
-            return self._read_only_response()
