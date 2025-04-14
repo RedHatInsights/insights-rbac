@@ -452,32 +452,26 @@ class ReadOnlyApiMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        """Code to be executed for each request before the view is called."""
+        """Code to be executed for each request before or after the view is called."""
         if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
             return self._read_only_response()
         return self.get_response(request)
 
     def _is_write_request(self, request):
         """Determine whether or not the request is a write request."""
-        write_methods = {"POST", "PUT", "PATCH", "DELETE"}
+        write_methods = ["POST", "PUT", "PATCH", "DELETE"]
         return request.method in write_methods
 
     def _should_deny_all_writes(self, request):
         """Determine whether or not to deny all API writes."""
-        try:
-            resolver = resolve(request.path)
-            api_namespace = resolver.app_name or ""
-        except Exception:
-            api_namespace = ""
+        resolver = resolve(request.path)
+        api_namespace = resolver.app_name if resolver else ""
         return settings.READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace != "internal"
 
     def _should_deny_v2_writes(self, request):
         """Determine whether or not to deny v2 writes."""
-        try:
-            resolver = resolve(request.path)
-            api_namespace = resolver.app_name or ""
-        except Exception:
-            api_namespace = ""
+        resolver = resolve(request.path)
+        api_namespace = resolver.app_name if resolver else ""
         return settings.V2_READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace == "v2_management"
 
     def _read_only_response(self):
