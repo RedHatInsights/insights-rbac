@@ -1354,7 +1354,8 @@
               "type": "string",
               "enum": [
                 "service-account",
-                "user"
+                "user",
+                "all"
               ]
             }
           },
@@ -1401,6 +1402,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountInGroupResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
                     }
                   ]
                 }
