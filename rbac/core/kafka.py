@@ -46,8 +46,8 @@ class RBACProducer:
                 self.producer = FakeKafkaProducer()
                 logger.info("Fake Kafka producer initialized in development mode")
             else:
-             while retries <= max_retries:
-                try:
+                while retries <= max_retries:
+                    try:
                         if settings.KAFKA_AUTH:
                             self.producer = KafkaProducer(**settings.KAFKA_AUTH)
                             logger.info("Kafka producer initialized successfully")
@@ -57,12 +57,12 @@ class RBACProducer:
                         else:
                             self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
                             return self.producer
-                except KafkaError as e:
-                    logger.error(f"Kafka error during initialization of Kafka producer: {e}")
-                    retries += 1
-                except Exception as e:
-                    logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
-                    retries += 1
+                    except KafkaError as e:
+                        logger.error(f"Kafka error during initialization of Kafka producer: {e}")
+                        retries += 1
+                    except Exception as e:
+                        logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
+                        retries += 1
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):
