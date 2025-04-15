@@ -102,7 +102,7 @@ def get_user_id(user: User):
     return user.user_id
 
 
-class IdentityHeaderMiddleware(MiddlewareMixin):
+class IdentityHeaderMiddleware:
     """A subclass of RemoteUserMiddleware.
 
     Processes the provided identity found on the request.
@@ -112,8 +112,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     bootstrap_service: TenantBootstrapService
 
     def __init__(self, get_response):
-        """Initialize the middleware."""
-        super().__init__(get_response)
+        """One-time configuration and initialization."""
+        self.get_response = get_response
         # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
         # In this case the replicator needs to include a precondition
         # which does not add the tuples if any others already exist for the tenant
@@ -203,23 +203,17 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
         return access
 
-    @catch_integrity_error
-    def process_request(self, request):  # pylint: disable=R1710
-        """Process request for identity middleware.
-
-        Args:
-            request (object): The request object
-
-        """
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
         if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # This request is for a private API endpoint
-            return
+            return self.get_response(request)
 
         if is_no_auth(request):
-            return
+            return self.get_response(request)
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
@@ -307,6 +301,30 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request.user = user
             request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
+        response = self.get_response(request)
+
+        # Code to be executed for each request/response after
+        # the view is called.
+        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
+        is_system = False
+
+        if hasattr(request, "user") and request.user:
+            username = request.user.username
+            if username:
+                is_system = request.user.system
+
+        behalf = "system" if is_system else "principal"
+
+        req_sys_counter.labels(
+            behalf=behalf,
+            method=request.method,
+            view=resolve(request.path).url_name,
+            status=response.get("status_code"),
+        ).inc()
+
+        IdentityHeaderMiddleware.log_request(request, response, is_internal)
+        return response
+
     @staticmethod
     def log_request(request, response, is_internal=False):
         """Log requests for identity middleware.
@@ -379,33 +397,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "is_internal": is_internal,
         }
         logger.info(log_object)
-
-    def process_response(self, request, response):  # pylint: disable=no-self-use
-        """Process response for identity middleware.
-
-        Args:
-            request (object): The request object
-            response (object): The response object
-        """
-        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
-        is_system = False
-
-        if hasattr(request, "user") and request.user:
-            username = request.user.username
-            if username:
-                is_system = request.user.system
-
-        behalf = "system" if is_system else "principal"
-
-        req_sys_counter.labels(
-            behalf=behalf,
-            method=request.method,
-            view=resolve(request.path).url_name,
-            status=response.get("status_code"),
-        ).inc()
-
-        IdentityHeaderMiddleware.log_request(request, response, is_internal)
-        return response
 
     def should_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
         """Decide whether RBAC should load the access permissions for the user based on the given request."""
