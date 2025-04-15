@@ -12,23 +12,47 @@
   },
   "tags": [
     {
-      "name": "Role",
-      "description": "Operations about roles"
+      "name": "Integrations",
+      "description": "List groups, roles, principals and tenants."
     },
     {
       "name": "Group",
-      "description": "Operations about groups"
+      "description": "Operations about groups."
     },
     {
       "name": "Principal",
-      "description": "Operations about principals"
+      "description": "Operations about principals."
+    },
+    {
+      "name": "Role",
+      "description": "Operations about roles."
+    },
+    {
+      "name": "Tenant",
+      "description": "Operations about tenants."
+    },
+    {
+      "name": "Utils",
+      "description": "Utils operations."
+    },
+    {
+      "name": "Destructive",
+      "description": "Destructive operations."
+    },
+    {
+      "name": "V2",
+      "description": "Operations related with RBAC V2."
+    },
+    {
+      "name": "CAR",
+      "description": "Cross Account Request operations."
     }
   ],
   "paths": {
     "/integrations/tenant/{orgId}/roles/": {
       "get": {
         "tags": [
-          "Role"
+          "Integrations", "Role"
         ],
         "summary": "List the roles for a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -207,7 +231,7 @@
     "/integrations/tenant/{orgId}/groups/": {
       "get": {
         "tags": [
-          "Group"
+          "Integrations", "Group"
         ],
         "summary": "List the groups for a tenant",
         "description": "By default, responses are sorted in ascending order by group name",
@@ -314,7 +338,7 @@
     "/integrations/tenant/{orgId}/groups/{uuid}/roles/": {
       "get": {
         "tags": [
-          "Group"
+          "Integrations", "Group", "Role"
         ],
         "summary": "List the roles for a group in a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -435,7 +459,7 @@
     "/integrations/tenant/{orgId}/principal/{username}/groups/": {
       "get": {
         "tags": [
-          "Principal"
+          "Integrations", "Group", "Principal"
         ],
         "summary": "List the groups for a principal in a tenant",
         "description": "By default, responses are sorted in ascending order by group name",
@@ -542,7 +566,7 @@
     "/integrations/tenant/{orgId}/principal/{username}/groups/{uuid}/roles/": {
       "get": {
         "tags": [
-          "Principal"
+          "Integrations", "Role", "Group", "Principal"
         ],
         "summary": "List the roles for a group for a principal in a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -645,7 +669,7 @@
     "/integrations/tenant/{orgId}/groups/{uuid}/principals/": {
       "get": {
         "tags": [
-          "Group"
+          "Integrations", "Principal", "Group"
         ],
         "summary": "Get a list of principals from a group in a tenant",
         "description": "By default, responses are sorted in ascending order by username",
@@ -818,7 +842,7 @@
     "/integrations/tenant/": {
       "get": {
         "tags": [
-          "Tenant"
+          "Integrations", "Tenant"
         ],
         "summary": "Get a list of tenants",
         "description": "List of tenants in ConsoleDot RBAC",
@@ -884,7 +908,7 @@
     "/api/utils/cars/clean/": {
       "get": {
         "tags": [
-          "Cars Clean"
+          "Utils", "CAR"
         ],
         "summary": "Get info of cars with custom roles",
         "description": "Get info of cars with custom roles",
@@ -917,7 +941,7 @@
       },
       "post": {
         "tags": [
-          "Cars Clean"
+          "CAR", "Utils"
         ],
         "summary": "Clean up custom roles in cars",
         "description": "Clean up custom roles in cars",
@@ -962,7 +986,7 @@
     "/api/utils/get_org_admin/{org_or_account}/": {
       "get": {
         "tags": [
-          "Org_Admin"
+          "Utils"
         ],
         "summary": "Get a list of Org Admins for an account or organization",
         "description": "List of Org Admins for an account or organization",
@@ -1040,7 +1064,7 @@
     "/api/utils/role/": {
       "delete": {
         "tags": [
-          "Role"
+          "Role", "Utils", "Destructive"
         ],
         "summary": "Delete Red Hat managed role",
         "description": "Specify a role name to delete a Red Hat managed role.",
@@ -1089,7 +1113,7 @@
     "/api/utils/permission/": {
       "delete": {
         "tags": [
-          "Permission"
+          "Permission", "Utils", "Destructive"
         ],
         "summary": "Delete permission",
         "description": "Specify a permission to delete a permission.",
@@ -1138,7 +1162,7 @@
     "/api/utils/data_migration/": {
       "post": {
         "tags": [
-          "V2 data migration"
+          "V2", "Utils"
         ],
         "summary": "Migration of v1 resources",
         "description": "Start process of migration of v1 resources.",
@@ -1193,7 +1217,7 @@
     "/api/utils/bootstrap_tenant/": {
       "post": {
         "tags": [
-          "Tenant bootstrap"
+          "V2", "Tenant", "Utils"
         ],
         "summary": "Bootstrap a tenants by org ids",
         "description": "Bootstrap a tenants by org ids",
@@ -1269,6 +1293,9 @@
     },
     "/api/utils/bootstrap_pending_tenants/": {
       "get": {
+        "tags": [
+          "V2", "Tenant", "Utils"
+        ],
         "summary": "List tenants that are not bootstrapped",
         "description": "Returns a list of tenant org IDs that have not yet been bootstrapped.",
         "operationId": "bootstrapPendingTenants",
@@ -1308,6 +1335,9 @@
     },
     "/fetch_replication_data": {
       "get": {
+        "tags": [
+          "V2", "Utils"
+        ],
         "summary": "Fetch replication data",
         "operationId": "fetchReplicationData",
         "description": "Retrieves replication-related information from the database.",
@@ -1397,7 +1427,7 @@
     "/api/utils/bindings/": {
       "get": {
         "tags": [
-          "Binding list for a role"
+          "V2", "Role", "Utils"
         ],
         "summary": "List bindingmappings for a role",
         "description": "List bindingmappings for a role.",
@@ -1453,7 +1483,7 @@
     "/api/utils/binding/{binding_id}/clean/": {
       "post": {
         "tags": [
-          "Clean binding"
+          "V2", "Utils"
         ],
         "summary": "Clean binding for a given id",
         "description": "Clean binding for a given id",
@@ -1513,7 +1543,7 @@
     "/api/utils/migration_resources/": {
       "delete": {
         "tags": [
-          "Delete migration resources"
+          "V2", "Destructive", "Utils"
         ],
         "summary": "Delete migration resources",
         "description": "Delete migration resources, including binding mappings, tenant mappings, and workspaces.",
@@ -1581,7 +1611,7 @@
       },
       "get": {
         "tags": [
-          "List migration resources"
+          "V2", "Utils"
         ],
         "summary": "List migration resources",
         "description": "List migration resources, including binding mappings, tenant mappings, and workspaces.",
@@ -1651,7 +1681,7 @@
     "/api/utils/set_tenant_ready/": {
       "get": {
         "tags": [
-          "Set tenant ready"
+          "Tenant", "Utils"
         ],
         "summary": "View count of tenants with ready flag false",
         "description": "View count of tenants with ready flag false.",
@@ -1684,7 +1714,7 @@
       },
       "post": {
         "tags": [
-          "Set tenant ready"
+          "Tenant", "Utils"
         ],
         "summary": "Set ready flag of tenants to true",
         "description": "Set ready flag of tenants to true.",
@@ -1740,7 +1770,7 @@
     "/api/utils/reset_imported_tenants/": {
       "delete": {
         "tags": [
-          "Tenants"
+          "Tenant", "Utils", "Destructive"
         ],
         "summary": "Remove tenants imported via user import job",
         "description": "Remove tenants with the flag ready=false or tenants without related objects. To use this endpoint, destructive API operations must be enabled.",
@@ -1800,7 +1830,7 @@
       },
       "get": {
         "tags": [
-          "Tenants"
+          "Tenant", "Utils"
         ],
         "summary": "Get count of tenants imported via user import job",
         "description": "Returns the count of tenants with the flag ready=false or tenants without related objects.",
@@ -1857,7 +1887,7 @@
     "/api/utils/principal/": {
       "delete": {
         "tags": [
-          "Principal"
+          "Principal", "Destructive", "Utils"
         ],
         "summary": "Delete principals without user_id and inactive.",
         "description": "Delete principals without principals and inactive..",
@@ -1941,7 +1971,7 @@
     "/api/utils/username_lower/": {
       "get": {
         "tags": [
-          "List username"
+          "Principal", "Utils"
         ],
         "summary": "List uppercase username",
         "description": "List uppercase username.",
@@ -1974,7 +2004,7 @@
       },
       "post": {
         "tags": [
-          "Update username"
+          "Principal", "Utils"
         ],
         "summary": "Update uppercase username to lowercase",
         "description": "Update uppercase username to lowercase.",
@@ -2018,6 +2048,9 @@
     },
     "/api/utils/user_lookup/": {
       "get":{
+        "tags": [
+          "Principal", "Utils"
+        ],
         "summary": "Get user info",
         "description": "Query for a user's groups, roles, and permissions based on their username or email. Only one of the params is required.",
         "operationId": "userLookup",
@@ -2137,7 +2170,7 @@
     "/_s2s/workspaces/ungrouped/": {
       "post": {
         "tags": [
-          "Get/create ungrouped hosts workspace"
+          "V2", "Workspace"
         ],
         "summary": "Get or create ungrouped hosts workspace",
         "description": "ungrouped hosts workspace.",
