@@ -1312,7 +1312,11 @@ def principal_removal(request):
 
 
 def retrieve_ungrouped_workspace(request):
-    """GET or create ungrouped workspace for HBI."""
+    """
+    GET or create ungrouped workspace for HBI.
+
+    GET /_private/_s2s/workspaces/ungrouped/
+    """
     if request.method != "GET":
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 

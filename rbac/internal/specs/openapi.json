@@ -2168,12 +2168,12 @@
       }
     },
     "/_s2s/workspaces/ungrouped/": {
-      "post": {
+      "get": {
         "tags": [
           "V2", "Workspace"
         ],
-        "summary": "Get or create ungrouped hosts workspace",
-        "description": "ungrouped hosts workspace.",
+        "summary": "Get or create ungrouped hosts workspace.",
+        "description": "Get or create ungrouped hosts workspace.",
         "operationId": "GetUngrouped",
         "responses": {
           "201": {
