@@ -22,7 +22,7 @@ import os
 from unittest import mock
 from unittest.mock import Mock, MagicMock, patch
 from django.conf import settings
-from django.http import QueryDict
+from django.http import QueryDict, HttpResponse
 from django.test.utils import override_settings
 from importlib import reload
 
@@ -217,9 +217,10 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         )
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
+        get_response = Mock(return_value=HttpResponse(status=200))
+        middleware = IdentityHeaderMiddleware(get_response=get_response)
         response = middleware(mock_request)
-        print(response)
-        self.assertIsInstance(response, Mock)
+        self.assertEqual(response.status_code, 200)
 
     def test_process_response(self):
         """Test that the middleware response functions correctly."""
