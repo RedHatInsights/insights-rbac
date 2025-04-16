@@ -276,15 +276,16 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertTrue(tenant.ready)
 
-    def test_process_no_customer(self):
+    @patch("rbac.middleware.resolve")
+    def test_process_no_customer(self, mock_resolve):
         """Test that the customer, tenant and user are not created."""
         customer = self._create_customer_data()
         account_id = customer["account_id"]
         del customer["account_id"]
         request_context = self._create_request_context(customer, self.user_data)
         mock_request = request_context["request"]
-        mock_request.path = Mock("/api/v1/providers/")
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware)
+        mock_request.path = "/api/v1/providers/"
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
         middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         with self.assertRaises(Tenant.DoesNotExist):
