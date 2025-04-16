@@ -83,21 +83,23 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         super().__init__(replicator)
         self.role = role
 
-    def prepare_for_update(self, role: Role = None):
+    def prepare_for_update(self, role: Optional[Role] = None):
         """Generate & store role's current relations."""
         if not self.replication_enabled():
             return
         if not role:
             role = self.role
+        assert isinstance(role, Role)
         self._current_role_relations = self._generate_relations_for_role(role)
 
-    def replicate_update_system_role(self, role: Role = None):
+    def replicate_update_system_role(self, role: Optional[Role] = None):
         """Replicate update of system role."""
         if not self.replication_enabled():
             return
 
         if not role:
             role = self.role
+        assert isinstance(role, Role)
         self._replicate(
             ReplicationEventType.UPDATE_SYSTEM_ROLE,
             self._create_metadata_from_role(role),
@@ -377,7 +379,7 @@ def delete_permission(permission: Permission):
     permission.delete()
     for dual_write_handler in dual_write_handlers:
         role = dual_write_handler.role
-        if role.system:
+        if isinstance(dual_write_handler, SeedingRelationApiDualWriteHandler):
             dual_write_handler.replicate_update_system_role(role)
         else:
             dual_write_handler.replicate_new_or_updated_role(role)
