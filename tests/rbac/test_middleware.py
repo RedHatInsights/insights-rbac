@@ -222,7 +222,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         self.assertIsInstance(response, Mock)
 
     def test_process_response(self):
-        """Test that the process response functions correctly."""
+        """Test that the middleware response functions correctly."""
         mock_request = Mock(path="/api/rbac/v1/status/")
         mock_response = Mock(status_code=200)
         get_response = Mock(return_value=mock_response)
