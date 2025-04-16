@@ -19,6 +19,7 @@ import uuid_utils.compat as uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
+from django.db.models.expressions import RawSQL
 from django.utils import timezone
 from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
@@ -96,14 +97,7 @@ class Workspace(TenantAwareModel):
 
     def descendants(self):
         """Return a list of descendants for a Workspace instance."""
-        descendant_ids = [d.id for d in self._descendant_queryset() if d.id != self.id]
-        descendants = Workspace.objects.filter(id__in=descendant_ids)
-        return descendants
-
-    def _descendant_queryset(self):
-        """Return a raw queryset on the workspace model for descendants."""
-        return Workspace.objects.raw(
-            """
+        sql = """
             WITH RECURSIVE descendants AS
               (SELECT id,
                       parent_id
@@ -115,6 +109,6 @@ class Workspace(TenantAwareModel):
                JOIN descendants d ON w.parent_id = d.id)
             SELECT id
             FROM descendants
-        """,
-            [self.id],
-        )
+            WHERE id != %s
+        """
+        return Workspace.objects.filter(id__in=RawSQL(sql, [self.id, self.id]))
