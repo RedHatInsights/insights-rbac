@@ -1183,8 +1183,8 @@ def correct_resource_definitions(request):
 
     Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'
 
-    GET /_private/api/utils/resource_definitions
-    PATCH /_private/api/utils/resource_definitions
+    GET /_private/api/utils/resource_definitions/
+    PATCH /_private/api/utils/resource_definitions/
     """
     list_query = """ FROM management_resourcedefinition
                 WHERE "attributeFilter"->>'operation' = 'equal'

@@ -2201,6 +2201,74 @@
           }
         }
       }
+    },
+    "/api/utils/resource_definitions/": {
+      "get": {
+        "tags": [
+          "Permission", "Utils"
+        ],
+        "summary": "Get incorrect resource definitions.",
+        "description": "Get resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
+        "operationId": "GetIncorrectResourceDefinitions",
+        "responses": {
+          "200": {
+            "description": "The number of resource definitions that would be corrected."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Permission", "Utils"
+        ],
+        "summary": "Fix incorrect resource definitions.",
+        "description": "Fix resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
+        "operationId": "FixIncorrectResourceDefinitions",
+        "responses": {
+          "200": {
+            "description": "The number of resource definitions that were corrected."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

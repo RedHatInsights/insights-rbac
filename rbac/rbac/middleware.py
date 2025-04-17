@@ -431,17 +431,17 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             return True
 
 
-class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class DisableCSRF:  # pylint: disable=too-few-public-methods
     """Middleware to disable CSRF for 3scale usecase."""
 
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request for csrf checks.
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
 
-        Args:
-            request (object): The request object
-
-        """
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
         setattr(request, "_dont_enforce_csrf_checks", True)
+        return self.get_response(request)
 
 
 class ReadOnlyApiMiddleware:
