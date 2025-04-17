@@ -431,21 +431,31 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             return True
 
 
-class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class DisableCSRF:  # pylint: disable=too-few-public-methods
     """Middleware to disable CSRF for 3scale usecase."""
 
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request for csrf checks.
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
 
-        Args:
-            request (object): The request object
-
-        """
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
         setattr(request, "_dont_enforce_csrf_checks", True)
+        return self.get_response(request)
 
 
-class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class ReadOnlyApiMiddleware:
     """Middleware to enable read-only on APIs when configured."""
+
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
+
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
+        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
+            return self._read_only_response()
+        return self.get_response(request)
 
     def _is_write_request(self, request):
         """Determine whether or not the request is a write request."""
@@ -471,8 +481,3 @@ class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-
             content_type="application/json",
             status=405,
         )
-
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request ReadOnlyApiMiddleware."""
-        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
-            return self._read_only_response()
