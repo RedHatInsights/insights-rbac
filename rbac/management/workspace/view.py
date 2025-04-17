@@ -106,6 +106,10 @@ class WorkspaceViewSet(BaseV2ViewSet):
     def destroy(self, request, *args, **kwargs):
         """Delete a workspace."""
         instance = self.get_object()
+        if instance.type != Workspace.Types.STANDARD:
+            message = f"Unable to delete {instance.type} workspace"
+            error = {"workspace": [_(message)]}
+            raise serializers.ValidationError(error)
         if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
             message = "Unable to delete due to workspace dependencies"
             error = {"workspace": [_(message)]}
