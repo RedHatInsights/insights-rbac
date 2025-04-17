@@ -2210,6 +2210,17 @@
         "summary": "Get incorrect resource definitions.",
         "description": "Get resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
         "operationId": "GetIncorrectResourceDefinitions",
+        "parameters": [
+          {
+            "name": "detail",
+            "in": "query",
+            "description": "Optional flag. If true, returns a list of resource definition objects. If false or omitted, returns only the count.",
+            "required": false,
+            "schema":{
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "The number of resource definitions that would be corrected."
@@ -2243,6 +2254,17 @@
         "summary": "Fix incorrect resource definitions.",
         "description": "Fix resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
         "operationId": "FixIncorrectResourceDefinitions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Resource definition id.",
+            "required": false,
+            "schema":{
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "The number of resource definitions that were corrected."
