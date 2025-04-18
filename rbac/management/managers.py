@@ -16,7 +16,7 @@
 #
 """Model managers."""
 
-from django.db import models
+from django.db import connection, models
 
 
 class WorkspaceQuerySet(models.QuerySet):
@@ -66,3 +66,24 @@ class WorkspaceManager(models.Manager):
         """Delegate call to the WorkspaceQuerySet."""
         tenant_id = self._get_tenant_id(tenant=tenant, tenant_id=tenant_id)
         return self.get_queryset().standard(tenant_id)
+
+    def tree_ids_from_roots(self, ids):
+        """Return the descendant and root workspace IDs based on roots supplied."""
+        with connection.cursor() as cursor:
+            sql = """
+                WITH RECURSIVE descendants AS
+                    (SELECT id,
+                            parent_id
+                    FROM management_workspace
+                    WHERE id = ANY(%s::uuid[])
+                    UNION SELECT w.id,
+                                 w.parent_id
+                    FROM management_workspace w
+                    JOIN descendants d ON w.parent_id = d.id)
+                SELECT DISTINCT id
+                FROM descendants
+            """
+            cursor.execute(sql, [ids])
+            rows = cursor.fetchall()
+
+        return [str(row[0]) for row in rows]
