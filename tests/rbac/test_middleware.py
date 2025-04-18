@@ -20,9 +20,9 @@ from functools import partial
 import json
 import os
 from unittest import mock
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from django.conf import settings
-from django.http import QueryDict
+from django.http import QueryDict, HttpResponse
 from django.test.utils import override_settings
 from importlib import reload
 
@@ -31,7 +31,7 @@ from django.urls import reverse
 
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.urls import clear_url_caches, get_resolver
+from django.urls import clear_url_caches, get_resolver, resolve
 
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
@@ -137,11 +137,12 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         request_context = self._create_request_context(self.customer, None)
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        result = middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        result = middleware(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
 
-    def test_get_tenant_with_org_id(self):
+    @patch("rbac.middleware.resolve")
+    def test_get_tenant_with_org_id(self, mock_resolve):
         """Test that the customer tenant is returned containing an org_id."""
         user_data = self._create_user_data()
         customer = self._create_customer_data()
@@ -156,8 +157,8 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user.org_id = "45321"
         request.user = user
 
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(request)
         self.assertEqual(request.tenant.org_id, user.org_id)
 
 
@@ -179,22 +180,25 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
     def test_process_status(self):
         """Test that the request gets a user."""
         mock_request = Mock(path="/api/v1/status/")
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
 
-    def test_process_cross_account_request(self):
-        """Test that the process request functions correctly for cross account request."""
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        # User without redhat email will fail.
+    @patch("rbac.middleware.resolve")
+    def test_process_cross_account_request(self, mock_resolve):
+        """Test that the middleware functions correctly for cross account request."""
+        mock_response = Mock()
+        middleware = IdentityHeaderMiddleware(get_response=mock_response)
+        # User without redhat email will fail
         request_context = self._create_request_context(
             self.customer, self.user_data, cross_account=True, is_internal=True
         )
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
 
-        response = middleware.process_request(mock_request)
-        self.assertIsInstance(response, HttpResponseUnauthorizedRequest)
+        # Ensure the middleware triggers the expected behavior
+        response = middleware(mock_request)
+        self.assertIsInstance(response, HttpResponseUnauthorizedRequest)  # Check for the correct response type
 
         # User with is_internal equal to False will fail.
         self.user_data["email"] = "test@redhat.com"
@@ -202,7 +206,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
 
-        response = middleware.process_request(mock_request)
+        # Test response when user is internal but has the wrong email
+        response = middleware(mock_request)
         self.assertIsInstance(response, HttpResponseUnauthorizedRequest)
 
         # Success pass if user is internal and with redhat email
@@ -212,33 +217,37 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         )
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
-
-        response = middleware.process_request(mock_request)
-        self.assertEqual(response, None)
+        get_response = Mock(return_value=HttpResponse(status=200))
+        middleware = IdentityHeaderMiddleware(get_response=get_response)
+        response = middleware(mock_request)
+        self.assertEqual(response.status_code, 200)
 
     def test_process_response(self):
-        """Test that the process response functions correctly."""
+        """Test that the middleware response functions correctly."""
         mock_request = Mock(path="/api/rbac/v1/status/")
         mock_response = Mock(status_code=200)
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_response)
-        response = middleware.process_response(mock_request, mock_response)
+        get_response = Mock(return_value=mock_response)
+        middleware = IdentityHeaderMiddleware(get_response)
+        response = middleware(mock_request)
         self.assertEqual(response, mock_response)
 
-    def test_process_not_status(self):
+    @patch("rbac.middleware.resolve")
+    def test_process_not_status(self, mock_resolve):
         """Test that the customer, tenant and user are created."""
         mock_request = self.request
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         self.assertEqual(mock_request.user.username, self.user_data["username"])
         tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertIsNotNone(tenant)
         self.assertTrue(tenant.ready)
 
-    def test_process_existing_tenant_unchanged(self):
+    @patch("rbac.middleware.resolve")
+    def test_process_existing_tenant_unchanged(self, mock_resolve):
         mock_request = self.request
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         self.assertEqual(mock_request.user.username, self.user_data["username"])
         tenant = Tenant.objects.get(org_id=self.org_id)
@@ -246,13 +255,14 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         self.assertTrue(tenant.ready)
 
         # Process a second request
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(mock_request)
 
         tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertTrue(tenant.ready)
 
-    def test_process_readies_tenant(self):
+    @patch("rbac.middleware.resolve")
+    def test_process_readies_tenant(self, mock_resolve):
         """If a tenant exists but is not ready, it is readied by the middleware."""
         tenant = Tenant.objects.create(
             tenant_name="test_user", org_id=self.org_id, account_id=self.customer["account_id"]
@@ -261,13 +271,14 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         tenant.save()
 
         mock_request = self.request
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(mock_request)
 
         tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertTrue(tenant.ready)
 
-    def test_process_no_customer(self):
+    @patch("rbac.middleware.resolve")
+    def test_process_no_customer(self, mock_resolve):
         """Test that the customer, tenant and user are not created."""
         customer = self._create_customer_data()
         account_id = customer["account_id"]
@@ -275,8 +286,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         request_context = self._create_request_context(customer, self.user_data)
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         with self.assertRaises(Tenant.DoesNotExist):
             Tenant.objects.get(org_id=self.org_id)
@@ -295,7 +306,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         )
         self.assertEqual(orig_cust, dup_cust)
 
-    def test_tenant_process_without_org_id(self):
+    @patch("rbac.middleware.resolve")
+    def test_tenant_process_without_org_id(self, mock_resolve):
         """Test that an existing tenant doesn't create a new one when providing an org_id."""
         tenant = Tenant.objects.create(tenant_name="test_user")
 
@@ -311,8 +323,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         user.org_id = "45321"
         request.user = user
 
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(request)
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        middleware(request)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").count(), 1)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").first().org_id, None)
 
