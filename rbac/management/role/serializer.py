@@ -62,23 +62,14 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         """Representation of ResourceDefinitions."""
         data = super().to_representation(instance)
         if self._is_workspace_filter(instance):
-            data.get("attributeFilter").update({"value": self._workspace_descendant_ids(instance)})
+            tree_ids = Workspace.objects.tree_ids_from_roots(instance.attributeFilter.get("value"))
+            data.get("attributeFilter").update({"value": tree_ids})
         return data
 
     def _is_workspace_filter(self, instance):
         is_inventory_permission = instance.application == settings.WORKSPACE_APPLICATION_NAME
         is_inventory_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
         return is_inventory_permission and is_inventory_group_filter
-
-    def _workspace_descendant_ids(self, instance):
-        workspace_ids = instance.attributeFilter.get("value")
-        workspaces = Workspace.objects.filter(id__in=workspace_ids).only("id")
-        all_descendant_ids = set()
-        for workspace in workspaces:
-            descendant_queryset = workspace.descendants().values_list("id", flat=True)
-            descendant_ids = list(map(str, descendant_queryset))
-            all_descendant_ids.update(descendant_ids)
-        return list(set(workspace_ids) | set(all_descendant_ids))
 
 
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
