@@ -54,7 +54,8 @@ class Workspace(TenantAwareModel):
                 condition=Q(type__in=["root", "default", "ungrouped-hosts"]),
             ),
             UniqueConstraint(
-                Upper("name"), "parent",
+                Upper("name"),
+                "parent",
                 name="unique_workspace_name_per_parent",
                 condition=Q(parent__isnull=False),
             ),

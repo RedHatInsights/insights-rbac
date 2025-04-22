@@ -97,7 +97,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)
         if name:
-            queryset = queryset.filter(name=name)
+            queryset = queryset.filter(name__iexact=name.lower())
 
         serializer = self.get_serializer(queryset, many=True)
         page = self.paginate_queryset(serializer.data)

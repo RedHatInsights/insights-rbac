@@ -99,7 +99,7 @@ class WorkspaceModelTests(WorkspaceBaseTestCase):
             name="child",
             tenant=tenant,
             parent=default,
-            type=Workspace.Types.STANDARD
+            type=Workspace.Types.STANDARD,
         )
 
         # Create a child with the same name but different parent
