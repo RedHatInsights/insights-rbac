@@ -19,6 +19,7 @@ import uuid_utils.compat as uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
+from django.db.models.functions import Upper
 from django.utils import timezone
 from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
@@ -53,7 +54,7 @@ class Workspace(TenantAwareModel):
                 condition=Q(type__in=["root", "default", "ungrouped-hosts"]),
             ),
             UniqueConstraint(
-                fields=["name", "parent"],
+                Upper("name"), "parent",
                 name="unique_workspace_name_per_parent",
                 condition=Q(parent__isnull=False),
             ),

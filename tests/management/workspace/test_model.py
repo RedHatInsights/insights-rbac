@@ -81,8 +81,9 @@ class WorkspaceModelTests(WorkspaceBaseTestCase):
         root = Workspace.objects.create(name="root", tenant=tenant, type=Workspace.Types.ROOT)
         default = Workspace.objects.create(name="default", tenant=tenant, type=Workspace.Types.DEFAULT, parent=root)
 
-        # Create a child with the same name as the parent
         Workspace.objects.create(name="Child", tenant=tenant, parent=default, type=Workspace.Types.STANDARD)
+
+        # Create a child with same name with the same parent
         self.assertRaises(
             ValidationError,
             Workspace.objects.create,
@@ -90,6 +91,15 @@ class WorkspaceModelTests(WorkspaceBaseTestCase):
             tenant=tenant,
             parent=default,
             type=Workspace.Types.STANDARD,
+        )
+        # Create a child with same name but the different case within the same parent
+        self.assertRaises(
+            ValidationError,
+            Workspace.objects.create,
+            name="child",
+            tenant=tenant,
+            parent=default,
+            type=Workspace.Types.STANDARD
         )
 
         # Create a child with the same name but different parent
