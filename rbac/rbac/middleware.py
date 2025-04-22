@@ -26,7 +26,6 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
-from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
 from management.principal.proxy import PrincipalProxy
