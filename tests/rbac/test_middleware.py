@@ -685,9 +685,9 @@ class RBACReadOnlyApiMiddleware(IdentityRequest):
     def test_get_read_only_true(self):
         """Test GET and READ_ONLY_API_MODE=True."""
         self.request.method = "GET"
-        middleware = ReadOnlyApiMiddleware(get_response=Mock())
-        resp = middleware.process_request(self.request)
-        self.assertEqual(resp, None)
+        middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+        resp = middleware(self.request)
+        self.assertEqual(resp, "OK")
 
     @override_settings(READ_ONLY_API_MODE=True)
     def test_write_methods_read_only_true(self):
@@ -695,23 +695,23 @@ class RBACReadOnlyApiMiddleware(IdentityRequest):
         for method in self.write_methods:
             self.request.method = method
             middleware = ReadOnlyApiMiddleware(get_response=Mock())
-            resp = middleware.process_request(self.request)
+            resp = middleware(self.request)
             self.assertReadOnlyFailure(resp)
 
     def test_get_read_only_false(self):
         """Test GET and READ_ONLY_API_MODE=False."""
         self.request.method = "GET"
-        middleware = ReadOnlyApiMiddleware(get_response=Mock())
-        resp = middleware.process_request(self.request)
-        self.assertEqual(resp, None)
+        middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+        resp = middleware(self.request)
+        self.assertEqual(resp, "OK")
 
     def test_write_methods_read_only_false(self):
         """Test write methods and READ_ONLY_API_MODE=False."""
         for method in self.write_methods:
             self.request.method = method
-            middleware = ReadOnlyApiMiddleware(get_response=Mock())
-            resp = middleware.process_request(self.request)
-            self.assertEqual(resp, None)
+            middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+            resp = middleware(self.request)
+            self.assertEqual(resp, "OK")
 
 
 @override_settings(V2_BOOTSTRAP_TENANT=True)
@@ -877,33 +877,33 @@ class RBACReadOnlyApiMiddlewareV2(RBACReadOnlyApiMiddleware):
     def test_get_read_only_v2_true(self):
         """Test GET and V2_READ_ONLY_API_MODE=True."""
         self.request.method = "GET"
-        middleware = ReadOnlyApiMiddleware(get_response=Mock())
-        resp = middleware.process_request(self.request)
-        self.assertEqual(resp, None)
+        middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+        resp = middleware(self.request)
+        self.assertEqual(resp, "OK")
 
     @override_settings(V2_READ_ONLY_API_MODE=True)
     def test_write_methods_read_only_v2_true(self):
         """Test write methods and V2_READ_ONLY_API_MODE=True."""
         for method in self.write_methods:
             self.request.method = method
-            middleware = ReadOnlyApiMiddleware(get_response=Mock())
-            resp = middleware.process_request(self.request)
+            middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+            resp = middleware(self.request)
             self.assertReadOnlyFailure(resp)
 
     def test_get_read_only_v2_false(self):
         """Test GET and V2_READ_ONLY_API_MODE=False."""
         self.request.method = "GET"
-        middleware = ReadOnlyApiMiddleware(get_response=Mock())
-        resp = middleware.process_request(self.request)
-        self.assertEqual(resp, None)
+        middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+        resp = middleware(self.request)
+        self.assertEqual(resp, "OK")
 
     def test_write_methods_read_only_v2_false(self):
         """Test write methods and V2_READ_ONLY_API_MODE=False."""
         for method in self.write_methods:
             self.request.method = method
-            middleware = ReadOnlyApiMiddleware(get_response=Mock())
-            resp = middleware.process_request(self.request)
-            self.assertEqual(resp, None)
+            middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+            resp = middleware(self.request)
+            self.assertEqual(resp, "OK")
 
     @override_settings(V2_READ_ONLY_API_MODE=True)
     def test_write_methods_read_only_v2_true_v1_path(self):
@@ -911,6 +911,6 @@ class RBACReadOnlyApiMiddlewareV2(RBACReadOnlyApiMiddleware):
         for method in self.write_methods:
             self.request.method = method
             self.request.path = "/api/rbac/v1/roles/"
-            middleware = ReadOnlyApiMiddleware(get_response=Mock())
-            resp = middleware.process_request(self.request)
-            self.assertEqual(resp, None)
+            middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
+            resp = middleware(self.request)
+            self.assertEqual(resp, "OK")
