@@ -203,6 +203,7 @@ class IdentityHeaderMiddleware:
 
         return access
 
+    @catch_integrity_error
     def __call__(self, request):
         """Code to be executed for each request before or after the view is called."""
         # Get request ID
