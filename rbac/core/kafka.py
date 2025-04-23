@@ -16,9 +16,14 @@
 #
 """Producer to send messages to kafka server."""
 import json
+import logging
 
 from django.conf import settings
 from kafka import KafkaProducer
+from kafka.errors import KafkaError
+
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class FakeKafkaProducer:
@@ -35,15 +40,29 @@ class RBACProducer:
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
         if not hasattr(self, "producer"):
+            retries = 0
+            max_retries = 5
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 self.producer = FakeKafkaProducer()
+                logger.info("Fake Kafka producer initialized in development mode")
             else:
-                if settings.KAFKA_AUTH:
-                    self.producer = KafkaProducer(**settings.KAFKA_AUTH)
-                elif not settings.KAFKA_SERVERS:
-                    raise AttributeError("Empty servers list")
-                else:
-                    self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
+                while retries <= max_retries:
+                    try:
+                        if settings.KAFKA_AUTH:
+                            self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                            logger.info("Kafka producer initialized successfully")
+                            return self.producer
+                        elif not settings.KAFKA_SERVERS:
+                            raise AttributeError("Empty servers list")
+                        else:
+                            self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
+                            return self.producer
+                    except KafkaError as e:
+                        logger.error(f"Kafka error during initialization of Kafka producer: {e}")
+                        retries += 1
+                    except Exception as e:
+                        logger.error(f"Non Kafka error occurred during initialization of Kafka producer: {e}")
+                        retries += 1
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):
