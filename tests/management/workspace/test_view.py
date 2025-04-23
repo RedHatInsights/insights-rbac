@@ -841,12 +841,6 @@ class TestsList(WorkspaceViewTests):
         workspaces = Workspace.objects.bulk_create(
             [
                 Workspace(
-                    name=ws_name_1,
-                    tenant=self.tenant,
-                    type="standard",
-                    parent_id=self.default_workspace.id,
-                ),
-                Workspace(
                     name=ws_name_2,
                     tenant=self.tenant,
                     type="standard",
@@ -869,7 +863,7 @@ class TestsList(WorkspaceViewTests):
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertType(payload, "standard")
-        assert payload.get("data")[0]["name"] == ws_name_1
+        assert payload.get("data")[0]["name"] == ws_name_1.upper()
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
