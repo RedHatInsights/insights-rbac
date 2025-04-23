@@ -683,6 +683,49 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_delete_workspace_with_dependencies(self):
+        workspace_data = {
+            "name": "Workspace for delete",
+            "description": "Workspace for delete - description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.root_workspace.id,
+        }
+        workspace = Workspace.objects.create(**workspace_data)
+        dependent = Workspace.objects.create(
+            name="Dependent Workspace",
+            tenant=self.tenant,
+            type="standard",
+            parent_id=workspace.id,
+        )
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+        test_headers = self.headers.copy()
+        test_headers["HTTP_ACCEPT"] = "application/problem+json"
+        response = client.delete(url, None, format="json", **test_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Unable to delete due to workspace dependencies")
+
+    def test_delete_workspace_with_non_standard_types(self):
+        # Root workspace can't be deleted
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+        client = APIClient()
+        test_headers = self.headers.copy()
+        test_headers["HTTP_ACCEPT"] = "application/problem+json"
+        response = client.delete(url, None, format="json", **test_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Unable to delete root workspace")
+
+        # Default workspace can't be deleted
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
+        response = client.delete(url, None, format="json", **test_headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Unable to delete default workspace")
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class TestsList(WorkspaceViewTests):
@@ -798,12 +841,6 @@ class TestsList(WorkspaceViewTests):
         workspaces = Workspace.objects.bulk_create(
             [
                 Workspace(
-                    name=ws_name_1,
-                    tenant=self.tenant,
-                    type="standard",
-                    parent_id=self.default_workspace.id,
-                ),
-                Workspace(
                     name=ws_name_2,
                     tenant=self.tenant,
                     type="standard",
@@ -826,7 +863,7 @@ class TestsList(WorkspaceViewTests):
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertType(payload, "standard")
-        assert payload.get("data")[0]["name"] == ws_name_1
+        assert payload.get("data")[0]["name"] == ws_name_1.upper()
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
