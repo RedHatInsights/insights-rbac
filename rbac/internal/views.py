@@ -79,22 +79,21 @@ TENANTS = TenantCache()
 PROXY = PrincipalProxy()
 
 
-def tenant_is_modified(tenant_name=None, org_id=None):
+def tenant_is_modified(tenant=None):
     """Determine whether or not the tenant is modified."""
     # we need to check if the schema exists because if we don't, and it doesn't exist,
     # the search_path on the query will fall back to using the public schema, in
     # which case there will be custom groups/roles, and we won't be able to properly
     # prune the tenant which has been created without a valid schema
-    tenant = get_object_or_404(Tenant, org_id=org_id)
 
     return (Role.objects.filter(system=False, tenant=tenant).count() != 0) or (
         Group.objects.filter(system=False, tenant=tenant).count() != 0
     )
 
 
-def tenant_is_unmodified(tenant_name=None, org_id=None):
+def tenant_is_unmodified(tenant=None):
     """Determine whether or not the tenant is unmodified."""
-    return not tenant_is_modified(tenant_name=tenant_name, org_id=org_id)
+    return not tenant_is_modified(tenant=tenant)
 
 
 def list_unmodified_tenants(request):
@@ -114,7 +113,7 @@ def list_unmodified_tenants(request):
         tenant_qs = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
-        if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=tenant_obj.org_id):
+        if tenant_is_unmodified(tenant=tenant_obj):
             to_return.append(tenant_obj.org_id)
     payload = {
         "unmodified_tenants": to_return,
@@ -157,21 +156,26 @@ def list_tenants(request):
     return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
-def tenant_view(request, org_id):
+def tenant_view(request, t_id):
     """View method for internal tenant requests.
 
-    DELETE /_private/api/tenant/<org_id>/
+    DELETE /_private/api/tenant/<t_id>/?account_number=true
+    t_id: id to identify tenant, either org_id or account_id
     """
     logger.info(f"Tenant view: {request.method} {request.user.username}")
     if request.method == "DELETE":
         if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
-        tenant_obj = get_object_or_404(Tenant, org_id=org_id)
+        is_acct_num = request.GET.get("account_number", "false") == "true"
+        tenant_obj = (
+            get_object_or_404(Tenant, account_id=t_id) if is_acct_num else get_object_or_404(Tenant, org_id=t_id)
+        )
         with transaction.atomic():
-            if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=org_id):
-                logger.warning(f"Deleting tenant {org_id}. Requested by {request.user.username}")
-                TENANTS.delete_tenant(org_id)
+            if tenant_is_unmodified(tenant=tenant_obj):
+                logger.warning(f"Deleting tenant {t_id}. Requested by {request.user.username}")
+                if not is_acct_num:
+                    TENANTS.delete_tenant(t_id)
                 tenant_obj.delete()
                 return HttpResponse(status=204)
             else:

@@ -69,7 +69,7 @@ s2s_urlpatterns = [
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/", views.list_tenants),
-    path("api/tenant/<str:org_id>/", views.tenant_view),
+    path("api/tenant/<str:t_id>/", views.tenant_view),
     path("api/roles/<str:uuid>/", views.roles),
     path("api/migrations/run/", views.run_migrations),
     path("api/migrations/progress/", views.migration_progress),

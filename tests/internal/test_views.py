@@ -203,6 +203,19 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch.object(Tenant, "delete")
+    def test_delete_tenant_with_accout_number(self, mock):
+        """Test that we can delete a tenant when allowed and unmodified when there are no roles or groups."""
+        Group.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
+
+        response = self.client.delete(
+            f"/_private/api/tenant/{self.tenant.account_id}/?account_number=true", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
     def test_list_unmodified_tenants(self):
         """Test that only unmodified tenants are returned"""
         modified_tenant_groups = Tenant.objects.create(tenant_name="acctmodifiedgroups", org_id="1111")
