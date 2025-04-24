@@ -1222,8 +1222,13 @@ def correct_resource_definitions(request):
 
     Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'
 
-    GET /_private/api/utils/resource_definitions
-    PATCH /_private/api/utils/resource_definitions
+    GET /_private/api/utils/resource_definitions/
+        query param 'detail=false' (default) to get resource definitions count
+        query param 'detail=true' to get resource definitions objects
+
+    PATCH /_private/api/utils/resource_definitions/
+        query param 'id=<resource_definitions_id>' to fix only 1 resource definition
+        you can identify 'id' by GET request with 'detail=true' query param
     """
     list_query = """ FROM management_resourcedefinition
                 WHERE "attributeFilter"->>'operation' = 'equal'
@@ -1232,9 +1237,31 @@ def correct_resource_definitions(request):
     string_query = """ from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
                 AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
 
-    if request.method == "GET":
-        with connection.cursor() as cursor:
+    query_params = request.GET
 
+    if request.method == "GET":
+        detail = query_params.get("detail") == "true"
+        if detail:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT *" + list_query)
+                list_rows = cursor.fetchall()
+
+                cursor.execute("SELECT *" + string_query)
+                string_rows = cursor.fetchall()
+
+                response = [
+                    {
+                        "id": row[0],
+                        "attributeFilter": json.loads(row[1]),
+                        "access_id": row[2],
+                        "tenant_id": row[3],
+                    }
+                    for row in list_rows + string_rows
+                ]
+
+            return HttpResponse(json.dumps(response), content_type="application/json", status=200)
+
+        with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*)" + list_query)
             count = cursor.fetchone()[0]
 
@@ -1242,15 +1269,23 @@ def correct_resource_definitions(request):
             count += cursor.fetchone()[0]
 
         return HttpResponse(f"{count} resource definitions would be corrected", status=200)
+
     elif request.method == "PATCH":
+        resource_definition_id = query_params.get("id")
+
+        if resource_definition_id:
+            resource_definition = get_object_or_404(ResourceDefinition, id=resource_definition_id)
+            resource_definition.attributeFilter = normalize_attribute_filter(resource_definition.attributeFilter)
+            resource_definition.save()
+            return HttpResponse(f"Resource definition id = {resource_definition_id} updated.", status=200)
+
         count = 0
         with connection.cursor() as cursor:
-
             cursor.execute("SELECT id " + list_query)
             result = cursor.fetchall()
             for id in result:
                 resource_definition = ResourceDefinition.objects.get(id=id[0])
-                resource_definition.attributeFilter["operation"] = "in"
+                resource_definition.attributeFilter = normalize_attribute_filter(resource_definition.attributeFilter)
                 resource_definition.save()
                 count += 1
 
@@ -1258,13 +1293,27 @@ def correct_resource_definitions(request):
             result = cursor.fetchall()
             for id in result:
                 resource_definition = ResourceDefinition.objects.get(id=id[0])
-                resource_definition.attributeFilter["operation"] = "equal"
+                resource_definition.attributeFilter = normalize_attribute_filter(resource_definition.attributeFilter)
                 resource_definition.save()
                 count += 1
 
         return HttpResponse(f"Updated {count} bad resource definitions", status=200)
 
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
+
+
+def normalize_attribute_filter(attribute_filter):
+    """For Attribute Filter set valid 'operation' or convert 'value' from string into list."""
+    op = attribute_filter.get("operation")
+    value = attribute_filter.get("value")
+    if op == "equal" and isinstance(value, list):
+        attribute_filter["operation"] = "in"
+    elif op == "in" and isinstance(value, str):
+        if "," in value:
+            attribute_filter["value"] = [item.strip() for item in value.split(",")]
+        else:
+            attribute_filter["operation"] = "equal"
+    return attribute_filter
 
 
 def username_lower(request):
@@ -1351,7 +1400,11 @@ def principal_removal(request):
 
 
 def retrieve_ungrouped_workspace(request):
-    """GET or create ungrouped workspace for HBI."""
+    """
+    GET or create ungrouped workspace for HBI.
+
+    GET /_private/_s2s/workspaces/ungrouped/
+    """
     if request.method != "GET":
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 

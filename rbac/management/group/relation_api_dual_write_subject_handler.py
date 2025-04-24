@@ -55,6 +55,7 @@ class RelationApiDualWriteSubjectHandler:
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
         except Exception as e:
+            logger.error(f"Initialization of RelationApiDualWriteSubjectHandler failed: {e}")
             raise DualWriteException(e)
 
     def replication_enabled(self):

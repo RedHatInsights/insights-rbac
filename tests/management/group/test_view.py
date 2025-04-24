@@ -22,7 +22,7 @@ from uuid import uuid4
 import json
 from django.db import transaction
 from django.conf import settings
-from django.urls import reverse, resolve
+from django.urls import reverse
 from django.utils import timezone
 from django.test.utils import override_settings
 from rest_framework import status
@@ -58,7 +58,6 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
-from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
@@ -938,7 +937,7 @@ class GroupViewsetTests(IdentityRequest):
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_failure_adding_principals_to_admin_default(self, mock_request):
-        """Test that adding a principal to a admin default group will fail."""
+        """Test that adding a principal to an admin default group will fail."""
         url = reverse("v1_management:group-principals", kwargs={"uuid": self.adminGroup.uuid})
         client = APIClient()
         username = "test_user"
@@ -1081,8 +1080,8 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("v1_management:group-detail", kwargs={"uuid": self.emptyGroup.uuid})
             mock_method.reset_mock()
 
-            respone = client.delete(url, **self.headers)
-            self.assertEqual(respone.status_code, status.HTTP_204_NO_CONTENT)
+            response = client.delete(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             mock_method.assert_not_called()
             self.assertEqual(Group.objects.filter(id=self.emptyGroup.id).exists(), False)
 
@@ -3527,6 +3526,173 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(int(response.data.get("meta").get("limit")), limit)
             self.assertEqual(int(response.data.get("meta").get("offset")), offset)
             self.assertEqual(len(response.data.get("data")), expected_data_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_principal_both_types_success(self, sa_mock, user_mock):
+        """Test that we can read a list of service accounts and user based principal in one query."""
+        mocked_sa_list = []
+        for uuid in self.sa_client_ids:
+            mocked_sa_list.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+        sa_mock.return_value = mocked_sa_list
+
+        user_mock.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test-username",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=all"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 4)
+        self.assertEqual(len(response.data.get("data").get("serviceAccounts")), 3)
+        self.assertEqual(len(response.data.get("data").get("users")), 1)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_principal_both_types_pagination(self, sa_mock, user_mock):
+        """
+        Test that pagination is working when we list both principal types in one query.
+        3 Service Accounts (3 SA) + 2 user based principals (2 U)
+        Limit = 2
+        Expected pagination:
+        Page 1: 2 SA
+        Page 2: 1 SA + 1 U
+        Page 3: 1 U
+        """
+        mocked_sa_list = []
+        for uuid in self.sa_client_ids:
+            mocked_sa_list.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+        sa_mock.return_value = mocked_sa_list
+
+        user_mock.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test-username-1",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567499,
+                    "username": "test-username-2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+            ],
+        }
+
+        client = APIClient()
+        limit = 2
+        url_base = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=all"
+
+        # Page 1: 2 SA
+        offset = 0
+        url = url_base + f"&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 5)
+        self.assertEqual(len(response.data.get("data").get("serviceAccounts")), 2)
+        self.assertTrue("users" not in response.data.get("data"))
+
+        # Page 2: 1 SA + 1 U
+        offset = 2
+        url = url_base + f"&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 5)
+        self.assertEqual(len(response.data.get("data").get("serviceAccounts")), 1)
+        self.assertEqual(len(response.data.get("data").get("users")), 1)
+
+        # Page 3: 1 U
+        offset = 4
+        url = url_base + f"&limit={limit}&offset={offset}"
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 5)
+        self.assertEqual(len(response.data.get("data").get("users")), 1)
+        self.assertTrue("serviceAccounts" not in response.data.get("data"))
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_principal_both_types_usernames_only(self, sa_mock):
+        """Test we can list only usernames of both principal types."""
+        mocked_sa_list = []
+        for uuid in self.sa_client_ids:
+            mocked_sa_list.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+        sa_mock.return_value = mocked_sa_list
+
+        # Check the principal count in database
+        principals = Group.objects.get(uuid=self.group.uuid).principals.all()
+        sa_count = [p.type for p in principals].count("service-account")
+        user_count = [p.type for p in principals].count("user")
+
+        client = APIClient()
+        url_base = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=all"
+
+        url = url_base + f"&username_only=true"
+        response = client.get(url, **self.headers)
+
+        print(response.json())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data").get("serviceAccounts")), sa_count)
+        self.assertEqual(len(response.data.get("data").get("users")), user_count)
+        self.assertEqual(int(response.data.get("meta").get("count")), sa_count + user_count)
 
 
 class GroupViewNonAdminTests(IdentityRequest):
