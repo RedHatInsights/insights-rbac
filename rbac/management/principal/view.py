@@ -278,7 +278,7 @@ class PrincipalView(APIView):
         if sa_resp.get("status_code") != status.HTTP_200_OK:
             return sa_resp, ""
 
-        # Calculate new limit and offset for the user base principals query
+        # Calculate new limit and offset for the user based principals query
         sa_count_total = sa_resp.get("saCount")
         sa_count = len(sa_resp.get("data", []))
 

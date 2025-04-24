@@ -26,7 +26,6 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
-from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
 from management.principal.proxy import PrincipalProxy
@@ -102,7 +101,7 @@ def get_user_id(user: User):
     return user.user_id
 
 
-class IdentityHeaderMiddleware(MiddlewareMixin):
+class IdentityHeaderMiddleware:
     """A subclass of RemoteUserMiddleware.
 
     Processes the provided identity found on the request.
@@ -112,8 +111,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     bootstrap_service: TenantBootstrapService
 
     def __init__(self, get_response):
-        """Initialize the middleware."""
-        super().__init__(get_response)
+        """One-time configuration and initialization."""
+        self.get_response = get_response
         # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
         # In this case the replicator needs to include a precondition
         # which does not add the tuples if any others already exist for the tenant
@@ -204,22 +203,17 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         return access
 
     @catch_integrity_error
-    def process_request(self, request):  # pylint: disable=R1710
-        """Process request for identity middleware.
-
-        Args:
-            request (object): The request object
-
-        """
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
         if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # This request is for a private API endpoint
-            return
+            return self.get_response(request)
 
         if is_no_auth(request):
-            return
+            return self.get_response(request)
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
@@ -307,6 +301,30 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request.user = user
             request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
+        response = self.get_response(request)
+
+        # Code to be executed for each request/response after
+        # the view is called.
+        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
+        is_system = False
+
+        if hasattr(request, "user") and request.user:
+            username = request.user.username
+            if username:
+                is_system = request.user.system
+
+        behalf = "system" if is_system else "principal"
+
+        req_sys_counter.labels(
+            behalf=behalf,
+            method=request.method,
+            view=resolve(request.path).url_name,
+            status=response.get("status_code"),
+        ).inc()
+
+        IdentityHeaderMiddleware.log_request(request, response, is_internal)
+        return response
+
     @staticmethod
     def log_request(request, response, is_internal=False):
         """Log requests for identity middleware.
@@ -380,33 +398,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         }
         logger.info(log_object)
 
-    def process_response(self, request, response):  # pylint: disable=no-self-use
-        """Process response for identity middleware.
-
-        Args:
-            request (object): The request object
-            response (object): The response object
-        """
-        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
-        is_system = False
-
-        if hasattr(request, "user") and request.user:
-            username = request.user.username
-            if username:
-                is_system = request.user.system
-
-        behalf = "system" if is_system else "principal"
-
-        req_sys_counter.labels(
-            behalf=behalf,
-            method=request.method,
-            view=resolve(request.path).url_name,
-            status=response.get("status_code"),
-        ).inc()
-
-        IdentityHeaderMiddleware.log_request(request, response, is_internal)
-        return response
-
     def should_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
         """Decide whether RBAC should load the access permissions for the user based on the given request."""
         # Organization administrators will have already all the permissions so there is no need to load permissions for
@@ -431,21 +422,31 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             return True
 
 
-class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class DisableCSRF:  # pylint: disable=too-few-public-methods
     """Middleware to disable CSRF for 3scale usecase."""
 
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request for csrf checks.
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
 
-        Args:
-            request (object): The request object
-
-        """
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
         setattr(request, "_dont_enforce_csrf_checks", True)
+        return self.get_response(request)
 
 
-class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class ReadOnlyApiMiddleware:
     """Middleware to enable read-only on APIs when configured."""
+
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
+
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
+        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
+            return self._read_only_response()
+        return self.get_response(request)
 
     def _is_write_request(self, request):
         """Determine whether or not the request is a write request."""
@@ -471,8 +472,3 @@ class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-
             content_type="application/json",
             status=405,
         )
-
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request ReadOnlyApiMiddleware."""
-        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
-            return self._read_only_response()

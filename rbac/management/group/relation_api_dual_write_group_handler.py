@@ -66,6 +66,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
             super().__init__(default_workspace, event_type, replicator)
         except Exception as e:
+            logger.error(f"Initialization of RelationApiDualWriteGroupHandler failed: {e}")
             raise DualWriteException(e)
 
     def _generate_member_relations(self):
@@ -94,6 +95,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         """Replicate new principals into group."""
         if not self.replication_enabled():
             return
+        logger.info("[Dual Write] Replicate new principals into Group(%s):, '%s'", self.group.uuid, self.group.name)
         self.generate_relations_to_add_principals(principals)
         self._replicate()
 
@@ -124,6 +126,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
                 ),
             )
         except Exception as e:
+            logger.error(f"Replication event failed for group: {self.group.uuid}: {e}")
             raise DualWriteException(e)
 
     # TODO: this can be removed after the migrator

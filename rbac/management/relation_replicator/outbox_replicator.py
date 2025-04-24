@@ -43,6 +43,12 @@ workspace_replication_event_total = Counter(
     "workspace_replication_event_total", "Total count of workspace replication events"
 )
 
+OPERATION_MAPPING = {
+    ReplicationEventType.CREATE_WORKSPACE: "create",
+    ReplicationEventType.DELETE_WORKSPACE: "delete",
+    ReplicationEventType.UPDATE_WORKSPACE: "update",
+}
+
 
 class ReplicationEventPayload(TypedDict):
     """Typed dictionary for ReplicationEvent payload."""
@@ -56,6 +62,7 @@ class WorkspaceEventPayload(TypedDict):
 
     org_id: str
     workspace: Dict[str, str]
+    operation: str
 
 
 class OutboxReplicator(RelationReplicator):
@@ -72,7 +79,9 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate_workspace(self, event: WorkspaceEvent):
         """Replicate the event of workspace."""
-        payload = WorkspaceEventPayload(org_id=event.org_id, workspace=event.workspace)
+        payload = WorkspaceEventPayload(
+            org_id=event.org_id, workspace=event.workspace, operation=OPERATION_MAPPING[event.event_type]
+        )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
     def _build_replication_event(
