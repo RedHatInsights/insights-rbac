@@ -1365,4 +1365,4 @@ parameters:
   value: 'rbac-hbi-s3-readonly'
 - name: RBAC_HBI_S3_AWS_BUCKET
   description: The bucket name for accessing HBI S3
-  value: 'hbi-kessel-s3-stage'
+  value: 'crc-rbac-s3-stage'
