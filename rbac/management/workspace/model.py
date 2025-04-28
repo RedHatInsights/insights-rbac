@@ -30,6 +30,11 @@ from api.models import TenantAwareModel
 class Workspace(TenantAwareModel):
     """A workspace."""
 
+    class SpecialNames:
+        DEFAULT = "Default Workspace"
+        ROOT = "Root Workspace"
+        UNGROUPED_HOSTS = "Ungrouped Hosts"
+
     class Types(models.TextChoices):
         STANDARD = "standard"
         DEFAULT = "default"
