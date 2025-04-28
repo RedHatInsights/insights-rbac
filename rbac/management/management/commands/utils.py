@@ -179,7 +179,7 @@ def batch_import_workspace(records):
             is_ungrouped = record["ungrouped"].lower() == "true"
             parent = parent_workspace_dict[record["org_id"]]
             if is_ungrouped:
-                ws_name = "Ungrouped Hosts"
+                ws_name = Workspace.SpecialNames.UNGROUPED_HOSTS
                 workspace_type = Workspace.Types.UNGROUPED_HOSTS
             else:
                 ws_name = record["name"]

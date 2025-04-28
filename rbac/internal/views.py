@@ -1378,7 +1378,10 @@ def retrieve_ungrouped_workspace(request):
             if not ungrouped_hosts.exists():
                 default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
                 ungrouped_hosts, _ = Workspace.objects.get_or_create(
-                    tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=default
+                    tenant=tenant,
+                    type=Workspace.Types.UNGROUPED_HOSTS,
+                    name=Workspace.SpecialNames.UNGROUPED_HOSTS,
+                    parent=default,
                 )
                 dual_write_handler = RelationApiDualWriteWorkspacepHandler(
                     ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
