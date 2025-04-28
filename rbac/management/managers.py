@@ -67,7 +67,7 @@ class WorkspaceManager(models.Manager):
         tenant_id = self._get_tenant_id(tenant=tenant, tenant_id=tenant_id)
         return self.get_queryset().standard(tenant_id)
 
-    def tree_ids_from_roots(self, ids):
+    def descendant_ids_with_parents(self, ids):
         """Return the descendant and root workspace IDs based on roots supplied."""
         with connection.cursor() as cursor:
             sql = """

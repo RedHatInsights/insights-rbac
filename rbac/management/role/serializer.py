@@ -62,7 +62,7 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         """Representation of ResourceDefinitions."""
         data = super().to_representation(instance)
         if self._is_workspace_filter(instance):
-            tree_ids = Workspace.objects.tree_ids_from_roots(instance.attributeFilter.get("value"))
+            tree_ids = Workspace.objects.descendant_ids_with_parents(instance.attributeFilter.get("value"))
             data.get("attributeFilter").update({"value": tree_ids})
         return data
 
