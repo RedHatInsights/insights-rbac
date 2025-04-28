@@ -296,6 +296,8 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
             [(workspace_id_1, str(defaults[0].id)), (workspace_id_2, str(defaults[1].id))],
         )
         self.assertEqual(Workspace.objects.filter(id__in=[workspace_id_1, workspace_id_2]).count(), 2)
+        self.assertEqual(Workspace.objects.get(id=workspace_id_1).parent, defaults[0])
+        self.assertEqual(Workspace.objects.get(id=workspace_id_2).parent, defaults[1])
         # Should be idempotent
         updated_name = "updated_name"
         updated_time = "2026-03-18 15:19:53.509206+00:00"

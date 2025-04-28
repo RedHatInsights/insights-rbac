@@ -191,6 +191,7 @@ def batch_import_workspace(records):
                     name=record["name"],
                     tenant=tenant_dict[record["org_id"]],
                     type=workspace_type,
+                    parent=parent,
                     created=record["created_on"],
                     modified=record["modified_on"],
                 )
