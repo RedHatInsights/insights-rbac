@@ -235,6 +235,8 @@ objects:
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_APPLICATION_NAME
             value: ${WORKSPACE_APPLICATION_NAME}
+          - name: WORKSPACE_RESOURCE_TYPE
+            value: ${WORKSPACE_RESOURCE_TYPE}
           - name: WORKSPACE_ATTRIBUTE_FILTER
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
@@ -466,6 +468,8 @@ objects:
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_APPLICATION_NAME
             value: ${WORKSPACE_APPLICATION_NAME}
+          - name: WORKSPACE_RESOURCE_TYPE
+            value: ${WORKSPACE_RESOURCE_TYPE}
           - name: WORKSPACE_ATTRIBUTE_FILTER
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
           ####### Following envs are additional to workers
@@ -735,6 +739,8 @@ objects:
               value: ${V2_BOOTSTRAP_TENANT}
             - name: WORKSPACE_APPLICATION_NAME
               value: ${WORKSPACE_APPLICATION_NAME}
+            - name: WORKSPACE_RESOURCE_TYPE
+              value: ${WORKSPACE_RESOURCE_TYPE}
             - name: WORKSPACE_ATTRIBUTE_FILTER
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
             ######## Following envs are different from worker
@@ -946,6 +952,8 @@ objects:
               value: ${V2_BOOTSTRAP_TENANT}
             - name: WORKSPACE_APPLICATION_NAME
               value: ${WORKSPACE_APPLICATION_NAME}
+            - name: WORKSPACE_RESOURCE_TYPE
+              value: ${WORKSPACE_RESOURCE_TYPE}
             - name: WORKSPACE_ATTRIBUTE_FILTER
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
             ######## Following envs are different from worker
@@ -1385,6 +1393,9 @@ parameters:
 - description: The application name used in workspace permissions
   name: WORKSPACE_APPLICATION_NAME
   value: 'inventory'
+- description: The resource type used in workspace permissions
+  name: WORKSPACE_RESOURCE_TYPE
+  value: 'groups'
 - description: The attribute filter key used in workspace permissions' resource definitions
   name: WORKSPACE_ATTRIBUTE_FILTER
   value: 'group.id'

@@ -67,9 +67,10 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         return data
 
     def _is_workspace_filter(self, instance):
-        is_inventory_permission = instance.application == settings.WORKSPACE_APPLICATION_NAME
-        is_inventory_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
-        return is_inventory_permission and is_inventory_group_filter
+        is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
+        is_workspace_resource_type = instance.resource_type == settings.WORKSPACE_RESOURCE_TYPE
+        is_workspace_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
+        return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 
 
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
