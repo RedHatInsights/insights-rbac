@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "2cc98514f5821c08381760d61b466c347e566c03c6f4bc3e7f443ff0639e0d5d"
+            "sha256": "0ab6cae12595bc302151a804851adfe47903854fbbfdb3c53c6b03538362f3aa"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -75,11 +75,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:790f8f966201781f5fcf486d48b4492e9f734446bbf9d19ef8159d08be854243",
-                "sha256:96f823240fe3704b99c17d1d1b2fd2d1679cf56d2a55b095f00255b76087cbf0"
+                "sha256:6143546bb56f1da4dff8d285cb6a3b8b0b6442451fe5937cb48a62bf7275386f",
+                "sha256:6206cf07be1069efaead2ddc858eb752dafef276ebbe88ac32b5c427b1d90570"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.38.3"
+            "version": "==1.38.4"
         },
         "celery": {
             "hashes": [
@@ -771,11 +771,11 @@
         },
         "pytz": {
             "hashes": [
-                "sha256:220f481bdafa09c3955dfbdddb7b57780e9a94f5127e35456a48589b9e0c0197",
-                "sha256:cea221417204f2d1a2aa03ddae3e867921971d0d76f14d87abb4414415bbdcf5"
+                "sha256:01a0681c4b9684a28304615eba55d1ab31ae00bf68ec157ec3708a8182dbbcd0",
+                "sha256:78f4f37d8198e0627c5f1143240bb0206b8691d8d7ac6d78fee88b78733f8c4a"
             ],
             "index": "pypi",
-            "version": "==2022.2.1"
+            "version": "==2022.7.1"
         },
         "redis": {
             "hashes": [
@@ -823,11 +823,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:128ce7b8f33c3079fd1b067ecbb4051a66e8526e7b65f6cec075dfc650ddfa88",
-                "sha256:e147c0549f27767ba362f9da434eab9c5dc0045d5304feb602a0af001089fc51"
+                "sha256:a38f898dcd6e5380f4da4381a87ec90bd0a7eec23d204a5552e80ee3cab6bd27",
+                "sha256:c40a5b3729d58dd749c0f08f1a07d134fb8a0a3d7f87dc33e7c5e1f762138650"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==79.0.1"
+            "version": "==80.0.0"
         },
         "six": {
             "hashes": [
@@ -1773,11 +1773,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:128ce7b8f33c3079fd1b067ecbb4051a66e8526e7b65f6cec075dfc650ddfa88",
-                "sha256:e147c0549f27767ba362f9da434eab9c5dc0045d5304feb602a0af001089fc51"
+                "sha256:a38f898dcd6e5380f4da4381a87ec90bd0a7eec23d204a5552e80ee3cab6bd27",
+                "sha256:c40a5b3729d58dd749c0f08f1a07d134fb8a0a3d7f87dc33e7c5e1f762138650"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==79.0.1"
+            "version": "==80.0.0"
         },
         "six": {
             "hashes": [
