@@ -38,6 +38,9 @@ class WorkspaceBaseTestCase(IdentityRequest):
             func()
         self.assertEqual("You must supply either a tenant object or tenant_id value.", str(assertion.exception))
 
+    def manager_assertion_for_descendant_ids(self, result_ids, expected_ids):
+        self.assertCountEqual(result_ids, [str(id) for id in expected_ids])
+
 
 class WorkspaceModelTests(WorkspaceBaseTestCase):
     """Test the workspace model."""
@@ -112,16 +115,58 @@ class WorkspaceModelTests(WorkspaceBaseTestCase):
         tenant_2 = Tenant.objects.create(tenant_name="Name/Parent uniqueness 2")
         Workspace.objects.create(name="root", tenant=tenant_2, type=Workspace.Types.ROOT)
 
+
+class WorkspaceDescendants(WorkspaceBaseTestCase):
+    def setUp(self):
+        """Set up the workspace descendant tests."""
+        self.root = Workspace.objects.create(name="Root", tenant=self.tenant, parent=None, type=Workspace.Types.ROOT)
+        self.level_1a = Workspace.objects.create(name="Level 1a", tenant=self.tenant, parent=self.root)
+        self.level_2a = Workspace.objects.create(name="Level 2a", tenant=self.tenant, parent=self.level_1a)
+        self.level_3a = Workspace.objects.create(name="Level 3a", tenant=self.tenant, parent=self.level_2a)
+        self.level_4a = Workspace.objects.create(name="Level 4a", tenant=self.tenant, parent=self.level_3a)
+        self.level_4b = Workspace.objects.create(name="Level 4b", tenant=self.tenant, parent=self.level_3a)
+        self.level_1b = Workspace.objects.create(name="Level 1b", tenant=self.tenant, parent=self.root)
+        self.level_2b = Workspace.objects.create(name="Level 2b", tenant=self.tenant, parent=self.level_1b)
+        self.level_3b = Workspace.objects.create(name="Level 3b", tenant=self.tenant, parent=self.level_2b)
+
+        self.t2 = Tenant.objects.create(tenant_name="T2")
+        self.t2_root = Workspace.objects.create(name="Root", tenant=self.t2, parent=None, type=Workspace.Types.ROOT)
+        self.t2_level_1 = Workspace.objects.create(name="T2 Level 1", tenant=self.t2, parent=self.t2_root)
+
+        super().setUp()
+
     def test_descendants(self):
         """Test descendants on a workspace"""
-        root = Workspace.objects.create(name="Root", tenant=self.tenant, parent=None, type=Workspace.Types.ROOT)
-        level_1 = Workspace.objects.create(name="Level 1", tenant=self.tenant, parent=root)
-        level_2 = Workspace.objects.create(name="Level 2", tenant=self.tenant, parent=level_1)
-        level_3 = Workspace.objects.create(name="Level 3", tenant=self.tenant, parent=level_2)
-        level_4a = Workspace.objects.create(name="Level 4a", tenant=self.tenant, parent=level_3)
-        level_4b = Workspace.objects.create(name="Level 4b", tenant=self.tenant, parent=level_3)
         self.assertCountEqual(level_1.descendants(), [level_2, level_3, level_4a, level_4b])
         self.assertCountEqual(level_4a.descendants(), [])
+
+    def test_descendant_ids_with_parents(self):
+        """Test returning descendant IDs with parents"""
+
+        self.manager_assertion_for_descendant_ids(
+            Workspace.objects.descendant_ids_with_parents([self.root.id]),
+            [
+                self.root.id,
+                self.level_1a.id,
+                self.level_2a.id,
+                self.level_3a.id,
+                self.level_4a.id,
+                self.level_4b.id,
+                self.level_1b.id,
+                self.level_2b.id,
+                self.level_3b.id,
+            ],
+        )
+
+        self.manager_assertion_for_descendant_ids(
+            Workspace.objects.descendant_ids_with_parents([self.level_2a.id]),
+            [self.level_2a.id, self.level_3a.id, self.level_4a.id, self.level_4b.id],
+        )
+
+        self.manager_assertion_for_descendant_ids(
+            Workspace.objects.descendant_ids_with_parents([self.level_1b.id]),
+            [self.level_1b.id, self.level_2b.id, self.level_3b.id],
+        )
 
 
 class Types(WorkspaceBaseTestCase):
