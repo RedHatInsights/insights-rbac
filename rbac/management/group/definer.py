@@ -104,7 +104,6 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     else:
         group_uuid = uuid4()
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
     tenant_default_policy = group.policies.get(system=True)
     group.name = "Custom default access"
     group.system = False
@@ -118,7 +117,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
         # TODO: returning none can break other code
         return None
-    public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
+    public_default_roles = Role.objects.filter(platform_default=True).public_tenant_only()
 
     group.save()
     tenant_default_policy.group = group
@@ -148,8 +147,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     if system_policy_created:
         logger.info(f"Created new system policy for tenant {tenant.org_id}.")
 
-    system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
-
+    system_roles = roles.public_tenant_only()
     # Custom roles are locked to prevent resources from being added/removed concurrently,
     # in the case that the Roles had _no_ resources specified to begin with.
     # This should not be necessary for system roles.
