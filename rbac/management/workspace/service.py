@@ -16,12 +16,9 @@
 #
 """Service for workspace management."""
 from django.core.exceptions import ValidationError
-
-# from django.db import transaction
 from management.models import Workspace
-
-# from management.relation_replicator.relation_replicator import ReplicationEventType
-# from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 
 
 class WorkspaceService:
@@ -33,3 +30,7 @@ class WorkspaceService:
             raise ValidationError(f"Unable to delete {instance.type} workspace")
         if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
             raise ValidationError("Unable to delete due to workspace dependencies")
+
+        dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
+        dual_write_handler.replicate_deleted_workspace()
+        instance.delete()
