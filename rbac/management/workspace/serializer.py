@@ -21,6 +21,8 @@ from management.relation_replicator.relation_replicator import ReplicationEventT
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from rest_framework import serializers
 
+from management.workspace.service import WorkspaceService
+
 from .model import Workspace
 
 
@@ -49,17 +51,14 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "type",
         )
 
+    @property
+    def _service(self) -> WorkspaceService:
+        return self._context["view"]._service
+
     def create(self, validated_data):
         """Create the workspace object in the database."""
-        validated_data["tenant"] = self.context["request"].tenant
-
-        with transaction.atomic():
-            workspace = Workspace.objects.create(**validated_data)
-            dual_write_handler = RelationApiDualWriteWorkspacepHandler(
-                workspace, ReplicationEventType.CREATE_WORKSPACE
-            )
-            dual_write_handler.replicate_new_workspace()
-        return workspace
+        tenant = self.context["request"].tenant
+        return self._service.create(validated_data, tenant)
 
     def validate(self, attrs):
         from django.core.exceptions import ValidationError

@@ -55,6 +55,10 @@ class WorkspaceViewSet(BaseV2ViewSet):
     ordering = ("name",)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._service = WorkspaceService()
+
     def get_serializer_class(self):
         """Get serializer class based on route."""
         if self.action == "partial_update":
@@ -114,10 +118,16 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     @transaction.atomic()
     def destroy(self, request, *args, **kwargs):
+        """
+        Destroy the instance.
+
+        Overridden only to add transaction.
+        """
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
-        WorkspaceService.destroy(instance)
+        """Delegate to service for destroy logic."""
+        self._service.destroy(instance)
 
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
