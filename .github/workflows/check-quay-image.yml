@@ -1,11 +1,9 @@
 name: Check Quay Image
 
 on:
-  pull_request:
+  push:
     branches:
       - master
-    types:
-      - closed
 
 jobs:
   check-image:
