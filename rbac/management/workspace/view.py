@@ -17,19 +17,24 @@
 """View for Workspace management."""
 from django.core.exceptions import ValidationError as DjangoValidationError
 
-# from django.db import transaction
+from django.db import transaction
+
+# from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from rest_framework.filters import OrderingFilter
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
+from management.workspace.service import WorkspaceService
 
-# from management.relation_replicator.relation_replicator import ReplicationEventType
-# from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+# from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from management.utils import validate_and_get_key
 
 from .model import Workspace
 from .serializer import WorkspacePatchSerializer, WorkspaceSerializer, WorkspaceWithAncestrySerializer
+
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
@@ -103,28 +108,14 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """Delete a workspace."""
-        pass
-        # instance = self.get_object()
-        # if instance.type != Workspace.Types.STANDARD:
-        #     message = f"Unable to delete {instance.type} workspace"
-        #     error = {"workspace": [_(message)]}
-        #     raise serializers.ValidationError(error)
-        # if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
-        #     message = "Unable to delete due to workspace dependencies"
-        #     error = {"workspace": [_(message)]}
-        #     raise serializers.ValidationError(error)
-        # with transaction.atomic():
-        #     instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
-        #     response = super().destroy(request=request, args=args, kwargs=kwargs)
-        #   dual_write_handler = RelationApiDualWriteWorkspacepHandler(
-        #                           instance,
-        #                           ReplicationEventType.DELETE_WORKSPACE
-        #                       )
-        #     dual_write_handler.replicate_deleted_workspace()
-        # return response
-
-        # NEED TO VALIDATE DELETE HERE
-        return super().destroy(request=request, args=args, kwargs=kwargs)
+        instance = self.get_object()
+        WorkspaceService.destroy(instance)
+        with transaction.atomic():
+            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
+            response = super().destroy(request=request, args=args, kwargs=kwargs)
+            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
+            dual_write_handler.replicate_deleted_workspace()
+        return response
 
     def update(self, request, *args, **kwargs):
         """Update a workspace."""

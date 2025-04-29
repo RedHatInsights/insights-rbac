@@ -18,6 +18,7 @@
 """Common exception handler class."""
 import copy
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
@@ -90,7 +91,6 @@ def _generate_error_data_payload_response(detail: str, context, http_status_code
 def custom_exception_handler_v2(exc, context):
     """Create custom response for v2 exceptions."""
     response = exception_handler(exc, context)
-    response.content_type = "application/problem+json"
 
     # Now add the HTTP status code to the response.
     if response is not None:
@@ -102,16 +102,11 @@ def custom_exception_handler_v2(exc, context):
             errors += _generate_errors_from_list(data, **{"status_code": str(response.status_code)})
         error_response = v2response_error_from_errors(errors=errors, exc=exc, context=context)
         response.data = error_response
-    elif isinstance(exc, IntegrityError):
+    elif isinstance(exc, IntegrityError) or isinstance(exc, ValidationError):
         source_view = context.get("view")
+        errors = [{"detail": str(exc), "source": f"{source_view.basename}", "status": "400"}]
         response = Response(
-            v2response_error_from_errors(
-                {
-                    "errors": [
-                        {"detail": str(exc), "source": f"{source_view.basename}", "status": "400"},
-                    ],
-                }
-            ),  # noqa: E231
+            v2response_error_from_errors(errors=errors, exc=exc, context=context),
             status=status.HTTP_400_BAD_REQUEST,
         )
     elif isinstance(exc, InvalidTokenError):
@@ -144,6 +139,7 @@ def custom_exception_handler_v2(exc, context):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+    response.content_type = "application/problem+json"
     return response
 
 

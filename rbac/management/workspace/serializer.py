@@ -30,7 +30,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(read_only=True, required=False)
     name = serializers.CharField(required=True, max_length=255)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
-    parent_id = serializers.UUIDField(required=True)
+    parent_id = serializers.UUIDField(required=False)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
     type = serializers.CharField(read_only=True)
@@ -62,15 +62,22 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         return workspace
 
     def validate(self, attrs):
+        from django.core.exceptions import ValidationError
+
         """Validate on POST, PUT and PATCH."""
-        pass
-        # request = self.context.get("request")
-        # type = request.data.get("type", Workspace.Types.STANDARD)
+        request = self.context.get("request")
+        type = request.data.get("type", Workspace.Types.STANDARD)
+        parent_id = attrs.get("parent_id")
+        tenant = request.tenant
 
-        # WorkspaceValidationService.validate_type(type)
-        # WorkspaceValidationService.validate_parent_id(tenant=request.tenant, parent_id=attrs.get("parent_id"))
+        if type != Workspace.Types.STANDARD:
+            raise ValidationError({"type": [f"Only workspace type '{Workspace.Types.STANDARD}' is allowed."]})
 
-        # return attrs
+        if parent_id and tenant:
+            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
+                raise ValidationError({"parent_id": (f"Parent workspace '{parent_id}' does not exist in tenant.")})
+
+        return attrs
 
     def update(self, instance, validated_data):
         """Update the workspace object in the database."""
