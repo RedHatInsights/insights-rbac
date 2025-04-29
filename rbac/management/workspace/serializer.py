@@ -16,9 +16,6 @@
 #
 
 """Serializer for workspace management."""
-from django.db import transaction
-from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from rest_framework import serializers
 
 from management.workspace.service import WorkspaceService
@@ -53,7 +50,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     @property
     def _service(self) -> WorkspaceService:
-        return self._context["view"]._service
+        return self.context["view"]._service
 
     def create(self, validated_data):
         """Create the workspace object in the database."""
@@ -80,14 +77,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """Update the workspace object in the database."""
-        with transaction.atomic():
-            # Lock the data
-            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
-            previous_parent = instance.parent
-            instance = super().update(instance, validated_data)
-            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
-            dual_write_handler.replicate_updated_workspace(previous_parent)
-        return instance
+        return self._service.update(instance, validated_data)
 
 
 class WorkspacePatchSerializer(WorkspaceSerializer):

@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Service for workspace management."""
+from uuid import UUID
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from management.models import Workspace
@@ -37,6 +38,15 @@ class WorkspaceService:
             dual_write_handler.replicate_new_workspace()
 
         return workspace
+
+    def update(self, instance: Workspace, validated_data: dict) -> Workspace:
+        for attr, value in validated_data.items():
+            # TODO(RHCLOUD-35415): check attr that parent is not changed here
+            setattr(instance, attr, value)
+        instance.save()
+        dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
+        dual_write_handler.replicate_updated_workspace(instance.parent)
+        return instance
 
     def destroy(self, instance: Workspace) -> None:
         if instance.type != Workspace.Types.STANDARD:

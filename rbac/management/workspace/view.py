@@ -129,10 +129,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Delegate to service for destroy logic."""
         self._service.destroy(instance)
 
+    @transaction.atomic()
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
-        return super().update(request=request, args=args, kwargs=kwargs)
-
-    def partial_update(self, request, *args, **kwargs):
-        """Patch a workspace."""
         return super().update(request=request, args=args, kwargs=kwargs)
