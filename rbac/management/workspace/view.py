@@ -34,9 +34,6 @@ from management.utils import validate_and_get_key
 from .model import Workspace
 from .serializer import WorkspacePatchSerializer, WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
-from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
-
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
