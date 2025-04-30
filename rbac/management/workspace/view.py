@@ -18,21 +18,17 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from django.db import transaction
-
-# from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
 from management.workspace.service import WorkspaceService
-
-# from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from management.utils import validate_and_get_key
 
 from .model import Workspace
-from .serializer import WorkspacePatchSerializer, WorkspaceSerializer, WorkspaceWithAncestrySerializer
+from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
@@ -58,8 +54,6 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
-        if self.action == "partial_update":
-            return WorkspacePatchSerializer
         if self.action == "retrieve":
             include_ancestry = validate_and_get_key(
                 self.request.query_params, INCLUDE_ANCESTRY_KEY, VALID_BOOLEAN_VALUES, "false"
@@ -129,4 +123,4 @@ class WorkspaceViewSet(BaseV2ViewSet):
     @transaction.atomic()
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
-        return super().update(request=request, args=args, kwargs=kwargs)
+        return super().update(request, *args, **kwargs)

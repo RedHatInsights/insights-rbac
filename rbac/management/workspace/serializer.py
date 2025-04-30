@@ -80,15 +80,6 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         return self._service.update(instance, validated_data)
 
 
-class WorkspacePatchSerializer(WorkspaceSerializer):
-    """Serializer for patching the Workspace model."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for field in ["name", "parent_id"]:
-            self.fields[field].required = False
-
-
 class WorkspaceAncestrySerializer(serializers.ModelSerializer):
     """Serializer for the Workspace ancestry."""
 
