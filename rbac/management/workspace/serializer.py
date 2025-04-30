@@ -71,7 +71,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
         if parent_id and tenant:
             if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
-                raise ValidationError({"parent_id": (f"Parent workspace '{parent_id}' does not exist in tenant.")})
+                raise ValidationError({"parent_id": (f"Parent workspace '{parent_id}' doesn't exist in tenant")})
 
         return attrs
 

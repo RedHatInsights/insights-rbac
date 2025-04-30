@@ -15,8 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Service for workspace management."""
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from rest_framework.serializers import ValidationError
+from rest_framework import serializers
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
@@ -30,13 +31,21 @@ class WorkspaceService:
 
     def create(self, validated_data, tenant) -> Workspace:
         with transaction.atomic():
-            workspace = Workspace.objects.create(**validated_data, tenant=tenant)
-            dual_write_handler = RelationApiDualWriteWorkspacepHandler(
-                workspace, ReplicationEventType.CREATE_WORKSPACE
-            )
-            dual_write_handler.replicate_new_workspace()
+            try:
+                workspace = Workspace.objects.create(**validated_data, tenant=tenant)
+                dual_write_handler = RelationApiDualWriteWorkspacepHandler(
+                    workspace, ReplicationEventType.CREATE_WORKSPACE
+                )
+                dual_write_handler.replicate_new_workspace()
 
-        return workspace
+                return workspace
+            except ValidationError as e:
+                if "__all__" in e.message_dict:
+                    for msg in e.message_dict["__all__"]:
+                        if "unique_workspace_name_per_parent" in msg:
+                            raise serializers.ValidationError(
+                                "Can't create workspace with same name within same parent workspace"
+                            )
 
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
         for attr, value in validated_data.items():
@@ -49,9 +58,9 @@ class WorkspaceService:
 
     def destroy(self, instance: Workspace) -> None:
         if instance.type != Workspace.Types.STANDARD:
-            raise ValidationError(f"Unable to delete {instance.type} workspace")
+            raise serializers.ValidationError(f"Unable to delete {instance.type} workspace")
         if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
-            raise ValidationError("Unable to delete due to workspace dependencies")
+            raise serializers.ValidationError("Unable to delete due to workspace dependencies")
 
         dual_write_handler = RelationApiDualWriteWorkspacepHandler(
             instance, ReplicationEventType.DELETE_WORKSPACE, replicator=self._replicator

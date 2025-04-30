@@ -369,7 +369,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         detail = response.data.get("detail")
         instance = response.data.get("instance")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, f"Parent workspace '{parent}' does not exist in tenant.")
+        self.assertEqual(detail, f"Parent workspace '{parent}' doesn't exist in tenant")
         self.assertEqual(status_code, 400)
         self.assertEqual(instance, url)
         self.assertEqual(response.get("content-type"), "application/problem+json")
@@ -422,7 +422,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         workspace_data = {"parent_id": root_workspace.id}
         response = client.patch(url, workspace_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["detail"], f"Parent workspace '{root_workspace.id}' does not exist in tenant.")
+        self.assertEqual(response.data["detail"], f"Parent workspace '{root_workspace.id}' doesn't exist in tenant")
 
     @unittest.skip('v2response_error_from_errors causes this to fail generically with "This field is required"')
     def test_update_workspace_empty_body(self):
