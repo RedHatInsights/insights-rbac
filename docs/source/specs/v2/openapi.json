@@ -1,0 +1,1372 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Role Based Access Control for Kessel Project",
+    "version": "v2"
+  },
+  "tags": [
+    {
+      "name": "Workspaces"
+    }
+  ],
+  "paths": {
+    "/workspaces/": {
+      "get": {
+        "operationId": "Workspaces_list",
+        "summary": "List workspaces in a tenant",
+        "description": "List workspaces in a tenant",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 10
+            },
+            "explode": false
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0
+            },
+            "explode": false
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Defaults to all when param is not supplied.",
+            "schema": {
+              "$ref": "#/components/schemas/Workspaces.WorkspaceTypesQueryParam",
+              "default": "all"
+            },
+            "explode": false
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Case sensitive exact match of workspace by name.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspaces.WorkspaceListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Workspaces"
+        ]
+      },
+      "post": {
+        "operationId": "Workspaces_create",
+        "summary": "Create workspace in tenant",
+        "description": "Create workspace in tenant",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "The request has succeeded and a new resource has been created as a result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspaces.CreateWorkspaceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem400"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Workspaces"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Workspaces.CreateWorkspaceRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{id}/": {
+      "get": {
+        "operationId": "Workspaces_read",
+        "summary": "Get a workspace in tenant",
+        "description": "Get a workspace in tenant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Unique identification",
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "include_ancestry",
+            "in": "query",
+            "required": false,
+            "description": "When true, the response will include the ancestry of the workspace.",
+            "schema": {
+              "type": "boolean"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Workspaces.ReadWorkspaceResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Workspaces.ReadWorkspaceWithAncestryResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Workspaces"
+        ]
+      },
+      "put": {
+        "operationId": "Workspaces_update",
+        "summary": "Edit the workspace name or description",
+        "description": "Edit a workspace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Unique identification",
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspaces.UpdateWorkspaceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        400
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Workspaces"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Workspaces.UpdateWorkspaceRequest"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "Workspaces_patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Unique identification",
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspaces.PatchWorkspaceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        400
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Workspaces"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Workspaces.PatchWorkspaceRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "Workspaces_delete",
+        "summary": "Delete the workspace",
+        "description": "Delete a workspace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Unique identification",
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "There is no content to send for this request, but the headers may be useful. "
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Workspace.Problem400WorkspaceNotEmpty"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Workspaces"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problems.Problem400": {
+        "type": "object",
+        "required": [
+          "title",
+          "detail"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "enum": [
+              "The request payload contains invalid syntax."
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "example": "JSON parse error - Expecting value: line 1 column 1 (char 0)"
+          }
+        },
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/components/schemas/Problems.ProblemType"
+              },
+              "status": {
+                "type": "number",
+                "enum": [
+                  400
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
+      },
+      "Problems.Problem403": {
+        "type": "object",
+        "required": [
+          "type",
+          "title"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "http://project-kessel.org/problems/insufficient-permission"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "You do not have permission to perform this action."
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/components/schemas/Problems.ProblemType"
+              },
+              "status": {
+                "type": "number",
+                "enum": [
+                  403
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
+      },
+      "Problems.Problem404": {
+        "type": "object",
+        "required": [
+          "title",
+          "detail"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "enum": [
+              "Resource was not found"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "example": "Not found"
+          }
+        },
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/components/schemas/Problems.ProblemType"
+              },
+              "status": {
+                "type": "number",
+                "enum": [
+                  404
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
+      },
+      "Problems.ProblemType": {
+        "type": "string",
+        "enum": [
+          "http://project-kessel.org/problems/insufficient-permission"
+        ]
+      },
+      "Problems.Workspace.Problem400WorkspaceNotEmpty": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "enum": [
+              "Unable to delete due to workspace dependencies"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/components/schemas/Problems.ProblemType"
+              },
+              "status": {
+                "type": "number",
+                "enum": [
+                  400
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
+      },
+      "Timestamps": {
+        "type": "object",
+        "required": [
+          "created",
+          "modified"
+        ],
+        "properties": {
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "description": "2019-01-21T17:32:28Z"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "2019-01-21T17:32:28Z"
+          }
+        }
+      },
+      "UUID": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "Versions": {
+        "type": "string",
+        "enum": [
+          "v2"
+        ]
+      },
+      "Workspaces.BasicWorkspace": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Workspace A",
+            "default": "Workspace A"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of Workspace A",
+            "default": "Description of Workspace A"
+          }
+        }
+      },
+      "Workspaces.CreateWorkspaceRequest": {
+        "type": "object",
+        "properties": {
+          "parent_id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Parent ID of Workspace A",
+            "default": "Parent ID of Workspace A"
+          }
+        },
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspaces.BasicWorkspace"
+          }
+        ]
+      },
+      "Workspaces.CreateWorkspaceResponse": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspaces.Workspace"
+          }
+        ]
+      },
+      "Workspaces.Pagination": {
+        "type": "object",
+        "required": [
+          "meta",
+          "links"
+        ],
+        "properties": {
+          "meta": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Workspaces.PaginationMeta"
+              }
+            ],
+            "description": "Pagination metadata"
+          },
+          "links": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Workspaces.PaginationLinks"
+              }
+            ],
+            "description": "Pagination links"
+          }
+        }
+      },
+      "Workspaces.PaginationLinks": {
+        "type": "object",
+        "required": [
+          "first",
+          "next",
+          "previous",
+          "last"
+        ],
+        "properties": {
+          "first": {
+            "type": "string",
+            "format": "uri",
+            "description": "The first link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The next link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=10"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The previous link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
+          },
+          "last": {
+            "type": "string",
+            "format": "uri",
+            "description": "The last link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=20"
+          }
+        }
+      },
+      "Workspaces.PaginationMeta": {
+        "type": "object",
+        "required": [
+          "count",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total count of objects",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Limit of returned objects",
+            "example": 10,
+            "default": 10
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Offset of returned objects",
+            "example": 10
+          }
+        }
+      },
+      "Workspaces.PatchWorkspaceRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Workspace A",
+            "default": "Workspace A"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of Workspace A",
+            "default": "Description of Workspace A"
+          }
+        }
+      },
+      "Workspaces.PatchWorkspaceResponse": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspaces.Workspace"
+          }
+        ]
+      },
+      "Workspaces.ReadWorkspaceResponse": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspaces.Workspace"
+          }
+        ]
+      },
+      "Workspaces.ReadWorkspaceWithAncestryResponse": {
+        "type": "object",
+        "required": [
+          "ancestry"
+        ],
+        "properties": {
+          "ancestry": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Workspaces.WorkspaceAncestor"
+            }
+          }
+        },
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspaces.ReadWorkspaceResponse"
+          }
+        ]
+      },
+      "Workspaces.UpdateWorkspaceRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "parent_id"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Workspace A",
+            "default": "Workspace A"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of Workspace A",
+            "default": "Description of Workspace A"
+          },
+          "parent_id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Description of Workspace A",
+            "default": "Parent ID of Workspace A"
+          }
+        }
+      },
+      "Workspaces.UpdateWorkspaceResponse": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspaces.Workspace"
+          }
+        ]
+      },
+      "Workspaces.Workspace": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "created",
+          "modified"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "parent_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "type": {
+            "$ref": "#/components/schemas/Workspaces.WorkspaceTypes"
+          },
+          "name": {
+            "type": "string",
+            "description": "Workspace A",
+            "default": "Workspace A"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of Workspace A",
+            "default": "Description of Workspace A"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "description": "2019-01-21T17:32:28Z"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "2019-01-21T17:32:28Z"
+          }
+        }
+      },
+      "Workspaces.WorkspaceAncestor": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "parent_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "Workspaces.WorkspaceListResponse": {
+        "type": "object",
+        "required": [
+          "meta",
+          "links",
+          "data"
+        ],
+        "properties": {
+          "meta": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Workspaces.PaginationMeta"
+              }
+            ],
+            "description": "Pagination metadata"
+          },
+          "links": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Workspaces.PaginationLinks"
+              }
+            ],
+            "description": "Pagination links"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Workspaces.Workspace"
+            },
+            "description": "List of workspaces"
+          }
+        }
+      },
+      "Workspaces.WorkspaceTypes": {
+        "type": "string",
+        "enum": [
+          "root",
+          "default",
+          "standard",
+          "ungrouped-hosts"
+        ]
+      },
+      "Workspaces.WorkspaceTypesQueryParam": {
+        "type": "string",
+        "enum": [
+          "all",
+          "root",
+          "default",
+          "standard",
+          "ungrouped-hosts"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://console.redhat.com/{basePath}",
+      "description": "Production Server",
+      "variables": {
+        "basePath": {
+          "default": "api/rbac/v2"
+        }
+      }
+    },
+    {
+      "url": "https://console.stage.redhat.com/{basePath}",
+      "description": "Stage Server",
+      "variables": {
+        "basePath": {
+          "default": "api/rbac/v2"
+        }
+      }
+    },
+    {
+      "url": "https://localhost:{port}/{basePath}",
+      "description": "Development Server",
+      "variables": {
+        "basePath": {
+          "default": "api/rbac/v2"
+        },
+        "port": {
+          "default": "8000"
+        }
+      }
+    }
+  ]
+}

@@ -23,7 +23,23 @@ from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 
 
-class WorkspaceModelTests(IdentityRequest):
+class WorkspaceBaseTestCase(IdentityRequest):
+    """Base class for Workspace tests for helpers/shared methods."""
+
+    def manager_assertions_for_type(self, func, expected_data):
+        if isinstance(expected_data, list):
+            self.assertCountEqual(list(func(tenant=self.tenant)), expected_data)
+            self.assertCountEqual(list(func(tenant_id=self.tenant.id)), expected_data)
+        else:
+            self.assertEqual(func(tenant=self.tenant), expected_data)
+            self.assertEqual(func(tenant_id=self.tenant.id), expected_data)
+
+        with self.assertRaises(ValueError) as assertion:
+            func()
+        self.assertEqual("You must supply either a tenant object or tenant_id value.", str(assertion.exception))
+
+
+class WorkspaceModelTests(WorkspaceBaseTestCase):
     """Test the workspace model."""
 
     def setUp(self):
@@ -59,8 +75,45 @@ class WorkspaceModelTests(IdentityRequest):
         level_4 = Workspace.objects.create(name="Level 4", tenant=self.tenant, parent=level_3)
         self.assertCountEqual(level_3.ancestors(), [root, level_1, level_2])
 
+    def test_unique_name_parent(self):
+        """"""
+        tenant = Tenant.objects.create(tenant_name="Name/Parent uniqueness")
+        root = Workspace.objects.create(name="root", tenant=tenant, type=Workspace.Types.ROOT)
+        default = Workspace.objects.create(name="default", tenant=tenant, type=Workspace.Types.DEFAULT, parent=root)
 
-class Types(IdentityRequest):
+        Workspace.objects.create(name="Child", tenant=tenant, parent=default, type=Workspace.Types.STANDARD)
+
+        # Create a child with same name with the same parent
+        self.assertRaises(
+            ValidationError,
+            Workspace.objects.create,
+            name="Child",
+            tenant=tenant,
+            parent=default,
+            type=Workspace.Types.STANDARD,
+        )
+        # Create a child with same name but the different case within the same parent
+        self.assertRaises(
+            ValidationError,
+            Workspace.objects.create,
+            name="child",
+            tenant=tenant,
+            parent=default,
+            type=Workspace.Types.STANDARD,
+        )
+
+        # Create a child with the same name but different parent
+        parent_2 = Workspace.objects.create(
+            name="Parent 2", tenant=tenant, type=Workspace.Types.STANDARD, parent=default
+        )
+        Workspace.objects.create(name="Child", tenant=tenant, parent=parent_2, type=Workspace.Types.STANDARD)
+
+        # If parent is null, it is allowed to have same name
+        tenant_2 = Tenant.objects.create(tenant_name="Name/Parent uniqueness 2")
+        Workspace.objects.create(name="root", tenant=tenant_2, type=Workspace.Types.ROOT)
+
+
+class Types(WorkspaceBaseTestCase):
     """Test types on a workspace."""
 
     def setUp(self):
@@ -72,6 +125,12 @@ class Types(IdentityRequest):
             name="T1 Default Workspace",
             tenant=self.tenant,
             type=Workspace.Types.DEFAULT,
+            parent=self.tenant_1_root_workspace,
+        )
+        self.tenant_1_ungrouped_hosts_workspace = Workspace.objects.create(
+            name="T1 Ungrouped Hosts Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.UNGROUPED_HOSTS,
             parent=self.tenant_1_root_workspace,
         )
         self.tenant_1_standard_workspace = Workspace.objects.create(
@@ -111,14 +170,33 @@ class Types(IdentityRequest):
         self.assertEqual(len(error_messages), 1)
         self.assertIn("unique_default_root_workspace_per_tenant", error_messages[0])
 
-    def test_multiple_root_and_default_multiple_tenants(self):
-        """Test that multiple tenants can have more than one root and default workspace"""
+    def test_single_ungrouped_hosts_per_tenant(self):
+        """Test tenant can only have one ungrouped hosts workspace"""
+        with self.assertRaises(ValidationError) as assertion:
+            Workspace.objects.create(
+                name="T1 Ungrouped Hosts Workspace Number 2",
+                type=Workspace.Types.UNGROUPED_HOSTS,
+                tenant=self.tenant,
+                parent=self.tenant_1_root_workspace,
+            )
+        error_messages = assertion.exception.messages
+        self.assertEqual(len(error_messages), 1)
+        self.assertIn("unique_default_root_workspace_per_tenant", error_messages[0])
+
+    def test_multiple_specific_ws_multiple_tenants(self):
+        """Test that multiple tenants can have more than one root/default/ungrouped-hosts workspace"""
         try:
             tenant_2 = Tenant.objects.create(tenant_name="Tenant 2")
             root = Workspace.objects.create(name="Root Workspace Number 2", type=Workspace.Types.ROOT, tenant=tenant_2)
             default = Workspace.objects.create(
                 name="Default Workspace Number 2",
                 type=Workspace.Types.DEFAULT,
+                tenant=tenant_2,
+                parent=root,
+            )
+            Workspace.objects.create(
+                name="Ungrouped Hosts Workspace Number 2",
+                type=Workspace.Types.UNGROUPED_HOSTS,
                 tenant=tenant_2,
                 parent=root,
             )
@@ -171,6 +249,51 @@ class Types(IdentityRequest):
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
         self.assertEqual(
-            {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
+            {"workspace": ["default workspaces must have a parent workspace."]},
             assertion.exception.message_dict,
         )
+
+    def test_ungrouped_hosts_no_parent(self):
+        """Test ungrouped hosts workspace creation with no parent"""
+        tenant = Tenant.objects.create(tenant_name="Ungrouped Hosts no parent")
+        with self.assertRaises(ValidationError) as assertion:
+            Workspace.objects.create(name="Ungrouped Hosts", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant)
+        self.assertEqual(
+            {"workspace": ["ungrouped-hosts workspaces must have a parent workspace."]},
+            assertion.exception.message_dict,
+        )
+
+    def test_built_in_types_queryset(self):
+        """Test the WorkspaceQuerySet on the Workspace model for built_in."""
+        self.manager_assertions_for_type(
+            Workspace.objects.built_in, [self.tenant_1_root_workspace, self.tenant_1_default_workspace]
+        )
+
+    def test_standard_types_queryset(self):
+        """Test the WorkspaceQuerySet on the Workspace model for standard."""
+        self.manager_assertions_for_type(Workspace.objects.standard, [self.tenant_1_standard_workspace])
+
+    def test_root_type_manager(self):
+        """Test the WorkspaceManager on the Workspace model for root."""
+        self.manager_assertions_for_type(Workspace.objects.root, self.tenant_1_root_workspace)
+
+    def test_default_type_manager(self):
+        """Test the WorkspaceManager on the Workspace model for default."""
+        self.manager_assertions_for_type(Workspace.objects.default, self.tenant_1_default_workspace)
+
+    def test_root_and_default_parent(self):
+        """Test root/default workspace creation with parent"""
+        tenant = Tenant.objects.create(tenant_name="Root with parent")
+        root = Workspace.objects.create(name="Root", type=Workspace.Types.ROOT, tenant=tenant)
+        # Default cannot be created without parent
+        with self.assertRaises(ValidationError) as assertion:
+            Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
+
+        default = Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
+        with self.assertRaises(ValidationError) as assertion:
+            root.parent = default
+            root.save()
+            self.assertEqual(
+                {"parent_id": ["Root workspaces cannot have a parent."]},
+                assertion.exception.message_dict,
+            )

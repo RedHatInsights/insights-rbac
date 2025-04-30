@@ -94,6 +94,11 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 params["queryBy"] = "userId"
             else:
                 params["queryBy"] = options["query_by"]
+        if "include_permissions" in options:
+            if options["include_permissions"]:
+                params["include_permissions"] = "true"
+            else:
+                params["include_permissions"] = "false"
 
         return params
 
@@ -155,16 +160,19 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         """Send request to proxy service."""
         metrics_method = method.__name__.upper()
         if params and params.get("username_only") == "true":
-            principals = Principal.objects.filter(type="user")
+            principals = Principal.objects.filter(type="user", tenant__org_id=org_id, cross_account=False)
             if data and "users" in data:
                 principals = principals.filter(username__in=data["users"])
-            data = [dict(username=principal.username) for principal in principals]
-            return dict(data=data, status_code=200)
+            userList = [dict(username=principal.username) for principal in principals]
+            offset = params.get("offset", 0)
+            limit = params.get("limit", len(userList))
+            paginatedUserList = userList[offset : offset + limit]  # noqa: E203
+            return dict(data=paginatedUserList, userCount=len(userList), status_code=200)
 
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []
             if data is None:
-                for principal in Principal.objects.filter(type="user"):
+                for principal in Principal.objects.filter(type="user", tenant__org_id=org_id, cross_account=False):
                     to_return.append(
                         dict(
                             username=principal.username,
@@ -262,7 +270,9 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         params = self._create_params(limit, offset, options)
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, account_principals_path)
 
-        return self._request_principals(url, params=params, org_id_filter=False, method=method, data=payload)
+        return self._request_principals(
+            url, org_id=org_id, params=params, org_id_filter=False, method=method, data=payload
+        )
 
     def request_filtered_principals(self, principals, org_id=None, limit=None, offset=None, options={}):
         """Request specific principals for an account."""
@@ -272,9 +282,10 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             org_id_filter = True
         if not principals:
             return {"status_code": status.HTTP_200_OK, "data": []}
+
         filtered_principals_path = "/v1/users"
         params = self._create_params(limit, offset, options)
-        payload = {"users": principals, "include_permissions": False}
+        payload = {"users": principals}
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, filtered_principals_path)
 
         return_id = False if options.get("return_id") is None else True

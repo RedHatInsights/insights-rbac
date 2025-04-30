@@ -442,6 +442,7 @@ class IntegrationViewsTests(IdentityRequest):
             **self.request.META,
             follow=True,
         )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
@@ -467,3 +468,107 @@ class IntegrationViewsTests(IdentityRequest):
         expected_org_ids = [t.org_id for t in [self.modifiedTenant1, self.modifiedTenant2]]
         actual_org_ids = [t["org_id"] for t in response.data.get("data")]
         self.assertEqual(sorted(expected_org_ids), sorted(actual_org_ids))
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567474,
+                    "username": "user_admin",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+            ],
+        },
+    )
+    def test_principals_for_group_offset_limit(self, mock_request):
+        """Test that a valid request to /tenant/<id>/groups/<uuid>/principals/ returns principals in group with offset & limit set."""
+        group_a_uuid = Group.objects.get(name="Group A").uuid
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/?offset=1&limit=10",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567474,
+                    "username": "user_admin",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+            ],
+        },
+    )
+    def test_principals_for_group_pagination_exists(self, mock_request):
+        """Test that a valid request to /tenant/<id>/groups/<uuid>/principals/ returns principals in group with correct pagination links after pagination change."""
+        group_a_uuid = Group.objects.get(name="Group A").uuid
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check that pagination contains correct links
+        links = response.data.get("links")
+        self.assertIn("next", links)
+        self.assertIn("previous", links)
+        self.assertIn("first", links)
+        self.assertIn("last", links)
+
+        # Check links have correct path set inside
+        self.assertTrue(
+            links["first"].startswith(
+                f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+            )
+        )
+        self.assertTrue(
+            links["last"].startswith(
+                f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+            )
+        )
+        if links["previous"] is not None:
+            self.assertTrue(
+                links["previous"].startswith(
+                    f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+                )
+            )
+        if links["next"] is not None:
+            self.assertTrue(
+                links["next"].startswith(
+                    f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+                )
+            )

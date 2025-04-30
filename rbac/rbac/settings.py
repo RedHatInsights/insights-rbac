@@ -84,7 +84,6 @@ DEBUG = False if os.getenv("DJANGO_DEBUG", "False") == "False" else True  # pyli
 
 ALLOWED_HOSTS = ["*"]
 
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -271,6 +270,7 @@ LOGGING = {
         "django.server": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL, "propagate": False},
         "django.request": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL, "propagate": False},
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "internal": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
@@ -438,6 +438,7 @@ if KAFKA_ENABLED:
                         "sasl_plain_password": kafka_brokers[broker_index].sasl.password,
                         "sasl_mechanism": kafka_brokers[broker_index].sasl.saslMechanism.upper(),
                         "security_protocol": kafka_brokers[broker_index].sasl.securityProtocol.upper(),
+                        "retries": 5,
                     }
                 )
             if kafka_brokers[broker_index].cacert:

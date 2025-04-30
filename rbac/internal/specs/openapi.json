@@ -1,5 +1,6 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.1.1",
+  "$schema": "https://spec.openapis.org/oas/3.1/schema/2025-02-13",
   "info": {
     "description": "Internal Integrations API for Role Based Access Control.",
     "version": "1.0.0",
@@ -11,23 +12,47 @@
   },
   "tags": [
     {
-      "name": "Role",
-      "description": "Operations about roles"
+      "name": "Integrations",
+      "description": "List groups, roles, principals and tenants."
     },
     {
       "name": "Group",
-      "description": "Operations about groups"
+      "description": "Operations about groups."
     },
     {
       "name": "Principal",
-      "description": "Operations about principals"
+      "description": "Operations about principals."
+    },
+    {
+      "name": "Role",
+      "description": "Operations about roles."
+    },
+    {
+      "name": "Tenant",
+      "description": "Operations about tenants."
+    },
+    {
+      "name": "Utils",
+      "description": "Utils operations."
+    },
+    {
+      "name": "Destructive",
+      "description": "Destructive operations."
+    },
+    {
+      "name": "V2",
+      "description": "Operations related with RBAC V2."
+    },
+    {
+      "name": "CAR",
+      "description": "Cross Account Request operations."
     }
   ],
   "paths": {
     "/integrations/tenant/{orgId}/roles/": {
       "get": {
         "tags": [
-          "Role"
+          "Integrations", "Role"
         ],
         "summary": "List the roles for a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -206,7 +231,7 @@
     "/integrations/tenant/{orgId}/groups/": {
       "get": {
         "tags": [
-          "Group"
+          "Integrations", "Group"
         ],
         "summary": "List the groups for a tenant",
         "description": "By default, responses are sorted in ascending order by group name",
@@ -313,7 +338,7 @@
     "/integrations/tenant/{orgId}/groups/{uuid}/roles/": {
       "get": {
         "tags": [
-          "Group"
+          "Integrations", "Group", "Role"
         ],
         "summary": "List the roles for a group in a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -434,7 +459,7 @@
     "/integrations/tenant/{orgId}/principal/{username}/groups/": {
       "get": {
         "tags": [
-          "Principal"
+          "Integrations", "Group", "Principal"
         ],
         "summary": "List the groups for a principal in a tenant",
         "description": "By default, responses are sorted in ascending order by group name",
@@ -541,7 +566,7 @@
     "/integrations/tenant/{orgId}/principal/{username}/groups/{uuid}/roles/": {
       "get": {
         "tags": [
-          "Principal"
+          "Integrations", "Role", "Group", "Principal"
         ],
         "summary": "List the roles for a group for a principal in a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -644,7 +669,7 @@
     "/integrations/tenant/{orgId}/groups/{uuid}/principals/": {
       "get": {
         "tags": [
-          "Group"
+          "Integrations", "Principal", "Group"
         ],
         "summary": "Get a list of principals from a group in a tenant",
         "description": "By default, responses are sorted in ascending order by username",
@@ -817,7 +842,7 @@
     "/integrations/tenant/": {
       "get": {
         "tags": [
-          "Tenant"
+          "Integrations", "Tenant"
         ],
         "summary": "Get a list of tenants",
         "description": "List of tenants in ConsoleDot RBAC",
@@ -880,10 +905,88 @@
         }
       }
     },
+    "/api/utils/cars/clean/": {
+      "get": {
+        "tags": [
+          "Utils", "CAR"
+        ],
+        "summary": "Get info of cars with custom roles",
+        "description": "Get info of cars with custom roles",
+        "operationId": "getCars",
+        "responses": {
+          "200": {
+            "description": "Info of cars with custom roles."
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "CAR", "Utils"
+        ],
+        "summary": "Clean up custom roles in cars",
+        "description": "Clean up custom roles in cars",
+        "operationId": "cleanCars",
+        "responses": {
+          "200": {
+            "description": "Deleted cars with custom roles."
+          },
+          "400": {
+            "description": "Destructive operations disallowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/get_org_admin/{org_or_account}/": {
       "get": {
         "tags": [
-          "Org_Admin"
+          "Utils"
         ],
         "summary": "Get a list of Org Admins for an account or organization",
         "description": "List of Org Admins for an account or organization",
@@ -961,7 +1064,7 @@
     "/api/utils/role/": {
       "delete": {
         "tags": [
-          "Role"
+          "Role", "Utils", "Destructive"
         ],
         "summary": "Delete Red Hat managed role",
         "description": "Specify a role name to delete a Red Hat managed role.",
@@ -1010,7 +1113,7 @@
     "/api/utils/permission/": {
       "delete": {
         "tags": [
-          "Permission"
+          "Permission", "Utils", "Destructive"
         ],
         "summary": "Delete permission",
         "description": "Specify a permission to delete a permission.",
@@ -1059,7 +1162,7 @@
     "/api/utils/data_migration/": {
       "post": {
         "tags": [
-          "V2 data migration"
+          "V2", "Utils"
         ],
         "summary": "Migration of v1 resources",
         "description": "Start process of migration of v1 resources.",
@@ -1114,21 +1217,32 @@
     "/api/utils/bootstrap_tenant/": {
       "post": {
         "tags": [
-          "Tenant bootstrap"
+          "V2", "Tenant", "Utils"
         ],
-        "summary": "Bootstrap a tennat by org id",
-        "description": "Bootstrap a tenant by org id",
+        "summary": "Bootstrap a tenants by org ids",
+        "description": "Bootstrap a tenants by org ids",
         "operationId": "TenantBootstrap",
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "query",
-            "required": true,
-            "description": "Defines the org id of the tenant to bootstrap.",
-            "schema": {
-              "type": "string"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "A list of organization IDs to bootstrap."
+                  }
+                },
+                "required": ["org_ids"]
+              }
             }
-          },
+          }
+        },
+        "parameters": [
           {
             "name": "force",
             "in": "query",
@@ -1177,10 +1291,143 @@
         }
       }
     },
+    "/api/utils/bootstrap_pending_tenants/": {
+      "get": {
+        "tags": [
+          "V2", "Tenant", "Utils"
+        ],
+        "summary": "List tenants that are not bootstrapped",
+        "description": "Returns a list of tenant org IDs that have not yet been bootstrapped.",
+        "operationId": "bootstrapPendingTenants",
+        "responses": {
+          "200": {
+            "description": "Successful response with a list of unbootstrapped tenants.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "List of unbootstrapped tenant IDs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method. Only GET is allowed.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method only \"GET\" is allowed."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fetch_replication_data": {
+      "get": {
+        "tags": [
+          "V2", "Utils"
+        ],
+        "summary": "Fetch replication data",
+        "operationId": "fetchReplicationData",
+        "description": "Retrieves replication-related information from the database.",
+        "responses": {
+          "200": {
+            "description": "Replication data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "replication_slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Slot name" },
+                          { "type": "string", "description": "Slot type" }
+                        ]
+                      }
+                    },
+                    "publications": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "integer", "description": "OID" },
+                          { "type": "string", "description": "Publication name" }
+                        ]
+                      }
+                    },
+                    "publication_tables": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Publication name" },
+                          { "type": "string", "description": "Table name" }
+                        ]
+                      }
+                    },
+                    "wal_lsn": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": [
+                          { "type": "string", "description": "Current WAL LSN" },
+                          { "type": "string", "description": "Confirmed flush LSN" }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only GET is allowed",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid method, only 'GET' is allowed."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/bindings/": {
       "get": {
         "tags": [
-          "Binding list for a role"
+          "V2", "Role", "Utils"
         ],
         "summary": "List bindingmappings for a role",
         "description": "List bindingmappings for a role.",
@@ -1233,10 +1480,70 @@
         }
       }
     },
+    "/api/utils/binding/{binding_id}/clean/": {
+      "post": {
+        "tags": [
+          "V2", "Utils"
+        ],
+        "summary": "Clean binding for a given id",
+        "description": "Clean binding for a given id",
+        "operationId": "CleanBinding",
+        "parameters": [
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "description": "To clean the field users or groups.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "users",
+                "groups"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mappings of the binding."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'users' or 'groups' in field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/migration_resources/": {
       "delete": {
         "tags": [
-          "Delete migration resources"
+          "V2", "Destructive", "Utils"
         ],
         "summary": "Delete migration resources",
         "description": "Delete migration resources, including binding mappings, tenant mappings, and workspaces.",
@@ -1304,7 +1611,7 @@
       },
       "get": {
         "tags": [
-          "List migration resources"
+          "V2", "Utils"
         ],
         "summary": "List migration resources",
         "description": "List migration resources, including binding mappings, tenant mappings, and workspaces.",
@@ -1374,7 +1681,7 @@
     "/api/utils/set_tenant_ready/": {
       "get": {
         "tags": [
-          "Set tenant ready"
+          "Tenant", "Utils"
         ],
         "summary": "View count of tenants with ready flag false",
         "description": "View count of tenants with ready flag false.",
@@ -1407,7 +1714,7 @@
       },
       "post": {
         "tags": [
-          "Set tenant ready"
+          "Tenant", "Utils"
         ],
         "summary": "Set ready flag of tenants to true",
         "description": "Set ready flag of tenants to true.",
@@ -1427,7 +1734,7 @@
           "200": {
             "description": "0 tenant with ready flag equal to false."
           },
-          "400":{
+          "400": {
             "description": "Invalid request, must supply the 'max_expected' query parameter.",
             "content": {
               "application/json": {
@@ -1439,6 +1746,185 @@
           },
           "405": {
             "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/reset_imported_tenants/": {
+      "delete": {
+        "tags": [
+          "Tenant", "Utils", "Destructive"
+        ],
+        "summary": "Remove tenants imported via user import job",
+        "description": "Remove tenants with the flag ready=false or tenants without related objects. To use this endpoint, destructive API operations must be enabled.",
+        "operationId": "RemoveImportedTenants",
+        "parameters": [
+          {
+            "name": "exclude_id",
+            "in": "query",
+            "required": false,
+            "description": "IDs of tenants to exclude from the reset operation. Can be specified multiple times.",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "only_ready_false_flag",
+            "in": "query",
+            "required": false,
+            "description": "If set to true, the query searches for tenants with the 'ready=false' flag; otherwise, it looks for tenants without related objects.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Parameter for selecting the amount of data removed.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenants deleting in worker."
+          },
+          "400": {
+            "description": "Destructive operations disallowed."
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Tenant", "Utils"
+        ],
+        "summary": "Get count of tenants imported via user import job",
+        "description": "Returns the count of tenants with the flag ready=false or tenants without related objects.",
+        "operationId": "CountOfImportedTenants",
+        "parameters": [
+          {
+            "name": "exclude_id",
+            "in": "query",
+            "required": false,
+            "description": "IDs of tenants to exclude from the reset operation. Can be specified multiple times.",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "only_ready_false_flag",
+            "in": "query",
+            "required": false,
+            "description": "If set to true, the query searches for tenants with the 'ready=false' flag; otherwise, it looks for tenants without related objects.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Parameter for selecting the amount of data returned.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenants count that would be deleted.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "2 tenants would be deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/principal/": {
+      "delete": {
+        "tags": [
+          "Principal", "Destructive", "Utils"
+        ],
+        "summary": "Delete principals without user_id and inactive.",
+        "description": "Delete principals without principals and inactive..",
+        "operationId": "DeletePrincipal",
+        "parameters": [
+          {
+            "name": "usernames",
+            "in": "query",
+            "required": true,
+            "description": "Comma separated list of usernames of the principals to be deleted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_type",
+            "in": "query",
+            "required": true,
+            "description": "The user type to search principals.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "service-account"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Principals deleted"
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -1475,6 +1961,330 @@
               "application/json": {
                 "schema": {
                   "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/username_lower/": {
+      "get": {
+        "tags": [
+          "Principal", "Utils"
+        ],
+        "summary": "List uppercase username",
+        "description": "List uppercase username.",
+        "operationId": "ListUsername",
+        "responses": {
+          "200": {
+            "description": "List of uppercase username."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Principal", "Utils"
+        ],
+        "summary": "Update uppercase username to lowercase",
+        "description": "Update uppercase username to lowercase.",
+        "operationId": "LowerUsername",
+        "responses": {
+          "200": {
+            "description": "All uppercase username updated to lowercase."
+          },
+          "400":{
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/user_lookup/": {
+      "get":{
+        "tags": [
+          "Principal", "Utils"
+        ],
+        "summary": "Get user info",
+        "description": "Query for a user's groups, roles, and permissions based on their username or email. Only one of the params is required.",
+        "operationId": "userLookup",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "description": "Username of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
+            "required": true,
+            "schema":{
+              "type": "string"
+            }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "description": "Email address of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
+            "required": true,
+            "schema":{
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Result set of user groups, roles, and permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "username": { "type": "string", "example": "fake_user" },
+                    "email_address": { "type": "string", "example": "fake_user@redhat.com" },
+                    "groups":{
+                      "type": "array",
+                      "items":{
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string", "example": "Example group"},
+                          "description": { "type": "string", "example": "A group for some users" },
+                          "uuid": { "type": "string", "format":"uuid", "example": "1c4da003-569d-433f-8159-fd77e6984de1" },
+                          "platform_default": { "type": "boolean", "example": true },
+                          "admin_default": { "type": "boolean", "example": false },
+                          "roles":{
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": { "type": "string", "example": "Example Role" },
+                                "display_name": { "type": "string", "example": "Example Role Display" },
+                                "description": { "type": "string", "example": "An example role for the spec" },
+                                "uuid": { "type": "string", "format":"uuid", "example": "a8d33564-628f-4eba-bd59-6a2948bfb31e" },
+                                "platform_default": { "type": "boolean", "example": true },
+                                "admin_default": { "type": "boolean", "example": false },
+                                "permissions": {
+                                  "type": "array",
+                                  "items":{
+                                    "type": "string",
+                                    "example": "application | resource | verb"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": ["username", "email_address", "groups"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request - bad input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found - user not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method - invalid http method used, only GET allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error - unexpected internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSingle"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_s2s/workspaces/ungrouped/": {
+      "get": {
+        "tags": [
+          "V2", "Workspace"
+        ],
+        "summary": "Get or create ungrouped hosts workspace.",
+        "description": "Get or create ungrouped hosts workspace.",
+        "operationId": "GetUngrouped",
+        "responses": {
+          "201": {
+            "description": "The ungrouped hosts workspace of the org."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/resource_definitions/": {
+      "get": {
+        "tags": [
+          "Permission", "Utils"
+        ],
+        "summary": "Get incorrect resource definitions.",
+        "description": "Get resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
+        "operationId": "GetIncorrectResourceDefinitions",
+        "parameters": [
+          {
+            "name": "detail",
+            "in": "query",
+            "description": "Optional flag. If true, returns a list of resource definition objects. If false or omitted, returns only the count.",
+            "required": false,
+            "schema":{
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of resource definitions that would be corrected."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Permission", "Utils"
+        ],
+        "summary": "Fix incorrect resource definitions.",
+        "description": "Fix resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
+        "operationId": "FixIncorrectResourceDefinitions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Resource definition id.",
+            "required": false,
+            "schema":{
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of resource definitions that were corrected."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1540,6 +2350,17 @@
                 }
               }
             }
+          }
+        }
+      },
+      "ErrorSingle": {
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Invalid request - bad input provided"
           }
         }
       },

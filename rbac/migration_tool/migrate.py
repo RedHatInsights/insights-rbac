@@ -16,6 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
+from typing import Union
 
 from django.db import transaction
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
@@ -65,7 +66,11 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
                 dual_write_handler.generate_relations_to_add_principals(principals)
                 # lock on group is not required to add system role, only binding mappings which is included in
                 # dual_write_handler
-                dual_write_handler.generate_relations_to_add_roles(system_roles)
+                # `reset_mapping_for_roles` is used because it is idempotent,
+                # HOWEVER it is also potentially destructive. This is done because we are sure
+                # there is currently only one source for roles to the same group and resource
+                # which does not duplicate roles (group policy).
+                dual_write_handler.generate_relations_reset_roles(system_roles)
                 dual_write_handler.replicate()
         # End of transaction for group operations, locks are released
 
@@ -130,7 +135,7 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
                 # This operation requires lock on cross account request as is done
                 # in CrossAccountRequestViewSet#get_queryset
                 # This also locks binding mapping if exists for passed system roles.
-                dual_write_handler.generate_relations_to_add_roles(cross_account_request.roles.all())
+                dual_write_handler.generate_relations_reset_roles(cross_account_request.roles.all())
                 dual_write_handler.replicate()
         # End of transaction for approved cross account request and its add role operation
         # Locks on cross account request and eventually on default workspace are released.
@@ -140,7 +145,10 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
 
 
 def migrate_data(
-    exclude_apps: list = [], orgs: list = [], write_relationships: str = "False", skip_roles: bool = False
+    exclude_apps: list = [],
+    orgs: list = [],
+    write_relationships: Union[str, RelationReplicator] = "False",
+    skip_roles: bool = False,
 ):
     """Migrate all data for all tenants."""
     count = 0
@@ -166,7 +174,10 @@ def migrate_data(
     logger.info("Finished migrating data for all tenants")
 
 
-def _get_replicator(write_relationships: str) -> RelationReplicator:
+def _get_replicator(write_relationships: Union[str, RelationReplicator]) -> RelationReplicator:
+    if isinstance(write_relationships, RelationReplicator):
+        return write_relationships
+
     option = write_relationships.lower()
 
     if option == "true" or option == "relations-api":

@@ -18,6 +18,7 @@
 import json
 import os
 import uuid
+from typing import Optional
 from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
@@ -30,7 +31,8 @@ from rest_framework import serializers
 from rest_framework.request import Request
 from rest_framework.serializers import ValidationError
 
-from api.models import Tenant
+from api.common import RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_ORG_ID, RH_RBAC_PSK
+from api.models import Tenant, User
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
@@ -51,6 +53,25 @@ def validate_psk(psk, client_id):
     return False
 
 
+def build_user_from_psk(request):
+    """Build a user from the PSK."""
+    user = None
+    request_psk = request.META.get(RH_RBAC_PSK)
+    account = request.META.get(RH_RBAC_ACCOUNT)
+    org_id = request.META.get(RH_RBAC_ORG_ID)
+    client_id = request.META.get(RH_RBAC_CLIENT_ID)
+    has_system_auth_headers = request_psk and org_id and client_id
+
+    if has_system_auth_headers and validate_psk(request_psk, client_id):
+        user = User()
+        user.username = client_id
+        user.account = account
+        user.org_id = org_id
+        user.admin = True
+        user.system = True
+    return user
+
+
 def get_principal_from_request(request):
     """Obtain principal from the request object."""
     current_user = request.user.username
@@ -68,7 +89,11 @@ def get_principal_from_request(request):
 
 
 def get_principal(
-    username: str, request: Request, verify_principal: bool = True, from_query: bool = False
+    username: str,
+    request: Request,
+    verify_principal: bool = True,
+    from_query: bool = False,
+    user_tenant: Optional[Tenant] = None,
 ) -> Principal:
     """Get principals from username.
 
@@ -92,7 +117,7 @@ def get_principal(
     - DELETE /groups/{uuid}/principals/?service-account=<uuid>.
     """
     # First check if principal exist on our side, if not call BOP to check if user exist in the account.
-    tenant: Tenant = request.tenant
+    tenant: Tenant = request.tenant if not user_tenant else user_tenant
     is_username_service_account = ITService.is_username_service_account(username)
 
     try:
@@ -122,9 +147,9 @@ def get_principal(
 
 def verify_principal_with_proxy(username, request, verify_principal=True):
     """Verify username through the BOP."""
-    org_id = request.user.org_id
-    proxy = PrincipalProxy()
     if verify_principal:
+        org_id = request.user.org_id
+        proxy = PrincipalProxy()
         resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
 
         if isinstance(resp, dict) and "errors" in resp:
@@ -239,12 +264,14 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
             key = "detail"
             message = "Query parameter '{}' is required.".format(query_key)
             raise serializers.ValidationError({key: _(message)})
+        if default_value:
+            return default_value.lower()
         return None
 
     elif value.lower() not in valid_values:
         key = "detail"
         message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
-            query_key, value, valid_values
+            query_key, value, [str(v) for v in valid_values]
         )
         raise serializers.ValidationError({key: _(message)})
     return value.lower()

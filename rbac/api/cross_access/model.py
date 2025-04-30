@@ -71,6 +71,10 @@ class CrossAccountRequest(models.Model):
 
         super(CrossAccountRequest, self).save(*args, **kwargs)
 
+    def source_pk(self):
+        """Return the source pk of cross account request for bindingmapping."""
+        return str(self.request_id)
+
 
 class RequestsRoles(models.Model):
     """Model to associate the cross account access request and role."""

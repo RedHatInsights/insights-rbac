@@ -1588,8 +1588,6 @@ class ITServiceTests(IdentityRequest):
 
         # Call the function under test.
         result, count = self.it_service.get_service_accounts(user=user, options=options)
-        print(result)
-        print(count)
         self.assertEqual(
             0,
             count,
@@ -1613,8 +1611,6 @@ class ITServiceTests(IdentityRequest):
 
         # Call the function under test.
         result, count = self.it_service.get_service_accounts(user=user, options=options)
-        print(result)
-        print(count)
         self.assertEqual(
             0,
             count,

@@ -208,7 +208,8 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             return False
 
         try:
-            data_dict = xmltodict.parse(frame.body)
+            body = frame.body.decode("utf-8", errors="ignore")
+            data_dict = xmltodict.parse(body)
             canonical_message = data_dict.get("CanonicalMessage")
 
             user = retrieve_user_info(canonical_message)

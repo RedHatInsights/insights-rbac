@@ -38,9 +38,62 @@
     {
       "name": "CrossAccountRequest",
       "description": "Operations about cross account requests"
+    },
+    {
+      "name": "Audit Logs",
+      "description": "Operations about audit logs requests"
     }
   ],
   "paths": {
+    "/auditlogs/": {
+      "get": {
+        "tags": [
+          "Audit Logs"
+        ],
+        "description": "A list of all of the Admin User's actions logged in Audit Logs",
+        "operationId": "getAuditlogs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering resource by database id so that latest actions appear first",
+            "schema": {
+              "type": "string",
+              "enum": ["id"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User actions have been successfully added to audit logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogPagination"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cross-account-requests/": {
       "get": {
         "tags": [
@@ -620,11 +673,16 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username. All options work for type of service-account principal, only username works for a user based principal.",
             "schema": {
               "type": "string",
               "enum": [
-                "username"
+                "username",
+                "name",
+                "owner",
+                "description",
+                "clientId",
+                "time_created"
               ]
             }
           },
@@ -645,13 +703,41 @@
             "in": "query",
             "name": "type",
             "required": false,
-            "description": "Parameter for selecting the type of principal to be returned.",
+            "description": "Parameter for selecting the type of principal to be returned. Defaults to 'user'.",
             "schema": {
               "type": "string",
               "enum": [
                 "service-account",
-                "user"
+                "user",
+                "all"
               ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact name such as: ?type=service-account&name=userA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact owner such as: ?type=service-account&owner=ownerA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "description",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by partial description such as: ?type=service-account&description=desc.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -667,6 +753,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
                     }
                   ]
                 }
@@ -1265,7 +1354,8 @@
               "type": "string",
               "enum": [
                 "service-account",
-                "user"
+                "user",
+                "all"
               ]
             }
           },
@@ -1312,6 +1402,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountInGroupResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
                     }
                   ]
                 }
@@ -2921,6 +3014,50 @@
           }
         }
       },
+      "AuditLog":{
+        "properties": {
+          "created": {
+            "type": "string"
+          },
+          "principal_username": {
+            "type": "string",
+            "example": "user123"
+          },
+          "description": {
+            "type": "string",
+            "example": "user abc added to group: 1234"
+          },
+          "resource_type":{
+            "type": "string",
+            "example": "group"
+          },
+          "action": {
+            "type": "string",
+            "example": "add"
+          }
+        }
+      },
+      "AuditLogPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditLog"
+                }
+              }
+            }
+          }
+        ]
+      },
       "Principal": {
         "required": [
           "username",
@@ -3124,6 +3261,63 @@
             }
           }
         }
+      },
+      "AllPrincipalsPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "serviceAccounts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ServiceAccount"
+                    }
+                  },
+                  "users": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Principal"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "serviceAccounts"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "users"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "serviceAccounts",
+                      "users"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "Group": {
         "required": [
@@ -3669,18 +3863,10 @@
               {
                 "type": "array",
                 "items": {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "example": "value1"
-                    }
-                  ]
+                  "type": "string",
+                  "nullable": true
                 },
-                "example": [
-                  "value1",
-                  "value2"
-                ],
-                "nullable": true
+                "example": ["value1", null, "value2"]
               }
             ]
           }

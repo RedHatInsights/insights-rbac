@@ -7,8 +7,6 @@ tags:
 paths:
   /workspaces/:
     get:
-      tags:
-        - Workspaces
       operationId: Workspaces_list
       summary: List workspaces in a tenant
       description: List workspaces in a tenant
@@ -20,6 +18,7 @@ paths:
             type: integer
             format: int64
             default: 10
+          explode: false
         - name: offset
           in: query
           required: false
@@ -27,6 +26,7 @@ paths:
             type: integer
             format: int64
             default: 0
+          explode: false
         - name: type
           in: query
           required: false
@@ -34,6 +34,14 @@ paths:
           schema:
             $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
             default: all
+          explode: false
+        - name: name
+          in: query
+          required: false
+          description: Case sensitive exact match of workspace by name.
+          schema:
+            type: string
+          explode: false
       responses:
         '200':
           description: The request has succeeded.
@@ -87,9 +95,9 @@ paths:
                   instance:
                     type: string
                     format: uri
-    post:
       tags:
         - Workspaces
+    post:
       operationId: Workspaces_create
       summary: Create workspace in tenant
       description: Create workspace in tenant
@@ -153,6 +161,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
       requestBody:
         required: true
         content:
@@ -161,8 +171,6 @@ paths:
               $ref: '#/components/schemas/Workspaces.CreateWorkspaceRequest'
   /workspaces/{id}/:
     get:
-      tags:
-        - Workspaces
       operationId: Workspaces_read
       summary: Get a workspace in tenant
       description: Get a workspace in tenant
@@ -179,6 +187,7 @@ paths:
           description: When true, the response will include the ancestry of the workspace.
           schema:
             type: boolean
+          explode: false
       responses:
         '200':
           description: The request has succeeded.
@@ -240,9 +249,9 @@ paths:
                   instance:
                     type: string
                     format: uri
-    put:
       tags:
         - Workspaces
+    put:
       operationId: Workspaces_update
       summary: Edit the workspace name or description
       description: Edit a workspace
@@ -326,6 +335,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
       requestBody:
         required: true
         content:
@@ -333,8 +344,6 @@ paths:
             schema:
               $ref: '#/components/schemas/Workspaces.UpdateWorkspaceRequest'
     patch:
-      tags:
-        - Workspaces
       operationId: Workspaces_patch
       parameters:
         - name: id
@@ -416,6 +425,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
       requestBody:
         required: true
         content:
@@ -423,8 +434,6 @@ paths:
             schema:
               $ref: '#/components/schemas/Workspaces.PatchWorkspaceRequest'
     delete:
-      tags:
-        - Workspaces
       operationId: Workspaces_delete
       summary: Delete the workspace
       description: Delete a workspace
@@ -490,6 +499,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
 components:
   schemas:
     Problems.Problem400:
@@ -618,11 +629,11 @@ components:
         created:
           type: string
           format: date-time
-          description: 2019-01-21T17:32:28Z
+          description: '2019-01-21T17:32:28Z'
         modified:
           type: string
           format: date-time
-          description: 2019-01-21T17:32:28Z
+          description: '2019-01-21T17:32:28Z'
     UUID:
       type: string
       format: uuid
@@ -645,8 +656,6 @@ components:
           default: Description of Workspace A
     Workspaces.CreateWorkspaceRequest:
       type: object
-      required:
-        - parent_id
       properties:
         parent_id:
           allOf:
@@ -683,26 +692,26 @@ components:
       properties:
         first:
           type: string
-          example: /api/rbac/v2/(resource)/?limit=10&offset=0
           format: uri
           description: The first link in pagination
+          example: /api/rbac/v2/(resource)/?limit=10&offset=0
         next:
           type: string
           nullable: true
-          example: /api/rbac/v2/(resource)/?limit=10&offset=10
           format: uri
           description: The next link in pagination
+          example: /api/rbac/v2/(resource)/?limit=10&offset=10
         previous:
           type: string
           nullable: true
-          example: /api/rbac/v2/(resource)/?limit=10&offset=0
           format: uri
           description: The previous link in pagination
+          example: /api/rbac/v2/(resource)/?limit=10&offset=0
         last:
           type: string
-          example: /api/rbac/v2/(resource)/?limit=10&offset=20
           format: uri
           description: The last link in pagination
+          example: /api/rbac/v2/(resource)/?limit=10&offset=20
     Workspaces.PaginationMeta:
       type: object
       required:
@@ -713,19 +722,19 @@ components:
         count:
           type: integer
           format: int64
-          example: 10
           description: Total count of objects
+          example: 10
         limit:
           type: integer
           format: int64
-          example: 10
           description: Limit of returned objects
+          example: 10
           default: 10
         offset:
           type: integer
           format: int64
-          example: 10
           description: Offset of returned objects
+          example: 10
     Workspaces.PatchWorkspaceRequest:
       type: object
       properties:
@@ -806,11 +815,11 @@ components:
         created:
           type: string
           format: date-time
-          description: 2019-01-21T17:32:28Z
+          description: '2019-01-21T17:32:28Z'
         modified:
           type: string
           format: date-time
-          description: 2019-01-21T17:32:28Z
+          description: '2019-01-21T17:32:28Z'
     Workspaces.WorkspaceAncestor:
       type: object
       required:
@@ -849,6 +858,7 @@ components:
         - root
         - default
         - standard
+        - ungrouped-hosts
     Workspaces.WorkspaceTypesQueryParam:
       type: string
       enum:
@@ -856,6 +866,7 @@ components:
         - root
         - default
         - standard
+        - ungrouped-hosts
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server

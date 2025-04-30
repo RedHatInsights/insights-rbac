@@ -229,7 +229,7 @@ FRAME_BODY_CREATION = (
     b'<Reference system="EBS" entity-name="Account" qualifier="number">11111111</Reference>\n                '
     b'</Identifiers>\n                <Status primary="true">\n                    <State>Active</State>\n                '
     b"</Status>\n                <Person>\n                    <FirstName>Test</FirstName>\n                    "
-    b"<LastName>Principal</LastName>\n                    <Salutation>Mr.</Salutation>\n                    <Title>QE</Title>\n                    "
+    b"<LastName>Principal \xed\xa0\xbd\xed\xb8\x8e</LastName>\n                    <Salutation>Mr.</Salutation>\n                    <Title>QE</Title>\n                    "
     b"<Credentials>\n                        <Login>principal-test</Login>\n                    </Credentials>\n                "
     b"</Person>\n                <Company>\n                    <Name>Shakespeare Birthplace Trust</Name>\n                "
     b"</Company>\n                <Address>\n                    <Identifiers>\n                        <AuthoringOperatingUnit>\n"
@@ -800,7 +800,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             all_tuples = self._tuples.find_tuples()
 
             # Should only have one tuple to ensure the user is in the default group
-            self.assertEqual(
+            self.assertCountEqual(
                 all_tuples,
                 [
                     RelationTuple(
@@ -846,9 +846,9 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         self.assertIsNotNone(mapping)
         workspaces = list(Workspace.objects.filter(tenant=tenant))
         self.assertEqual(len(workspaces), 2)
-        default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+        default = Workspace.objects.default(tenant=tenant)
         self.assertIsNotNone(default)
-        root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+        root = Workspace.objects.root(tenant=tenant)
         self.assertIsNotNone(root)
 
         platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
