@@ -52,13 +52,13 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         else:
             values = value.get("value")
             error = False
-            if not isinstance(values, list) and op == "in":
+            if op == "in" and not isinstance(values, list):
                 key = "format"
                 message = "attributeFilter operation 'in' expects a List value"
                 error = {key: [_(message)]}
-            elif isinstance(values, list) and op == "equals":
+            elif op == "equal" and not isinstance(values, str):
                 key = "format"
-                message = "attributeFilter operation 'equals' expects a String value"
+                message = "attributeFilter operation 'equal' expects a String value"
                 error = {key: [_(message)]}
             if error:
                 raise serializers.ValidationError(error)
