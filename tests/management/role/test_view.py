@@ -2005,9 +2005,17 @@ class RoleViewsetTests(IdentityRequest):
             f"Role '{name}' already exists for a tenant.",
         )
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="someApp")
     def test_create_role_with_invalid_equals_operation(self):
-        """Test that we cannot create a role when a String value is paired with the 'in' operation."""
+        """Test that we cannot create a role when a List value is paired with the 'equal' operation."""
         role_name = "roleFail"
+        Permission.objects.create(
+            application="someApp",
+            resource_type="*",
+            verb="*",
+            permission="someApp:*:*",
+            tenant=self.tenant,
+        )
         access_data = [
             {
                 "permission": "someApp:*:*",
@@ -2015,7 +2023,7 @@ class RoleViewsetTests(IdentityRequest):
                     {
                         "attributeFilter": {
                             "key": "keyA.id",
-                            "operation": "equals",
+                            "operation": "equal",
                             "value": ["value1", "value2"],
                         }
                     }
@@ -2023,7 +2031,10 @@ class RoleViewsetTests(IdentityRequest):
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
-        self.assertEqual(response.data["errors"][0]["source"] == "resourceDefinitions.attributeFilter.format")
+        self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
+        self.assertEqual(
+            response.data["errors"][0]["detail"], "attributeFilter operation 'equal' expects a String value"
+        )
 
     def test_create_role_with_invalid_in_operation(self):
         """Test that we cannot create a role when a String value is paired with the 'in' operation."""
@@ -2043,7 +2054,8 @@ class RoleViewsetTests(IdentityRequest):
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
-        self.assertEqual(response.data["errors"][0]["source"] == "resourceDefinitions.attributeFilter.format")
+        self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
+        self.assertEqual(response.data["errors"][0]["detail"], "attributeFilter operation 'in' expects a List value")
 
 
 class RoleViewNonAdminTests(IdentityRequest):

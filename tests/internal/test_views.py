@@ -2473,16 +2473,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_get_incorrect_string_resource_definition(self):
         """Test that a string attributeFilter cannot have the in operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "in", "value": "value1"},
+            tenant=self.tenant,
+        )
 
         response = self.client.get(
             f"/_private/api/utils/resource_definitions/",
@@ -2517,18 +2515,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_get_incorrect_list_resource_definition(self):
         """Test that a list attributeFilter cannot have the equal operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [
-                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
-            ],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]},
+            tenant=self.tenant,
+        )
 
         response = self.client.get(
             f"/_private/api/utils/resource_definitions/",
@@ -2540,19 +2534,29 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_get_incorrect_resource_definition_with_details(self):
         """Test we can get list of invalid resource definitions with 'detail=true' query param."""
-
-        role_name = "role_A"
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [
-                {"attributeFilter": {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]}},
-                {"attributeFilter": {"key": "key2_id", "operation": "in", "value": "value1, value2"}},
-                {"attributeFilter": {"key": "key3_id", "operation": "in", "value": "string"}},
-            ],
-        }
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        attribute_filter_data = [
+            {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]},
+            {"key": "key2_id", "operation": "in", "value": "value1, value2"},
+            {"key": "key3_id", "operation": "in", "value": "string"},
+        ]
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[0],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[1],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[2],
+            tenant=self.tenant,
+        )
         # Send the request without 'detail=true' query param
         response = self.client.get(
             f"/_private/api/utils/resource_definitions/",
@@ -2569,12 +2573,12 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.json()), 3)
         for rf_from_response in response.json():
-            for rf in self.access_data["resourceDefinitions"]:
-                if rf_from_response["attributeFilter"]["key"] == rf["attributeFilter"]["key"]:
+            for at in attribute_filter_data:
+                if rf_from_response["attributeFilter"]["key"] == at["key"]:
                     operation = rf_from_response["attributeFilter"]["operation"]
                     value = rf_from_response["attributeFilter"]["value"]
-                    expected_operation = rf["attributeFilter"]["operation"]
-                    expected_value = rf["attributeFilter"]["value"]
+                    expected_operation = at["operation"]
+                    expected_value = at["value"]
                     self.assertEqual(operation, expected_operation)
                     self.assertEqual(value, expected_value)
 
@@ -2609,16 +2613,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_patch_incorrect_string_resource_definition(self):
         """Test patching a string attributeFilter with the in operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "in", "value": "value1"},
+            tenant=self.tenant,
+        )
 
         response = self.client.patch(
             f"/_private/api/utils/resource_definitions/",
@@ -2669,18 +2671,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_patch_incorrect_list_resource_definition(self):
         """Test patching a list attributeFilter with the equal operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [
-                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
-            ],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:*:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]},
+            tenant=self.tenant,
+        )
 
         response = self.client.patch(
             f"/_private/api/utils/resource_definitions/",
@@ -2700,18 +2698,30 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_patch_incorrect_resource_definition_all(self):
         """Test we can patch all invalid resource definitions."""
-
         role_name = "role_A"
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [
-                {"attributeFilter": {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]}},
-                {"attributeFilter": {"key": "key2_id", "operation": "in", "value": "value1, value2"}},
-                {"attributeFilter": {"key": "key3_id", "operation": "in", "value": "string"}},
-            ],
-        }
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name=role_name, tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        attribute_filter_data = [
+            {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]},
+            {"key": "key2_id", "operation": "in", "value": "value1, value2"},
+            {"key": "key3_id", "operation": "in", "value": "string"},
+        ]
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[0],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[1],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[2],
+            tenant=self.tenant,
+        )
 
         # Send the GET request to check we have fixable resource definitions
         response = self.client.get(
@@ -2754,18 +2764,30 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_patch_incorrect_resource_definition_by_id(self):
         """Test we can patch one invalid resource definitions with 'id' query param."""
-
         role_name = "role_A"
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [
-                {"attributeFilter": {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]}},
-                {"attributeFilter": {"key": "key2_id", "operation": "in", "value": "value1, value2"}},
-                {"attributeFilter": {"key": "key3_id", "operation": "in", "value": "string"}},
-            ],
-        }
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name=role_name, tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        attribute_filter_data = [
+            {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]},
+            {"key": "key2_id", "operation": "in", "value": "value1, value2"},
+            {"key": "key3_id", "operation": "in", "value": "string"},
+        ]
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[0],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[1],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[2],
+            tenant=self.tenant,
+        )
 
         # Send the GET request to get details resource definitions ids
         response = self.client.get(
