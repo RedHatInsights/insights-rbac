@@ -130,6 +130,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         workspace = {
             "name": "New Workspace",
             "description": "Workspace",
+            "type": "foo",  # should be ignored
         }
 
         url = reverse("v2_management:workspace-list")
@@ -486,7 +487,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
-    def test_edit_workspace_not_allowed_type(self):
+    def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
         root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
 
@@ -499,22 +500,27 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
-        # Create is not allowed
+        # Create disregards 'type'
         response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
 
         workspace["type"] = Workspace.Types.DEFAULT
+        workspace["name"] = "New Workspace 2"
         response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
 
-        # Update is not allowed
+        # Update disregards 'type'
         workspace["type"] = Workspace.Types.STANDARD
+        workspace["name"] = "New Workspace 3"
         created_workspace = Workspace.objects.create(**workspace, tenant=self.tenant)
         url = reverse("v2_management:workspace-detail", kwargs={"pk": created_workspace.id})
         client = APIClient()
         workspace["type"] = Workspace.Types.UNGROUPED_HOSTS
         response = client.put(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
 
     def test_get_workspace(self):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})

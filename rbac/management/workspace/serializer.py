@@ -62,12 +62,8 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
         """Validate on POST, PUT and PATCH."""
         request = self.context.get("request")
-        type = request.data.get("type", Workspace.Types.STANDARD)
         parent_id = attrs.get("parent_id")
         tenant = request.tenant
-
-        if type != Workspace.Types.STANDARD:
-            raise ValidationError({"type": [f"Only workspace type '{Workspace.Types.STANDARD}' is allowed."]})
 
         if parent_id and tenant:
             if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
