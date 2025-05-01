@@ -40,12 +40,14 @@ class WorkspaceService:
 
                 return workspace
             except ValidationError as e:
-                if "__all__" in e.message_dict:
-                    for msg in e.message_dict["__all__"]:
-                        if "unique_workspace_name_per_parent" in msg:
-                            raise serializers.ValidationError(
-                                "Can't create workspace with same name within same parent workspace"
-                            )
+                message = e.message_dict
+                if hasattr(e, "error_dict") and "__all__" in e.error_dict:
+                    for error in e.error_dict["__all__"]:
+                        for msg in error.messages:
+                            if "unique_workspace_name_per_parent" in msg:
+                                message = "Can't create workspace with same name within same parent workspace"
+                                break
+                raise serializers.ValidationError(message)
 
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
         for attr, value in validated_data.items():
