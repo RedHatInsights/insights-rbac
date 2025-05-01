@@ -20,7 +20,6 @@ from django.test.utils import override_settings
 from django.urls import clear_url_caches
 from importlib import reload
 from unittest.mock import patch
-import unittest
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -150,7 +149,6 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
-    @unittest.skip('v2response_error_from_errors causes this to fail generically with "This field is required"')
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
         workspace = {}
@@ -163,7 +161,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         status_code = response.data.get("status")
         detail = response.data.get("detail")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Field 'name' is required.")
+        self.assertEqual(detail, "This field is required.")
 
         self.assertEqual(status_code, 400)
         self.assertEqual(response.get("content-type"), "application/problem+json")
@@ -425,7 +423,6 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["detail"], f"Parent workspace '{root_workspace.id}' doesn't exist in tenant")
 
-    @unittest.skip('v2response_error_from_errors causes this to fail generically with "This field is required"')
     def test_update_workspace_empty_body(self):
         """Test for updating a workspace with empty body"""
         workspace = {}
@@ -439,7 +436,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         detail = response.data.get("detail")
         instance = response.data.get("instance")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Field 'name' is required.")
+        self.assertEqual(detail, "This field is required.")
         self.assertEqual(status_code, 400)
         self.assertEqual(instance, url)
         self.assertEqual(response.get("content-type"), "application/problem+json")
