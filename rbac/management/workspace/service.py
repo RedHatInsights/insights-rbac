@@ -28,10 +28,6 @@ from api.models import Tenant
 class WorkspaceService:
     """Workspace service."""
 
-    def __init__(self, replicator=None):
-        """Init workspace service."""
-        self._replicator = replicator
-
     def create(self, validated_data: dict, tenant: Tenant) -> Workspace:
         """Create workspace."""
         with transaction.atomic():
@@ -70,8 +66,6 @@ class WorkspaceService:
         if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
             raise serializers.ValidationError("Unable to delete due to workspace dependencies")
 
-        dual_write_handler = RelationApiDualWriteWorkspacepHandler(
-            instance, ReplicationEventType.DELETE_WORKSPACE, replicator=self._replicator
-        )
+        dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
