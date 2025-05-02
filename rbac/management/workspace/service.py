@@ -17,20 +17,23 @@
 """Service for workspace management."""
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from rest_framework import serializers
-from api.models import Tenant
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from rest_framework import serializers
+
+from api.models import Tenant
 
 
 class WorkspaceService:
-    """Workspace service"""
+    """Workspace service."""
 
     def __init__(self, replicator=None):
+        """Init workspace service."""
         self._replicator = replicator
 
     def create(self, validated_data: dict, tenant: Tenant) -> Workspace:
+        """Create workspace."""
         with transaction.atomic():
             try:
                 workspace = Workspace.objects.create(**validated_data, tenant=tenant)
@@ -51,6 +54,7 @@ class WorkspaceService:
                 raise serializers.ValidationError(message)
 
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
+        """Update workspace."""
         for attr, value in validated_data.items():
             # TODO(RHCLOUD-35415): check attr that parent is not changed here
             setattr(instance, attr, value)
@@ -60,6 +64,7 @@ class WorkspaceService:
         return instance
 
     def destroy(self, instance: Workspace) -> None:
+        """Destroy workspace."""
         if instance.type != Workspace.Types.STANDARD:
             raise serializers.ValidationError(f"Unable to delete {instance.type} workspace")
         if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():

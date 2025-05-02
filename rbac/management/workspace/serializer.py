@@ -16,9 +16,9 @@
 #
 
 """Serializer for workspace management."""
-from rest_framework import serializers
-
+from django.core.exceptions import ValidationError
 from management.workspace.service import WorkspaceService
+from rest_framework import serializers
 
 from .model import Workspace
 
@@ -58,8 +58,6 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         return self._service.create(validated_data, tenant)
 
     def validate(self, attrs):
-        from django.core.exceptions import ValidationError
-
         """Validate on POST, PUT and PATCH."""
         request = self.context.get("request")
         parent_id = attrs.get("parent_id")

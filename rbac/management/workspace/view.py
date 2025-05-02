@@ -17,12 +17,12 @@
 """View for Workspace management."""
 from django.db import transaction
 from django_filters import rest_framework as filters
-from rest_framework.filters import OrderingFilter
-from rest_framework.permissions import SAFE_METHODS
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
-from management.workspace.service import WorkspaceService
 from management.utils import validate_and_get_key
+from management.workspace.service import WorkspaceService
+from rest_framework.filters import OrderingFilter
+from rest_framework.permissions import SAFE_METHODS
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
@@ -46,6 +46,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
 
     def __init__(self, **kwargs):
+        """Init viewset."""
         super().__init__(**kwargs)
         self._service = WorkspaceService()
 
@@ -60,6 +61,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
         return super().get_serializer_class()
 
     def get_queryset(self):
+        """Get queryset override."""
         if self.request.method not in SAFE_METHODS:
             return super().get_queryset().select_for_update()
         return super().get_queryset()
