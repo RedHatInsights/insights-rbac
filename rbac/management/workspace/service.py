@@ -28,11 +28,16 @@ from api.models import Tenant
 class WorkspaceService:
     """Workspace service."""
 
-    def create(self, validated_data: dict, tenant: Tenant) -> Workspace:
+    def create(self, validated_data: dict, request_tenant: Tenant) -> Workspace:
         """Create workspace."""
         with transaction.atomic():
             try:
-                workspace = Workspace.objects.create(**validated_data, tenant=tenant)
+                parent_id = validated_data.get("parent_id")
+                if parent_id is None:
+                    default = Workspace.objects.default(tenant=request_tenant)
+                    parent_id = default.id
+                parent = Workspace.objects.get(id=parent_id)
+                workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
                 dual_write_handler = RelationApiDualWriteWorkspacepHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE
                 )

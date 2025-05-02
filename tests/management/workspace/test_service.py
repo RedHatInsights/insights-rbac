@@ -58,10 +58,17 @@ class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
             self.service.create({}, self.tenant)
         self.assertIn("This field cannot be blank.", str(context.exception))
 
-    def test_create_success(self):
-        """Test the create method successfully"""
+    def test_create_success_with_parent_id(self):
+        """Test the create method successfully with a parent"""
         validated_data = {"name": "Unique Standard Child", "parent_id": self.standard_workspace.id}
-        self.service.create(validated_data, self.tenant)
+        workspace = self.service.create(validated_data, self.tenant)
+        self.assertEqual(workspace.tenant, self.tenant)
+
+    def test_create_success_without_parent_id(self):
+        """Test the create method successfully without a parent"""
+        validated_data = {"name": "Unique Standard Child"}
+        workspace = self.service.create(validated_data, self.tenant)
+        self.assertEqual(workspace.tenant, self.tenant)
 
 
 class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
