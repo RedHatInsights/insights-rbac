@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.1.1",
   "info": {
     "description": "The API for Role Based Access Control.",
     "version": "1.0.0",
@@ -3856,15 +3856,13 @@
           "value": {
             "oneOf": [
               {
-                "type": "string",
-                "example": "123456",
-                "nullable": true
+                "type": ["string", "null"],
+                "example": "123456"
               },
               {
                 "type": "array",
                 "items": {
-                  "type": "string",
-                  "nullable": true
+                  "type": ["string", "null"]
                 },
                 "example": ["value1", null, "value2"]
               }
