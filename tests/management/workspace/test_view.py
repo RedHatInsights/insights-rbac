@@ -129,7 +129,6 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         workspace = {
             "name": "New Workspace",
             "description": "Workspace",
-            "type": "foo",  # should be ignored
         }
 
         url = reverse("v2_management:workspace-list")

@@ -18,6 +18,7 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from rest_framework import serializers
+from api.models import Tenant
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
@@ -29,7 +30,7 @@ class WorkspaceService:
     def __init__(self, replicator=None):
         self._replicator = replicator
 
-    def create(self, validated_data, tenant) -> Workspace:
+    def create(self, validated_data: dict, tenant: Tenant) -> Workspace:
         with transaction.atomic():
             try:
                 workspace = Workspace.objects.create(**validated_data, tenant=tenant)
