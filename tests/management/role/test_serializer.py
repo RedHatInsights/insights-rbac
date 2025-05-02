@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 from django.test import TestCase
+from django.test.utils import override_settings
 from unittest.mock import Mock
 from api.models import Tenant
 from management.models import Permission, Workspace
@@ -86,6 +87,7 @@ class RoleSerializerTest(TestCase):
         self.assertRaises(Permission.DoesNotExist, serializer.update, role, serializer.validated_data)
 
 
+@override_settings(WORKSPACE_HIERARCHY_ENABLED=True)
 class ResourceDefinitionTest(TestCase):
     """Test the resource definition serializer"""
 

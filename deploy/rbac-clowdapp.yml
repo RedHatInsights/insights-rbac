@@ -239,6 +239,8 @@ objects:
             value: ${WORKSPACE_RESOURCE_TYPE}
           - name: WORKSPACE_ATTRIBUTE_FILTER
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
+          - name: WORKSPACE_HIERARCHY_ENABLED
+            value: ${WORKSPACE_HIERARCHY_ENABLED}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -472,6 +474,8 @@ objects:
             value: ${WORKSPACE_RESOURCE_TYPE}
           - name: WORKSPACE_ATTRIBUTE_FILTER
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
+          - name: WORKSPACE_HIERARCHY_ENABLED
+            value: ${WORKSPACE_HIERARCHY_ENABLED}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -743,6 +747,8 @@ objects:
               value: ${WORKSPACE_RESOURCE_TYPE}
             - name: WORKSPACE_ATTRIBUTE_FILTER
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
+            - name: WORKSPACE_HIERARCHY_ENABLED
+              value: ${WORKSPACE_HIERARCHY_ENABLED}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -956,6 +962,8 @@ objects:
               value: ${WORKSPACE_RESOURCE_TYPE}
             - name: WORKSPACE_ATTRIBUTE_FILTER
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
+            - name: WORKSPACE_HIERARCHY_ENABLED
+              value: ${WORKSPACE_HIERARCHY_ENABLED}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1399,3 +1407,6 @@ parameters:
 - description: The attribute filter key used in workspace permissions' resource definitions
   name: WORKSPACE_ATTRIBUTE_FILTER
   value: 'group.id'
+- description: Flag to enable returning workspace hierarchy in v1 access
+  name: WORKSPACE_HIERARCHY_ENABLED
+  value: 'False'
