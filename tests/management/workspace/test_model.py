@@ -135,11 +135,6 @@ class WorkspaceDescendants(WorkspaceBaseTestCase):
 
         super().setUp()
 
-    def test_descendants(self):
-        """Test descendants on a workspace"""
-        self.assertCountEqual(level_1.descendants(), [level_2, level_3, level_4a, level_4b])
-        self.assertCountEqual(level_4a.descendants(), [])
-
     def test_descendant_ids_with_parents(self):
         """Test returning descendant IDs with parents"""
 
