@@ -296,9 +296,15 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
             [(workspace_id_1, str(defaults[0].id)), (workspace_id_2, str(defaults[1].id))],
         )
         self.assertEqual(Workspace.objects.filter(id__in=[workspace_id_1, workspace_id_2]).count(), 2)
+        self.assertEqual(Workspace.objects.get(id=workspace_id_1).parent, defaults[0])
+        self.assertEqual(Workspace.objects.get(id=workspace_id_2).parent, defaults[1])
+        self.assertEqual(Workspace.objects.get(id=workspace_id_2).type, Workspace.Types.UNGROUPED_HOSTS)
+        self.assertEqual(Workspace.objects.get(id=workspace_id_2).name, "Ungrouped Hosts")
         # Should be idempotent
         updated_name = "updated_name"
         updated_time = "2026-03-18 15:19:53.509206+00:00"
+        records[0]["name"] = updated_name
+        records[0]["modified_on"] = updated_time
         records[1]["name"] = updated_name
         records[1]["modified_on"] = updated_time
         mock_bss.create_workspace_relationships.reset_mock()
@@ -307,6 +313,9 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
             mock_bss.create_workspace_relationships.call_args[0][0],
             [(workspace_id_1, str(defaults[0].id)), (workspace_id_2, str(defaults[1].id))],
         )
-        updated_ws = Workspace.objects.get(id=workspace_id_2)
-        self.assertEqual(updated_ws.name, updated_name)
-        self.assertEqual(updated_ws.modified, datetime.fromisoformat(updated_time))
+        updated_ws_1 = Workspace.objects.get(id=workspace_id_1)
+        self.assertEqual(updated_ws_1.name, updated_name)
+        self.assertEqual(updated_ws_1.modified, datetime.fromisoformat(updated_time))
+        updated_ws_2 = Workspace.objects.get(id=workspace_id_2)
+        self.assertEqual(updated_ws_2.name, "Ungrouped Hosts")
+        self.assertEqual(updated_ws_2.modified, datetime.fromisoformat(updated_time))
