@@ -418,11 +418,13 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_by_guids_with_invalid_guid(self):
         """Test that an invalid guid in a list of guids returns an error."""
-        url = "{}?uuids=invalid"
+        url = f"{reverse('v1_management:group-list')}?uuid=invalid"
         client = APIClient()
         response = client.get(url, **self.headers)
-        # FIXME: This seems inconsistent with GUID validation we added elsewhere
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        response_body = response.json()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response_body.get("errors")[0].get("detail"), "invalid is not a valid UUID.")
+        self.assertEqual(response_body.get("errors")[0].get("source"), "groups uuid filter")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
