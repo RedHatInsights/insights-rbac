@@ -946,6 +946,9 @@ class GroupViewsetTests(IdentityRequest):
         test_data = {"principals": [{"username": username}]}
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"), "ADD PRINCIPALS cannot be performed on system groups."
+        )
 
     def test_update_group_invalid(self):
         """Test that updating an invalid group returns an error."""
