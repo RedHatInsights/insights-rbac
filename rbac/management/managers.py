@@ -67,7 +67,7 @@ class WorkspaceManager(models.Manager):
         tenant_id = self._get_tenant_id(tenant=tenant, tenant_id=tenant_id)
         return self.get_queryset().standard(tenant_id)
 
-    def descendant_ids_with_parents(self, ids):
+    def descendant_ids_with_parents(self, ids, tenant_id):
         """Return the descendant and root workspace IDs based on roots supplied."""
         with connection.cursor() as cursor:
             sql = """
@@ -76,14 +76,16 @@ class WorkspaceManager(models.Manager):
                             parent_id
                     FROM management_workspace
                     WHERE id = ANY(%s::uuid[])
+                    AND tenant_id = %s
                     UNION SELECT w.id,
                                  w.parent_id
                     FROM management_workspace w
-                    JOIN descendants d ON w.parent_id = d.id)
+                    JOIN descendants d ON w.parent_id = d.id
+                    WHERE w.tenant_id = %s)
                 SELECT DISTINCT id
                 FROM descendants
             """
-            cursor.execute(sql, [ids])
+            cursor.execute(sql, [ids, tenant_id, tenant_id])
             rows = cursor.fetchall()
 
         return [str(row[0]) for row in rows]

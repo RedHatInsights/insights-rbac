@@ -139,7 +139,7 @@ class WorkspaceDescendants(WorkspaceBaseTestCase):
         """Test returning descendant IDs with parents"""
 
         self.manager_assertion_for_descendant_ids(
-            Workspace.objects.descendant_ids_with_parents([self.root.id]),
+            Workspace.objects.descendant_ids_with_parents([self.root.id], self.tenant.id),
             [
                 self.root.id,
                 self.level_1a.id,
@@ -154,13 +154,19 @@ class WorkspaceDescendants(WorkspaceBaseTestCase):
         )
 
         self.manager_assertion_for_descendant_ids(
-            Workspace.objects.descendant_ids_with_parents([self.level_2a.id]),
+            Workspace.objects.descendant_ids_with_parents([self.level_2a.id], self.tenant.id),
             [self.level_2a.id, self.level_3a.id, self.level_4a.id, self.level_4b.id],
         )
 
         self.manager_assertion_for_descendant_ids(
-            Workspace.objects.descendant_ids_with_parents([self.level_1b.id]),
+            Workspace.objects.descendant_ids_with_parents([self.level_1b.id], self.tenant.id),
             [self.level_1b.id, self.level_2b.id, self.level_3b.id],
+        )
+
+        tenant_from_other_org = Tenant.objects.create(tenant_name="foo")
+        self.manager_assertion_for_descendant_ids(
+            Workspace.objects.descendant_ids_with_parents([self.level_1b.id], tenant_from_other_org.id),
+            [],
         )
 
 
