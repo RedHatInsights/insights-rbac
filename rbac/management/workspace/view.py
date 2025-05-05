@@ -23,7 +23,7 @@ from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_uuid
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter
@@ -117,7 +117,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
         with transaction.atomic():
             instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
             response = super().destroy(request=request, args=args, kwargs=kwargs)
-            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
+            dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
             dual_write_handler.replicate_deleted_workspace()
         return response
 
