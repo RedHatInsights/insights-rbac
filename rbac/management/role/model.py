@@ -120,6 +120,12 @@ class ResourceDefinition(TenantAwareModel):
         if self.access and self.access.permission:
             return self.access.permission.resource_type
 
+    @property
+    def tenant_id(self):
+        """Get the tenant_id of the RD."""
+        if self.tenant:
+            return self.tenant.id
+
 
 class ExtTenant(models.Model):
     """External tenant."""
