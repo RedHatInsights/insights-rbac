@@ -91,17 +91,26 @@ class RoleSerializerTest(TestCase):
 class ResourceDefinitionTest(TestCase):
     """Test the resource definition serializer"""
 
-    def test_get_with_inventory_groups_filter(self):
-        """Return the hierarchy locally."""
-
-        tenant = Tenant.objects.create(tenant_name="Test")
-        root_workspace = Workspace.objects.create(name="Root", tenant=tenant, parent=None, type=Workspace.Types.ROOT)
-        default_workspace = Workspace.objects.create(
-            name="Default", tenant=tenant, parent=root_workspace, type=Workspace.Types.DEFAULT
+    def setUp(self):
+        self.tenant = Tenant.objects.get(tenant_name="public")
+        self.root_workspace = Workspace.objects.create(
+            name="Root", tenant=self.tenant, parent=None, type=Workspace.Types.ROOT
         )
-        standard_workspace = Workspace.objects.create(name="Standard", tenant=tenant, parent=default_workspace)
-        sub_workspace_a = Workspace.objects.create(name="Sub a", tenant=tenant, parent=standard_workspace)
-        sub_workspace_b = Workspace.objects.create(name="Sub b", tenant=tenant, parent=standard_workspace)
+        self.default_workspace = Workspace.objects.create(
+            name="Default", tenant=self.tenant, parent=self.root_workspace, type=Workspace.Types.DEFAULT
+        )
+        self.standard_workspace = Workspace.objects.create(
+            name="Standard", tenant=self.tenant, parent=self.default_workspace
+        )
+        self.sub_workspace_a = Workspace.objects.create(
+            name="Sub a", tenant=self.tenant, parent=self.standard_workspace
+        )
+        self.sub_workspace_b = Workspace.objects.create(
+            name="Sub b", tenant=self.tenant, parent=self.standard_workspace
+        )
+
+    def test_get_with_inventory_groups_filter_in(self):
+        """Return the hierarchy locally."""
         permission_str = "inventory:groups:read"
         role_data = {
             "name": "Inventory Group Role",
@@ -113,7 +122,7 @@ class ResourceDefinitionTest(TestCase):
                             "attributeFilter": {
                                 "key": "group.id",
                                 "operation": "in",
-                                "value": [str(default_workspace.id)],
+                                "value": [str(self.default_workspace.id), "foo"],
                             }
                         }
                     ],
@@ -123,7 +132,7 @@ class ResourceDefinitionTest(TestCase):
 
         # Serialize the input
         role_serializer = RoleSerializerTest.prepare_serializer(RoleSerializerTest, role_data)
-        Permission.objects.create(permission=permission_str, tenant=Tenant.objects.get(tenant_name="public"))
+        Permission.objects.create(permission=permission_str, tenant=self.tenant)
 
         # Create the role
         role = role_serializer.create(role_serializer.validated_data)
@@ -134,7 +143,57 @@ class ResourceDefinitionTest(TestCase):
         resource_definition_serializer = ResourceDefinitionSerializer(resource_definition)
         actual = set(resource_definition_serializer.data.get("attributeFilter").get("value"))
         expected = set(
-            [str(default_workspace.id), str(standard_workspace.id), str(sub_workspace_a.id), str(sub_workspace_b.id)]
+            [
+                str(self.default_workspace.id),
+                str(self.standard_workspace.id),
+                str(self.sub_workspace_a.id),
+                str(self.sub_workspace_b.id),
+                "foo",
+            ]
+        )
+
+        self.assertEqual(actual, expected)
+
+    def test_get_with_inventory_groups_filter_equal(self):
+        """Return the hierarchy locally."""
+        permission_str = "inventory:groups:read"
+        role_data = {
+            "name": "Inventory Group Role",
+            "access": [
+                {
+                    "permission": permission_str,
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.default_workspace.id),
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        # Serialize the input
+        role_serializer = RoleSerializerTest.prepare_serializer(RoleSerializerTest, role_data)
+        Permission.objects.create(permission=permission_str, tenant=self.tenant)
+
+        # Create the role
+        role = role_serializer.create(role_serializer.validated_data)
+
+        # Get the Resource Definition
+        access = role.access.last()
+        resource_definition = access.resourceDefinitions.last()
+        resource_definition_serializer = ResourceDefinitionSerializer(resource_definition)
+        actual = set(resource_definition_serializer.data.get("attributeFilter").get("value"))
+        expected = set(
+            [
+                str(self.default_workspace.id),
+                str(self.standard_workspace.id),
+                str(self.sub_workspace_a.id),
+                str(self.sub_workspace_b.id),
+            ]
         )
         self.assertEqual(actual, expected)
 
@@ -157,7 +216,7 @@ class ResourceDefinitionTest(TestCase):
 
         # Serialize the input
         role_serializer = RoleSerializerTest.prepare_serializer(RoleSerializerTest, role_data)
-        Permission.objects.create(permission=permission_str, tenant=Tenant.objects.get(tenant_name="public"))
+        Permission.objects.create(permission=permission_str, tenant=self.tenant)
 
         # Create the role
         role = role_serializer.create(role_serializer.validated_data)

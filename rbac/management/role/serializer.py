@@ -20,7 +20,13 @@ from django.conf import settings
 from django.utils.translation import gettext as _
 from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
+from management.utils import (
+    filter_queryset_by_tenant,
+    get_principal,
+    is_valid_uuid,
+    validate_and_get_key,
+    value_to_list,
+)
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -78,9 +84,15 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
             return data
 
         if self._is_workspace_filter(instance):
-            tree_ids = Workspace.objects.descendant_ids_with_parents(instance.attributeFilter.get("value"))
-            data.get("attributeFilter").update({"value": tree_ids})
+            data.get("attributeFilter").update({"value": self._original_vals_and_descendant_ids(instance)})
         return data
+
+    def _original_vals_and_descendant_ids(self, instance):
+        attr_filter_list = value_to_list(instance.attributeFilter.get("value"))
+        uuids = [val for val in attr_filter_list if is_valid_uuid(val)]
+        non_uuids = [val for val in attr_filter_list if not is_valid_uuid(val)]
+        ids_with_parents = Workspace.objects.descendant_ids_with_parents(uuids, instance.tenant_id)
+        return list(set(non_uuids + ids_with_parents))
 
     def _is_workspace_filter(self, instance):
         is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
