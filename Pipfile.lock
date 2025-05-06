@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "7887097dd7281693fb401a03f07d31f502d88ccd86c307d05e0e5db87e83c61b"
+            "sha256": "213d51c8d6f0c5d897abc30411090419976c1cc3d7b47a4d65066f38054ccded"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -605,11 +605,11 @@
         },
         "kafka-python": {
             "hashes": [
-                "sha256:ad96948af44a97f2daafad5ed0bb5787f1d137a864b249b3bc7aa35adbe94c79",
-                "sha256:e4b892e9b5fbc1fcb980d064caad5d506ede64205847acbcb4953d4980c7cfd7"
+                "sha256:205953e581c0371cada35bebdacc58ac7dee6c3f9e8d95b9a6a0a7bacc054ca0",
+                "sha256:6765c25440046cdadeb9c31469566be259d50802d27d4f8aae86d9ae755b78e2"
             ],
             "index": "pypi",
-            "version": "==2.2.4"
+            "version": "==2.1.5"
         },
         "kombu": {
             "hashes": [
@@ -825,11 +825,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:31e2c58dbb67c99c289f51c16d899afedae292b978f8051efaf6262d8212f927",
-                "sha256:ea8e00d7992054c4c592aeb892f6ad51fe1b4d90cc6947cc45c45717c40ec537"
+                "sha256:a65cffc4fb86167e3020b3ef58e08226baad8b29a3b34ce2c9d07e901bac481d",
+                "sha256:ec8308eb180b2312062b1c5523204acf872cd8b0a9e6c2ae76431b22bc4065d7"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==80.3.1"
+            "version": "==80.3.0"
         },
         "six": {
             "hashes": [
@@ -1785,11 +1785,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:31e2c58dbb67c99c289f51c16d899afedae292b978f8051efaf6262d8212f927",
-                "sha256:ea8e00d7992054c4c592aeb892f6ad51fe1b4d90cc6947cc45c45717c40ec537"
+                "sha256:a65cffc4fb86167e3020b3ef58e08226baad8b29a3b34ce2c9d07e901bac481d",
+                "sha256:ec8308eb180b2312062b1c5523204acf872cd8b0a9e6c2ae76431b22bc4065d7"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==80.3.1"
+            "version": "==80.3.0"
         },
         "six": {
             "hashes": [
