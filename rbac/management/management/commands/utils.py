@@ -22,9 +22,8 @@ import boto3
 from botocore.exceptions import ClientError
 from django.db import IntegrityError, transaction
 from internal.utils import get_or_create_ungrouped_workspace
-from management.models import Principal, ResourceDefinition, Role, Workspace
-from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.relation_api_dual_write_handler import OutboxReplicator, RelationApiDualWriteHandler
+from management.models import Principal, ResourceDefinition, Workspace
+from management.role.relation_api_dual_write_handler import OutboxReplicator
 from management.tenant_mapping.model import logger
 from management.tenant_service.v2 import V2TenantBootstrapService
 
@@ -208,44 +207,28 @@ def batch_import_workspace(records):
         BOOT_STRAP_SERVICE.create_workspace_relationships(pairs)
 
 
-def _replace_null_value_in_resourcedef(rd: ResourceDefinition):
-    updated = False
+def _add_ungrouped_hosts_in_resourcedef(rd: ResourceDefinition):
     if rd.attributeFilter["operation"] == "in":
         for value in rd.attributeFilter["value"]:
             if value is None:
-                rd.attributeFilter["value"].remove(value)
                 ungrouped_ws = get_or_create_ungrouped_workspace(rd.tenant)
-                rd.attributeFilter["value"].append(str(ungrouped_ws.id))
-                updated = True
+                ws_id = str(ungrouped_ws.id)
+                if ws_id not in rd.attributeFilter["value"]:
+                    rd.attributeFilter["value"].append(ws_id)
+                    rd.save()
     else:  # operation is "equals"
         if rd.attributeFilter["value"] is None:
             ungrouped_ws = get_or_create_ungrouped_workspace(rd.tenant)
-            rd.attributeFilter["value"] = str(ungrouped_ws.id)
-            updated = True
-    return updated
+            ws_id = str(ungrouped_ws.id)
+            rd.attributeFilter["operation"] = "in"
+            rd.attributeFilter["value"] = [str(ungrouped_ws.id), None]
+            rd.save()
 
 
 def backfill_null_value():
     """Backfill null values of the resource definition for inventory."""
     # Backfill null values for workspaces
     for rd in ResourceDefinition.objects.filter(attributeFilter__key="group.id"):
-        updated = _replace_null_value_in_resourcedef(rd)
-
-        if updated:
-            with transaction.atomic():
-                rd.save()
-                role = rd.access.role
-                # Update all resource definitions for the role
-                for access in role.access.all():
-                    for rd in access.resourceDefinitions.all():
-                        updated = _replace_null_value_in_resourcedef(rd)
-                        if updated:
-                            rd.save()
-                logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
-                # Requery and lock role
-                role = Role.objects.select_for_update().get(pk=role.id)
-                dual_write_handler = RelationApiDualWriteHandler(
-                    role, ReplicationEventType.MIGRATE_CUSTOM_ROLE, OutboxReplicator()
-                )
-                dual_write_handler.prepare_for_update()
-                dual_write_handler.replicate_new_or_updated_role(role)
+        with transaction.atomic():
+            rd = ResourceDefinition.objects.select_for_update().get(pk=rd.id)
+            _add_ungrouped_hosts_in_resourcedef(rd)

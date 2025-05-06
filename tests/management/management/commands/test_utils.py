@@ -352,12 +352,7 @@ class TestBackfillUngroupedHostsWorkspace(TestCase):
             tenant=self.tenant,
         )
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_backfill_ungrouped_hosts_workspace_id(self, replicate):
-        tuples = InMemoryTuples()
-        replicator = InMemoryRelationReplicator(tuples)
-        replicate.side_effect = replicator.replicate
+    def test_backfill_ungrouped_hosts_workspace_id(self):
         ungrouped = Workspace.objects.create(
             name=Workspace.SpecialNames.UNGROUPED_HOSTS,
             tenant=self.tenant,
@@ -366,185 +361,19 @@ class TestBackfillUngroupedHostsWorkspace(TestCase):
         )
         backfill_null_value()
         self.rd_1.refresh_from_db()
-        self.assertFalse(None in self.rd_1.attributeFilter["value"])
+        self.assertTrue(None in self.rd_1.attributeFilter["value"])
         self.assertTrue(str(ungrouped.id) in self.rd_1.attributeFilter["value"])
         self.rd_2.refresh_from_db()
-        self.assertEqual(str(ungrouped.id), self.rd_2.attributeFilter["value"])
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", ungrouped.id),
-                    relation("parent"),
-                    subject("rbac", "workspace", self.default.id),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", self.standard_workspace_id),
-                    relation("parent"),
-                    subject("rbac", "workspace", self.default.id),
-                )
-            ),
-            1,
-        )
-        binding_standard = BindingMapping.objects.get(resource_id=self.standard_workspace_id, role=self.role)
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", self.standard_workspace_id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", binding_standard.mappings["id"]),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role", binding_standard.mappings["role"]["id"]),
-                    relation("inventory_hosts_all"),
-                    subject("rbac", "principal", "*"),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", binding_standard.mappings["id"]),
-                    relation("role"),
-                    subject("rbac", "role", binding_standard.mappings["role"]["id"]),
-                )
-            ),
-            1,
-        )
-        binding_ungrouped = BindingMapping.objects.get(resource_id=ungrouped.id, role=self.role)
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", ungrouped.id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", binding_ungrouped.mappings["id"]),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role", binding_ungrouped.mappings["role"]["id"]),
-                    relation("inventory_hosts_all"),
-                    subject("rbac", "principal", "*"),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", binding_ungrouped.mappings["id"]),
-                    relation("role"),
-                    subject("rbac", "role", binding_ungrouped.mappings["role"]["id"]),
-                )
-            ),
-            1,
-        )
+        self.assertTrue(None in self.rd_2.attributeFilter["value"])
+        self.assertEqual("in", self.rd_2.attributeFilter["operation"])
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_backfill_ungrouped_hosts_workspace_id_when_it_does_not_exist(self, repliacte):
-        tuples = InMemoryTuples()
-        replicator = InMemoryRelationReplicator(tuples)
-        repliacte.side_effect = replicator.replicate
+    def test_backfill_ungrouped_hosts_workspace_id_when_it_does_not_exist(self):
         backfill_null_value()
         self.rd_1.refresh_from_db()
         ungrouped = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
-        self.assertFalse(None in self.rd_1.attributeFilter["value"])
+        self.assertTrue(None in self.rd_1.attributeFilter["value"])
         self.assertTrue(str(ungrouped.id) in self.rd_1.attributeFilter["value"])
         self.rd_2.refresh_from_db()
-        self.assertEqual(str(ungrouped.id), self.rd_2.attributeFilter["value"])
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", ungrouped.id),
-                    relation("parent"),
-                    subject("rbac", "workspace", self.default.id),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", self.standard_workspace_id),
-                    relation("parent"),
-                    subject("rbac", "workspace", self.default.id),
-                )
-            ),
-            1,
-        )
-        binding_standard = BindingMapping.objects.get(resource_id=self.standard_workspace_id, role=self.role)
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", self.standard_workspace_id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", binding_standard.mappings["id"]),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role", binding_standard.mappings["role"]["id"]),
-                    relation("inventory_hosts_all"),
-                    subject("rbac", "principal", "*"),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", binding_standard.mappings["id"]),
-                    relation("role"),
-                    subject("rbac", "role", binding_standard.mappings["role"]["id"]),
-                )
-            ),
-            1,
-        )
-        binding_ungrouped = BindingMapping.objects.get(resource_id=ungrouped.id, role=self.role)
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", ungrouped.id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", binding_ungrouped.mappings["id"]),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role", binding_ungrouped.mappings["role"]["id"]),
-                    relation("inventory_hosts_all"),
-                    subject("rbac", "principal", "*"),
-                )
-            ),
-            1,
-        )
-        self.assertEqual(
-            tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", binding_ungrouped.mappings["id"]),
-                    relation("role"),
-                    subject("rbac", "role", binding_ungrouped.mappings["role"]["id"]),
-                )
-            ),
-            1,
-        )
+        self.assertTrue(str(ungrouped.id) in self.rd_2.attributeFilter["value"])
+        self.assertTrue(None in self.rd_2.attributeFilter["value"])
+        self.assertEqual("in", self.rd_2.attributeFilter["operation"])
