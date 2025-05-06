@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "87676e9f81ca4bc36a6af255ed1967fdc7fc93611b10ad5c102ff945656e3b7c"
+            "sha256": "1d64abe010ad8da5408c71ec58e42e08a514e0fbf4856991f836924eb7bb4bb5"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -75,11 +75,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:2d954d3d9a6c7f86fbfbeb164223996c24b7b7726682bace61f86a7e10b531e6",
-                "sha256:53113040882192388e05edebee48d45c008fb4ba2739dc889ce09b2adc9e56e4"
+                "sha256:68d739300cc94232373517b27c5570de6ae6d809a2db644f30219f5c8e0371ce",
+                "sha256:f6ae08a56fe94e18d2aa223611a3b5e94123315d0cb3cb85764b029b2326c710"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.38.9"
+            "version": "==1.38.8"
         },
         "celery": {
             "hashes": [
@@ -986,12 +986,12 @@
         },
         "watchtower": {
             "hashes": [
-                "sha256:5eac65cbf2a7350bb43c3518485230a6135ed7dec7ccb88468828d68ab9fea26",
-                "sha256:7d3c116aff72a73ce8f6fc0addd1d0daa04d3f9d53d87cedca3a5a65a264bf7d"
+                "sha256:7f51411a4e736baad0504ce9a68fae5babecf009c15ec4df96451c6fecacbf4c",
+                "sha256:c66283efb4af22f1dd7565b12450dad4ef9175878f3d65b56ccff0dcf0a53c28"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==3.4.0"
+            "markers": "python_version >= '3.6'",
+            "version": "==3.0.0"
         },
         "wcwidth": {
             "hashes": [
@@ -1955,11 +1955,11 @@
         },
         "virtualenv": {
             "hashes": [
-                "sha256:65442939608aeebb9284cd30baca5865fcd9f12b58bb740a24b220030df46d26",
-                "sha256:f448cd2f1604c831afb9ea238021060be2c0edbcad8eb0a4e8b4e14ff11a5482"
+                "sha256:800863162bcaa5450a6e4d721049730e7f2dae07720e0902b0e4040bd6f9ada8",
+                "sha256:e34302959180fca3af42d1800df014b35019490b119eba981af27f2fa486e5d6"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==20.31.1"
+            "version": "==20.30.0"
         },
         "zipp": {
             "hashes": [
