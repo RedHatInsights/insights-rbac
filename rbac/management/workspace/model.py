@@ -19,6 +19,7 @@ import uuid_utils.compat as uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
+from django.db.models.functions import Upper
 from django.utils import timezone
 from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
@@ -28,6 +29,11 @@ from api.models import TenantAwareModel
 
 class Workspace(TenantAwareModel):
     """A workspace."""
+
+    class SpecialNames:
+        DEFAULT = "Default Workspace"
+        ROOT = "Root Workspace"
+        UNGROUPED_HOSTS = "Ungrouped Hosts"
 
     class Types(models.TextChoices):
         STANDARD = "standard"
@@ -51,7 +57,13 @@ class Workspace(TenantAwareModel):
                 fields=["tenant_id", "type"],
                 name="unique_default_root_workspace_per_tenant",
                 condition=Q(type__in=["root", "default", "ungrouped-hosts"]),
-            )
+            ),
+            UniqueConstraint(
+                Upper("name"),
+                "parent",
+                name="unique_workspace_name_per_parent",
+                condition=Q(parent__isnull=False),
+            ),
         ]
 
     def save(self, *args, **kwargs):
@@ -63,11 +75,17 @@ class Workspace(TenantAwareModel):
         """Validate the model."""
         if self.type == self.Types.ROOT:
             if self.parent is not None:
-                raise ValidationError({"root_parent": ("Root workspace must not have a parent.")})
-        elif self.parent_id is None:
-            raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
+                raise ValidationError({"root_parent": "Root workspace must not have a parent."})
+        elif self.parent is None:
+            if self.type == self.Types.STANDARD:
+                if self.parent_id is None:
+                    workspace_object = Workspace.objects.get(type=self.Types.DEFAULT, tenant=self.tenant_id)
+                    self.parent = workspace_object
+                    self.parent_id = workspace_object.id
+            else:
+                raise ValidationError({"workspace": f"{self.type} workspaces must have a parent workspace."})
         elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
-            raise ValidationError({"default_parent": ("Default workspace must have a root parent.")})
+            raise ValidationError({"default_parent": "Default workspace must have a root parent."})
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""

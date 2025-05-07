@@ -75,6 +75,43 @@ class WorkspaceModelTests(WorkspaceBaseTestCase):
         level_4 = Workspace.objects.create(name="Level 4", tenant=self.tenant, parent=level_3)
         self.assertCountEqual(level_3.ancestors(), [root, level_1, level_2])
 
+    def test_unique_name_parent(self):
+        """"""
+        tenant = Tenant.objects.create(tenant_name="Name/Parent uniqueness")
+        root = Workspace.objects.create(name="root", tenant=tenant, type=Workspace.Types.ROOT)
+        default = Workspace.objects.create(name="default", tenant=tenant, type=Workspace.Types.DEFAULT, parent=root)
+
+        Workspace.objects.create(name="Child", tenant=tenant, parent=default, type=Workspace.Types.STANDARD)
+
+        # Create a child with same name with the same parent
+        self.assertRaises(
+            ValidationError,
+            Workspace.objects.create,
+            name="Child",
+            tenant=tenant,
+            parent=default,
+            type=Workspace.Types.STANDARD,
+        )
+        # Create a child with same name but the different case within the same parent
+        self.assertRaises(
+            ValidationError,
+            Workspace.objects.create,
+            name="child",
+            tenant=tenant,
+            parent=default,
+            type=Workspace.Types.STANDARD,
+        )
+
+        # Create a child with the same name but different parent
+        parent_2 = Workspace.objects.create(
+            name="Parent 2", tenant=tenant, type=Workspace.Types.STANDARD, parent=default
+        )
+        Workspace.objects.create(name="Child", tenant=tenant, parent=parent_2, type=Workspace.Types.STANDARD)
+
+        # If parent is null, it is allowed to have same name
+        tenant_2 = Tenant.objects.create(tenant_name="Name/Parent uniqueness 2")
+        Workspace.objects.create(name="root", tenant=tenant_2, type=Workspace.Types.ROOT)
+
 
 class Types(WorkspaceBaseTestCase):
     """Test types on a workspace."""
@@ -212,7 +249,7 @@ class Types(WorkspaceBaseTestCase):
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
         self.assertEqual(
-            {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
+            {"workspace": ["default workspaces must have a parent workspace."]},
             assertion.exception.message_dict,
         )
 
@@ -222,7 +259,7 @@ class Types(WorkspaceBaseTestCase):
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Ungrouped Hosts", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant)
         self.assertEqual(
-            {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
+            {"workspace": ["ungrouped-hosts workspaces must have a parent workspace."]},
             assertion.exception.message_dict,
         )
 
@@ -248,13 +285,11 @@ class Types(WorkspaceBaseTestCase):
         """Test root/default workspace creation with parent"""
         tenant = Tenant.objects.create(tenant_name="Root with parent")
         root = Workspace.objects.create(name="Root", type=Workspace.Types.ROOT, tenant=tenant)
-        # Standard workspace and not be created without parent
-        with self.assertRaises(ValidationError) as assertion:
-            Workspace.objects.create(name="Standard", type=Workspace.Types.STANDARD, tenant=tenant)
+        # Default cannot be created without parent
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
-        default = Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
 
+        default = Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
         with self.assertRaises(ValidationError) as assertion:
             root.parent = default
             root.save()
