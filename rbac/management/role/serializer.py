@@ -16,8 +16,9 @@
 #
 
 """Serializer for role management."""
+from django.conf import settings
 from django.utils.translation import gettext as _
-from management.group.model import Group
+from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
 from rest_framework import serializers
@@ -69,6 +70,23 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
 
         model = ResourceDefinition
         fields = ("attributeFilter",)
+
+    def to_representation(self, instance):
+        """Representation of ResourceDefinitions."""
+        if settings.WORKSPACE_HIERARCHY_ENABLED is not True:
+            return super().to_representation(instance)
+
+        data = super().to_representation(instance)
+        if self._is_workspace_filter(instance):
+            tree_ids = Workspace.objects.descendant_ids_with_parents(instance.attributeFilter.get("value"))
+            data.get("attributeFilter").update({"value": tree_ids})
+        return data
+
+    def _is_workspace_filter(self, instance):
+        is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
+        is_workspace_resource_type = instance.resource_type == settings.WORKSPACE_RESOURCE_TYPE
+        is_workspace_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
+        return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 
 
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):

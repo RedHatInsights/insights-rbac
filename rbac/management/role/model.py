@@ -108,6 +108,18 @@ class ResourceDefinition(TenantAwareModel):
         if self.access:
             return self.access.role
 
+    @property
+    def application(self):
+        """Get the corresponding application."""
+        if self.access and self.access.permission:
+            return self.access.permission.application
+
+    @property
+    def resource_type(self):
+        """Get the corresponding resource type."""
+        if self.access and self.access.permission:
+            return self.access.permission.resource_type
+
 
 class ExtTenant(models.Model):
     """External tenant."""
