@@ -303,22 +303,13 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertEquals(update_workspace.name, "New Workspace")
 
-    def test_update_workspace_same_parent(self):
-        """Test for updating a workspace."""
-        parent_workspace_data = {
-            "name": "New Workspace",
-            "description": "New Workspace - description",
-            "tenant_id": self.tenant.id,
-            "parent_id": self.standard_workspace.id,
-        }
-
-        parent_workspace = Workspace.objects.create(**parent_workspace_data)
-
+    def test_update_workspace_update_parent_id(self):
+        """Test for updating a workspace's parent_id."""
         workspace_data = {
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": parent_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -326,7 +317,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
         client = APIClient()
 
-        workspace_request_data = {"name": "New Workspace", "parent_id": workspace.id, "description": "XX"}
+        workspace_request_data = {"name": "New Workspace", "parent_id": self.default_workspace.id}
 
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
@@ -334,7 +325,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         status_code = response.data.get("status")
         detail = response.data.get("detail")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, "The parent_id and id values must not be the same.")
+        self.assertEqual(detail, "Can't update the 'parent_id' on a workspace directly")
         self.assertEqual(status_code, 400)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
