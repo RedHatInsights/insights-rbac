@@ -21,9 +21,11 @@ import logging
 
 from django.db import transaction
 from django.urls import resolve
+from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 
 from api.models import User
 
@@ -91,3 +93,31 @@ def delete_bindings(bindings):
             bindings.delete()
         info["relations"] = [stringify_spicedb_relationship(relation) for relation in relations_to_remove]
     return info
+
+
+def get_or_create_ungrouped_workspace(tenant):
+    """
+    Retrieve the ungrouped workspace for the given tenant.
+
+    Args:
+        tenant (str): The tenant for which to retrieve the ungrouped workspace.
+
+    Returns:
+        Workspace: The ungrouped workspace object for the given tenant.
+    """
+    ungrouped_hosts = Workspace.objects.select_for_update().filter(tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+    if not ungrouped_hosts.exists():
+        default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+        ungrouped_hosts, _ = Workspace.objects.get_or_create(
+            tenant=tenant,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            name=Workspace.SpecialNames.UNGROUPED_HOSTS,
+            parent=default,
+        )
+        dual_write_handler = RelationApiDualWriteWorkspaceHandler(
+            ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
+        )
+        dual_write_handler.replicate_new_workspace()
+    else:
+        ungrouped_hosts = ungrouped_hosts.get()
+    return ungrouped_hosts

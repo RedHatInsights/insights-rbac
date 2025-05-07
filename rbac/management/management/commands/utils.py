@@ -21,11 +21,11 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 from django.db import IntegrityError, transaction
-from management.principal.model import Principal
+from internal.utils import get_or_create_ungrouped_workspace
+from management.models import Principal, ResourceDefinition, Workspace
 from management.role.relation_api_dual_write_handler import OutboxReplicator
 from management.tenant_mapping.model import logger
 from management.tenant_service.v2 import V2TenantBootstrapService
-from management.workspace.model import Workspace
 
 
 from api.models import Tenant, User
@@ -205,3 +205,30 @@ def batch_import_workspace(records):
         Workspace.objects.bulk_create(workspaces)
         Workspace.objects.bulk_update(workspaces_to_update, ["name", "modified"])
         BOOT_STRAP_SERVICE.create_workspace_relationships(pairs)
+
+
+def _add_ungrouped_hosts_in_resourcedef(rd: ResourceDefinition):
+    if rd.attributeFilter["operation"] == "in":
+        for value in rd.attributeFilter["value"]:
+            if value is None:
+                ungrouped_ws = get_or_create_ungrouped_workspace(rd.tenant)
+                ws_id = str(ungrouped_ws.id)
+                if ws_id not in rd.attributeFilter["value"]:
+                    rd.attributeFilter["value"].append(ws_id)
+                    rd.save()
+    else:  # operation is "equals"
+        if rd.attributeFilter["value"] is None:
+            ungrouped_ws = get_or_create_ungrouped_workspace(rd.tenant)
+            ws_id = str(ungrouped_ws.id)
+            rd.attributeFilter["operation"] = "in"
+            rd.attributeFilter["value"] = [str(ungrouped_ws.id), None]
+            rd.save()
+
+
+def backfill_null_value():
+    """Backfill null values of the resource definition for inventory."""
+    # Backfill null values for workspaces
+    for rd in ResourceDefinition.objects.filter(attributeFilter__key="group.id"):
+        with transaction.atomic():
+            rd = ResourceDefinition.objects.select_for_update().get(pk=rd.id)
+            _add_ungrouped_hosts_in_resourcedef(rd)
