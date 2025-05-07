@@ -66,7 +66,9 @@
             "description": "Parameter for ordering resource by database id so that latest actions appear first",
             "schema": {
               "type": "string",
-              "enum": ["id"]
+              "enum": [
+                "id"
+              ]
             }
           }
         ],
@@ -3014,7 +3016,7 @@
           }
         }
       },
-      "AuditLog":{
+      "AuditLog": {
         "properties": {
           "created": {
             "type": "string"
@@ -3027,7 +3029,7 @@
             "type": "string",
             "example": "user abc added to group: 1234"
           },
-          "resource_type":{
+          "resource_type": {
             "type": "string",
             "example": "group"
           },
@@ -3836,6 +3838,7 @@
         ]
       },
       "ResourceDefinitionFilter": {
+        "type": "object",
         "required": [
           "key",
           "operation",
@@ -3853,22 +3856,50 @@
               "in"
             ]
           },
-          "value": {
-            "oneOf": [
-              {
-                "type": ["string", "null"],
-                "example": "123456"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": ["string", "null"]
-                },
-                "example": ["value1", null, "value2"]
+          "value": {}
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "equal"
+                }
               }
-            ]
+            },
+            "then": {
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "example": "123456"
+                }
+              }
+            },
+            "else": {
+              "if": {
+                "properties": {
+                  "operation": {
+                    "const": "in"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "value": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "example": [
+                      "value1",
+                      "value2"
+                    ]
+                  }
+                }
+              }
+            }
           }
-        }
+        ]
       },
       "ResourceDefinition": {
         "required": [
