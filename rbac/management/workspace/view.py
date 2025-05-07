@@ -20,7 +20,7 @@ from django.db import transaction
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
-from management.permissions import WorkspaceAccessPermission
+from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_uuid
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
@@ -90,6 +90,9 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Get a list of workspaces."""
         all_types = "all"
         queryset = self.get_queryset()
+        if getattr(request, "permission_tuples", None):
+            permitted_wss = [tuple[1] for tuple in request.permission_tuples]
+            queryset = queryset.filter(id__in=permitted_wss)
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
