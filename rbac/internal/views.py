@@ -1301,10 +1301,10 @@ def normalize_hbi_attribute_filter(attribute_filter):
     value = attribute_filter.get("value")
     attribute_filter["operation"] = "in"
     if not isinstance(value, list):
-        if value is None or isinstance(value, str):
-            attribute_filter["value"] = [value]
-        elif "id" in value:
+        if isinstance(value, dict):
             attribute_filter["value"] = [value["id"]]
+        else:
+            attribute_filter["value"] = [value]
     return attribute_filter
 
 
