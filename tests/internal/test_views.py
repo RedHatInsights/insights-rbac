@@ -2841,6 +2841,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
             {"key": "group.id", "operation": "equal", "value": "string"},
             {"key": "group.id", "operation": "in", "value": {"id": "12345"}},
             {"key": "group.id", "operation": "equal", "value": 2},
+            {"key": "group.id", "operation": "in", "value": {}},
         ]
         rfs = ResourceDefinition.objects.bulk_create(
             [
@@ -2869,6 +2870,11 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
                     attributeFilter=attribute_filter_data[4],
                     tenant=self.tenant,
                 ),
+                ResourceDefinition(
+                    access=access,
+                    attributeFilter=attribute_filter_data[5],
+                    tenant=self.tenant,
+                ),
             ]
         )
 
@@ -2878,10 +2884,10 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
             **self.internal_request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.content, b"Updated 5 bad resource definitions")
+        self.assertEqual(response.content, b"Updated 6 bad resource definitions")
 
         # Check the resource definitions were fixed as expected
-        values = [["value1", "value2"], [None], ["string"], ["12345"], [2]]
+        values = [["value1", "value2"], [None], ["string"], ["12345"], [2], [None]]
         for index, rf in enumerate(rfs):
             rf.refresh_from_db()
             operation = rf.attributeFilter["operation"]
