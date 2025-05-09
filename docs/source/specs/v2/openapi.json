@@ -12,6 +12,9 @@
   "paths": {
     "/workspaces/": {
       "get": {
+        "tags": [
+          "Workspaces"
+        ],
         "operationId": "Workspaces_list",
         "summary": "List workspaces in a tenant",
         "description": "List workspaces in a tenant",
@@ -24,8 +27,7 @@
               "type": "integer",
               "format": "int64",
               "default": 10
-            },
-            "explode": false
+            }
           },
           {
             "name": "offset",
@@ -35,8 +37,7 @@
               "type": "integer",
               "format": "int64",
               "default": 0
-            },
-            "explode": false
+            }
           },
           {
             "name": "type",
@@ -46,8 +47,7 @@
             "schema": {
               "$ref": "#/components/schemas/Workspaces.WorkspaceTypesQueryParam",
               "default": "all"
-            },
-            "explode": false
+            }
           },
           {
             "name": "name",
@@ -56,8 +56,7 @@
             "description": "Case sensitive exact match of workspace by name.",
             "schema": {
               "type": "string"
-            },
-            "explode": false
+            }
           }
         ],
         "responses": {
@@ -143,12 +142,12 @@
               }
             }
           }
-        },
-        "tags": [
-          "Workspaces"
-        ]
+        }
       },
       "post": {
+        "tags": [
+          "Workspaces"
+        ],
         "operationId": "Workspaces_create",
         "summary": "Create workspace in tenant",
         "description": "Create workspace in tenant",
@@ -247,9 +246,6 @@
             }
           }
         },
-        "tags": [
-          "Workspaces"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -264,6 +260,9 @@
     },
     "/workspaces/{id}/": {
       "get": {
+        "tags": [
+          "Workspaces"
+        ],
         "operationId": "Workspaces_read",
         "summary": "Get a workspace in tenant",
         "description": "Get a workspace in tenant",
@@ -284,8 +283,7 @@
             "description": "When true, the response will include the ancestry of the workspace.",
             "schema": {
               "type": "boolean"
-            },
-            "explode": false
+            }
           }
         ],
         "responses": {
@@ -388,12 +386,12 @@
               }
             }
           }
-        },
-        "tags": [
-          "Workspaces"
-        ]
+        }
       },
       "put": {
+        "tags": [
+          "Workspaces"
+        ],
         "operationId": "Workspaces_update",
         "summary": "Edit the workspace name or description",
         "description": "Edit a workspace",
@@ -523,9 +521,6 @@
             }
           }
         },
-        "tags": [
-          "Workspaces"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -538,6 +533,9 @@
         }
       },
       "patch": {
+        "tags": [
+          "Workspaces"
+        ],
         "operationId": "Workspaces_patch",
         "parameters": [
           {
@@ -665,9 +663,6 @@
             }
           }
         },
-        "tags": [
-          "Workspaces"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -680,6 +675,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Workspaces"
+        ],
         "operationId": "Workspaces_delete",
         "summary": "Delete the workspace",
         "description": "Delete a workspace",
@@ -780,10 +778,7 @@
               }
             }
           }
-        },
-        "tags": [
-          "Workspaces"
-        ]
+        }
       }
     }
   },
@@ -1082,29 +1077,29 @@
         "properties": {
           "first": {
             "type": "string",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0",
             "format": "uri",
-            "description": "The first link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
+            "description": "The first link in pagination"
           },
           "next": {
             "type": "string",
             "nullable": true,
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=10",
             "format": "uri",
-            "description": "The next link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=10"
+            "description": "The next link in pagination"
           },
           "previous": {
             "type": "string",
             "nullable": true,
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0",
             "format": "uri",
-            "description": "The previous link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
+            "description": "The previous link in pagination"
           },
           "last": {
             "type": "string",
+            "example": "/api/rbac/v2/(resource)/?limit=10&offset=20",
             "format": "uri",
-            "description": "The last link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=20"
+            "description": "The last link in pagination"
           }
         }
       },
@@ -1119,21 +1114,21 @@
           "count": {
             "type": "integer",
             "format": "int64",
-            "description": "Total count of objects",
-            "example": 10
+            "example": 10,
+            "description": "Total count of objects"
           },
           "limit": {
             "type": "integer",
             "format": "int64",
-            "description": "Limit of returned objects",
             "example": 10,
+            "description": "Limit of returned objects",
             "default": 10
           },
           "offset": {
             "type": "integer",
             "format": "int64",
-            "description": "Offset of returned objects",
-            "example": 10
+            "example": 10,
+            "description": "Offset of returned objects"
           }
         }
       },
@@ -1211,7 +1206,7 @@
                 "$ref": "#/components/schemas/UUID"
               }
             ],
-            "description": "Description of Workspace A",
+            "description": "Must match current parent_id value. Not updatable directly on the workspace.",
             "default": "Parent ID of Workspace A"
           }
         }

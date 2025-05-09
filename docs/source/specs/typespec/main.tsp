@@ -145,7 +145,7 @@ namespace Workspaces {
         name: string = "Workspace A";
         @doc("Description of Workspace A")
         description: string = "Description of Workspace A";
-        @doc("Description of Workspace A")
+        @doc("Must match current parent_id value. Not updatable directly on the workspace.")
         parent_id: UUID = "Parent ID of Workspace A";
     }
 

@@ -81,6 +81,19 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         self.assertEqual(updated_instance.name, validated_data["name"])
         self.assertEqual(updated_instance.description, validated_data["description"])
 
+    def test_update_parent_id_same(self):
+        """Test the update method when the parent is the same"""
+        validated_data = {"parent_id": self.standard_workspace.parent_id}
+        updated_instance = self.service.update(self.standard_workspace, validated_data)
+        self.assertEqual(updated_instance.parent_id, self.standard_workspace.parent_id)
+
+    def test_update_parent_id_different(self):
+        """Test the update method when the parent is being changed"""
+        validated_data = {"parent_id": self.default_workspace.parent_id}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.update(self.standard_workspace, validated_data)
+        self.assertIn("Can't update the 'parent_id' on a workspace directly", str(context.exception))
+
 
 class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
     """Tests for the destroy method"""

@@ -57,7 +57,8 @@ class WorkspaceService:
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
         """Update workspace."""
         for attr, value in validated_data.items():
-            # TODO(RHCLOUD-35415): check attr that parent is not changed here
+            if self._parent_id_attr_update(attr, value, instance):
+                raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
             setattr(instance, attr, value)
         instance.save()
         dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
@@ -74,3 +75,7 @@ class WorkspaceService:
         dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
+
+    def _parent_id_attr_update(self, attr: str, value: str, instance: Workspace) -> bool:
+        """Determine if the attribute being updated is parent_id."""
+        return attr == "parent_id" and instance.parent_id != value

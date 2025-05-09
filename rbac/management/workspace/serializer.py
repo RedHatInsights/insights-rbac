@@ -16,7 +16,6 @@
 #
 
 """Serializer for workspace management."""
-from django.core.exceptions import ValidationError
 from management.workspace.service import WorkspaceService
 from rest_framework import serializers
 
@@ -56,18 +55,6 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         """Create the workspace object in the database."""
         tenant = self.context["request"].tenant
         return self._service.create(validated_data, tenant)
-
-    def validate(self, attrs):
-        """Validate on POST, PUT and PATCH."""
-        request = self.context.get("request")
-        parent_id = attrs.get("parent_id")
-        tenant = request.tenant
-
-        if parent_id and tenant:
-            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
-                raise ValidationError({"parent_id": (f"Parent workspace '{parent_id}' doesn't exist in tenant")})
-
-        return attrs
 
     def update(self, instance, validated_data):
         """Update the workspace object in the database."""
