@@ -1197,6 +1197,10 @@ def correct_resource_definitions(request):
     string_query = """ from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
                 AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
 
+    hbi_query = """ from management_resourcedefinition WHERE ("attributeFilter"->>'operation' <> 'in'
+                OR jsonb_typeof("attributeFilter"->'value') <> 'array')
+                AND "attributeFilter"->>'key' = 'group.id';"""
+
     query_params = request.GET
 
     if request.method == "GET":
@@ -1209,6 +1213,9 @@ def correct_resource_definitions(request):
                 cursor.execute("SELECT *" + string_query)
                 string_rows = cursor.fetchall()
 
+                cursor.execute("SELECT *" + hbi_query)
+                hbi_rows = cursor.fetchall()
+
                 response = [
                     {
                         "id": row[0],
@@ -1216,7 +1223,7 @@ def correct_resource_definitions(request):
                         "access_id": row[2],
                         "tenant_id": row[3],
                     }
-                    for row in list_rows + string_rows
+                    for row in list_rows + string_rows + hbi_rows
                 ]
 
             return HttpResponse(json.dumps(response), content_type="application/json", status=200)
@@ -1226,6 +1233,9 @@ def correct_resource_definitions(request):
             count = cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(*)" + string_query)
+            count += cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*)" + hbi_query)
             count += cursor.fetchone()[0]
 
         return HttpResponse(f"{count} resource definitions would be corrected", status=200)
@@ -1257,6 +1267,16 @@ def correct_resource_definitions(request):
                 resource_definition.save()
                 count += 1
 
+            cursor.execute("SELECT id " + hbi_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter = normalize_hbi_attribute_filter(
+                    resource_definition.attributeFilter
+                )
+                resource_definition.save()
+                count += 1
+
         return HttpResponse(f"Updated {count} bad resource definitions", status=200)
 
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
@@ -1273,6 +1293,21 @@ def normalize_attribute_filter(attribute_filter):
             attribute_filter["value"] = [item.strip() for item in value.split(",")]
         else:
             attribute_filter["operation"] = "equal"
+    return attribute_filter
+
+
+def normalize_hbi_attribute_filter(attribute_filter):
+    """Set Attribute Filter 'operation' to 'in' and convert 'value' into list."""
+    value = attribute_filter.get("value")
+    attribute_filter["operation"] = "in"
+    if not isinstance(value, list):
+        if isinstance(value, dict):
+            if "id" not in value:
+                attribute_filter["value"] = [None]
+            else:
+                attribute_filter["value"] = [value["id"]]
+        else:
+            attribute_filter["value"] = [value]
     return attribute_filter
 
 
@@ -1378,7 +1413,10 @@ def retrieve_ungrouped_workspace(request):
             if not ungrouped_hosts.exists():
                 default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
                 ungrouped_hosts, _ = Workspace.objects.get_or_create(
-                    tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS, name="Ungrouped Hosts", parent=default
+                    tenant=tenant,
+                    type=Workspace.Types.UNGROUPED_HOSTS,
+                    name=Workspace.SpecialNames.UNGROUPED_HOSTS,
+                    parent=default,
                 )
                 dual_write_handler = RelationApiDualWriteWorkspacepHandler(
                     ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE

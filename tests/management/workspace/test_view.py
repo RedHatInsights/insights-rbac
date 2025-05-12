@@ -160,7 +160,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         status_code = response.data.get("status")
         detail = response.data.get("detail")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Field 'name' is required.")
+        self.assertEqual(detail, "This field is required.")
 
         self.assertEqual(status_code, 400)
         self.assertEqual(response.get("content-type"), "application/problem+json")
@@ -265,19 +265,16 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
         client = APIClient()
 
-        workspace_request_data = {"name": "New Workspace"}
+        workspace_request_data = {"name": "Newer Workspace"}
 
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        status_code = response.data.get("status")
-        detail = response.data.get("detail")
-        instance = response.data.get("instance")
-        self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Field 'description' is required.")
-        self.assertEqual(status_code, 400)
-        self.assertEqual(instance, url)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        status_code = data.get("status")
+        self.assertEqual(data.get("name"), "Newer Workspace")
+        self.assertEqual(data.get("description"), workspace_data["description"])
+        self.assertEqual(data.get("parent_id"), str(workspace_data["parent_id"]))
 
     def test_partial_update_empty(self):
         """Test for updating a workspace with empty body."""
@@ -337,7 +334,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         status_code = response.data.get("status")
         detail = response.data.get("detail")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Parent ID and ID can't be same")
+        self.assertEqual(detail, "The parent_id and id values must not be the same.")
         self.assertEqual(status_code, 400)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
@@ -438,7 +435,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         detail = response.data.get("detail")
         instance = response.data.get("instance")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Field 'name' is required.")
+        self.assertEqual(detail, "This field is required.")
         self.assertEqual(status_code, 400)
         self.assertEqual(instance, url)
         self.assertEqual(response.get("content-type"), "application/problem+json")
@@ -486,7 +483,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
-    def test_edit_workspace_not_allowed_type(self):
+    def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
         root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
 
@@ -499,22 +496,27 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
-        # Create is not allowed
+        # Create disregards 'type'
         response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
 
         workspace["type"] = Workspace.Types.DEFAULT
+        workspace["name"] = "New Workspace 2"
         response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
 
-        # Update is not allowed
+        # Update disregards 'type'
         workspace["type"] = Workspace.Types.STANDARD
+        workspace["name"] = "New Workspace 3"
         created_workspace = Workspace.objects.create(**workspace, tenant=self.tenant)
         url = reverse("v2_management:workspace-detail", kwargs={"pk": created_workspace.id})
         client = APIClient()
         workspace["type"] = Workspace.Types.UNGROUPED_HOSTS
         response = client.put(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
 
     def test_get_workspace(self):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})

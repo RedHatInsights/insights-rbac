@@ -178,19 +178,25 @@ def batch_import_workspace(records):
         for record in records:
             is_ungrouped = record["ungrouped"].lower() == "true"
             parent = parent_workspace_dict[record["org_id"]]
-            workspace_type = Workspace.Types.UNGROUPED_HOSTS if is_ungrouped else Workspace.Types.STANDARD
+            if is_ungrouped:
+                ws_name = Workspace.SpecialNames.UNGROUPED_HOSTS
+                workspace_type = Workspace.Types.UNGROUPED_HOSTS
+            else:
+                ws_name = record["name"]
+                workspace_type = Workspace.Types.STANDARD
 
             if record["id"] in existing_wss_dict:
                 workspace = existing_wss_dict[record["id"]]
-                workspace.name = record["name"]
+                workspace.name = ws_name
                 workspace.modified = record["modified_on"]
                 workspaces_to_update.append(workspace)
             else:
                 workspace = Workspace(
                     id=record["id"],
-                    name=record["name"],
+                    name=ws_name,
                     tenant=tenant_dict[record["org_id"]],
                     type=workspace_type,
+                    parent=parent,
                     created=record["created_on"],
                     modified=record["modified_on"],
                 )

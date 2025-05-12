@@ -24,12 +24,18 @@ from django.db.models.functions import Upper
 from django.utils import timezone
 from management.managers import WorkspaceManager
 from management.rbac_fields import AutoDateTimeField
+from rest_framework import serializers
 
 from api.models import TenantAwareModel
 
 
 class Workspace(TenantAwareModel):
     """A workspace."""
+
+    class SpecialNames:
+        DEFAULT = "Default Workspace"
+        ROOT = "Root Workspace"
+        UNGROUPED_HOSTS = "Ungrouped Hosts"
 
     class Types(models.TextChoices):
         STANDARD = "standard"
@@ -82,6 +88,8 @@ class Workspace(TenantAwareModel):
                 raise ValidationError({"workspace": f"{self.type} workspaces must have a parent workspace."})
         elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
             raise ValidationError({"default_parent": "Default workspace must have a root parent."})
+        elif self.id == self.parent_id:
+            raise serializers.ValidationError({"parent_id": ("The parent_id and id values must not be the same.")})
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
