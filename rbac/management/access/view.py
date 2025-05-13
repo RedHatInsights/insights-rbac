@@ -177,20 +177,23 @@ class AccessView(APIView):
 
     def add_ungrouped_hosts_id(self, response, tenant):
         """Add ungrouped hosts id to the data."""
-        if settings.ADD_UNGROUPED_HOSTS_ID:
-            ungrouped_hosts_id = None
-            queried = False
-            for access in response.data["data"]:
-                for resource_def in access.get("resourceDefinitions", []):
-                    attibute_filter = resource_def.get("attributeFilter", {})
-                    if attibute_filter.get("key") == "group.id" and None in attibute_filter.get("value"):
-                        if not ungrouped_hosts_id and not queried:
-                            ungrouped_workspace = Workspace.objects.filter(
-                                type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant
-                            ).first()
-                            queried = True
-                        if ungrouped_workspace:
-                            ungrouped_hosts_id = str(ungrouped_workspace.id)
-                            if ungrouped_hosts_id not in attibute_filter["value"]:
-                                attibute_filter["value"].append(ungrouped_hosts_id)
+        if not settings.ADD_UNGROUPED_HOSTS_ID:
+            return
+        ungrouped_hosts_id = None
+        queried = False
+        for access in response.data["data"]:
+            for resource_def in access.get("resourceDefinitions", []):
+                attibute_filter = resource_def.get("attributeFilter", {})
+                if attibute_filter.get("key") == "group.id" and None in attibute_filter.get("value"):
+                    if not ungrouped_hosts_id and not queried:
+                        ungrouped_workspace = Workspace.objects.filter(
+                            type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant
+                        ).first()
+                        queried = True
+                    if ungrouped_workspace:
+                        ungrouped_hosts_id = str(ungrouped_workspace.id)
+                        if ungrouped_hosts_id not in attibute_filter["value"]:
+                            attibute_filter["value"].append(ungrouped_hosts_id)
+                        if settings.REMOVE_NULL_VALUE:
+                            attibute_filter["value"].remove(None)
         return response

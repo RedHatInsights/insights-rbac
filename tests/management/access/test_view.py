@@ -272,7 +272,7 @@ class AccessViewTests(IdentityRequest):
                     break
 
         # Test that we can retrieve the principal access
-        # and null value is replaced if there is a ungrouped workspace
+        # if there is an ungrouped workspace, its id will be added
         ungrouped_hosts_id = Workspace.objects.create(
             name="Ungrouped Workspace",
             type=Workspace.Types.UNGROUPED_HOSTS,
@@ -286,6 +286,17 @@ class AccessViewTests(IdentityRequest):
             for resourceDef in access_data.get("resourceDefinitions", []):
                 if resourceDef.get("key", None) == "group.id":
                     self.assertEqual(resourceDef.get("value"), [None, str(ungrouped_hosts_id)])
+                    break
+
+        # Test that we can retrieve the principal access
+        # and null value is replaced if there is a ungrouped workspace
+        with self.settings(ADD_UNGROUPED_HOSTS_ID=True, REMOVE_NULL_VALUE=True):
+            response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for access_data in response.data.get("data"):
+            for resourceDef in access_data.get("resourceDefinitions", []):
+                if resourceDef.get("key", None) == "group.id":
+                    self.assertEqual(resourceDef.get("value"), [str(ungrouped_hosts_id)])
                     break
 
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_system_role(self):
