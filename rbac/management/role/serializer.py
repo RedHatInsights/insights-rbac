@@ -18,6 +18,7 @@
 """Serializer for role management."""
 from django.conf import settings
 from django.utils.translation import gettext as _
+from internal.utils import get_or_create_ungrouped_workspace
 from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import (
@@ -70,6 +71,16 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
             if error:
                 raise serializers.ValidationError(error)
         return value
+
+    def to_representation(self, instance):
+        """Convert the ResourceDefinition instance to a dictionary."""
+        serialized_data = super().to_representation(instance)
+        if settings.REMOVE_NULL_VALUE:
+            if instance.attributeFilter["key"] == "group.id" and None in instance.attributeFilter["value"]:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                instance.attributeFilter["value"].remove(None)
+                instance.attributeFilter["value"].append(str(ungrouped_hosts.id))
+        return serialized_data
 
     class Meta:
         """Metadata for the serializer."""
