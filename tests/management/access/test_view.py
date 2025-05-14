@@ -241,7 +241,7 @@ class AccessViewTests(IdentityRequest):
             attributeFilter={
                 "key": "group.id",
                 "operation": "in",
-                "value": [None],
+                "value": [None, "uuid"],
             },
             access=access,
             tenant=self.tenant,
@@ -250,14 +250,14 @@ class AccessViewTests(IdentityRequest):
         self.create_policy(policy_name, self.group.uuid, [role_uuid], tenant=self.tenant)
 
         # Test that we can retrieve the principal access and null value is not replaced
-        url = "{}?application={}".format(reverse("v1_management:access"), "")
+        url = f'{reverse("v1_management:access")}?application='
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
                 if resourceDef.get("key", None) == "group.id":
-                    self.assertEqual(resourceDef.get("value"), [None])
+                    self.assertEqual(resourceDef.get("value"), [None, "uuid"])
                     break
 
         # Test that we can retrieve the principal access
@@ -268,7 +268,7 @@ class AccessViewTests(IdentityRequest):
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
                 if resourceDef.get("key", None) == "group.id":
-                    self.assertEqual(resourceDef.get("value"), [None])
+                    self.assertEqual(resourceDef.get("value"), [None, "uuid"])
                     break
 
         # Test that we can retrieve the principal access
@@ -285,7 +285,7 @@ class AccessViewTests(IdentityRequest):
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
                 if resourceDef.get("key", None) == "group.id":
-                    self.assertEqual(resourceDef.get("value"), [None, str(ungrouped_hosts_id)])
+                    self.assertEqual(resourceDef.get("value"), [None, str(ungrouped_hosts_id), "uuid"])
                     break
 
         # Test that we can retrieve the principal access
@@ -296,7 +296,7 @@ class AccessViewTests(IdentityRequest):
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
                 if resourceDef.get("key", None) == "group.id":
-                    self.assertEqual(resourceDef.get("value"), [str(ungrouped_hosts_id)])
+                    self.assertEqual(resourceDef.get("value"), [str(ungrouped_hosts_id), "uuid"])
                     break
 
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_system_role(self):

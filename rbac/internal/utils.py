@@ -95,7 +95,8 @@ def delete_bindings(bindings):
     return info
 
 
-def get_or_create_ungrouped_workspace(tenant):
+@transaction.atomic
+def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
     """
     Retrieve the ungrouped workspace for the given tenant.
 
@@ -104,19 +105,16 @@ def get_or_create_ungrouped_workspace(tenant):
     Returns:
         Workspace: The ungrouped workspace object for the given tenant.
     """
-    ungrouped_hosts = Workspace.objects.select_for_update().filter(tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS)
-    if not ungrouped_hosts.exists():
-        default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-        ungrouped_hosts, _ = Workspace.objects.get_or_create(
-            tenant=tenant,
-            type=Workspace.Types.UNGROUPED_HOSTS,
-            name=Workspace.SpecialNames.UNGROUPED_HOSTS,
-            parent=default,
-        )
-        dual_write_handler = RelationApiDualWriteWorkspaceHandler(
-            ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
-        )
-        dual_write_handler.replicate_new_workspace()
-    else:
-        ungrouped_hosts = ungrouped_hosts.get()
-    return ungrouped_hosts
+    # fetch parent only once
+    default_ws = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+    # single select_for_update + get_or_create
+    workspace, created = Workspace.objects.select_for_update().get_or_create(
+        tenant=tenant,
+        type=Workspace.Types.UNGROUPED_HOSTS,
+        defaults={"name": Workspace.SpecialNames.UNGROUPED_HOSTS, "parent": default_ws},
+    )
+    if created:
+        RelationApiDualWriteWorkspaceHandler(
+            workspace, ReplicationEventType.CREATE_WORKSPACE
+        ).replicate_new_workspace()
+    return workspace
