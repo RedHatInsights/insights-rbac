@@ -21,6 +21,7 @@ import json
 import logging
 import os
 
+from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
 from management.cache import JWTCache
@@ -33,13 +34,13 @@ from api.models import User
 
 logger = logging.getLogger(__name__)
 
-HOST = os.getenv("HOST")
+HOST = settings.REDHAT_STAGE_SSO
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-scopes = os.getenv("SCOPES")
-url = os.getenv("URL")
-grant_type = os.getenv("GRANT_TYPE")
-relations_api_server = os.getenv("relation_api_gRPC_server")
+scopes = settings.SCOPE
+url = settings.OPENID_URL
+grant_type = settings.TOKEN_GRANT_TYPE
+relations_api_server = settings.RELATION_API_SERVER
 JWT = JWTCache()
 
 
