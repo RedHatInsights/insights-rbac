@@ -75,11 +75,14 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
     def to_representation(self, instance):
         """Convert the ResourceDefinition instance to a dictionary."""
         serialized_data = super().to_representation(instance)
-        if settings.REMOVE_NULL_VALUE:
-            if instance.attributeFilter["key"] == "group.id" and None in instance.attributeFilter["value"]:
-                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
-                instance.attributeFilter["value"].remove(None)
-                instance.attributeFilter["value"].append(str(ungrouped_hosts.id))
+        if (
+            settings.REMOVE_NULL_VALUE
+            and instance.attributeFilter["key"] == "group.id"
+            and None in instance.attributeFilter["value"]
+        ):
+            ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+            serialized_data["attributeFilter"]["value"].remove(None)
+            serialized_data["attributeFilter"]["value"].append(str(ungrouped_hosts.id))
         return serialized_data
 
     class Meta:

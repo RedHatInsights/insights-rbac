@@ -183,8 +183,8 @@ class AccessView(APIView):
         queried = False
         for access in response.data["data"]:
             for resource_def in access.get("resourceDefinitions", []):
-                attibute_filter = resource_def.get("attributeFilter", {})
-                if attibute_filter.get("key") == "group.id" and None in attibute_filter.get("value"):
+                attribute_filter = resource_def.get("attributeFilter", {})
+                if attribute_filter.get("key") == "group.id" and None in attribute_filter.get("value"):
                     if not ungrouped_hosts_id and not queried:
                         ungrouped_workspace = Workspace.objects.filter(
                             type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant
@@ -192,8 +192,8 @@ class AccessView(APIView):
                         queried = True
                     if ungrouped_workspace:
                         ungrouped_hosts_id = str(ungrouped_workspace.id)
-                        if ungrouped_hosts_id not in attibute_filter["value"]:
-                            attibute_filter["value"].append(ungrouped_hosts_id)
+                        if ungrouped_hosts_id not in attribute_filter["value"]:
+                            attribute_filter["value"].append(ungrouped_hosts_id)
                         if settings.REMOVE_NULL_VALUE:
-                            attibute_filter["value"].remove(None)
+                            attribute_filter["value"].remove(None)
         return response
