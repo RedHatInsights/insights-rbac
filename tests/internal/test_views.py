@@ -36,6 +36,7 @@ from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ResourceDefinition
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
@@ -2472,16 +2473,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_get_incorrect_string_resource_definition(self):
         """Test that a string attributeFilter cannot have the in operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "in", "value": "value1"},
+            tenant=self.tenant,
+        )
 
         response = self.client.get(
             f"/_private/api/utils/resource_definitions/",
@@ -2516,18 +2515,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_get_incorrect_list_resource_definition(self):
         """Test that a list attributeFilter cannot have the equal operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [
-                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
-            ],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]},
+            tenant=self.tenant,
+        )
 
         response = self.client.get(
             f"/_private/api/utils/resource_definitions/",
@@ -2536,6 +2531,56 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"1 resource definitions would be corrected")
+
+    def test_get_incorrect_resource_definition_with_details(self):
+        """Test we can get list of invalid resource definitions with 'detail=true' query param."""
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        attribute_filter_data = [
+            {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]},
+            {"key": "key2_id", "operation": "in", "value": "value1, value2"},
+            {"key": "key3_id", "operation": "in", "value": "string"},
+        ]
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[0],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[1],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[2],
+            tenant=self.tenant,
+        )
+        # Send the request without 'detail=true' query param
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"3 resource definitions would be corrected")
+
+        # Send the request with 'detail=true' query param
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/?detail=true",
+            **self.internal_request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.json()), 3)
+        for rf_from_response in response.json():
+            for at in attribute_filter_data:
+                if rf_from_response["attributeFilter"]["key"] == at["key"]:
+                    operation = rf_from_response["attributeFilter"]["operation"]
+                    value = rf_from_response["attributeFilter"]["value"]
+                    expected_operation = at["operation"]
+                    expected_value = at["value"]
+                    self.assertEqual(operation, expected_operation)
+                    self.assertEqual(value, expected_value)
 
     def test_patch_correct_string_resource_definition(self):
         """Test patching a string attributeFilter with the equal operation"""
@@ -2568,16 +2613,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_patch_incorrect_string_resource_definition(self):
         """Test patching a string attributeFilter with the in operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "in", "value": "value1"},
+            tenant=self.tenant,
+        )
 
         response = self.client.patch(
             f"/_private/api/utils/resource_definitions/",
@@ -2628,18 +2671,14 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
     def test_patch_incorrect_list_resource_definition(self):
         """Test patching a list attributeFilter with the equal operation"""
-
-        role_name = "roleA"
-
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [
-                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
-            ],
-        }
-
-        response = self.create_role(role_name, headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:*:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]},
+            tenant=self.tenant,
+        )
 
         response = self.client.patch(
             f"/_private/api/utils/resource_definitions/",
@@ -2656,6 +2695,139 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_patch_incorrect_resource_definition_all(self):
+        """Test we can patch all invalid resource definitions."""
+        role_name = "role_A"
+        role = Role.objects.create(name=role_name, tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        attribute_filter_data = [
+            {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]},
+            {"key": "key2_id", "operation": "in", "value": "value1, value2"},
+            {"key": "key3_id", "operation": "in", "value": "string"},
+        ]
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[0],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[1],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[2],
+            tenant=self.tenant,
+        )
+
+        # Send the GET request to check we have fixable resource definitions
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"3 resource definitions would be corrected")
+
+        # Send the PATCH request to fix all resource definitions
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 3 bad resource definitions")
+
+        # Send the GET request to check we don't have fixable resource definitions
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+        # Check the resource definitions were fixed as expected
+        for rf in ResourceDefinition.objects.filter(access__role__name=role_name):
+            if rf.attributeFilter["key"] == "key1_id":
+                operation = rf.attributeFilter["operation"]
+                self.assertEqual(operation, "in")
+            elif rf.attributeFilter["key"] == "key2_id":
+                value = rf.attributeFilter["value"]
+                self.assertIsInstance(value, list)
+                self.assertEqual(len(value), 2)
+                self.assertEqual(value[0], "value1")
+                self.assertEqual(value[1], "value2")
+            elif rf.attributeFilter["key"] == "key3_id":
+                operation = rf.attributeFilter["operation"]
+                self.assertEqual(operation, "equal")
+
+    def test_patch_incorrect_resource_definition_by_id(self):
+        """Test we can patch one invalid resource definitions with 'id' query param."""
+        role_name = "role_A"
+        role = Role.objects.create(name=role_name, tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        attribute_filter_data = [
+            {"key": "key1_id", "operation": "equal", "value": ["value1", "value2"]},
+            {"key": "key2_id", "operation": "in", "value": "value1, value2"},
+            {"key": "key3_id", "operation": "in", "value": "string"},
+        ]
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[0],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[1],
+            tenant=self.tenant,
+        )
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=attribute_filter_data[2],
+            tenant=self.tenant,
+        )
+
+        # Send the GET request to get details resource definitions ids
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/?detail=true",
+            **self.internal_request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        resource_definitions_ids = [rf["id"] for rf in response.json()]
+
+        # Send the PATCH request with 'id' query parameter to fix only 1 resource definition
+        for rf_id in resource_definitions_ids:
+            response = self.client.patch(
+                f"/_private/api/utils/resource_definitions/?id={rf_id}",
+                **self.internal_request.META,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.content.decode(), f"Resource definition id = {rf_id} updated.")
+
+        # Send the PATCH request to fix all resource definitions
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 0 bad resource definitions")
+
+        # Check the resource definitions were fixed as expected
+        for rf in ResourceDefinition.objects.filter(access__role__name=role_name):
+            if rf.attributeFilter["key"] == "key1_id":
+                operation = rf.attributeFilter["operation"]
+                self.assertEqual(operation, "in")
+            elif rf.attributeFilter["key"] == "key2_id":
+                value = rf.attributeFilter["value"]
+                self.assertIsInstance(value, list)
+                self.assertEqual(len(value), 2)
+                self.assertEqual(value[0], "value1")
+                self.assertEqual(value[1], "value2")
+            elif rf.attributeFilter["key"] == "key3_id":
+                operation = rf.attributeFilter["operation"]
+                self.assertEqual(operation, "equal")
 
     def test_bootstrap_pending_tenants(self):
         tenant = Tenant.objects.create(org_id="111", account_id="111")
@@ -2677,9 +2849,10 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
 class InternalS2SViewsetTests(IdentityRequest):
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
-    def test_create_ungrouped_workspace(self, replicate):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_create_ungrouped_workspace(self, replicate, replicate_workspace):
         tuples = InMemoryTuples()
         replicator = InMemoryRelationReplicator(tuples)
         replicate.side_effect = replicator.replicate
@@ -2718,6 +2891,10 @@ class InternalS2SViewsetTests(IdentityRequest):
             )
         )
         self.assertEqual(len(ungrouped_host_relation), 1)
+        workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.org_id, org_id)
+        self.assertEqual(workspace_event.event_type, ReplicationEventType.CREATE_WORKSPACE)
+        self.assertEqual(workspace_event.workspace["type"], str(Workspace.Types.UNGROUPED_HOSTS))
 
         # Get existing ungrouped workspace
         response = self.client.get(
@@ -2726,6 +2903,6 @@ class InternalS2SViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         ungrouped_hosts.pop("modified")
-        data = response.json()
-        data.pop("modified")
-        self.assertEqual(data, ungrouped_hosts)
+        payload_get = response.json()
+        payload_get.pop("modified")
+        self.assertEqual(ungrouped_hosts, payload_get)

@@ -78,7 +78,11 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
             relations.append(relation_tuple)
         if "app_all_read" in role_binding.role.permissions:
             relation_tuple = relation_api_tuple(
-                "workspace", default_workspace_id, "binding", "role_binding", role_binding.id
+                "workspace",
+                default_workspace_id,
+                "binding",
+                "role_binding",
+                role_binding.id,
             )
             relations.append(relation_tuple)
         else:
@@ -87,7 +91,14 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
     return relations
 
 
-def relation_api_tuple(resource_type, resource_id, relation, subject_type, subject_id, subject_relation=None):
+def relation_api_tuple(
+    resource_type,
+    resource_id,
+    relation,
+    subject_type,
+    subject_id,
+    subject_relation=None,
+):
     """Helper function for creating a relation tuple in json."""
     return {
         "resource": relation_api_resource(resource_type, resource_id),
@@ -122,11 +133,23 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
-        sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
+        sys_role_config = {
+            "name": "system_role",
+            "display_name": "system_display",
+            "system": True,
+        }
 
-        sys_pub_role_config = {"name": "system_public_role", "display_name": "system_public_display", "system": True}
+        sys_pub_role_config = {
+            "name": "system_public_role",
+            "display_name": "system_public_display",
+            "system": True,
+        }
 
-        def_role_config = {"name": "default_role", "display_name": "default_display", "platform_default": True}
+        def_role_config = {
+            "name": "default_role",
+            "display_name": "default_display",
+            "platform_default": True,
+        }
 
         admin_def_role_config = {
             "name": "admin_default_role",
@@ -195,7 +218,13 @@ class RoleViewsetTests(IdentityRequest):
         self.ext_tenant = ExtTenant.objects.create(name="foo")
         self.ext_role_relation = ExtRoleRelation.objects.create(role=self.defRole, ext_tenant=self.ext_tenant)
 
-        self.policy.roles.add(self.defRole, self.sysRole, self.adminRole, self.platformAdminRole, self.sysPubRole)
+        self.policy.roles.add(
+            self.defRole,
+            self.sysRole,
+            self.adminRole,
+            self.platformAdminRole,
+            self.sysPubRole,
+        )
         self.policy.save()
 
         self.policyTwo.roles.add(self.platformAdminRole)
@@ -247,14 +276,24 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}
+                    {
+                        "attributeFilter": {
+                            "key": "key1.id",
+                            "operation": "equal",
+                            "value": "value1",
+                        }
+                    }
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
         ]
         if in_access_data is not None:
             access_data = in_access_data
-        test_data = {"name": role_name, "display_name": role_display, "access": access_data}
+        test_data = {
+            "name": role_name,
+            "display_name": role_display,
+            "access": access_data,
+        }
 
         # create a role
         client = APIClient()
@@ -295,7 +334,13 @@ class RoleViewsetTests(IdentityRequest):
                 {
                     "permission": "app:*:*",
                     "resourceDefinitions": [
-                        {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                        {
+                            "attributeFilter": {
+                                "key": "keyA.id",
+                                "operation": "equal",
+                                "value": "valueA",
+                            }
+                        }
                     ],
                 },
                 {"permission": "app:*:read", "resourceDefinitions": []},
@@ -374,7 +419,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "group.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "group.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
@@ -388,7 +439,11 @@ class RoleViewsetTests(IdentityRequest):
         to_add = actual_sorted["relations_to_add"]
 
         self.assertEqual([], actual_sorted["relations_to_remove"])
-        self.assertEqual(3, len(to_add), "too many relations (should not add relations for excluded resource)")
+        self.assertEqual(
+            3,
+            len(to_add),
+            "too many relations (should not add relations for excluded resource)",
+        )
 
         role_binding = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role_binding")["resource"][
             "id"
@@ -414,7 +469,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
@@ -450,7 +511,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": self.permission.permission,
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -470,14 +537,20 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_create_role_invalid_permission(self):
         """Test that creating a role with invalid access permission returns an error."""
-        test_data = {"name": "role1", "access": [{"permission": "foo:bar", "resourceDefinitions": []}]}
+        test_data = {
+            "name": "role1",
+            "access": [{"permission": "foo:bar", "resourceDefinitions": []}],
+        }
         client = APIClient()
         response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_empty_application_in_permission(self):
         """Test that creating a role with empty application in access permission returns an error."""
-        test_data = {"name": "role1", "access": [{"permission": ":foo:bar", "resourceDefinitions": []}]}
+        test_data = {
+            "name": "role1",
+            "access": [{"permission": ":foo:bar", "resourceDefinitions": []}],
+        }
         client = APIClient()
         response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -489,7 +562,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "cost-management:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -514,7 +593,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "someApp:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -527,7 +612,13 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": {"attributeFilter": {"key": "keyA.id", "operation": "in", "foo": "valueA"}},
+                "resourceDefinitions": {
+                    "attributeFilter": {
+                        "key": "keyA.id",
+                        "operation": "in",
+                        "foo": "valueA",
+                    }
+                },
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -540,7 +631,15 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "in", "foo": "valueA"}}],
+                "resourceDefinitions": [
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "in",
+                            "foo": "valueA",
+                        }
+                    }
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -553,7 +652,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "cost-management:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "boop", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "boop",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -568,13 +673,22 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": permission,
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            f"Permission does not exist: {permission}",
+        )
 
     def test_create_role_fail_with_access_not_list(self):
         """Test that we cannot create a role for a non-allow_listed app."""
@@ -900,7 +1014,10 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get(groups_in)[0]["description"])
 
         # make sure created role exists in result set and has correct values
-        created_role = next((iterRole for iterRole in response_data if iterRole["name"] == custom_role_name), None)
+        created_role = next(
+            (iterRole for iterRole in response_data if iterRole["name"] == custom_role_name),
+            None,
+        )
         self.assertIsNotNone(created_role)
         self.assertEqual(created_role[groups_in_count], 1)
         self.assertEqual(created_role[groups_in][0]["name"], custom_group_name)
@@ -996,7 +1113,10 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get(groups_in)[0]["description"])
 
         # make sure created role exists in result set and has correct values
-        created_role = next((iterRole for iterRole in response_data if iterRole["name"] == custom_role_name), None)
+        created_role = next(
+            (iterRole for iterRole in response_data if iterRole["name"] == custom_role_name),
+            None,
+        )
         self.assertIsNotNone(created_role)
         self.assertEqual(created_role[groups_in_count], 1)
         self.assertEqual(created_role[groups_in][0]["name"], custom_group_name)
@@ -1005,7 +1125,11 @@ class RoleViewsetTests(IdentityRequest):
         #       * custom group 'NewGroupForJohn' or
         #       * 'Default access' group
         #       * 'Default admin access' group
-        groups = [default_access_group_name, default_admin_access_group_name, custom_group_name]
+        groups = [
+            default_access_group_name,
+            default_admin_access_group_name,
+            custom_group_name,
+        ]
         for role in response_data:
             for group in role[groups_in]:
                 self.assertIn(group["name"], groups)
@@ -1078,13 +1202,19 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get("groups_in")[0]["description"])
 
         # make sure created role exists in result set and has correct values
-        created_role = next((iterRole for iterRole in response_data if iterRole["name"] == role_name), None)
+        created_role = next(
+            (iterRole for iterRole in response_data if iterRole["name"] == role_name),
+            None,
+        )
         self.assertIsNotNone(created_role)
         self.assertEqual(created_role["groups_in_count"], 1)
         self.assertEqual(created_role["groups_in"][0]["name"], group_name)
 
         # make sure a default role exists in result set and has correct values
-        default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
+        default_role = next(
+            (iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name),
+            None,
+        )
         self.assertIsNotNone(default_role)
         self.assertEqual(default_role["groups_in_count"], 1)
         self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
@@ -1119,13 +1249,19 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get("groups_in")[0]["description"])
 
         # make sure a default role exists in result set and has correct values
-        default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
+        default_role = next(
+            (iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name),
+            None,
+        )
         self.assertIsNotNone(default_role)
         self.assertEqual(default_role["groups_in_count"], 1)
         self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
         # make sure an admin role exists in result set and has correct values
-        admin_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.adminRole.name), None)
+        admin_role = next(
+            (iterRole for iterRole in response_data if iterRole["name"] == self.adminRole.name),
+            None,
+        )
         self.assertIsNotNone(admin_role)
         self.assertEqual(admin_role["groups_in_count"], 1)
         self.assertEqual(admin_role["groups_in"][0]["name"], self.group.name)
@@ -1265,7 +1401,11 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.patch(
             url,
-            {"name": updated_name, "display_name": updated_name, "description": updated_description},
+            {
+                "name": updated_name,
+                "display_name": updated_name,
+                "description": updated_description,
+            },
             format="json",
             **self.headers,
         )
@@ -1305,7 +1445,12 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.patch(
             url,
-            {"name": updated_name, "display_name": updated_name, "description": updated_description, "foo": "bar"},
+            {
+                "name": updated_name,
+                "display_name": updated_name,
+                "description": updated_description,
+                "foo": "bar",
+            },
             format="json",
             **self.headers,
         )
@@ -1398,7 +1543,11 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.put(
             url,
-            {"name": "updated_name", "display_name": "updated_name", "description": "updated_description"},
+            {
+                "name": "updated_name",
+                "display_name": "updated_name",
+                "description": "updated_description",
+            },
             format="json",
             **self.headers,
         )
@@ -1412,7 +1561,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "cost-management:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -1438,7 +1593,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
@@ -1448,7 +1609,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
@@ -1480,7 +1647,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "cost-management:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -1489,7 +1662,11 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         test_data = response.data
         test_data.get("access")[0]["resourceDefinitions"] = {
-            "attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}
+            "attributeFilter": {
+                "key": "keyA.id",
+                "operation": "equal",
+                "value": "valueA",
+            }
         }
 
         # Test update failure
@@ -1506,7 +1683,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "cost-management:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -1522,7 +1705,8 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            str(response.data["errors"][0]["detail"]), "attributeFilter operation must be one of ['in', 'equal']"
+            str(response.data["errors"][0]["detail"]),
+            "attributeFilter operation must be one of ['in', 'equal']",
         )
 
     def test_update_role_permission_does_not_exist_fail(self):
@@ -1534,7 +1718,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "cost-management:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             }
         ]
@@ -1550,7 +1740,10 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            f"Permission does not exist: {permission}",
+        )
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_delete_role(self, mock_method):
@@ -1560,7 +1753,13 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": "valueA",
+                        }
+                    }
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
@@ -1694,13 +1893,23 @@ class RoleViewsetTests(IdentityRequest):
                 "admin_default": True,
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}
+                    {
+                        "attributeFilter": {
+                            "key": "key1.id",
+                            "operation": "equal",
+                            "value": "value1",
+                        }
+                    }
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
         ]
 
-        test_data = {"name": "role_name", "display_name": "role_display", "access": access_data}
+        test_data = {
+            "name": "role_name",
+            "display_name": "role_display",
+            "access": access_data,
+        }
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["errors"][0]["detail"], "System roles may not be updated.")
@@ -1791,7 +2000,62 @@ class RoleViewsetTests(IdentityRequest):
         # Try to create the same role again
         response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Role '{name}' already exists for a tenant.")
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            f"Role '{name}' already exists for a tenant.",
+        )
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="someApp")
+    def test_create_role_with_invalid_equals_operation(self):
+        """Test that we cannot create a role when a List value is paired with the 'equal' operation."""
+        role_name = "roleFail"
+        Permission.objects.create(
+            application="someApp",
+            resource_type="*",
+            verb="*",
+            permission="someApp:*:*",
+            tenant=self.tenant,
+        )
+        access_data = [
+            {
+                "permission": "someApp:*:*",
+                "resourceDefinitions": [
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "equal",
+                            "value": ["value1", "value2"],
+                        }
+                    }
+                ],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
+        self.assertEqual(
+            response.data["errors"][0]["detail"], "attributeFilter operation 'equal' expects a String value"
+        )
+
+    def test_create_role_with_invalid_in_operation(self):
+        """Test that we cannot create a role when a String value is paired with the 'in' operation."""
+        role_name = "roleFail"
+        access_data = [
+            {
+                "permission": "someApp:*:*",
+                "resourceDefinitions": [
+                    {
+                        "attributeFilter": {
+                            "key": "keyA.id",
+                            "operation": "in",
+                            "value": "123456",
+                        }
+                    }
+                ],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
+        self.assertEqual(response.data["errors"][0]["detail"], "attributeFilter operation 'in' expects a List value")
 
 
 class RoleViewNonAdminTests(IdentityRequest):
@@ -1862,7 +2126,10 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         request_context_user_based_principal = self._create_request_context(
             customer_data=customer_data,
-            user_data={"username": self.user_based_principal.username, "email": "test@email.com"},
+            user_data={
+                "username": self.user_based_principal.username,
+                "email": "test@email.com",
+            },
             is_org_admin=False,
         )
         self.headers_user_based_principal = request_context_user_based_principal["request"].META
@@ -1914,7 +2181,11 @@ class RoleViewNonAdminTests(IdentityRequest):
         """Create a group with a 'User Access administrator' role."""
         # Create a group with 'User Access administrator' role
         rbac_admin_permission = Permission.objects.create(
-            application="rbac", permission="rbac:*:*", resource_type="*", verb="*", tenant=tenant
+            application="rbac",
+            permission="rbac:*:*",
+            resource_type="*",
+            verb="*",
+            tenant=tenant,
         )
         user_access_administrator_role = Role.objects.create(
             admin_default=True,
@@ -1924,7 +2195,11 @@ class RoleViewNonAdminTests(IdentityRequest):
             system=True,
             tenant=tenant,
         )
-        Access.objects.create(permission=rbac_admin_permission, role=user_access_administrator_role, tenant=tenant)
+        Access.objects.create(
+            permission=rbac_admin_permission,
+            role=user_access_administrator_role,
+            tenant=tenant,
+        )
         rbac_admin_group = Group.objects.create(
             admin_default=False,
             description="A group with the 'User Access administrator' role",
@@ -1934,7 +2209,10 @@ class RoleViewNonAdminTests(IdentityRequest):
             tenant=tenant,
         )
         policy_for_rbac_admin_group = Policy.objects.create(
-            group=rbac_admin_group, name="Policy for rbac_admin_group", system=True, tenant=tenant
+            group=rbac_admin_group,
+            name="Policy for rbac_admin_group",
+            system=True,
+            tenant=tenant,
         )
         policy_for_rbac_admin_group.roles.add(user_access_administrator_role)
         return rbac_admin_group
@@ -2135,12 +2413,21 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, test_data, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), "Custom roles cannot be created for rbac")
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            "Custom roles cannot be created for rbac",
+        )
 
         response = client.post(url, test_data, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), "Custom roles cannot be created for rbac")
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            "Custom roles cannot be created for rbac",
+        )
 
         response = client.post(url, test_data, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), "Custom roles cannot be created for rbac")
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            "Custom roles cannot be created for rbac",
+        )

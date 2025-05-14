@@ -49,6 +49,19 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
             message = f"attributeFilter operation must be one of {ALLOWED_OPERATIONS}"
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
+        else:
+            values = value.get("value")
+            error = False
+            if op == "in" and not isinstance(values, list):
+                key = "format"
+                message = "attributeFilter operation 'in' expects a List value"
+                error = {key: [_(message)]}
+            elif op == "equal" and not isinstance(values, str):
+                key = "format"
+                message = "attributeFilter operation 'equal' expects a String value"
+                error = {key: [_(message)]}
+            if error:
+                raise serializers.ValidationError(error)
         return value
 
     class Meta:
