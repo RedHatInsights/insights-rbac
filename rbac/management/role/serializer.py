@@ -80,11 +80,10 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
     def to_representation(self, instance):
         """Representation of ResourceDefinitions."""
         data = super().to_representation(instance)
-        if settings.WORKSPACE_HIERARCHY_ENABLED is not True:
-            return data
-
-        if self._is_workspace_filter(instance):
-            data.get("attributeFilter").update({"value": self._original_vals_and_descendant_ids(instance)})
+        if self._should_add_hierarchy(instance):
+            data.get("attributeFilter").update(
+                {"operation": "in", "value": self._original_vals_and_descendant_ids(instance)}
+            )
         return data
 
     def _original_vals_and_descendant_ids(self, instance):
@@ -93,6 +92,11 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         non_uuids = [val for val in attr_filter_list if not is_valid_uuid(val)]
         ids_with_parents = Workspace.objects.descendant_ids_with_parents(uuids, instance.tenant_id)
         return list(set(non_uuids + ids_with_parents))
+
+    def _should_add_hierarchy(self, instance):
+        hierarchy_enabled = settings.WORKSPACE_HIERARCHY_ENABLED is True
+        is_access_request = self.context.get("for_access") is True
+        return hierarchy_enabled and is_access_request and self._is_workspace_filter(instance)
 
     def _is_workspace_filter(self, instance):
         is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
