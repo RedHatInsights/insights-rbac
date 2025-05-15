@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Service for workspace management."""
+import uuid
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from management.models import Workspace
@@ -37,6 +39,7 @@ class WorkspaceService:
                     default = Workspace.objects.default(tenant=request_tenant)
                     parent_id = default.id
                 parent = Workspace.objects.get(id=parent_id)
+                self._enforce_hierarchy_depth(parent_id, request_tenant)
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
                 dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE
@@ -58,10 +61,15 @@ class WorkspaceService:
         """Update workspace."""
         if instance.type in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
             raise serializers.ValidationError(f"The {instance.type} workspace cannot be updated.")
+        parent_id = None
         for attr, value in validated_data.items():
+            if attr == "parent_id":
+                parent_id = value
             if self._parent_id_attr_update(attr, value, instance):
                 raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
             setattr(instance, attr, value)
+        if parent_id is not None:
+            self._enforce_hierarchy_depth(parent_id, instance.tenant)
         instance.save()
         dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
         dual_write_handler.replicate_updated_workspace(instance.parent)
@@ -81,3 +89,24 @@ class WorkspaceService:
     def _parent_id_attr_update(self, attr: str, value: str, instance: Workspace) -> bool:
         """Determine if the attribute being updated is parent_id."""
         return attr == "parent_id" and instance.parent_id != value
+
+    def _enforce_hierarchy_depth(self, parent_id: uuid.UUID, tenant: Tenant) -> None:
+        if self._exceeds_depth_limit(parent_id, tenant):
+            message = f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep."
+            error = {"workspace": [message]}
+            raise serializers.ValidationError(error)
+        if self._violates_peer_restrictions(parent_id, tenant):
+            message = "Sub-workspaces may only be created under the default workspace."
+            error = {"workspace": [message]}
+            raise serializers.ValidationError(error)
+
+    def _violates_peer_restrictions(self, parent_id: uuid.UUID, tenant: Tenant) -> bool:
+        target_root_workspace = Workspace.objects.root(tenant=tenant)
+        if settings.WORKSPACE_RESTRICT_DEFAULT_PEERS and str(target_root_workspace.id) == str(parent_id):
+            return True
+        return False
+
+    def _exceeds_depth_limit(self, parent_id: uuid.UUID, tenant: Tenant) -> bool:
+        target_parent_workspace = Workspace.objects.get(id=parent_id, tenant=tenant)
+        max_depth_for_workspace = len(target_parent_workspace.ancestors()) + 1
+        return max_depth_for_workspace > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT
