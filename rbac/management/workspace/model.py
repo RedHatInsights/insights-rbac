@@ -77,7 +77,7 @@ class Workspace(TenantAwareModel):
         """Validate the model."""
         if self.type == self.Types.ROOT:
             if self.parent is not None:
-                raise ValidationError({"root_parent": "Root workspace must not have a parent."})
+                raise serializers.ValidationError({"root_parent": "Root workspace must not have a parent."})
         elif self.parent is None:
             if self.type == self.Types.STANDARD:
                 if self.parent_id is None:
@@ -87,9 +87,9 @@ class Workspace(TenantAwareModel):
             else:
                 raise ValidationError({"workspace": f"{self.type} workspaces must have a parent workspace."})
         elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
-            raise ValidationError({"default_parent": "Default workspace must have a root parent."})
+            raise serializers.ValidationError({"default_parent": "Default workspace must have a root parent."})
         elif self.id == self.parent_id:
-            raise serializers.ValidationError({"parent_id": ("The parent_id and id values must not be the same.")})
+            raise serializers.ValidationError({"parent_id": "The parent_id and id values must not be the same."})
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
