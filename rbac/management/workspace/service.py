@@ -56,6 +56,8 @@ class WorkspaceService:
 
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
         """Update workspace."""
+        if instance.type in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
+            raise serializers.ValidationError(f"The {instance.type} workspace cannot be updated.")
         for attr, value in validated_data.items():
             if self._parent_id_attr_update(attr, value, instance):
                 raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
