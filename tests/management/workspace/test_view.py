@@ -57,7 +57,9 @@ class WorkspaceViewTests(IdentityRequest):
 
 
 @override_settings(V2_APIS_ENABLED=True)
-class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
+class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
+    """Tests for create/update/delete workspaces."""
+
     def setUp(self):
         super().setUp()
         self.root_workspace = Workspace.objects.create(
@@ -69,6 +71,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             tenant=self.tenant,
             type=Workspace.Types.DEFAULT,
             name="Default Workspace",
+            description="Default Description",
             parent_id=self.root_workspace.id,
         )
         self.standard_workspace = Workspace.objects.create(
@@ -77,6 +80,13 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             tenant=self.tenant,
             parent=self.default_workspace,
             type=Workspace.Types.STANDARD,
+        )
+        self.ungrouped_workspace = Workspace.objects.create(
+            name="Ungrouped Hosts Workspace",
+            description="Ungrouped Hosts Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.UNGROUPED_HOSTS,
         )
         self.tuples = InMemoryTuples()
         self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
@@ -438,6 +448,154 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_update_root_workspace_parent_id_fail(self):
+        """Test we cannot update parent id for root workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+
+        # Test with not existing uuid, with root workspace's own id, with existing workspace id
+        invalid_id = "a5b82afe-a74a-4d4d-98e5-f49ea78e5910"
+        root_id = self.root_workspace.id
+        workspace_data = {
+            "name": "Workspace name",
+            "description": "Workspace description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.standard_workspace.id,
+        }
+        standard_workspace = Workspace.objects.create(**workspace_data)
+        standard_id = standard_workspace.id
+
+        for ws_id in invalid_id, root_id, standard_id:
+            test_data = {"name": "New Workspace Name", "parent_id": ws_id}
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            resp_body = json.loads(response.content.decode())
+            self.assertEqual(resp_body.get("detail"), "The root workspace cannot be updated.")
+
+    def test_update_root_workspace_name_description_fail(self):
+        """Test we cannot update name and/or description for root workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+
+        # Test data cases:
+        #    - name and description update,
+        #    - only name update
+        #    - only description update (name without change but must be present because the field is required)
+        test_data_cases = [
+            {"name": "New name", "description": "New description"},
+            {"name": "New name"},
+            {"name": self.root_workspace.name, "description": "New description"},
+        ]
+
+        for test_data in test_data_cases:
+            for method in ("put", "patch"):  # try to update via PUT and PATCH endpoint
+                response = getattr(client, method)(url, test_data, format="json", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                resp_body = json.loads(response.content.decode())
+                self.assertEqual(resp_body.get("detail"), "The root workspace cannot be updated.")
+
+    def test_update_ungrouped_workspace_parent_id_fail(self):
+        """Test we cannot update parent id for ungrouped workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.ungrouped_workspace.id})
+
+        # Test with not existing uuid, with ungrouped workspace's own id, with existing workspace id
+        invalid_id = "a5b82afe-a74a-4d4d-98e5-f49ea78e5910"
+        ungrouped_id = self.ungrouped_workspace.id
+        workspace_data = {
+            "name": "Workspace name",
+            "description": "Workspace description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.standard_workspace.id,
+        }
+        standard_workspace = Workspace.objects.create(**workspace_data)
+        standard_id = standard_workspace.id
+
+        for ws_id in invalid_id, ungrouped_id, standard_id:
+            test_data = {"name": "New Workspace Name", "parent_id": ws_id}
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            resp_body = json.loads(response.content.decode())
+            self.assertEqual(resp_body.get("detail"), "The ungrouped-hosts workspace cannot be updated.")
+
+    def test_update_ungrouped_workspace_name_description_fail(self):
+        """Test we cannot update name and/or description for ungrouped workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.ungrouped_workspace.id})
+
+        # Test data cases:
+        #    - name and description update,
+        #    - only name update
+        #    - only description update (name without change but must be present because the field is required)
+        test_data_cases = [
+            {"name": "New name", "description": "New description"},
+            {"name": "New name"},
+            {"name": self.root_workspace.name, "description": "New description"},
+        ]
+
+        for test_data in test_data_cases:
+            for method in ("put", "patch"):  # try to update via PUT and PATCH endpoint
+                response = getattr(client, method)(url, test_data, format="json", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                resp_body = json.loads(response.content.decode())
+                self.assertEqual(resp_body.get("detail"), "The ungrouped-hosts workspace cannot be updated.")
+
+    def test_update_default_workspace_parent_id_fail(self):
+        """Test we cannot update parent id for default workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
+
+        # Test with not existing uuid, default workspace's id, existing workspace id
+        invalid_id = "a5b82afe-a74a-4d4d-98e5-f49ea78e5910"
+        default_id = self.default_workspace.id
+        workspace_data = {
+            "name": "Workspace name",
+            "description": "Workspace description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.standard_workspace.id,
+        }
+        standard_workspace = Workspace.objects.create(**workspace_data)
+        standard_id = standard_workspace.id
+
+        print("root", self.root_workspace.id)
+        for ws_id in invalid_id, default_id, standard_id:
+            print(ws_id)
+            test_data = {"name": "New Workspace Name", "parent_id": ws_id}
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            resp_body = json.loads(response.content.decode())
+            self.assertEqual(resp_body.get("detail"), "Can't update the 'parent_id' on a workspace directly")
+
+    def test_update_default_workspace_name_description(self):
+        """Test we can update name and/or description for default workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
+
+        # Test data cases:
+        #    - name and description update,
+        #    - only name update
+        #    - only description update (name without change but must be present because the field is required)
+        test_data_cases = [
+            {"name": "New name", "description": "New description"},
+            {"name": "New name", "description": self.default_workspace.description},
+            {"name": self.default_workspace.name, "description": "New description"},
+        ]
+
+        for test_data in test_data_cases:
+            for method in ("put", "patch"):  # try to update via PUT and PATCH endpoint
+                response = getattr(client, method)(url, test_data, format="json", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                resp_body = response.json()
+                self.assertEqual(resp_body.get("id"), str(self.default_workspace.id))
+                self.assertEqual(resp_body.get("name"), test_data["name"])
+                self.assertEqual(resp_body.get("description"), test_data["description"])
+                self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
+                self.assertEqual(resp_body.get("parent_id"), str(self.default_workspace.parent_id))
+
+                # After test set the default values back
+                self.default_workspace.name = "Default"
+                self.default_workspace.description = "Default description"
+
     def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
         root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
@@ -665,13 +823,13 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(detail, "Unable to delete due to workspace dependencies")
 
     def test_delete_workspace_with_non_standard_types(self):
+        """Test the non-standard (root, default, ungrouped-hosts) workspaces cannot be deleted."""
+        client = APIClient()
         # Root workspace can't be deleted
         url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
-        client = APIClient()
         test_headers = self.headers.copy()
         test_headers["HTTP_ACCEPT"] = "application/problem+json"
         response = client.delete(url, None, format="json", **test_headers)
-
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         detail = response.data.get("detail")
         self.assertEqual(detail, "Unable to delete root workspace")
@@ -683,9 +841,16 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         detail = response.data.get("detail")
         self.assertEqual(detail, "Unable to delete default workspace")
 
+        # Ungrouped workspace can't be deleted
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.ungrouped_workspace.id})
+        response = client.delete(url, None, format="json", **test_headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Unable to delete ungrouped-hosts workspace")
+
 
 @override_settings(V2_APIS_ENABLED=True)
-class TestsList(WorkspaceViewTests):
+class WorkspaceTestsList(WorkspaceViewTests):
     """Tests for listing workspaces."""
 
     def setUp(self):

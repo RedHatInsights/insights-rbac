@@ -21,6 +21,7 @@ from tests.identity_request import IdentityRequest
 
 from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
+from rest_framework import serializers
 
 
 class WorkspaceBaseTestCase(IdentityRequest):
@@ -290,7 +291,7 @@ class Types(WorkspaceBaseTestCase):
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
 
         default = Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
-        with self.assertRaises(ValidationError) as assertion:
+        with self.assertRaises(serializers.ValidationError) as assertion:
             root.parent = default
             root.save()
             self.assertEqual(
