@@ -49,8 +49,8 @@ class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
     """Tests for the create method"""
 
     def test_create_unique_per_parent(self):
-        """Test the create method handles other validation errors"""
-        validated_data = {"name": "Standard Child", "parent_id": self.standard_workspace.id}
+        """Test the create method enforces name uniqueness per tenant"""
+        validated_data = {"name": "Standard", "parent_id": self.default_workspace.id}
         with self.assertRaises(serializers.ValidationError) as context:
             self.service.create(validated_data, self.tenant)
         self.assertIn("Can't create workspace with same name within same parent workspace", str(context.exception))
@@ -63,7 +63,7 @@ class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
 
     def test_create_success_with_parent_id(self):
         """Test the create method successfully with a parent"""
-        validated_data = {"name": "Unique Standard Child", "parent_id": self.standard_workspace.id}
+        validated_data = {"name": "Unique Standard Child", "parent_id": self.default_workspace.id}
         workspace = self.service.create(validated_data, self.tenant)
         self.assertEqual(workspace.tenant, self.tenant)
 
