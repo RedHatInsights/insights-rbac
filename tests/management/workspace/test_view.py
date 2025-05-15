@@ -438,6 +438,56 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_update_root_workspace_fail(self):
+        """Test we cannot update parent id for root workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+
+        # Test with not existing uuid, with root workspace's own id, with existing workspace id
+        invalid_id = "a5b82afe-a74a-4d4d-98e5-f49ea78e5910"
+        root_id = self.root_workspace.id
+        workspace_data = {
+            "name": "Workspace name",
+            "description": "Workspace description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.standard_workspace.id,
+        }
+        standard_workspace = Workspace.objects.create(**workspace_data)
+        standard_id = standard_workspace.id
+
+        for ws_id in invalid_id, root_id, standard_id:
+            test_data = {"name": "New Workspace Name", "parent_id": ws_id}
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            resp_body = json.loads(response.content.decode())
+            self.assertEqual(resp_body.get("detail"), "Can't update the 'parent_id' on a workspace directly")
+
+    def test_update_default_workspace_fail(self):
+        """Test we cannot update parent id for default workspace."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
+
+        # Test with not existing uuid, default workspace's id, existing workspace id
+        invalid_id = "a5b82afe-a74a-4d4d-98e5-f49ea78e5910"
+        default_id = self.default_workspace.id
+        workspace_data = {
+            "name": "Workspace name",
+            "description": "Workspace description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.standard_workspace.id,
+        }
+        standard_workspace = Workspace.objects.create(**workspace_data)
+        standard_id = standard_workspace.id
+
+        print("root", self.root_workspace.id)
+        for ws_id in invalid_id, default_id, standard_id:
+            print(ws_id)
+            test_data = {"name": "New Workspace Name", "parent_id": ws_id}
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            resp_body = json.loads(response.content.decode())
+            self.assertEqual(resp_body.get("detail"), "Can't update the 'parent_id' on a workspace directly")
+
     def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
         root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
