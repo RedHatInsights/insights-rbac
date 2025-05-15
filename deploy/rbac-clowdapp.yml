@@ -538,6 +538,10 @@ objects:
             value: ${V2_READ_ONLY_API_MODE}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
+          - name: ADD_UNGROUPED_HOSTS_ID
+            value: ${ADD_UNGROUPED_HOSTS_ID}
+          - name: REMOVE_NULL_VALUE
+            value: ${REMOVE_NULL_VALUE}
 
     jobs:
       - name: tenant-org-id-populator
@@ -1366,3 +1370,9 @@ parameters:
 - name: RBAC_HBI_S3_AWS_BUCKET
   description: The bucket name for accessing HBI S3
   value: 'hbi-kessel-s3-stage'
+- name: ADD_UNGROUPED_HOSTS_ID
+  description: Add ungrouped hosts workspace id in addition to null
+  value: 'False'
+- name: REMOVE_NULL_VALUE
+  description: Remove null value from the list of workspace id
+  value: 'False'
