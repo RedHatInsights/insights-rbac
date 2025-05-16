@@ -557,9 +557,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         standard_workspace = Workspace.objects.create(**workspace_data)
         standard_id = standard_workspace.id
 
-        print("root", self.root_workspace.id)
         for ws_id in invalid_id, default_id, standard_id:
-            print(ws_id)
             test_data = {"name": "New Workspace Name", "parent_id": ws_id}
             response = client.put(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
