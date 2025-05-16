@@ -19,6 +19,7 @@ import uuid_utils.compat as uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
+from django.db.models.expressions import RawSQL
 from django.db.models.functions import Upper
 from django.utils import timezone
 from management.managers import WorkspaceManager
@@ -92,13 +93,7 @@ class Workspace(TenantAwareModel):
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
-        ancestor_ids = [a.id for a in self._ancestry_queryset() if a.id != self.id]
-        ancestors = Workspace.objects.filter(id__in=ancestor_ids)
-        return ancestors
-
-    def _ancestry_queryset(self):
-        """Return a raw queryset on the workspace model for ancestors."""
-        return Workspace.objects.raw(
+        sql = (
             """
             WITH RECURSIVE ancestors AS
               (SELECT id,
@@ -111,6 +106,7 @@ class Workspace(TenantAwareModel):
                JOIN ancestors a ON w.id = a.parent_id)
             SELECT id
             FROM ancestors
+            WHERE id != %s
         """,
-            [self.id],
         )
+        return Workspace.objects.filter(id__in=RawSQL(sql, [self.id, self.id]))
