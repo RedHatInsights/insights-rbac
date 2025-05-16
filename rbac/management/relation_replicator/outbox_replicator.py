@@ -61,6 +61,7 @@ class WorkspaceEventPayload(TypedDict):
     """Typed dictionary for WorkspaceEvent payload."""
 
     org_id: str
+    account_number: str
     workspace: Dict[str, str]
     operation: str
 
@@ -80,7 +81,10 @@ class OutboxReplicator(RelationReplicator):
     def replicate_workspace(self, event: WorkspaceEvent):
         """Replicate the event of workspace."""
         payload = WorkspaceEventPayload(
-            org_id=event.org_id, workspace=event.workspace, operation=OPERATION_MAPPING[event.event_type]
+            org_id=event.org_id,
+            account_number=event.account_number,
+            workspace=event.workspace,
+            operation=OPERATION_MAPPING[event.event_type],
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
