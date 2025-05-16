@@ -59,7 +59,7 @@ from management.utils import (
     get_principal,
     groups_for_principal,
 )
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
 from rest_framework import status
 
@@ -1418,7 +1418,7 @@ def retrieve_ungrouped_workspace(request):
                     name=Workspace.SpecialNames.UNGROUPED_HOSTS,
                     parent=default,
                 )
-                dual_write_handler = RelationApiDualWriteWorkspacepHandler(
+                dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
                 )
                 dual_write_handler.replicate_new_workspace()

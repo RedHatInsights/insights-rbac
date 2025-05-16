@@ -3687,8 +3687,6 @@ class GroupViewsetTests(IdentityRequest):
         url = url_base + f"&username_only=true"
         response = client.get(url, **self.headers)
 
-        print(response.json())
-
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data").get("serviceAccounts")), sa_count)
         self.assertEqual(len(response.data.get("data").get("users")), user_count)
