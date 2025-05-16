@@ -130,7 +130,12 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
           ]
         }
         """
-        return super().list(request=request, args=args, kwargs=kwargs)
+        permission_list = super().list(request=request, args=args, kwargs=kwargs)
+        if request.query_params.get("order_by") == "permission":
+            data = permission_list.data["data"]
+            sorted_plist = sorted(data, key=lambda x: (x["resource_type"], x["verb"]))
+            permission_list.data["data"] = sorted_plist
+        return permission_list
 
     @action(detail=False)
     def options(self, request):
@@ -166,7 +171,6 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             context = request.query_params.get(key)
             if context:
                 filters[f"{key}__in"] = context.split(",")
-
         query_set = (
             self.filter_queryset(self.get_queryset())
             .order_by(query_field)
