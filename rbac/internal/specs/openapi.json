@@ -46,13 +46,18 @@
     {
       "name": "CAR",
       "description": "Cross Account Request operations."
+    },
+    {
+      "name": "Workspace",
+      "description": "Operations about workspaces."
     }
   ],
   "paths": {
     "/integrations/tenant/{orgId}/roles/": {
       "get": {
         "tags": [
-          "Integrations", "Role"
+          "Integrations",
+          "Role"
         ],
         "summary": "List the roles for a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -231,7 +236,8 @@
     "/integrations/tenant/{orgId}/groups/": {
       "get": {
         "tags": [
-          "Integrations", "Group"
+          "Integrations",
+          "Group"
         ],
         "summary": "List the groups for a tenant",
         "description": "By default, responses are sorted in ascending order by group name",
@@ -338,7 +344,9 @@
     "/integrations/tenant/{orgId}/groups/{uuid}/roles/": {
       "get": {
         "tags": [
-          "Integrations", "Group", "Role"
+          "Integrations",
+          "Group",
+          "Role"
         ],
         "summary": "List the roles for a group in a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -459,7 +467,9 @@
     "/integrations/tenant/{orgId}/principal/{username}/groups/": {
       "get": {
         "tags": [
-          "Integrations", "Group", "Principal"
+          "Integrations",
+          "Group",
+          "Principal"
         ],
         "summary": "List the groups for a principal in a tenant",
         "description": "By default, responses are sorted in ascending order by group name",
@@ -566,7 +576,10 @@
     "/integrations/tenant/{orgId}/principal/{username}/groups/{uuid}/roles/": {
       "get": {
         "tags": [
-          "Integrations", "Role", "Group", "Principal"
+          "Integrations",
+          "Role",
+          "Group",
+          "Principal"
         ],
         "summary": "List the roles for a group for a principal in a tenant",
         "description": "By default, responses are sorted in ascending order by role name",
@@ -669,7 +682,9 @@
     "/integrations/tenant/{orgId}/groups/{uuid}/principals/": {
       "get": {
         "tags": [
-          "Integrations", "Principal", "Group"
+          "Integrations",
+          "Principal",
+          "Group"
         ],
         "summary": "Get a list of principals from a group in a tenant",
         "description": "By default, responses are sorted in ascending order by username",
@@ -842,7 +857,8 @@
     "/integrations/tenant/": {
       "get": {
         "tags": [
-          "Integrations", "Tenant"
+          "Integrations",
+          "Tenant"
         ],
         "summary": "Get a list of tenants",
         "description": "List of tenants in ConsoleDot RBAC",
@@ -908,7 +924,8 @@
     "/api/utils/cars/clean/": {
       "get": {
         "tags": [
-          "Utils", "CAR"
+          "Utils",
+          "CAR"
         ],
         "summary": "Get info of cars with custom roles",
         "description": "Get info of cars with custom roles",
@@ -941,7 +958,8 @@
       },
       "post": {
         "tags": [
-          "CAR", "Utils"
+          "CAR",
+          "Utils"
         ],
         "summary": "Clean up custom roles in cars",
         "description": "Clean up custom roles in cars",
@@ -1064,7 +1082,9 @@
     "/api/utils/role/": {
       "delete": {
         "tags": [
-          "Role", "Utils", "Destructive"
+          "Role",
+          "Utils",
+          "Destructive"
         ],
         "summary": "Delete Red Hat managed role",
         "description": "Specify a role name to delete a Red Hat managed role.",
@@ -1113,7 +1133,9 @@
     "/api/utils/permission/": {
       "delete": {
         "tags": [
-          "Permission", "Utils", "Destructive"
+          "Permission",
+          "Utils",
+          "Destructive"
         ],
         "summary": "Delete permission",
         "description": "Specify a permission to delete a permission.",
@@ -1162,7 +1184,8 @@
     "/api/utils/data_migration/": {
       "post": {
         "tags": [
-          "V2", "Utils"
+          "V2",
+          "Utils"
         ],
         "summary": "Migration of v1 resources",
         "description": "Start process of migration of v1 resources.",
@@ -1217,7 +1240,9 @@
     "/api/utils/bootstrap_tenant/": {
       "post": {
         "tags": [
-          "V2", "Tenant", "Utils"
+          "V2",
+          "Tenant",
+          "Utils"
         ],
         "summary": "Bootstrap a tenants by org ids",
         "description": "Bootstrap a tenants by org ids",
@@ -1237,7 +1262,9 @@
                     "description": "A list of organization IDs to bootstrap."
                   }
                 },
-                "required": ["org_ids"]
+                "required": [
+                  "org_ids"
+                ]
               }
             }
           }
@@ -1294,7 +1321,9 @@
     "/api/utils/bootstrap_pending_tenants/": {
       "get": {
         "tags": [
-          "V2", "Tenant", "Utils"
+          "V2",
+          "Tenant",
+          "Utils"
         ],
         "summary": "List tenants that are not bootstrapped",
         "description": "Returns a list of tenant org IDs that have not yet been bootstrapped.",
@@ -1336,7 +1365,8 @@
     "/fetch_replication_data": {
       "get": {
         "tags": [
-          "V2", "Utils"
+          "V2",
+          "Utils"
         ],
         "summary": "Fetch replication data",
         "operationId": "fetchReplicationData",
@@ -1354,8 +1384,14 @@
                       "items": {
                         "type": "array",
                         "items": [
-                          { "type": "string", "description": "Slot name" },
-                          { "type": "string", "description": "Slot type" }
+                          {
+                            "type": "string",
+                            "description": "Slot name"
+                          },
+                          {
+                            "type": "string",
+                            "description": "Slot type"
+                          }
                         ]
                       }
                     },
@@ -1364,8 +1400,14 @@
                       "items": {
                         "type": "array",
                         "items": [
-                          { "type": "integer", "description": "OID" },
-                          { "type": "string", "description": "Publication name" }
+                          {
+                            "type": "integer",
+                            "description": "OID"
+                          },
+                          {
+                            "type": "string",
+                            "description": "Publication name"
+                          }
                         ]
                       }
                     },
@@ -1374,8 +1416,14 @@
                       "items": {
                         "type": "array",
                         "items": [
-                          { "type": "string", "description": "Publication name" },
-                          { "type": "string", "description": "Table name" }
+                          {
+                            "type": "string",
+                            "description": "Publication name"
+                          },
+                          {
+                            "type": "string",
+                            "description": "Table name"
+                          }
                         ]
                       }
                     },
@@ -1384,8 +1432,14 @@
                       "items": {
                         "type": "array",
                         "items": [
-                          { "type": "string", "description": "Current WAL LSN" },
-                          { "type": "string", "description": "Confirmed flush LSN" }
+                          {
+                            "type": "string",
+                            "description": "Current WAL LSN"
+                          },
+                          {
+                            "type": "string",
+                            "description": "Confirmed flush LSN"
+                          }
                         ]
                       }
                     }
@@ -1427,7 +1481,9 @@
     "/api/utils/bindings/": {
       "get": {
         "tags": [
-          "V2", "Role", "Utils"
+          "V2",
+          "Role",
+          "Utils"
         ],
         "summary": "List bindingmappings for a role",
         "description": "List bindingmappings for a role.",
@@ -1483,7 +1539,8 @@
     "/api/utils/binding/{binding_id}/clean/": {
       "post": {
         "tags": [
-          "V2", "Utils"
+          "V2",
+          "Utils"
         ],
         "summary": "Clean binding for a given id",
         "description": "Clean binding for a given id",
@@ -1543,7 +1600,9 @@
     "/api/utils/migration_resources/": {
       "delete": {
         "tags": [
-          "V2", "Destructive", "Utils"
+          "V2",
+          "Destructive",
+          "Utils"
         ],
         "summary": "Delete migration resources",
         "description": "Delete migration resources, including binding mappings, tenant mappings, and workspaces.",
@@ -1611,7 +1670,8 @@
       },
       "get": {
         "tags": [
-          "V2", "Utils"
+          "V2",
+          "Utils"
         ],
         "summary": "List migration resources",
         "description": "List migration resources, including binding mappings, tenant mappings, and workspaces.",
@@ -1681,7 +1741,8 @@
     "/api/utils/set_tenant_ready/": {
       "get": {
         "tags": [
-          "Tenant", "Utils"
+          "Tenant",
+          "Utils"
         ],
         "summary": "View count of tenants with ready flag false",
         "description": "View count of tenants with ready flag false.",
@@ -1714,7 +1775,8 @@
       },
       "post": {
         "tags": [
-          "Tenant", "Utils"
+          "Tenant",
+          "Utils"
         ],
         "summary": "Set ready flag of tenants to true",
         "description": "Set ready flag of tenants to true.",
@@ -1770,7 +1832,9 @@
     "/api/utils/reset_imported_tenants/": {
       "delete": {
         "tags": [
-          "Tenant", "Utils", "Destructive"
+          "Tenant",
+          "Utils",
+          "Destructive"
         ],
         "summary": "Remove tenants imported via user import job",
         "description": "Remove tenants with the flag ready=false or tenants without related objects. To use this endpoint, destructive API operations must be enabled.",
@@ -1830,7 +1894,8 @@
       },
       "get": {
         "tags": [
-          "Tenant", "Utils"
+          "Tenant",
+          "Utils"
         ],
         "summary": "Get count of tenants imported via user import job",
         "description": "Returns the count of tenants with the flag ready=false or tenants without related objects.",
@@ -1887,7 +1952,9 @@
     "/api/utils/principal/": {
       "delete": {
         "tags": [
-          "Principal", "Destructive", "Utils"
+          "Principal",
+          "Destructive",
+          "Utils"
         ],
         "summary": "Delete principals without user_id and inactive.",
         "description": "Delete principals without principals and inactive..",
@@ -1971,7 +2038,8 @@
     "/api/utils/username_lower/": {
       "get": {
         "tags": [
-          "Principal", "Utils"
+          "Principal",
+          "Utils"
         ],
         "summary": "List uppercase username",
         "description": "List uppercase username.",
@@ -2004,7 +2072,8 @@
       },
       "post": {
         "tags": [
-          "Principal", "Utils"
+          "Principal",
+          "Utils"
         ],
         "summary": "Update uppercase username to lowercase",
         "description": "Update uppercase username to lowercase.",
@@ -2013,7 +2082,7 @@
           "200": {
             "description": "All uppercase username updated to lowercase."
           },
-          "400":{
+          "400": {
             "description": "Invalid request.",
             "content": {
               "application/json": {
@@ -2047,9 +2116,10 @@
       }
     },
     "/api/utils/user_lookup/": {
-      "get":{
+      "get": {
         "tags": [
-          "Principal", "Utils"
+          "Principal",
+          "Utils"
         ],
         "summary": "Get user info",
         "description": "Query for a user's groups, roles, and permissions based on their username or email. Only one of the params is required.",
@@ -2060,7 +2130,7 @@
             "in": "query",
             "description": "Username of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
             "required": true,
-            "schema":{
+            "schema": {
               "type": "string"
             }
           },
@@ -2069,7 +2139,7 @@
             "in": "query",
             "description": "Email address of the desired user to query for. If both username and email are provided, username is used and email is ignored.",
             "required": true,
-            "schema":{
+            "schema": {
               "type": "string"
             }
           }
@@ -2082,32 +2152,73 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "username": { "type": "string", "example": "fake_user" },
-                    "email_address": { "type": "string", "example": "fake_user@redhat.com" },
-                    "groups":{
+                    "username": {
+                      "type": "string",
+                      "example": "fake_user"
+                    },
+                    "email_address": {
+                      "type": "string",
+                      "example": "fake_user@redhat.com"
+                    },
+                    "groups": {
                       "type": "array",
-                      "items":{
+                      "items": {
                         "type": "object",
                         "properties": {
-                          "name": { "type": "string", "example": "Example group"},
-                          "description": { "type": "string", "example": "A group for some users" },
-                          "uuid": { "type": "string", "format":"uuid", "example": "1c4da003-569d-433f-8159-fd77e6984de1" },
-                          "platform_default": { "type": "boolean", "example": true },
-                          "admin_default": { "type": "boolean", "example": false },
-                          "roles":{
+                          "name": {
+                            "type": "string",
+                            "example": "Example group"
+                          },
+                          "description": {
+                            "type": "string",
+                            "example": "A group for some users"
+                          },
+                          "uuid": {
+                            "type": "string",
+                            "format": "uuid",
+                            "example": "1c4da003-569d-433f-8159-fd77e6984de1"
+                          },
+                          "platform_default": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "admin_default": {
+                            "type": "boolean",
+                            "example": false
+                          },
+                          "roles": {
                             "type": "array",
                             "items": {
                               "type": "object",
                               "properties": {
-                                "name": { "type": "string", "example": "Example Role" },
-                                "display_name": { "type": "string", "example": "Example Role Display" },
-                                "description": { "type": "string", "example": "An example role for the spec" },
-                                "uuid": { "type": "string", "format":"uuid", "example": "a8d33564-628f-4eba-bd59-6a2948bfb31e" },
-                                "platform_default": { "type": "boolean", "example": true },
-                                "admin_default": { "type": "boolean", "example": false },
+                                "name": {
+                                  "type": "string",
+                                  "example": "Example Role"
+                                },
+                                "display_name": {
+                                  "type": "string",
+                                  "example": "Example Role Display"
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "example": "An example role for the spec"
+                                },
+                                "uuid": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "example": "a8d33564-628f-4eba-bd59-6a2948bfb31e"
+                                },
+                                "platform_default": {
+                                  "type": "boolean",
+                                  "example": true
+                                },
+                                "admin_default": {
+                                  "type": "boolean",
+                                  "example": false
+                                },
                                 "permissions": {
                                   "type": "array",
-                                  "items":{
+                                  "items": {
                                     "type": "string",
                                     "example": "application | resource | verb"
                                   }
@@ -2119,7 +2230,11 @@
                       }
                     }
                   },
-                  "required": ["username", "email_address", "groups"]
+                  "required": [
+                    "username",
+                    "email_address",
+                    "groups"
+                  ]
                 }
               }
             }
@@ -2170,7 +2285,8 @@
     "/_s2s/workspaces/ungrouped/": {
       "get": {
         "tags": [
-          "V2", "Workspace"
+          "V2",
+          "Workspace"
         ],
         "summary": "Get or create ungrouped hosts workspace.",
         "description": "Get or create ungrouped hosts workspace.",
@@ -2205,7 +2321,8 @@
     "/api/utils/resource_definitions/": {
       "get": {
         "tags": [
-          "Permission", "Utils"
+          "Permission",
+          "Utils"
         ],
         "summary": "Get incorrect resource definitions.",
         "description": "Get resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
@@ -2216,7 +2333,7 @@
             "in": "query",
             "description": "Optional flag. If true, returns a list of resource definition objects. If false or omitted, returns only the count.",
             "required": false,
-            "schema":{
+            "schema": {
               "type": "boolean"
             }
           }
@@ -2249,7 +2366,8 @@
       },
       "patch": {
         "tags": [
-          "Permission", "Utils"
+          "Permission",
+          "Utils"
         ],
         "summary": "Fix incorrect resource definitions.",
         "description": "Fix resource definitions with incorrect attribute filters. Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'.",
@@ -2260,7 +2378,7 @@
             "in": "query",
             "description": "Resource definition id.",
             "required": false,
-            "schema":{
+            "schema": {
               "type": "string"
             }
           }
@@ -2276,6 +2394,139 @@
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_private/api/utils/workspace/": {
+      "get": {
+        "tags": [
+          "Workspace"
+        ],
+        "summary": "Get all standard workspaces.",
+        "description": "Returns count or list of standard workspaces.",
+        "parameters": [
+          {
+            "name": "detail",
+            "in": "query",
+            "description": "Set to true to get a detailed list. Default is false (only count).",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace count or list returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "integer"
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Workspace"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "example": "5 standard workspace(s) eligible for removal."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Workspace",
+          "Destructive"
+        ],
+        "summary": "Delete standard workspaces.",
+        "description": "Deletes one or all standard workspaces. If `id` is provided, deletes one workspace; otherwise deletes all.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "ID of the workspace to delete (optional).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace(s) deleted successfully",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "single": {
+                    "value": "Workspace with id='abc123' deleted."
+                  },
+                  "bulk": {
+                    "value": "5 workspace(s) deleted."
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Destructive operations not allowed.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "Destructive operations disallowed."
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "Workspace with id='abc123' not found."
               }
             }
           },
@@ -2899,6 +3150,50 @@
               }
             }
           }
+        ]
+      },
+      "Workspace": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "example": "standard"
+          },
+          "tenant_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "parent_id",
+          "description",
+          "created",
+          "modified",
+          "type",
+          "tenant_id"
         ]
       }
     }
