@@ -46,7 +46,6 @@ from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
-@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
 class WorkspaceViewTests(IdentityRequest):
     """Test the Workspace view."""
 
@@ -55,6 +54,32 @@ class WorkspaceViewTests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.standard_workspace = Workspace.objects.create(
+            name="Standard Workspace",
+            description="Standard Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        self.ungrouped_workspace = Workspace.objects.create(
+            name="Ungrouped Hosts Workspace",
+            description="Ungrouped Hosts Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+        )
 
     def tearDown(self):
         """Tear down group model tests."""
@@ -97,59 +122,22 @@ class WorkspaceViewTests(IdentityRequest):
             group.principals.add(principal)
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
 class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
     """Tests for create/update/delete workspaces."""
 
     def setUp(self):
         super().setUp()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-        self.standard_workspace = Workspace.objects.create(
-            name="Standard Workspace",
-            description="Standard Workspace - description",
-            tenant=self.tenant,
-            parent=self.default_workspace,
-            type=Workspace.Types.STANDARD,
-        )
-        self.ungrouped_workspace = Workspace.objects.create(
-            name="Ungrouped Hosts Workspace",
-            description="Ungrouped Hosts Workspace - description",
-            tenant=self.tenant,
-            parent=self.default_workspace,
-            type=Workspace.Types.UNGROUPED_HOSTS,
-        )
         self.tuples = InMemoryTuples()
         self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
 
-
-@override_settings(V2_APIS_ENABLED=True)
-class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
-
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_create_workspace(self, replicate_workspace, replicate):
         """Test for creating a workspace."""
         replicate.side_effect = self.in_memory_replicator.replicate
-        workspace_data = {
-            "name": "New Workspace parent",
-            "description": "New Workspace - description",
-            "tenant_id": self.tenant.id,
-            "parent_id": self.standard_workspace.id,
-        }
-        parent_workspace = Workspace.objects.create(**workspace_data)
-        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": parent_workspace.id}
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.default_workspace.id}
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
@@ -168,7 +156,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             all_of(
                 resource("rbac", "workspace", data.get("id")),
                 relation("parent"),
-                subject("rbac", "workspace", str(parent_workspace.id)),
+                subject("rbac", "workspace", str(self.default_workspace.id)),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -711,6 +699,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
                 self.default_workspace.name = "Default"
                 self.default_workspace.description = "Default description"
 
+    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
     def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
         root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
