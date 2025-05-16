@@ -19,7 +19,9 @@ from rest_framework import serializers
 from api.models import Tenant
 from management.models import Workspace
 from management.workspace.service import WorkspaceService
+from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.test.utils import override_settings
 
 
 class WorkspaceServiceTestBase(TestCase):
@@ -139,3 +141,30 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
         """Test the destroy method successfully"""
         self.service.destroy(self.standard_child_workspace)
         self.assertFalse(Workspace.objects.filter(id=self.standard_child_workspace.id).exists())
+
+
+class WorkspaceHierarchyTests(WorkspaceServiceTestBase):
+    """Tests for hierarchy enforcement"""
+
+    def test_enforce_hierarchy_depth_exceeded(self):
+        """Test when hierarchy depth is exceeded"""
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service._enforce_hierarchy_depth(self.standard_workspace.id, self.tenant)
+        self.assertIn(
+            f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep.", str(context.exception)
+        )
+
+    def test_enforce_hierarchy_depth_is_within_range_but_peer_violation(self):
+        """Test when hierarchy depth is within range but there are peer restrictions"""
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service._enforce_hierarchy_depth(self.root_workspace.id, self.tenant)
+        self.assertIn("Sub-workspaces may only be created under the default workspace.", str(context.exception))
+
+    def test_enforce_hierarchy_depth_is_within_range_and_no_peer_violation(self):
+        """Test when hierarchy depth is within range and no peer restrictions"""
+        self.assertEqual(self.service._enforce_hierarchy_depth(self.default_workspace.id, self.tenant), None)
+
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+    def test_enforce_hierarchy_depth_is_within_range_and_peer_validation_is_off(self):
+        """Test when hierarchy depth is within range and no peer restrictions"""
+        self.assertEqual(self.service._enforce_hierarchy_depth(self.root_workspace.id, self.tenant), None)

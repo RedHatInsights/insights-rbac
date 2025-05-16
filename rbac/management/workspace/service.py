@@ -86,27 +86,30 @@ class WorkspaceService:
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
 
-    def _parent_id_attr_update(self, attr: str, value: str, instance: Workspace) -> bool:
-        """Determine if the attribute being updated is parent_id."""
-        return attr == "parent_id" and instance.parent_id != value
-
-    def _enforce_hierarchy_depth(self, parent_id: uuid.UUID, tenant: Tenant) -> None:
-        if self._exceeds_depth_limit(parent_id, tenant):
+    def _enforce_hierarchy_depth(self, target_parent_id: uuid.UUID, tenant: Tenant) -> None:
+        """Enforce hierarchy depth limits on workspaces."""
+        if self._exceeds_depth_limit(target_parent_id, tenant):
             message = f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep."
             error = {"workspace": [message]}
             raise serializers.ValidationError(error)
-        if self._violates_peer_restrictions(parent_id, tenant):
+        if self._violates_peer_restrictions(target_parent_id, tenant):
             message = "Sub-workspaces may only be created under the default workspace."
             error = {"workspace": [message]}
             raise serializers.ValidationError(error)
 
-    def _violates_peer_restrictions(self, parent_id: uuid.UUID, tenant: Tenant) -> bool:
+    def _parent_id_attr_update(self, attr: str, value: str, instance: Workspace) -> bool:
+        """Determine if the attribute being updated is parent_id."""
+        return attr == "parent_id" and instance.parent_id != value
+
+    def _violates_peer_restrictions(self, target_parent_id: uuid.UUID, tenant: Tenant) -> bool:
+        """Determine if peer restrictions are violated."""
         target_root_workspace = Workspace.objects.root(tenant=tenant)
-        if settings.WORKSPACE_RESTRICT_DEFAULT_PEERS and str(target_root_workspace.id) == str(parent_id):
+        if settings.WORKSPACE_RESTRICT_DEFAULT_PEERS and str(target_root_workspace.id) == str(target_parent_id):
             return True
         return False
 
-    def _exceeds_depth_limit(self, parent_id: uuid.UUID, tenant: Tenant) -> bool:
-        target_parent_workspace = Workspace.objects.get(id=parent_id, tenant=tenant)
+    def _exceeds_depth_limit(self, target_parent_id: uuid.UUID, tenant: Tenant) -> bool:
+        """Determine if depth limit is exceeded."""
+        target_parent_workspace = Workspace.objects.get(id=target_parent_id, tenant=tenant)
         max_depth_for_workspace = len(target_parent_workspace.ancestors()) + 1
         return max_depth_for_workspace > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT
