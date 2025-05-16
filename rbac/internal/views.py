@@ -19,6 +19,7 @@
 
 import json
 import logging
+import uuid
 
 import requests
 from core.utils import destructive_ok
@@ -29,6 +30,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from django.views.decorators.http import require_http_methods
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.utils import delete_bindings
 from management.cache import TenantCache
@@ -1427,4 +1429,71 @@ def retrieve_ungrouped_workspace(request):
             data = WorkspaceSerializer(ungrouped_hosts).data
             return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:
+        return HttpResponse(str(e), status=500)
+
+
+@require_http_methods(["GET", "DELETE"])
+def workspace_removal(request):
+    """
+    Get or delete standard workspaces.
+
+    GET /_private/api/utils/workspace/
+        ?detail=false (default) : return count only
+        ?detail=true            : return list of standard workspaces
+
+    DELETE /_private/api/utils/workspace/
+        ?id=<workspace_id> : delete a single workspace
+        (no id)            : delete all standard workspaces
+    """
+    query_params = request.GET
+    logger.info(f"Workspace list or removal: {request.method} {request.user.username}")
+
+    if request.method == "DELETE" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=403)
+
+    # GET
+    if request.method == "GET":
+        if query_params.get("detail") == "true":
+            workspaces = Workspace.objects.filter(type=Workspace.Types.STANDARD)
+            serialized_ws = WorkspaceSerializer(workspaces, many=True).data
+            # Add tenant id into response
+            for ws_obj, ws_data in zip(workspaces, serialized_ws):
+                ws_data["tenant_id"] = ws_obj.tenant_id
+            payload = {"count": len(serialized_ws), "data": serialized_ws}
+            return JsonResponse(payload, status=200)
+
+        ws_count = Workspace.objects.filter(type=Workspace.Types.STANDARD).count()
+        return HttpResponse(
+            f"{ws_count} standard workspace(s) eligible for removal.", content_type="text/plain", status=200
+        )
+
+    # DELETE
+    # delete 1 standard workspace
+    if ws_id := query_params.get("id"):
+        try:
+            uuid.UUID(str(ws_id))
+        except ValueError:
+            return HttpResponse("Invalid workspace id format.", content_type="text/plain", status=400)
+
+        if ws := Workspace.objects.filter(type=Workspace.Types.STANDARD, id=ws_id).first():
+            dual_write_handler = RelationApiDualWriteWorkspaceHandler(ws, ReplicationEventType.DELETE_WORKSPACE)
+            dual_write_handler.replicate_deleted_workspace()
+            ws.delete()
+            logger.info(f"Deleted workspace id='{ws_id}'")
+            return HttpResponse(f"Workspace with id='{ws_id}' deleted.", content_type="text/plain", status=200)
+        return HttpResponse(f"Workspace with id='{ws_id}' not found.", content_type="text/plain", status=404)
+
+    # delete all standard workspaces
+    workspaces = Workspace.objects.filter(type=Workspace.Types.STANDARD)
+    try:
+        with transaction.atomic():
+            for ws in workspaces:
+                dual_write_handler = RelationApiDualWriteWorkspaceHandler(ws, ReplicationEventType.DELETE_WORKSPACE)
+                dual_write_handler.replicate_deleted_workspace()
+                ws.delete()
+        logger.info("All standard workspaces successfully deleted.")
+        return HttpResponse(f"{len(workspaces)} workspace(s) deleted.", content_type="text/plain", status=200)
+
+    except Exception as e:
+        logger.exception(f"Bulk workspace deletion failed: {e}")
         return HttpResponse(str(e), status=500)
