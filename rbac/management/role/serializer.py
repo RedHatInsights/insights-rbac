@@ -75,14 +75,20 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
     def to_representation(self, instance):
         """Convert the ResourceDefinition instance to a dictionary."""
         serialized_data = super().to_representation(instance)
-        if (
-            settings.REMOVE_NULL_VALUE
-            and instance.attributeFilter["key"] == "group.id"
-            and None in instance.attributeFilter["value"]
-        ):
-            ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
-            serialized_data["attributeFilter"]["value"].remove(None)
-            serialized_data["attributeFilter"]["value"].append(str(ungrouped_hosts.id))
+        if settings.REMOVE_NULL_VALUE and instance.attributeFilter["key"] == "group.id":
+            value = instance.attributeFilter["value"]
+            if isinstance(value, list) and None in value:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = [v for v in value if v is not None]
+                value.append(str(ungrouped_hosts.id))
+            elif value is None:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = str(ungrouped_hosts.id)
+            serialized_data["attributeFilter"]["value"] = value
+        if self._should_add_hierarchy(instance):
+            serialized_data.get("attributeFilter").update(
+                {"operation": "in", "value": self._original_vals_and_descendant_ids(instance)}
+            )
         return serialized_data
 
     class Meta:
@@ -90,15 +96,6 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
 
         model = ResourceDefinition
         fields = ("attributeFilter",)
-
-    def to_representation(self, instance):
-        """Representation of ResourceDefinitions."""
-        data = super().to_representation(instance)
-        if self._should_add_hierarchy(instance):
-            data.get("attributeFilter").update(
-                {"operation": "in", "value": self._original_vals_and_descendant_ids(instance)}
-            )
-        return data
 
     def _original_vals_and_descendant_ids(self, instance):
         attr_filter_list = value_to_list(instance.attributeFilter.get("value"))

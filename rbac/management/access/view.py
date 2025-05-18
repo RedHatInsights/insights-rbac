@@ -182,6 +182,8 @@ class AccessView(APIView):
         ungrouped_hosts_id = None
         queried = False
         for access in response.data["data"]:
+            if not access["permission"].startswith("inventory:hosts:"):
+                continue
             for resource_def in access.get("resourceDefinitions", []):
                 attribute_filter = resource_def.get("attributeFilter", {})
                 if attribute_filter.get("key") == "group.id" and None in attribute_filter.get("value"):
