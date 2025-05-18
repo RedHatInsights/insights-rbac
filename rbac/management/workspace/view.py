@@ -18,7 +18,7 @@
 from django.db import transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
-from management.permissions import WorkspaceAccessPermission
+from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
 from rest_framework import serializers

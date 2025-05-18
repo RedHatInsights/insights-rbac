@@ -110,26 +110,3 @@ class Workspace(TenantAwareModel):
         """,
         )
         return Workspace.objects.filter(id__in=RawSQL(sql, [self.id, self.id]))
-
-    def get_all_ancestor_ids(self):
-        """Get all ancestor IDs of the workspace."""
-        ancestors = self._ancestry_queryset()
-        return [str(ancestor.id) for ancestor in ancestors]
-
-    def get_all_descendant_ids(self):
-        """Get all descendant IDs of the workspace."""
-        descendants = Workspace.objects.raw(
-            """
-                WITH RECURSIVE descendants AS (
-                    SELECT id, parent_id FROM management_workspace WHERE id = %s
-                    UNION ALL
-                    SELECT w.id, w.parent_id
-                    FROM management_workspace w
-                    INNER JOIN descendants d ON w.parent_id = d.id
-                )
-                SELECT id
-                FROM descendants
-            """,
-            [self.id],
-        )
-        return [str(descendant.id) for descendant in descendants]

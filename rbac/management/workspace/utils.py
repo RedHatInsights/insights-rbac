@@ -54,12 +54,12 @@ def get_access_permission_tuples(access, tenant, default_workspace_id, is_list_a
     workspaces = Workspace.objects.filter(tenant=tenant, id__in=group_list)
     tuple_set = set()
     for workspace in workspaces:
-        for descendant in workspace.get_all_descendant_ids():
+        for descendant in Workspace.objects.descendant_ids_with_parents([str(workspace.id)], workspace.tenant_id):
             tuple_set.add((access.permission.permission, descendant))
         if is_list_action:
             # Allow listing ancestors for a workspace they have access to
-            for ancestor in workspace.get_all_ancestor_ids():
-                tuple_set.add((access.permission.permission, ancestor))
+            for ancestor in workspace.ancestors():
+                tuple_set.add((access.permission.permission, str(ancestor.id)))
     return tuple_set
 
 
@@ -108,5 +108,5 @@ def _get_group_list_from_resource_definitions(resource_definitions: dict) -> lis
         try:
             UUID(gid)
         except (ValueError, TypeError):
-            group_list.pop(gid)
+            group_list.remove(gid)
     return group_list
