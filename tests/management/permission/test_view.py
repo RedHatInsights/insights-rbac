@@ -131,6 +131,21 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertEqual(response.data.get("data")[0].get("permission"), self.permissionB.permission)
 
+    def test_list_permission_filter_alphabetical_order_success(self):
+        """Test that the filtered list of permissions are in alphabetical order."""
+        expected_permissions = list(
+            Permission.objects.filter(application__in=["rbac", "acme"]).values_list("permission", flat=True)
+        )
+        url = LIST_URL
+        url = f"{url}?application=rbac,acme"
+        response = CLIENT.get(url, **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 4)
+        expected_list = ["acme:*:*", "acme:*:write", "rbac:*:*", "rbac:roles:read"]
+        self.assertCountEqual(expected_permissions, response_permissions)
+        self.assertEqual(response_permissions, expected_list)
+
     def test_get_list_is_the_only_valid_method(self):
         """Test GET on /permissions/ is the only valid method."""
         response = CLIENT.post(LIST_URL, **self.headers)
