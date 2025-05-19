@@ -509,7 +509,8 @@ spec:
       optional: true
     - name: netrc
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-insights-rbac
   workspaces:
   - name: git-auth
     secret:
