@@ -1334,7 +1334,7 @@ def normalize_operation_in_attribute_filter(attribute_filter):
     """Set Attribute Filter invalid 'operation' to valid operation if value type is 'str' or 'list'."""
     op = attribute_filter.get("operation")
     value = attribute_filter.get("value")
-    if op != "equal" and isinstance(value, str):
+    if op != "equal" and isinstance(value, str) or isinstance(value, int):
         attribute_filter["operation"] = "equal"
     elif op != "in" and isinstance(value, list):
         attribute_filter["operation"] = "in"

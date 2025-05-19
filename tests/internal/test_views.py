@@ -2696,6 +2696,33 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"0 resource definitions would be corrected")
 
+    def test_patch_invalid_resource_definitions_operation_equal_value_int(self):
+        """Test patching a attributeFilters operation to a valid operation for 'equal' when value is int"""
+        role = Role.objects.create(name="role_A", tenant=self.tenant)
+        perm = Permission.objects.create(permission="test_app:operation:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={"key": "key1.id", "operation": "equals", "value": 12345},
+            tenant=self.tenant,
+        )
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 1 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
     def test_patch_invalid_resource_definitions_operation_in(self):
         """Test patching a attributeFilters operation to a valid operation for 'in'"""
         role = Role.objects.create(name="role_A", tenant=self.tenant)
