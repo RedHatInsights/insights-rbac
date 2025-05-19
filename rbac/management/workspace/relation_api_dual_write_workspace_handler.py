@@ -35,7 +35,7 @@ from migration_tool.utils import create_relationship
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class RelationApiDualWriteWorkspacepHandler(BaseRelationApiDualWriteHandler):
+class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write for group bindings and membership."""
 
     workspace: Workspace
