@@ -1,5 +1,22 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
 metadata:
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/RedHatInsights/insights-rbac?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
+      == "master"
   creationTimestamp: null
+  creationTimestamp: null
+  labels:
+    appstudio.openshift.io/application: rbac
+    appstudio.openshift.io/component: insights-rbac
+    pipelines.appstudio.openshift.io/type: build
+  name: insights-rbac-on-push
+  namespace: hcc-accessmanagement-tenant
 spec:
   params:
   - name: git-url
