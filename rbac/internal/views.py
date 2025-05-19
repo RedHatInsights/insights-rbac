@@ -1201,9 +1201,6 @@ def correct_resource_definitions(request):
                 OR jsonb_typeof("attributeFilter"->'value') <> 'array')
                 AND "attributeFilter"->>'key' = 'group.id';"""
 
-    operations_query = """FROM management_resourcedefinition WHERE "attributeFilter"->>'operation' != 'in'
-                       AND "attributeFilter"->>'operation' != 'equal';"""
-
     query_params = request.GET
 
     if request.method == "GET":
@@ -1219,9 +1216,6 @@ def correct_resource_definitions(request):
                 cursor.execute("SELECT *" + hbi_query)
                 hbi_rows = cursor.fetchall()
 
-                cursor.execute("SELECT *" + operations_query)
-                operation_rows = cursor.fetchall()
-
                 response = [
                     {
                         "id": row[0],
@@ -1229,7 +1223,7 @@ def correct_resource_definitions(request):
                         "access_id": row[2],
                         "tenant_id": row[3],
                     }
-                    for row in list_rows + string_rows + hbi_rows + operation_rows
+                    for row in list_rows + string_rows + hbi_rows
                 ]
 
             return HttpResponse(json.dumps(response), content_type="application/json", status=200)
@@ -1242,9 +1236,6 @@ def correct_resource_definitions(request):
             count += cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(*)" + hbi_query)
-            count += cursor.fetchone()[0]
-
-            cursor.execute("SELECT COUNT(*)" + operations_query)
             count += cursor.fetchone()[0]
 
         return HttpResponse(f"{count} resource definitions would be corrected", status=200)
@@ -1286,16 +1277,6 @@ def correct_resource_definitions(request):
                 resource_definition.save()
                 count += 1
 
-            cursor.execute("SELECT id " + operations_query)
-            result = cursor.fetchall()
-            for id in result:
-                resource_definition = ResourceDefinition.objects.get(id=id[0])
-                resource_definition.attributeFilter = normalize_operation_in_attribute_filter(
-                    resource_definition.attributeFilter
-                )
-                resource_definition.save()
-                count += 1
-
         return HttpResponse(f"Updated {count} bad resource definitions", status=200)
 
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
@@ -1327,17 +1308,6 @@ def normalize_hbi_attribute_filter(attribute_filter):
                 attribute_filter["value"] = [value["id"]]
         else:
             attribute_filter["value"] = [value]
-    return attribute_filter
-
-
-def normalize_operation_in_attribute_filter(attribute_filter):
-    """Set Attribute Filter invalid 'operation' to valid operation if value type is 'str' or 'list'."""
-    op = attribute_filter.get("operation")
-    value = attribute_filter.get("value")
-    if op != "equal" and isinstance(value, str) or isinstance(value, int):
-        attribute_filter["operation"] = "equal"
-    elif op != "in" and isinstance(value, list):
-        attribute_filter["operation"] = "in"
     return attribute_filter
 
 
