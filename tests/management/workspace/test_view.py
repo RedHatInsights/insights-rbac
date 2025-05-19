@@ -128,6 +128,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         )
         self.assertEqual(len(tuples), 1)
         workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.account_number, self.tenant.account_id)
         self.assertEqual(workspace_event.org_id, self.tenant.org_id)
         self.assertEqual(workspace_event.event_type, ReplicationEventType.CREATE_WORKSPACE)
         data.pop("description")
@@ -255,6 +256,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(len(self.tuples), 0)
         self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
         workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.account_number, self.tenant.account_id)
         self.assertEqual(workspace_event.org_id, self.tenant.org_id)
         self.assertEqual(workspace_event.event_type, ReplicationEventType.UPDATE_WORKSPACE)
         data.pop("description")
@@ -762,6 +764,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(len(self.tuples), 0)
         self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
         workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.account_number, self.tenant.account_id)
         self.assertEqual(workspace_event.org_id, self.tenant.org_id)
         self.assertEqual(workspace_event.event_type, ReplicationEventType.DELETE_WORKSPACE)
         deleted_workspace = WorkspaceEventSerializer(workspace).data
