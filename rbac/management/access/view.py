@@ -16,8 +16,9 @@
 #
 
 """View for principal access."""
+from django.db.models import Prefetch
 from management.cache import AccessCache
-from management.models import Access
+from management.models import Access, ResourceDefinition
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
@@ -98,7 +99,16 @@ class AccessView(APIView):
     def get_queryset(self, ordering):
         """Define the query set."""
         unique_columns = ["permission_id", "resourceDefinitions__attributeFilter"]
-        access_queryset = Access.objects.filter(id__in=self.get_access_queryset_unique_by_column(*unique_columns))
+        distinct_queryset = self.get_access_queryset_unique_by_column(*unique_columns)
+        access_queryset = (
+            Access.objects.filter(id__in=distinct_queryset)
+            .select_related("permission")
+            .prefetch_related(
+                Prefetch(
+                    "resourceDefinitions", queryset=ResourceDefinition.objects.select_related("access__permission")
+                )
+            )
+        )
 
         if ordering:
             if ordering[0] == "-":
@@ -124,7 +134,7 @@ class AccessView(APIView):
         access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
             queryset = self.get_queryset(ordering)
-            access_policy = self.serializer_class(queryset, many=True).data
+            access_policy = self.serializer_class(queryset, many=True, context={"for_access": True}).data
             cache.save_policy(principal.uuid, sub_key, access_policy)
 
         page = self.paginate_queryset(access_policy)
