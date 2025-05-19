@@ -15,25 +15,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
-from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.utils import validate_and_get_key, validate_uuid
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.utils import validate_and_get_key
+from management.workspace.service import WorkspaceService
 from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter
+from rest_framework.permissions import SAFE_METHODS
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
-VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_CREATE_FIELDS = ["name"]
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
@@ -52,6 +46,11 @@ class WorkspaceViewSet(BaseV2ViewSet):
     ordering = ("name",)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
 
+    def __init__(self, **kwargs):
+        """Init viewset."""
+        super().__init__(**kwargs)
+        self._service = WorkspaceService()
+
     def get_serializer_class(self):
         """Get serializer class based on route."""
         if self.action == "retrieve":
@@ -62,25 +61,23 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 return WorkspaceWithAncestrySerializer
         return super().get_serializer_class()
 
+    def get_queryset(self):
+        """Get queryset override."""
+        if self.request.method not in SAFE_METHODS:
+            return super().get_queryset().select_for_update()
+        return super().get_queryset()
+
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
-        self.validate_workspace(request)
-        return super().create(request=request, args=args, kwargs=kwargs)
+        tenant = request.tenant
+        parent_id = request.data.get("parent_id")
 
-    def perform_create(self, serializer):
-        """Perform create operation."""
-        try:
-            return super().perform_create(serializer)
-        except DjangoValidationError as e:
-            # Use structured error checking by inspecting error codes
-            message = e.message_dict
-            if hasattr(e, "error_dict") and "__all__" in e.error_dict:
-                for error in e.error_dict["__all__"]:
-                    for msg in error.messages:
-                        if "unique_workspace_name_per_parent" in msg:
-                            message = "Can't create workspace with same name within same parent workspace"
-                            break
-            raise ValidationError(message)
+        if parent_id and tenant:
+            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
+                raise serializers.ValidationError(
+                    {"parent_id": (f"Parent workspace '{parent_id}' doesn't exist in tenant")}
+                )
+        return super().create(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):
         """Get a workspace."""
@@ -103,77 +100,20 @@ class WorkspaceViewSet(BaseV2ViewSet):
         page = self.paginate_queryset(serializer.data)
         return self.get_paginated_response(page)
 
+    @transaction.atomic()
     def destroy(self, request, *args, **kwargs):
-        """Delete a workspace."""
-        instance = self.get_object()
-        if instance.type != Workspace.Types.STANDARD:
-            message = f"Unable to delete {instance.type} workspace"
-            error = {"workspace": [_(message)]}
-            raise serializers.ValidationError(error)
-        if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
-            message = "Unable to delete due to workspace dependencies"
-            error = {"workspace": [_(message)]}
-            raise serializers.ValidationError(error)
-        with transaction.atomic():
-            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
-            response = super().destroy(request=request, args=args, kwargs=kwargs)
-            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
-            dual_write_handler.replicate_deleted_workspace()
-        return response
+        """
+        Destroy the instance.
 
+        Overridden only to add transaction.
+        """
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        """Delegate to service for destroy logic."""
+        self._service.destroy(instance)
+
+    @transaction.atomic()
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
-        self.validate_workspace(request, "put")
-        self.update_validation(request)
-        return super().update(request=request, args=args, kwargs=kwargs)
-
-    def partial_update(self, request, *args, **kwargs):
-        """Patch a workspace."""
-        self.validate_workspace(request, "patch")
-        payload = request.data or {}
-        for field in payload:
-            if field not in VALID_PATCH_FIELDS:
-                message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
-                error = {"workspace": [_(message)]}
-                raise serializers.ValidationError(error)
-
-        self.update_validation(request)
-
-        return super().update(request=request, args=args, kwargs=kwargs)
-
-    def update_validation(self, request):
-        """Validate a workspace for update."""
-        instance = self.get_object()
-        parent_id = request.data.get("parent_id")
-        if str(instance.id) == parent_id:
-            message = "Parent ID and ID can't be same"
-            error = {"workspace": [_(message)]}
-            raise serializers.ValidationError(error)
-
-    def validate_required_fields(self, request, required_fields):
-        """Validate required fields for workspace."""
-        for field in required_fields:
-            if field not in request.data:
-                message = f"Field '{field}' is required."
-                error = {"workspace": [_(message)]}
-                raise serializers.ValidationError(error)
-
-    def validate_workspace(self, request, action="create"):
-        """Validate a workspace."""
-        parent_id = request.data.get("parent_id")
-        tenant = request.tenant
-        workspace_type = request.data.get("type", Workspace.Types.STANDARD)
-        if workspace_type != Workspace.Types.STANDARD:
-            message = f"Only workspace type {Workspace.Types.STANDARD} is allowed."
-            error = {"workspace": [_(message)]}
-            raise serializers.ValidationError(error)
-        if action == "create":
-            self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
-        elif action == "put":
-            self.validate_required_fields(request, REQUIRED_PUT_FIELDS)
-        if parent_id:
-            validate_uuid(parent_id)
-            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
-                message = f"Parent workspace '{parent_id}' doesn't exist in tenant"
-                error = {"workspace": [message]}
-                raise serializers.ValidationError(error)
+        return super().update(request, *args, **kwargs)

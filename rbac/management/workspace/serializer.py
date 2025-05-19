@@ -16,9 +16,7 @@
 #
 
 """Serializer for workspace management."""
-from django.db import transaction
-from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.workspace.service import WorkspaceService
 from rest_framework import serializers
 
 from .model import Workspace
@@ -28,9 +26,9 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     """Serializer for the Workspace model."""
 
     id = serializers.UUIDField(read_only=True, required=False)
-    name = serializers.CharField(required=False, max_length=255)
+    name = serializers.CharField(required=True, max_length=255)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
-    parent_id = serializers.UUIDField(allow_null=True, required=False)
+    parent_id = serializers.UUIDField(required=False)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
     type = serializers.CharField(read_only=True)
@@ -49,28 +47,18 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "type",
         )
 
+    @property
+    def _service(self) -> WorkspaceService:
+        return self.context["view"]._service
+
     def create(self, validated_data):
         """Create the workspace object in the database."""
-        validated_data["tenant"] = self.context["request"].tenant
-
-        with transaction.atomic():
-            workspace = Workspace.objects.create(**validated_data)
-            dual_write_handler = RelationApiDualWriteWorkspacepHandler(
-                workspace, ReplicationEventType.CREATE_WORKSPACE
-            )
-            dual_write_handler.replicate_new_workspace()
-        return workspace
+        tenant = self.context["request"].tenant
+        return self._service.create(validated_data, tenant)
 
     def update(self, instance, validated_data):
         """Update the workspace object in the database."""
-        with transaction.atomic():
-            # Lock the data
-            instance = Workspace.objects.select_for_update().filter(id=instance.id).get()
-            previous_parent = instance.parent
-            instance = super().update(instance, validated_data)
-            dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
-            dual_write_handler.replicate_updated_workspace(previous_parent)
-        return instance
+        return self._service.update(instance, validated_data)
 
 
 class WorkspaceAncestrySerializer(serializers.ModelSerializer):
