@@ -42,6 +42,11 @@ class BaseV2ViewSetTest(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        # Make them admin
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=True)
+
+        request = request_context["request"]
+        self.headers = request.META
 
     def test_renderer_classes(self):
         """Test default renderers."""
