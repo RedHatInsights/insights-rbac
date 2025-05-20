@@ -40,6 +40,9 @@ class WorkspaceServiceTestBase(TestCase):
         cls.standard_child_workspace = Workspace.objects.create(
             name="Standard Child", type=Workspace.Types.STANDARD, tenant=cls.tenant, parent=cls.standard_workspace
         )
+        cls.ungrouped_workspace = Workspace.objects.create(
+            name="Ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=cls.tenant, parent=cls.default_workspace
+        )
 
 
 class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
@@ -81,15 +84,50 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         self.assertEqual(updated_instance.name, validated_data["name"])
         self.assertEqual(updated_instance.description, validated_data["description"])
 
+    def test_update_parent_id_same(self):
+        """Test the update method when the parent is the same"""
+        validated_data = {"parent_id": self.standard_workspace.parent_id}
+        updated_instance = self.service.update(self.standard_workspace, validated_data)
+        self.assertEqual(updated_instance.parent_id, self.standard_workspace.parent_id)
+
+    def test_update_parent_id_different(self):
+        """Test the update method when the parent is being changed"""
+        validated_data = {"parent_id": self.default_workspace.parent_id}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.update(self.standard_workspace, validated_data)
+        self.assertIn("Can't update the 'parent_id' on a workspace directly", str(context.exception))
+
+    def test_update_root_workspace(self):
+        """Test we cannot update the root workspace."""
+        validated_data = {"name": "Bar Name", "description": "Bar Desc"}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.update(self.root_workspace, validated_data)
+        self.assertIn("The root workspace cannot be updated.", str(context.exception))
+
+    def test_update_default_workspace(self):
+        """Test we can update the default workspace."""
+        validated_data = {"name": "Default new name", "description": "Default new description"}
+        updated_instance = self.service.update(self.default_workspace, validated_data)
+        self.assertEqual(updated_instance.name, validated_data["name"])
+        self.assertEqual(updated_instance.description, validated_data["description"])
+
+    def test_update_ungrouped_workspace(self):
+        """Test we cannot update the ungrouped workspace."""
+        validated_data = {"name": "Bar Name", "description": "Bar Desc"}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.update(self.ungrouped_workspace, validated_data)
+        self.assertIn("The ungrouped-hosts workspace cannot be updated.", str(context.exception))
+
 
 class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
     """Tests for the destroy method"""
 
     def test_destroy_non_standard(self):
         """Test the destroy method on non-standard workspaces"""
-        with self.assertRaises(serializers.ValidationError) as context:
-            self.service.destroy(self.default_workspace)
-        self.assertIn(f"Unable to delete {self.default_workspace.type} workspace", str(context.exception))
+        for workspace in (self.default_workspace, self.root_workspace, self.ungrouped_workspace):
+            with self.assertRaises(serializers.ValidationError) as context:
+                self.service.destroy(workspace)
+            self.assertIn(f"Unable to delete {workspace.type} workspace", str(context.exception))
 
     def test_destroy_when_parent(self):
         """Test the destroy method on parent workspaces"""

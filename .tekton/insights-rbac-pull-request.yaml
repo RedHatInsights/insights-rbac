@@ -160,8 +160,7 @@ spec:
       workspaces:
       - name: basic-auth
         workspace: git-auth
-
-      # unit tests
+    # clone the repository for unit tests
     - name: clone-repository-oci-ta
       params:
       - name: url
@@ -169,7 +168,6 @@ spec:
       - name: revision
         value: $(params.revision)
       - name: ociStorage
-        # needs to be unique storage name
         value: $(params.output-image).git
       runAfter:
       - init
@@ -183,92 +181,89 @@ spec:
           value: task
         resolver: bundles
       workspaces:
-      # use the git-auth workspace for credentials
       - name: basic-auth
         workspace: git-auth
-
-    - name: run-unit-tests
-      description: Running Insights RBAC unit tests
-      # make sure the task runs after the artifact is created
-      runAfter:
-        - clone-repository-oci-ta
+    # run the unit tests
+    - description: Running Insights RBAC unit tests
+      name: run-unit-tests
       params:
-        # store the trusted artifact
-        - name: SOURCE_ARTIFACT
-          value: $(tasks.clone-repository-oci-ta.results.SOURCE_ARTIFACT)
-        - name: POSTGRESQL_USER
-          value: "root"
-        - name: POSTGRESQL_PASSWORD
-          value: "root"
-        - name: POSTGRESQL_DATABASE
-          value: "rbac"
-        - name: POSTGRESQL_PORT
-          value: "5432"
-        - name: DATABASE_HOST
-          value: "0.0.0.0"
+      - name: SOURCE_ARTIFACT
+        value: $(tasks.clone-repository-oci-ta.results.SOURCE_ARTIFACT)
+      - name: POSTGRESQL_USER
+        value: root
+      - name: POSTGRESQL_PASSWORD
+        value: root
+      - name: POSTGRESQL_DATABASE
+        value: rbac
+      - name: POSTGRESQL_PORT
+        value: "5432"
+      - name: DATABASE_HOST
+        value: 0.0.0.0
+      runAfter:
+      - clone-repository-oci-ta
+      taskSpec:
+        metadata: {}
+        params:
+        - description: The Trusted Artifact URI pointing to the artifact with the
+            application source code.
+          name: SOURCE_ARTIFACT
+          type: string
+        sidecars:
+        - computeResources: {}
+          env:
+          - name: POSTGRESQL_DATABASE
+            value: $(params.POSTGRESQL_DATABASE)
+          - name: POSTGRESQL_USER
+            value: $(params.POSTGRESQL_USER)
+          - name: POSTGRESQL_PASSWORD
+            value: $(params.POSTGRESQL_PASSWORD)
+          - name: POSTGRESQL_PORT
+            value: $(params.POSTGRESQL_PORT)
+          image: quay.io/cloudservices/postgresql-rds:14
+          name: rbac-db
+        spec: null
+        stepTemplate:
+          computeResources: {}
+          volumeMounts:
+          - mountPath: /var/workdir
+            name: workdir
+        steps:
+        - args:
+          - use
+          - $(params.SOURCE_ARTIFACT)=/var/workdir
+          computeResources: {}
+          image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:9b180776a41d9a22a1c51539f1647c60defbbd55b44bbebdd4130e33512d8b0d
+          name: use-trusted-artifact
+        - computeResources: {}
+          env:
+          - name: DATABASE_NAME
+            value: $(params.POSTGRESQL_DATABASE)
+          - name: DATABASE_USER
+            value: $(params.POSTGRESQL_USER)
+          - name: DATABASE_PASSWORD
+            value: $(params.POSTGRESQL_PASSWORD)
+          - name: DATABASE_PORT
+            value: $(params.POSTGRESQL_PORT)
+          - name: DATABASE_HOST
+            value: $(params.DATABASE_HOST)
+          image: registry.access.redhat.com/ubi9/python-39:latest
+          name: unit-tests
+          script: |
+            #!/bin/bash
+            set -ex
+            echo "RUN THE UNIT TESTS"
+            pip install --upgrade pip
+            pip install tox
+            tox -r
+          securityContext:
+            runAsUser: 0
+          workingDir: /var/workdir
+        volumes:
+        - emptyDir: {}
+          name: workdir
       workspaces:
       - name: basic-auth
         workspace: git-auth
-      taskSpec:
-        params:
-          - description: The Trusted Artifact URI pointing to the artifact with the application source code.
-            name: SOURCE_ARTIFACT
-            type: string
-        volumes:
-          # New volume to store a copy of the source code accessible only to this Task.
-          - name: workdir
-            emptyDir: {}
-        stepTemplate:
-          volumeMounts:
-            - mountPath: /var/workdir
-              name: workdir
-              readyOnly: false
-        sidecars:
-          - image: quay.io/cloudservices/postgresql-rds:14
-            name: rbac-db
-            env:
-              - name: POSTGRESQL_DATABASE
-                value: $(params.POSTGRESQL_DATABASE)
-              - name: POSTGRESQL_USER
-                value: $(params.POSTGRESQL_USER)
-              - name: POSTGRESQL_PASSWORD
-                value: $(params.POSTGRESQL_PASSWORD)
-              - name: POSTGRESQL_PORT
-                value: $(params.POSTGRESQL_PORT)
-        steps:
-          # Add the trusted artifact to the task volume
-          - name: use-trusted-artifact
-            image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:9b180776a41d9a22a1c51539f1647c60defbbd55b44bbebdd4130e33512d8b0d
-            args:
-              - use
-              - $(params.SOURCE_ARTIFACT)=/var/workdir
-          - name: unit-tests
-            # set the working directory to value from previous step
-            workingDir: /var/workdir
-            # Use image that suites your use case
-            image: registry.access.redhat.com/ubi9/python-39:latest
-            securityContext:
-            # If the task step needs write access to the volume, set the runAsUser to 0 (root).
-              runAsUser: 0
-            env:
-              - name: DATABASE_NAME
-                value: $(params.POSTGRESQL_DATABASE)
-              - name: DATABASE_USER
-                value: $(params.POSTGRESQL_USER)
-              - name: DATABASE_PASSWORD
-                value: $(params.POSTGRESQL_PASSWORD)
-              - name: DATABASE_PORT
-                value: $(params.POSTGRESQL_PORT)
-              - name: DATABASE_HOST
-                value: $(params.DATABASE_HOST)
-            script: |
-              #!/bin/bash
-              set -ex
-              echo "RUN THE UNIT TESTS"
-              pip install --upgrade pip
-              pip install tox
-              tox -r
-
     - name: prefetch-dependencies
       params:
       - name: input
@@ -286,7 +281,7 @@ spec:
         - name: name
           value: prefetch-dependencies-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:3a1b3280d6300ebedb9923ddc441b91b6980512be5dae8da4b9d3be21feeb48e
+          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:d48c621ae828a3cbca162e12ec166210d2d77a7ba23b0e5d60c4a1b94491adeb
         - name: kind
           value: task
         resolver: bundles
@@ -327,7 +322,7 @@ spec:
         - name: name
           value: buildah-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.4@sha256:0d6b3c8a075bbf10ec4b7ee9b9312db7c4d91846396d6f16ddc1277549713cff
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.4@sha256:6ac9d16f598c14a4b56e662eccda0a438e94aa8f87dd27a3ea0ff1abc6e00c66
         - name: kind
           value: task
         resolver: bundles
@@ -372,7 +367,7 @@ spec:
       - name: image-url
         value: $(tasks.build-container.results.IMAGE_URL)
       - name: fail-unsigned
-        value: true
+        value: "true"
       runAfter:
       - build-container
       taskRef:
@@ -380,7 +375,7 @@ spec:
         - name: name
           value: rpms-signature-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:d01508e7a0df9059af2ef455e3e81588a70e0b24cd4a5def35af3cc1537bf84a
+          value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:297c2d8928aa3b114fcb1ba5d9da8b10226b68fed30706e78a6a5089c6cd30e3
         - name: kind
           value: task
         resolver: bundles
@@ -414,58 +409,56 @@ spec:
         - "true"
     - name: sast-shell-check
       params:
-        - name: image-digest
-          value: $(tasks.build-image-index.results.IMAGE_DIGEST)
-        - name: image-url
-          value: $(tasks.build-image-index.results.IMAGE_URL)
-        - name: SOURCE_ARTIFACT
-          value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
-        - name: CACHI2_ARTIFACT
-          value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
+      - name: image-digest
+        value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+      - name: image-url
+        value: $(tasks.build-image-index.results.IMAGE_URL)
+      - name: SOURCE_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
+      - name: CACHI2_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
       runAfter:
-        - build-image-index
+      - build-image-index
       taskRef:
         params:
-          - name: name
-            value: sast-shell-check-oci-ta
-          - name: bundle
-            value: quay.io/konflux-ci/tekton-catalog/task-sast-shell-check-oci-ta:0.1@sha256:57b3262138eb06186ae7375f84ca53788bba2a66cfd03d39cb82c78df050aba5
-          - name: kind
-            value: task
+        - name: name
+          value: sast-shell-check-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-sast-shell-check-oci-ta:0.1@sha256:57b3262138eb06186ae7375f84ca53788bba2a66cfd03d39cb82c78df050aba5
+        - name: kind
+          value: task
         resolver: bundles
       when:
-        - input: $(params.skip-checks)
-          operator: in
-          values:
-            - "false"
-      workspaces: []
+      - input: $(params.skip-checks)
+        operator: in
+        values:
+        - "false"
     - name: sast-unicode-check
       params:
-        - name: image-url
-          value: $(tasks.build-image-index.results.IMAGE_URL)
-        - name: image-digest
-          value: $(tasks.build-image-index.results.IMAGE_DIGEST)
-        - name: SOURCE_ARTIFACT
-          value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
-        - name: CACHI2_ARTIFACT
-          value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
+      - name: image-url
+        value: $(tasks.build-image-index.results.IMAGE_URL)
+      - name: image-digest
+        value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+      - name: SOURCE_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
+      - name: CACHI2_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
       runAfter:
-        - build-image-index
+      - build-image-index
       taskRef:
         params:
-          - name: name
-            value: sast-unicode-check-oci-ta
-          - name: bundle
-            value: quay.io/konflux-ci/tekton-catalog/task-sast-unicode-check-oci-ta:0.2@sha256:df185dbe4e2852668f9c46f938dd752e90ea9c79696363378435a6499596c319
-          - name: kind
-            value: task
+        - name: name
+          value: sast-unicode-check-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-sast-unicode-check-oci-ta:0.2@sha256:df185dbe4e2852668f9c46f938dd752e90ea9c79696363378435a6499596c319
+        - name: kind
+          value: task
         resolver: bundles
       when:
-        - input: $(params.skip-checks)
-          operator: in
-          values:
-            - "false"
-      workspaces: []
+      - input: $(params.skip-checks)
+        operator: in
+        values:
+        - "false"
     - name: deprecated-base-image-check
       params:
       - name: IMAGE_URL
@@ -479,7 +472,7 @@ spec:
         - name: name
           value: deprecated-image-check
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:eb8136b543147b4a3e88ca3cc661ca6a11e303f35f0db44059f69151beea8496
+          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:ecd33669676b3a193ff4c2c6223cb912cc1b0cf5cc36e080eaec7718500272cf
         - name: kind
           value: task
         resolver: bundles
@@ -501,7 +494,7 @@ spec:
         - name: name
           value: clair-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:7c73e2beca9b8306387efeaf775831440ec799b05a5f5c008a65bb941a1e91f6
+          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:878ae247ffc58d95a9ac68e4d658ef91ef039363e03e65a386bc0ead02d9d7d8
         - name: kind
           value: task
         resolver: bundles
@@ -521,7 +514,7 @@ spec:
         - name: name
           value: ecosystem-cert-preflight-checks
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:dea8d9b4bec3e99d612d799798acf132df48276164b5193ea68f9f3c25ae425b
+          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:1157c6ac9805af8b8874e4b8d68d2403d99e1c007f63623566b5d848b27c1826
         - name: kind
           value: task
         resolver: bundles
@@ -569,7 +562,7 @@ spec:
         - name: name
           value: clamav-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:59094118aa07d5b0199565c4e0b2d0f4feb9a4741877c8716877572e2c4804f9
+          value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:24182598bf5161c4007988a7236e240f361c77a0a9b6973a6712dbae50d296bc
         - name: kind
           value: task
         resolver: bundles
@@ -612,7 +605,7 @@ spec:
         - name: name
           value: push-dockerfile-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-push-dockerfile-oci-ta:0.1@sha256:278f84550844c1c050a65536799f4b54e7c203e0ac51393aa75379dd974c82e9
+          value: quay.io/konflux-ci/tekton-catalog/task-push-dockerfile-oci-ta:0.1@sha256:d0ee13ab3d9564f7ee806a8ceaced934db493a3a40e11ff6db3a912b8bbace95
         - name: kind
           value: task
         resolver: bundles
@@ -621,7 +614,8 @@ spec:
       optional: true
     - name: netrc
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-insights-rbac
   workspaces:
   - name: git-auth
     secret:

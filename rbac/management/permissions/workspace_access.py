@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Defines the Audit Log Access Permissions class."""
+from management.workspace.utils import is_user_allowed
 from rest_framework import permissions
 
 
@@ -23,4 +24,13 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on Account Admin property."""
-        return request.user.admin
+        # Would exist for update/delete/retrive workspace
+        if request.user.admin:
+            return True
+        workspace_id = view.kwargs.get("pk")
+        if request.method in permissions.SAFE_METHODS:
+            required_operation = "read"
+        else:
+            required_operation = "write"
+
+        return is_user_allowed(request, required_operation, workspace_id)

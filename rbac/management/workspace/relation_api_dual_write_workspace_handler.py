@@ -35,7 +35,7 @@ from migration_tool.utils import create_relationship
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class RelationApiDualWriteWorkspacepHandler(BaseRelationApiDualWriteHandler):
+class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write for group bindings and membership."""
 
     workspace: Workspace
@@ -99,6 +99,7 @@ class RelationApiDualWriteWorkspacepHandler(BaseRelationApiDualWriteHandler):
                 )
             self._replicator.replicate_workspace(
                 WorkspaceEvent(
+                    account_number=self.workspace.tenant.account_id,
                     org_id=str(self.workspace.tenant.org_id),
                     workspace=WorkspaceEventSerializer(self.workspace).data,
                     event_type=self.event_type,
