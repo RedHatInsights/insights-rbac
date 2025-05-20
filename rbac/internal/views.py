@@ -30,9 +30,9 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.errors import SentryDiagnosticError, UserNotFoundError
-from internal.utils import delete_bindings
+from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
 from management.cache import TenantCache
-from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
+from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -59,7 +59,6 @@ from management.utils import (
     get_principal,
     groups_for_principal,
 )
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
 from management.workspace.serializer import WorkspaceSerializer
 from rest_framework import status
 
@@ -1201,6 +1200,9 @@ def correct_resource_definitions(request):
                 OR jsonb_typeof("attributeFilter"->'value') <> 'array')
                 AND "attributeFilter"->>'key' = 'group.id';"""
 
+    operations_query = """FROM management_resourcedefinition WHERE "attributeFilter"->>'operation' != 'in'
+                       AND "attributeFilter"->>'operation' != 'equal';"""
+
     query_params = request.GET
 
     if request.method == "GET":
@@ -1216,6 +1218,9 @@ def correct_resource_definitions(request):
                 cursor.execute("SELECT *" + hbi_query)
                 hbi_rows = cursor.fetchall()
 
+                cursor.execute("SELECT *" + operations_query)
+                operation_rows = cursor.fetchall()
+
                 response = [
                     {
                         "id": row[0],
@@ -1223,7 +1228,7 @@ def correct_resource_definitions(request):
                         "access_id": row[2],
                         "tenant_id": row[3],
                     }
-                    for row in list_rows + string_rows + hbi_rows
+                    for row in list_rows + string_rows + hbi_rows + operation_rows
                 ]
 
             return HttpResponse(json.dumps(response), content_type="application/json", status=200)
@@ -1236,6 +1241,9 @@ def correct_resource_definitions(request):
             count += cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(*)" + hbi_query)
+            count += cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*)" + operations_query)
             count += cursor.fetchone()[0]
 
         return HttpResponse(f"{count} resource definitions would be corrected", status=200)
@@ -1277,6 +1285,16 @@ def correct_resource_definitions(request):
                 resource_definition.save()
                 count += 1
 
+            cursor.execute("SELECT id " + operations_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter = normalize_operation_in_attribute_filter(
+                    resource_definition.attributeFilter
+                )
+                resource_definition.save()
+                count += 1
+
         return HttpResponse(f"Updated {count} bad resource definitions", status=200)
 
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
@@ -1308,6 +1326,17 @@ def normalize_hbi_attribute_filter(attribute_filter):
                 attribute_filter["value"] = [value["id"]]
         else:
             attribute_filter["value"] = [value]
+    return attribute_filter
+
+
+def normalize_operation_in_attribute_filter(attribute_filter):
+    """Set Attribute Filter invalid 'operation' to valid operation if value type is 'str', 'int' or 'list'."""
+    op = attribute_filter.get("operation")
+    value = attribute_filter.get("value")
+    if op != "equal" and isinstance(value, (str, int)):
+        attribute_filter["operation"] = "equal"
+    elif op != "in" and isinstance(value, list):
+        attribute_filter["operation"] = "in"
     return attribute_filter
 
 
@@ -1407,23 +1436,7 @@ def retrieve_ungrouped_workspace(request):
     try:
         with transaction.atomic():
             tenant = Tenant.objects.get(org_id=org_id)
-            ungrouped_hosts = Workspace.objects.select_for_update().filter(
-                tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS
-            )
-            if not ungrouped_hosts.exists():
-                default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-                ungrouped_hosts, _ = Workspace.objects.get_or_create(
-                    tenant=tenant,
-                    type=Workspace.Types.UNGROUPED_HOSTS,
-                    name=Workspace.SpecialNames.UNGROUPED_HOSTS,
-                    parent=default,
-                )
-                dual_write_handler = RelationApiDualWriteWorkspacepHandler(
-                    ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
-                )
-                dual_write_handler.replicate_new_workspace()
-            else:
-                ungrouped_hosts = ungrouped_hosts.get()
+            ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
             return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:

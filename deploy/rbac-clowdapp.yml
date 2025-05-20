@@ -233,6 +233,14 @@ objects:
             value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_APPLICATION_NAME
+            value: ${WORKSPACE_APPLICATION_NAME}
+          - name: WORKSPACE_RESOURCE_TYPE
+            value: ${WORKSPACE_RESOURCE_TYPE}
+          - name: WORKSPACE_ATTRIBUTE_FILTER
+            value: ${WORKSPACE_ATTRIBUTE_FILTER}
+          - name: WORKSPACE_HIERARCHY_ENABLED
+            value: ${WORKSPACE_HIERARCHY_ENABLED}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -460,6 +468,14 @@ objects:
             value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_APPLICATION_NAME
+            value: ${WORKSPACE_APPLICATION_NAME}
+          - name: WORKSPACE_RESOURCE_TYPE
+            value: ${WORKSPACE_RESOURCE_TYPE}
+          - name: WORKSPACE_ATTRIBUTE_FILTER
+            value: ${WORKSPACE_ATTRIBUTE_FILTER}
+          - name: WORKSPACE_HIERARCHY_ENABLED
+            value: ${WORKSPACE_HIERARCHY_ENABLED}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -538,6 +554,10 @@ objects:
             value: ${V2_READ_ONLY_API_MODE}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
+          - name: ADD_UNGROUPED_HOSTS_ID
+            value: ${ADD_UNGROUPED_HOSTS_ID}
+          - name: REMOVE_NULL_VALUE
+            value: ${REMOVE_NULL_VALUE}
 
     jobs:
       - name: tenant-org-id-populator
@@ -725,6 +745,14 @@ objects:
               value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
+            - name: WORKSPACE_APPLICATION_NAME
+              value: ${WORKSPACE_APPLICATION_NAME}
+            - name: WORKSPACE_RESOURCE_TYPE
+              value: ${WORKSPACE_RESOURCE_TYPE}
+            - name: WORKSPACE_ATTRIBUTE_FILTER
+              value: ${WORKSPACE_ATTRIBUTE_FILTER}
+            - name: WORKSPACE_HIERARCHY_ENABLED
+              value: ${WORKSPACE_HIERARCHY_ENABLED}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -932,6 +960,14 @@ objects:
               value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
+            - name: WORKSPACE_APPLICATION_NAME
+              value: ${WORKSPACE_APPLICATION_NAME}
+            - name: WORKSPACE_RESOURCE_TYPE
+              value: ${WORKSPACE_RESOURCE_TYPE}
+            - name: WORKSPACE_ATTRIBUTE_FILTER
+              value: ${WORKSPACE_ATTRIBUTE_FILTER}
+            - name: WORKSPACE_HIERARCHY_ENABLED
+              value: ${WORKSPACE_HIERARCHY_ENABLED}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1366,3 +1402,20 @@ parameters:
 - name: RBAC_HBI_S3_AWS_BUCKET
   description: The bucket name for accessing HBI S3
   value: 'hbi-kessel-s3-stage'
+- description: The application name used in workspace permissions
+  name: WORKSPACE_APPLICATION_NAME
+  value: 'inventory'
+- description: The resource type used in workspace permissions
+  name: WORKSPACE_RESOURCE_TYPE
+  value: 'groups'
+- description: The attribute filter key used in workspace permissions' resource definitions
+  name: WORKSPACE_ATTRIBUTE_FILTER
+  value: 'group.id'
+- description: Flag to enable returning workspace hierarchy in v1 access
+  name: WORKSPACE_HIERARCHY_ENABLED
+- name: ADD_UNGROUPED_HOSTS_ID
+  description: Add ungrouped hosts workspace id in addition to null
+  value: 'False'
+- name: REMOVE_NULL_VALUE
+  description: Remove null value from the list of workspace id
+  value: 'False'

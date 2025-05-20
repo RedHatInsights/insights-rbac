@@ -288,6 +288,21 @@ def validate_key(params, query_key, valid_values, default_value=None, required=T
         raise serializers.ValidationError({key: _(message)})
 
 
+def value_to_list(value):
+    """Ensure value is returned in a list if not already a list."""
+    value_list = [value] if not isinstance(value, list) else value
+    return value_list
+
+
+def is_valid_uuid(value):
+    """Return whether or not a value is a valid UUID."""
+    try:
+        UUID(str(value))
+        return True
+    except ValueError:
+        return False
+
+
 def validate_uuid(uuid, key="UUID Validation"):
     """Verify UUID provided is valid."""
     try:

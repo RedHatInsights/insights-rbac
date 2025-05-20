@@ -95,15 +95,22 @@ class WorkspaceEvent:
     """Workspace event."""
 
     org_id: str
+    account_number: str
     workspace: dict[str, str]
     event_type: ReplicationEventType
     partition_key: "PartitionKey"
 
     def __init__(
-        self, org_id: str, workspace: dict[str, str], event_type: ReplicationEventType, partition_key: "PartitionKey"
+        self,
+        org_id: str,
+        account_number: str,
+        workspace: dict[str, str],
+        event_type: ReplicationEventType,
+        partition_key: "PartitionKey",
     ):
         """Initialize WorkspaceEvent."""
         self.org_id = org_id
+        self.account_number = account_number
         self.workspace = workspace
         self.event_type = event_type
         self.partition_key = partition_key

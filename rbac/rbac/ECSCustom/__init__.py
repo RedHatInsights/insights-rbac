@@ -55,14 +55,14 @@ class ECSCustomFormatter(StdlibFormatter):
     def add_info_from_WSGIRequest(self, result, request):
         """Extract info from WSGIRequest and add it to the log."""
         parsed_url = urlparse(request.build_absolute_uri())
-        request_body_bytes = request.headers["Content-Length"] or "0"
+        request_body_bytes = request.headers.get("Content-Length", "0")
 
         result["url"] = {"path": parsed_url.path, "domain": parsed_url.hostname, "port": parsed_url.port}
         result["http"] = {
             "request": {"body": {"bytes": int(request_body_bytes)}, "method": request.method},
             "response": {
                 "body": {"bytes": len(result["message"]), "content": result["message"]},
-                "status_code": result["status_code"],
+                "status_code": result.get("status_code", ""),
             },
         }
 

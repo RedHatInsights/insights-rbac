@@ -19,7 +19,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -38,7 +38,7 @@ class WorkspaceService:
                     parent_id = default.id
                 parent = Workspace.objects.get(id=parent_id)
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
-                dual_write_handler = RelationApiDualWriteWorkspacepHandler(
+                dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE
                 )
                 dual_write_handler.replicate_new_workspace()
@@ -56,12 +56,14 @@ class WorkspaceService:
 
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
         """Update workspace."""
+        if instance.type in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
+            raise serializers.ValidationError(f"The {instance.type} workspace cannot be updated.")
         for attr, value in validated_data.items():
             if self._parent_id_attr_update(attr, value, instance):
                 raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
             setattr(instance, attr, value)
         instance.save()
-        dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
+        dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
         dual_write_handler.replicate_updated_workspace(instance.parent)
         return instance
 
@@ -72,7 +74,7 @@ class WorkspaceService:
         if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
             raise serializers.ValidationError("Unable to delete due to workspace dependencies")
 
-        dual_write_handler = RelationApiDualWriteWorkspacepHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
+        dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
 
