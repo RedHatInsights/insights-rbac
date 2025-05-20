@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from datetime import timedelta
 from management.cache import TenantCache
-from management.models import Group, Permission, Principal, Policy, Role, Access, Workspace
+from management.models import Group, Permission, Principal, ResourceDefinition, Policy, Role, Access, Workspace
 from tests.identity_request import IdentityRequest
 
 
@@ -100,7 +100,7 @@ class AccessViewTests(IdentityRequest):
             tenant=self.tenant,
             type=Workspace.Types.ROOT,
         )
-        Workspace.objects.create(
+        self.default_ws = Workspace.objects.create(
             name="Tenant Default Workspace",
             type=Workspace.Types.DEFAULT,
             parent=tenant_root_workspace,
@@ -113,7 +113,9 @@ class AccessViewTests(IdentityRequest):
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(type=Workspace.Types.UNGROUPED_HOSTS).delete()
+        Workspace.objects.filter(type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(type=Workspace.Types.DEFAULT).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
 
     def create_role(self, role_name, headers, in_access_data=None):
@@ -226,6 +228,76 @@ class AccessViewTests(IdentityRequest):
         url = "{}?application={}".format(reverse("v1_management:access"), "default")
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
+
+    def test_get_access_replace_null_value(self):
+        """Test that we can obtain the expected access without pagination."""
+        role_name = "roleA"
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        role = Role.objects.get(uuid=role_uuid)
+        access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+        resourceDef = ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [None, "uuid"],
+            },
+            access=access,
+            tenant=self.tenant,
+        )
+        policy_name = "policyA"
+        self.create_policy(policy_name, self.group.uuid, [role_uuid], tenant=self.tenant)
+
+        # Test that we can retrieve the principal access and null value is not replaced
+        url = f'{reverse("v1_management:access")}?application='
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for access_data in response.data.get("data"):
+            for resourceDef in access_data.get("resourceDefinitions", []):
+                if resourceDef.get("key", None) == "group.id":
+                    self.assertEqual(resourceDef.get("value"), [None, "uuid"])
+                    break
+
+        # Test that we can retrieve the principal access
+        # and null value is not replaced if there is no ungrouped workspace
+        with self.settings(ADD_UNGROUPED_HOSTS_ID=True):
+            response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for access_data in response.data.get("data"):
+            for resourceDef in access_data.get("resourceDefinitions", []):
+                if resourceDef.get("key", None) == "group.id":
+                    self.assertEqual(resourceDef.get("value"), [None, "uuid"])
+                    break
+
+        # Test that we can retrieve the principal access
+        # if there is an ungrouped workspace, its id will be added
+        ungrouped_hosts_id = Workspace.objects.create(
+            name="Ungrouped Workspace",
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            tenant=self.tenant,
+            parent=self.default_ws,
+        )
+        with self.settings(ADD_UNGROUPED_HOSTS_ID=True):
+            response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for access_data in response.data.get("data"):
+            for resourceDef in access_data.get("resourceDefinitions", []):
+                if resourceDef.get("key", None) == "group.id":
+                    self.assertEqual(resourceDef.get("value"), [None, str(ungrouped_hosts_id), "uuid"])
+                    break
+
+        # Test that we can retrieve the principal access
+        # and null value is replaced if there is a ungrouped workspace
+        with self.settings(ADD_UNGROUPED_HOSTS_ID=True, REMOVE_NULL_VALUE=True):
+            response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for access_data in response.data.get("data"):
+            for resourceDef in access_data.get("resourceDefinitions", []):
+                if resourceDef.get("key", None) == "group.id":
+                    self.assertEqual(resourceDef.get("value"), [str(ungrouped_hosts_id), "uuid"])
+                    break
 
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_system_role(self):
         self.create_platform_default_resource()

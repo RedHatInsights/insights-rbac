@@ -16,6 +16,10 @@
 #
 """Test the Audit Logs Model."""
 import json
+import random
+import string
+from uuid import uuid4
+
 from django.test.utils import override_settings
 from django.urls import clear_url_caches
 from importlib import reload
@@ -25,7 +29,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
-from management.models import Workspace
+from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role, Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.serializer import WorkspaceEventSerializer
 from migration_tool.in_memory_tuples import (
@@ -54,6 +58,41 @@ class WorkspaceViewTests(IdentityRequest):
         """Tear down group model tests."""
         Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
+
+    def _get_random_name(self, length=10):
+        return "".join(random.choices(string.ascii_letters + string.digits, k=length))
+
+    def _setup_access_for_principal(self, username, permission, workspace_id=None, platform_default=False):
+        group = Group(name=self._get_random_name(), platform_default=platform_default, tenant=self.tenant)
+        group.save()
+        role = Role.objects.create(
+            name="".join(random.choices(string.ascii_letters + string.digits, k=5)),
+            description="A role for a group.",
+            tenant=self.tenant,
+        )
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        permission, _ = Permission.objects.get_or_create(permission=permission, tenant=public_tenant)
+        access = Access.objects.create(permission=permission, role=role, tenant=self.tenant)
+        if workspace_id:
+            operation = "in" if isinstance(workspace_id, list) else "equal"
+            ResourceDefinition.objects.create(
+                attributeFilter={
+                    "key": "group.id",
+                    "operation": operation,
+                    "value": workspace_id,
+                },
+                access=access,
+                tenant=self.tenant,
+            )
+
+        policy = Policy.objects.create(name=self._get_random_name(), group=group, tenant=self.tenant)
+        policy.roles.add(role)
+        policy.save()
+        group.policies.add(policy)
+        group.save()
+        if not platform_default:
+            principal, _ = Principal.objects.get_or_create(username=username, tenant=self.tenant)
+            group.principals.add(principal)
 
 
 @override_settings(V2_APIS_ENABLED=True)
@@ -195,6 +234,58 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(detail, "You do not have permission to perform this action.")
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
+
+    def test_create_workspace_authorized_through_custom_role(self):
+        """Test for creating a workspace."""
+        workspace = {
+            "name": "New Workspace",
+            "description": "Workspace",
+        }
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read")
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:write")
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], workspace["name"])
+
+    def test_create_workspace_authorized_through_platform_default_access(self):
+        """Test for creating a workspace."""
+        workspace = {
+            "name": "New Workspace",
+            "description": "Workspace",
+        }
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read", platform_default=True)
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:write", platform_default=True)
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], workspace["name"])
 
     def test_duplicate_create_workspace(self):
         """Test that creating a duplicate workspace within same parent is not allowed."""
@@ -730,6 +821,54 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_get_workspace_authorized_through_custom_role(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read")
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_get_workspace_authorized_through_custom_role_with_resourcedef(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        # Assign permission of non target workspace
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:read", workspace_id=str(uuid4())
+        )
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Assign permission of target workspace
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:read", workspace_id=[str(self.standard_workspace.id)]
+        )
+        response = client.get(url, None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_get_workspace_authorized_through_platform_default_access(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read", platform_default=True)
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
@@ -987,6 +1126,55 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertType(payload, "standard")
         assert payload.get("data")[0]["name"] == ws_name_1.upper()
+
+    def test_workspace_list_authorization_platform_default(self):
+        """List workspaces authorization."""
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+        request = request_context["request"]
+        headers = request.META
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read", platform_default=True)
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_authorization_custom_role(self):
+        """List workspaces authorization."""
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+        request = request_context["request"]
+        headers = request.META
+        Workspace.objects.create(
+            name="Another Standard Workspace",
+            tenant=self.tenant,
+            type="standard",
+            parent_id=self.default_workspace.id,
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:read", workspace_id=str(uuid4())
+        )
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Will include ancestors of the workspace: root->default->standard_workspace, but not the another standard ws
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:read", workspace_id=str(self.standard_workspace.id)
+        )
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(len(payload.get("data")), 3)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 1)
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):

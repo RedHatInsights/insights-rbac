@@ -554,6 +554,10 @@ objects:
             value: ${V2_READ_ONLY_API_MODE}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
+          - name: ADD_UNGROUPED_HOSTS_ID
+            value: ${ADD_UNGROUPED_HOSTS_ID}
+          - name: REMOVE_NULL_VALUE
+            value: ${REMOVE_NULL_VALUE}
 
     jobs:
       - name: tenant-org-id-populator
@@ -1409,4 +1413,9 @@ parameters:
   value: 'group.id'
 - description: Flag to enable returning workspace hierarchy in v1 access
   name: WORKSPACE_HIERARCHY_ENABLED
+- name: ADD_UNGROUPED_HOSTS_ID
+  description: Add ungrouped hosts workspace id in addition to null
+  value: 'False'
+- name: REMOVE_NULL_VALUE
+  description: Remove null value from the list of workspace id
   value: 'False'

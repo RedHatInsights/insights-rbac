@@ -18,6 +18,7 @@
 """Serializer for role management."""
 from django.conf import settings
 from django.utils.translation import gettext as _
+from internal.utils import get_or_create_ungrouped_workspace
 from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import (
@@ -71,20 +72,30 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
                 raise serializers.ValidationError(error)
         return value
 
+    def to_representation(self, instance):
+        """Convert the ResourceDefinition instance to a dictionary."""
+        serialized_data = super().to_representation(instance)
+        if settings.REMOVE_NULL_VALUE and instance.attributeFilter["key"] == "group.id":
+            value = instance.attributeFilter["value"]
+            if isinstance(value, list) and None in value:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = [v for v in value if v is not None]
+                value.append(str(ungrouped_hosts.id))
+            elif value is None:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = str(ungrouped_hosts.id)
+            serialized_data["attributeFilter"]["value"] = value
+        if self._should_add_hierarchy(instance):
+            serialized_data.get("attributeFilter").update(
+                {"operation": "in", "value": self._original_vals_and_descendant_ids(instance)}
+            )
+        return serialized_data
+
     class Meta:
         """Metadata for the serializer."""
 
         model = ResourceDefinition
         fields = ("attributeFilter",)
-
-    def to_representation(self, instance):
-        """Representation of ResourceDefinitions."""
-        data = super().to_representation(instance)
-        if self._should_add_hierarchy(instance):
-            data.get("attributeFilter").update(
-                {"operation": "in", "value": self._original_vals_and_descendant_ids(instance)}
-            )
-        return data
 
     def _original_vals_and_descendant_ids(self, instance):
         attr_filter_list = value_to_list(instance.attributeFilter.get("value"))

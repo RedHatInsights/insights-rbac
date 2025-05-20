@@ -16,9 +16,10 @@
 #
 
 """View for principal access."""
+from django.conf import settings
 from django.db.models import Prefetch
 from management.cache import AccessCache
-from management.models import Access, ResourceDefinition
+from management.models import Access, ResourceDefinition, Workspace
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
@@ -138,9 +139,11 @@ class AccessView(APIView):
             cache.save_policy(principal.uuid, sub_key, access_policy)
 
         page = self.paginate_queryset(access_policy)
-        if page is not None:
-            return self.get_paginated_response(page)
-        return Response({"data": access_policy})
+        response = Response({"data": access_policy}) if page is None else self.get_paginated_response(page)
+
+        self.add_ungrouped_hosts_id(response, request.tenant)
+
+        return response
 
     @property
     def paginator(self):
@@ -171,3 +174,28 @@ class AccessView(APIView):
         if ordering:
             sub_key = f"{app}&order:{ordering}"
         return sub_key, ordering
+
+    def add_ungrouped_hosts_id(self, response, tenant):
+        """Add ungrouped hosts id to the data."""
+        if not settings.ADD_UNGROUPED_HOSTS_ID:
+            return
+        ungrouped_hosts_id = None
+        queried = False
+        for access in response.data["data"]:
+            if not access["permission"].startswith("inventory:hosts:"):
+                continue
+            for resource_def in access.get("resourceDefinitions", []):
+                attribute_filter = resource_def.get("attributeFilter", {})
+                if attribute_filter.get("key") == "group.id" and None in attribute_filter.get("value"):
+                    if not ungrouped_hosts_id and not queried:
+                        ungrouped_workspace = Workspace.objects.filter(
+                            type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant
+                        ).first()
+                        queried = True
+                    if ungrouped_workspace:
+                        ungrouped_hosts_id = str(ungrouped_workspace.id)
+                        if ungrouped_hosts_id not in attribute_filter["value"]:
+                            attribute_filter["value"].append(ungrouped_hosts_id)
+                        if settings.REMOVE_NULL_VALUE:
+                            attribute_filter["value"].remove(None)
+        return response
