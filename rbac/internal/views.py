@@ -30,9 +30,9 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.errors import SentryDiagnosticError, UserNotFoundError
-from internal.utils import delete_bindings
+from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
 from management.cache import TenantCache
-from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
+from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -59,7 +59,6 @@ from management.utils import (
     get_principal,
     groups_for_principal,
 )
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
 from rest_framework import status
 
@@ -1437,23 +1436,7 @@ def retrieve_ungrouped_workspace(request):
     try:
         with transaction.atomic():
             tenant = Tenant.objects.get(org_id=org_id)
-            ungrouped_hosts = Workspace.objects.select_for_update().filter(
-                tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS
-            )
-            if not ungrouped_hosts.exists():
-                default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-                ungrouped_hosts, _ = Workspace.objects.get_or_create(
-                    tenant=tenant,
-                    type=Workspace.Types.UNGROUPED_HOSTS,
-                    name=Workspace.SpecialNames.UNGROUPED_HOSTS,
-                    parent=default,
-                )
-                dual_write_handler = RelationApiDualWriteWorkspaceHandler(
-                    ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
-                )
-                dual_write_handler.replicate_new_workspace()
-            else:
-                ungrouped_hosts = ungrouped_hosts.get()
+            ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
             return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:
