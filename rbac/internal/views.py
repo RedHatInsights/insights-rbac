@@ -1457,8 +1457,10 @@ def workspace_removal(request):
         ?detail=true            : return list of standard workspaces
 
     DELETE /_private/api/utils/workspace/
-        ?id=<workspace_id> : delete a single workspace
-        (no id)            : delete all standard workspaces
+        ?id=<workspace_id>                  : delete a single workspace
+        (no id)                             : delete all standard workspaces
+        ?without_child_only=false (default) : delete all standard workspaces
+        ?without_child_only=true            : delete only standard workspaces without children
     """
     query_params = request.GET
     logger.info(f"Workspace list or removal: {request.method} {request.user.username}")
@@ -1521,6 +1523,7 @@ def workspace_removal(request):
         with transaction.atomic():
             while True:
                 workspaces = Workspace.objects.filter(type=Workspace.Types.STANDARD, children__isnull=True)
+                ws_without_child_count = workspaces.count()
                 if not workspaces:
                     break
                 for ws in workspaces:
@@ -1529,6 +1532,13 @@ def workspace_removal(request):
                     )
                     dual_write_handler.replicate_deleted_workspace()
                     ws.delete()
+                if query_params.get("without_child_only", "") == "true":
+                    return HttpResponse(
+                        f"{ws_without_child_count} workspace(s) deleted, "
+                        f"another {ws_count - ws_without_child_count} standard workspace(s) exist in database.",
+                        content_type="text/plain",
+                        status=200,
+                    )
         logger.info("All standard workspaces successfully deleted.")
         return HttpResponse(f"{ws_count} workspace(s) deleted.", content_type="text/plain", status=200)
     except Exception as e:
