@@ -3267,3 +3267,32 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Invalid workspace id format.")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_workspace_delete_workspace_only_without_children(self):
+        """Test we can remove only standard workspaces without children."""
+        depth = 2
+        branching = 2
+        self.create_workspace_tree(parent=self.default_workspace, depth=depth, branching=branching)
+
+        url = "/_private/api/utils/workspace/" + f"?without_child_only=true"
+        response = self.client.delete(url, **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # with depth = 2 and branching = 2 we created 6 workspaces + 1 workspace already existed in db
+        #
+        # Default workspace
+        #     * Workspace 1
+        #           * Workspace 1 1
+        #           * Workspace 1 2
+        #     * Workspace 2
+        #           * Workspace 2 1
+        #           * Workspace 2 2
+        #     * self.standard_workspace
+        #
+        # => with ?without_child_only=true we removed 5 workspaces and 'Workspace 1' and 'Workspace 2'
+        # were not removed
+        self.assertEqual(
+            response.content.decode(), f"5 workspace(s) deleted, another 2 standard workspace(s) exist in database."
+        )
+        self.assertEqual(Workspace.objects.filter(type=Workspace.Types.STANDARD).count(), 2)
