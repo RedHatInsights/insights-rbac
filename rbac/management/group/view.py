@@ -827,7 +827,7 @@ class GroupViewSet(
                             "errors": [
                                 {
                                     "detail": str(ipe),
-                                    "status": status.HTTP_403_FORBIDDEN,
+                                    "status": str(status.HTTP_403_FORBIDDEN),
                                     "source": "groups",
                                 }
                             ]
