@@ -177,7 +177,10 @@ def batch_import_workspace(records):
 
         for record in records:
             is_ungrouped = record["ungrouped"].lower() == "true"
-            parent = parent_workspace_dict[record["org_id"]]
+            parent = parent_workspace_dict.get(record["org_id"])
+            if not parent:
+                logger.warning(f"Missing tenant for org_id: {record['org_id']}")
+                continue
             if is_ungrouped:
                 ws_name = Workspace.SpecialNames.UNGROUPED_HOSTS
                 workspace_type = Workspace.Types.UNGROUPED_HOSTS
