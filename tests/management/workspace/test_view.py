@@ -1170,7 +1170,9 @@ class WorkspaceTestsList(WorkspaceViewTests):
         payload = response.data
         self.assertSuccessfulList(response, payload)
         self.assertEqual(len(payload.get("data")), 3)
-        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 1)
+
+        # Account for ungrouped and new standard workspace not having access
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 2)
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
