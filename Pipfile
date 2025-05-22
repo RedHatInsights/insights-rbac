@@ -58,7 +58,7 @@ pre-commit = "==4.2.0"
 mypy = "==1.15.0"
 
 [requires]
-python_version = "3.9"
+python_version = "3.12"
 
 [pipenv]
 allow_prereleases = true

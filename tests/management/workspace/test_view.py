@@ -145,12 +145,12 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.data
         self.assertEqual(data.get("name"), "New Workspace")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("description"), "Workspace")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
         tuples = self.tuples.find_tuples(
             all_of(
@@ -178,12 +178,12 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.data
         self.assertEqual(data.get("name"), "Root Peer")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("description"), "Workspace")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_assign_parent_id(self):
@@ -201,13 +201,13 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         data = response.data
 
         self.assertEqual(data.get("name"), "New Workspace")
-        self.assertNotEquals(data.get("id"), "")
-        self.assertNotEquals(data.get("parent_id"), data.get("id"))
+        self.assertNotEqual(data.get("id"), "")
+        self.assertNotEqual(data.get("parent_id"), data.get("id"))
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("description"), "Workspace")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_empty_body(self):
@@ -344,16 +344,16 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Updated name")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("type"), "standard")
-        self.assertEquals(data.get("description"), "Updated description")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("type"), "standard")
+        self.assertEqual(data.get("description"), "Updated description")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
-        self.assertEquals(update_workspace.name, "Updated name")
-        self.assertEquals(update_workspace.description, "Updated description")
+        self.assertEqual(update_workspace.name, "Updated name")
+        self.assertEqual(update_workspace.description, "Updated description")
         self.assertEqual(response.get("content-type"), "application/json")
 
         self.assertEqual(len(self.tuples), 0)
@@ -411,12 +411,12 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(data.get("name"), "New Workspace")
         self.assertEqual(data.get("description"), "New Workspace - description")
         self.assertEqual(data.get("id"), str(workspace.id))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("type"), "standard")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
-        self.assertEquals(update_workspace.name, "New Workspace")
+        self.assertEqual(update_workspace.name, "New Workspace")
 
     def test_update_workspace_update_parent_id(self):
         """Test for updating a workspace's parent_id."""
@@ -463,14 +463,14 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Updated name")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("type"), "standard")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
-        self.assertEquals(update_workspace.name, "Updated name")
+        self.assertEqual(update_workspace.name, "Updated name")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_partial_update_workspace_same_tenant_parent_id(self):
@@ -743,14 +743,14 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Standard Workspace")
-        self.assertEquals(data.get("description"), "Standard Workspace - description")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertEqual(data.get("description"), "Standard Workspace - description")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
-        self.assertEquals(data.get("type"), "standard")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_with_ancestry(self):
@@ -762,16 +762,16 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Standard Workspace")
-        self.assertEquals(data.get("description"), "Standard Workspace - description")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertEqual(data.get("description"), "Standard Workspace - description")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
         self.assertEqual(
             data.get("ancestry"),
             [{"name": self.root_workspace.name, "id": str(self.root_workspace.id), "parent_id": None}],
         )
-        self.assertEquals(data.get("type"), "standard")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
 
@@ -784,11 +784,11 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Standard Workspace")
-        self.assertEquals(data.get("description"), "Standard Workspace - description")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertEqual(data.get("description"), "Standard Workspace - description")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
         self.assertCountEqual(
             data.get("ancestry"),
             [
@@ -800,7 +800,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
                 },
             ],
         )
-        self.assertEquals(data.get("type"), "standard")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_not_found(self):

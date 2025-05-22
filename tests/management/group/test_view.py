@@ -7234,7 +7234,7 @@ class GroupReplicationTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
 
         # Expect no new tuples
-        self.assertEquals(0, self.relations.count_tuples())
+        self.assertEqual(0, self.relations.count_tuples())
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_remove_role_added_twice_removes_role(self, replicate):
