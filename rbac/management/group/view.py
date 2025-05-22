@@ -833,15 +833,15 @@ class GroupViewSet(
                             ]
                         },
                     )
-                except ServiceAccountNotFoundError as sanfe:
+                except ServiceAccountNotFoundError as err:
                     return Response(
-                        status=status.HTTP_400_BAD_REQUEST,
+                        status=status.HTTP_404_NOT_FOUND,
                         data={
                             "errors": [
                                 {
-                                    "detail": str(sanfe),
-                                    "source": "group",
-                                    "status": str(status.HTTP_400_BAD_REQUEST),
+                                    "detail": str(err),
+                                    "source": "groups",
+                                    "status": str(status.HTTP_404_NOT_FOUND),
                                 }
                             ]
                         },
