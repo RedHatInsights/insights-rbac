@@ -922,7 +922,7 @@ def clean_binding_mapping(request, binding_id):
                     .exists()
                 ):
                     raise Exception(
-                        f"User(s) {mapping.mappings['users']} are still related to approved cross account reqeusts."
+                        f"User(s) {mapping.mappings['users']} are still related to approved cross account requests."
                     )
                 # After migration, if it is still old format with duplication, means
                 # it only binds with expired cars, which we can remove
