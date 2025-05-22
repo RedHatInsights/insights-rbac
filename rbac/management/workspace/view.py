@@ -75,7 +75,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
         if parent_id and tenant:
             if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
                 raise serializers.ValidationError(
-                    {"parent_id": (f"Parent workspace '{parent_id}' doesn't exist in tenant")}
+                    {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
                 )
         return super().create(request=request, args=args, kwargs=kwargs)
 
