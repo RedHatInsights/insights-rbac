@@ -20,6 +20,7 @@ import random
 import string
 from uuid import uuid4
 
+from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import clear_url_caches
 from importlib import reload
@@ -46,13 +47,39 @@ from tests.identity_request import IdentityRequest
 
 
 class WorkspaceViewTests(IdentityRequest):
-    """Test the Workspace Model."""
+    """Test the Workspace view."""
 
     def setUp(self):
         """Set up the workspace model tests."""
         reload(urls)
         clear_url_caches()
         super().setUp()
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.standard_workspace = Workspace.objects.create(
+            name="Standard Workspace",
+            description="Standard Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        self.ungrouped_workspace = Workspace.objects.create(
+            name="Ungrouped Hosts Workspace",
+            description="Ungrouped Hosts Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+        )
 
     def tearDown(self):
         """Tear down group model tests."""
@@ -95,38 +122,12 @@ class WorkspaceViewTests(IdentityRequest):
             group.principals.add(principal)
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
 class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
     """Tests for create/update/delete workspaces."""
 
     def setUp(self):
         super().setUp()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-        self.standard_workspace = Workspace.objects.create(
-            name="Standard Workspace",
-            description="Standard Workspace - description",
-            tenant=self.tenant,
-            parent=self.default_workspace,
-            type=Workspace.Types.STANDARD,
-        )
-        self.ungrouped_workspace = Workspace.objects.create(
-            name="Ungrouped Hosts Workspace",
-            description="Ungrouped Hosts Workspace - description",
-            tenant=self.tenant,
-            parent=self.default_workspace,
-            type=Workspace.Types.UNGROUPED_HOSTS,
-        )
         self.tuples = InMemoryTuples()
         self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
 
@@ -136,14 +137,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
     def test_create_workspace(self, replicate_workspace, replicate):
         """Test for creating a workspace."""
         replicate.side_effect = self.in_memory_replicator.replicate
-        workspace_data = {
-            "name": "New Workspace parent",
-            "description": "New Workspace - description",
-            "tenant_id": self.tenant.id,
-            "parent_id": self.standard_workspace.id,
-        }
-        parent_workspace = Workspace.objects.create(**workspace_data)
-        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": parent_workspace.id}
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.default_workspace.id}
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
@@ -162,7 +156,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
             all_of(
                 resource("rbac", "workspace", data.get("id")),
                 relation("parent"),
-                subject("rbac", "workspace", str(parent_workspace.id)),
+                subject("rbac", "workspace", str(self.default_workspace.id)),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -173,6 +167,24 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         data.pop("description")
         data.pop("parent_id")
         self.assertEqual(workspace_event.workspace, data)
+
+    def test_create_workspace_against_root(self):
+        """Test for creating a workspace against the root."""
+        workspace = {"name": "Root Peer", "description": "Workspace", "parent_id": self.root_workspace.id}
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+        self.assertEqual(data.get("name"), "Root Peer")
+        self.assertNotEquals(data.get("id"), "")
+        self.assertIsNotNone(data.get("id"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("description"), "Workspace")
+        self.assertEquals(data.get("type"), "standard")
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_assign_parent_id(self):
         """Test for creating a workspace without parent id."""
@@ -687,6 +699,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
                 self.default_workspace.name = "Default"
                 self.default_workspace.description = "Default description"
 
+    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
     def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
         root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
@@ -993,23 +1006,6 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
 class WorkspaceTestsList(WorkspaceViewTests):
     """Tests for listing workspaces."""
 
-    def setUp(self):
-        """Set up the workspace model list tests."""
-        super().setUp()
-        self.root_workspace = Workspace.objects.create(name="Root Workspace", tenant=self.tenant, type="root")
-        self.default_workspace = Workspace.objects.create(
-            name="Default Workspace",
-            tenant=self.tenant,
-            type="default",
-            parent_id=self.root_workspace.id,
-        )
-        self.standard_workspace = Workspace.objects.create(
-            name="Standard Workspace",
-            tenant=self.tenant,
-            type="standard",
-            parent_id=self.default_workspace.id,
-        )
-
     def assertSuccessfulList(self, response, payload):
         """Common list success assertions."""
         self.assertIsInstance(payload.get("data"), list)
@@ -1174,7 +1170,9 @@ class WorkspaceTestsList(WorkspaceViewTests):
         payload = response.data
         self.assertSuccessfulList(response, payload)
         self.assertEqual(len(payload.get("data")), 3)
-        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 1)
+
+        # Account for ungrouped and new standard workspace not having access
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 2)
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
@@ -1185,3 +1183,50 @@ class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
         response = client.get(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
+class WorkspaceViewTestsWithHierarchyLimit(WorkspaceViewTests):
+    """Test workspace hierarchy limits."""
+
+    def test_create_nested_workspace_valid(self):
+        """Test creating a workspace with valid depth."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.default_workspace.id}
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_nested_workspace_invalid(self):
+        """Test creating a workspace with invalid depth."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.standard_workspace.id}
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep.")
+
+        self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+
+
+@override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
+class WorkspaceViewTestsWithPeerRestrictions(WorkspaceViewTests):
+    """Test workspace peer restrictions."""
+
+    def test_create_nested_workspace_against_root(self):
+        """Test creating a workspace with root as the parent."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": self.root_workspace.id}
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Sub-workspaces may only be created under the default workspace.")
+
+        self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
