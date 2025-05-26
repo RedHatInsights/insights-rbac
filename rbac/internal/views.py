@@ -93,8 +93,10 @@ TENANTS = TenantCache()
 PROXY = PrincipalProxy()
 JWT = JWTCache()
 
+
 class SSOservice:
-    """Class to handle communication with SSO stage service"""
+    """Class to handle communication with SSO stage service."""
+
     # Instance variable for the class.
     _instance = None
 
@@ -104,14 +106,18 @@ class SSOservice:
             cls._instance = super().__new__(cls, *args, **kwargs)
 
         return cls._instance
-    
+
     def __init__(self):
         """Establish SSO connection information."""
         self.conn = None
         if settings.REDHAT_STAGE_SSO is not None:
             self.conn = http.client.HTTPSConnection(settings.REDHAT_STAGE_SSO)
-                
-token = get_jwt_from_redis(SSOservice().conn, settings.TOKEN_GRANT_TYPE, client_id, client_secret, settings.SCOPE, settings.OPENID_URL)
+
+
+token = get_jwt_from_redis(
+    SSOservice().conn, settings.TOKEN_GRANT_TYPE, client_id, client_secret, settings.SCOPE, settings.OPENID_URL
+)
+
 
 @contextmanager
 def create_client_channel(addr):
