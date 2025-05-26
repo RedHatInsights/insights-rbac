@@ -151,6 +151,7 @@ def get_jwt_from_redis(conn, grant_type, client_id, client_secret, scopes, url):
         logger.error(f"error occurred when trying to retrieve JWT token. {e}")
         return None
 
+
 @transaction.atomic
 def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
     """

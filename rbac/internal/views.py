@@ -20,8 +20,8 @@ import http.client
 import json
 import logging
 import os
-from contextlib import contextmanager
 import uuid
+from contextlib import contextmanager
 
 import grpc
 import requests
@@ -34,7 +34,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
-
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.utils import delete_bindings, get_jwt_from_redis, get_or_create_ungrouped_workspace
@@ -1529,6 +1528,7 @@ def lookup_resource(request):
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return HttpResponse(f"Error occurred in call to lookup resources endpoint: {str(e)}", status=500)
+
 
 @require_http_methods(["GET", "DELETE"])
 def workspace_removal(request):
