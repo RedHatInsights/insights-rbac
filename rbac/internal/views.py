@@ -110,12 +110,17 @@ class SSOservice:
     def __init__(self):
         """Establish SSO connection information."""
         self.conn = None
+
+    def get_conn(self):
+        """Get connection to sso stage."""
         if settings.REDHAT_STAGE_SSO is not None:
             self.conn = http.client.HTTPSConnection(settings.REDHAT_STAGE_SSO)
+        return self.conn
 
 
+sso_service = SSOservice()
 token = get_jwt_from_redis(
-    SSOservice().conn, settings.TOKEN_GRANT_TYPE, client_id, client_secret, settings.SCOPE, settings.OPENID_URL
+    sso_service.get_conn(), settings.TOKEN_GRANT_TYPE, client_id, client_secret, settings.SCOPE, settings.OPENID_URL
 )
 
 
