@@ -96,7 +96,6 @@ class WorkspaceViewTests(IdentityRequest):
 
 
 @override_settings(V2_APIS_ENABLED=True)
-@override_settings(WORKSPACE_ORG_CREATION_LIMIT=10)
 class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
     """Tests for create/update/delete workspaces."""
 
