@@ -241,6 +241,8 @@ objects:
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
           - name: WORKSPACE_HIERARCHY_ENABLED
             value: ${WORKSPACE_HIERARCHY_ENABLED}
+          - name: WORKSPACE_ORG_CREATION_LIMIT
+            value: ${WORKSPACE_ORG_CREATION_LIMIT}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
