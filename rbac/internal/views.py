@@ -85,27 +85,33 @@ from api.tasks import (
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
 # environment variables
-HOST = settings.REDHAT_STAGE_SSO
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-scopes = settings.SCOPE
-url = settings.OPENID_URL
-grant_type = settings.TOKEN_GRANT_TYPE
-relations_api_server = settings.RELATION_API_SERVER
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 PROXY = PrincipalProxy()
 JWT = JWTCache()
 
+class SSOservice:
+    """Class to handle communication with SSO stage service"""
+    # Instance variable for the class.
+    _instance = None
 
-conn = None
-# Create http client
-if HOST is not None:
-    conn = http.client.HTTPSConnection(HOST)
+    def __new__(cls, *args, **kwargs):
+        """Create a single instance of the class."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls, *args, **kwargs)
 
-token = get_jwt_from_redis(conn, grant_type, client_id, client_secret, scopes, url)
-
+        return cls._instance
+    
+    def __init__(self):
+        """Establish SSO connection information."""
+        self.conn = None
+        if settings.REDHAT_STAGE_SSO is not None:
+            self.conn = http.client.HTTPSConnection(settings.REDHAT_STAGE_SSO)
+                
+token = get_jwt_from_redis(SSOservice().conn, settings.TOKEN_GRANT_TYPE, client_id, client_secret, settings.SCOPE, settings.OPENID_URL)
 
 @contextmanager
 def create_client_channel(addr):
@@ -1500,7 +1506,7 @@ def lookup_resource(request):
     resource_subject_id = req_data["subject"]["subject"]["id"]
 
     try:
-        with create_client_channel(relations_api_server) as channel:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
 
             request = lookup_pb2.LookupResourcesRequest(
