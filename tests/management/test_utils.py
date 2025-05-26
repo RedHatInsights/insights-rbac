@@ -29,6 +29,8 @@ from management.utils import (
     account_id_for_tenant,
     get_principal,
     validate_and_get_key,
+    is_valid_uuid,
+    value_to_list,
 )
 from tests.identity_request import IdentityRequest
 
@@ -383,3 +385,22 @@ class UtilsTests(IdentityRequest):
             f"type query parameter value 'foo' is invalid. {[str(v) for v in valid_values]} are valid inputs."
         )
         self.assertEqual(assertion.exception.detail.get("detail"), expected_err)
+
+    def test_is_valid_uuid(self):
+        """Test boolean UUID method check"""
+        self.assertEqual(is_valid_uuid("0195f781-8363-7a02-8f1e-93ff24f14936"), True)
+        self.assertEqual(is_valid_uuid("foo"), False)
+        self.assertEqual(is_valid_uuid(""), False)
+        self.assertEqual(is_valid_uuid([]), False)
+        self.assertEqual(is_valid_uuid(["0195f781-8363-7a02-8f1e-93ff24f14936"]), False)
+        self.assertEqual(is_valid_uuid(None), False)
+        self.assertEqual(is_valid_uuid(True), False)
+
+    def test_value_to_list(self):
+        """Test returning value to a list"""
+        self.assertEquals(value_to_list(1), [1])
+        self.assertEquals(value_to_list("foo"), ["foo"])
+        self.assertEquals(value_to_list(True), [True])
+        self.assertEquals(value_to_list([1]), [1])
+        self.assertEquals(value_to_list(["foo"]), ["foo"])
+        self.assertEquals(value_to_list([True]), [True])

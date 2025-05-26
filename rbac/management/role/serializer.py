@@ -16,10 +16,18 @@
 #
 
 """Serializer for role management."""
+from django.conf import settings
 from django.utils.translation import gettext as _
-from management.group.model import Group
+from internal.utils import get_or_create_ungrouped_workspace
+from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
+from management.utils import (
+    filter_queryset_by_tenant,
+    get_principal,
+    is_valid_uuid,
+    validate_and_get_key,
+    value_to_list,
+)
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -64,11 +72,48 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
                 raise serializers.ValidationError(error)
         return value
 
+    def to_representation(self, instance):
+        """Convert the ResourceDefinition instance to a dictionary."""
+        serialized_data = super().to_representation(instance)
+        if settings.REMOVE_NULL_VALUE and instance.attributeFilter["key"] == "group.id":
+            value = instance.attributeFilter["value"]
+            if isinstance(value, list) and None in value:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = [v for v in value if v is not None]
+                value.append(str(ungrouped_hosts.id))
+            elif value is None:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = str(ungrouped_hosts.id)
+            serialized_data["attributeFilter"]["value"] = value
+        if self._should_add_hierarchy(instance):
+            serialized_data.get("attributeFilter").update(
+                {"operation": "in", "value": self._original_vals_and_descendant_ids(instance)}
+            )
+        return serialized_data
+
     class Meta:
         """Metadata for the serializer."""
 
         model = ResourceDefinition
         fields = ("attributeFilter",)
+
+    def _original_vals_and_descendant_ids(self, instance):
+        attr_filter_list = value_to_list(instance.attributeFilter.get("value"))
+        uuids = [val for val in attr_filter_list if is_valid_uuid(val)]
+        non_uuids = [val for val in attr_filter_list if not is_valid_uuid(val)]
+        ids_with_parents = Workspace.objects.descendant_ids_with_parents(uuids, instance.tenant_id)
+        return list(set(non_uuids + ids_with_parents))
+
+    def _should_add_hierarchy(self, instance):
+        hierarchy_enabled = settings.WORKSPACE_HIERARCHY_ENABLED is True
+        is_access_request = self.context.get("for_access") is True
+        return hierarchy_enabled and is_access_request and self._is_workspace_filter(instance)
+
+    def _is_workspace_filter(self, instance):
+        is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
+        is_workspace_resource_type = instance.resource_type == settings.WORKSPACE_RESOURCE_TYPE
+        is_workspace_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
+        return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 
 
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):

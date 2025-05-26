@@ -494,7 +494,8 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         self.org_id = "4321"
         tenant = Tenant.objects.create(org_id=self.org_id)
         root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
-        Workspace.objects.create(name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=root)
+        default = Workspace.objects.create(name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
+        Workspace.objects.create(name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default)
         request = self.request_context["request"]
         client = APIClient()
         response = client.post(f"/_private/_s2s/workspaces/ungrouped/", **request.META)

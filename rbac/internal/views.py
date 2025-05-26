@@ -21,6 +21,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
+import uuid
 
 import grpc
 import requests
@@ -32,14 +33,16 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from django.views.decorators.http import require_http_methods
+
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
-from internal.utils import delete_bindings, get_jwt_from_redis
+from internal.utils import delete_bindings, get_jwt_from_redis, get_or_create_ungrouped_workspace
 from kessel.relations.v1beta1 import common_pb2
 from kessel.relations.v1beta1 import lookup_pb2
 from kessel.relations.v1beta1 import lookup_pb2_grpc
 from management.cache import JWTCache, TenantCache
-from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role, Workspace
+from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -66,7 +69,8 @@ from management.utils import (
     get_principal,
     groups_for_principal,
 )
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspacepHandler
+from management.workspace.model import Workspace
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
 from rest_framework import status
 
@@ -957,7 +961,7 @@ def clean_binding_mapping(request, binding_id):
                     .exists()
                 ):
                     raise Exception(
-                        f"User(s) {mapping.mappings['users']} are still related to approved cross account reqeusts."
+                        f"User(s) {mapping.mappings['users']} are still related to approved cross account requests."
                     )
                 # After migration, if it is still old format with duplication, means
                 # it only binds with expired cars, which we can remove
@@ -1235,6 +1239,13 @@ def correct_resource_definitions(request):
     string_query = """ from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
                 AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
 
+    hbi_query = """ from management_resourcedefinition WHERE ("attributeFilter"->>'operation' <> 'in'
+                OR jsonb_typeof("attributeFilter"->'value') <> 'array')
+                AND "attributeFilter"->>'key' = 'group.id';"""
+
+    operations_query = """FROM management_resourcedefinition WHERE "attributeFilter"->>'operation' != 'in'
+                       AND "attributeFilter"->>'operation' != 'equal';"""
+
     query_params = request.GET
 
     if request.method == "GET":
@@ -1247,6 +1258,12 @@ def correct_resource_definitions(request):
                 cursor.execute("SELECT *" + string_query)
                 string_rows = cursor.fetchall()
 
+                cursor.execute("SELECT *" + hbi_query)
+                hbi_rows = cursor.fetchall()
+
+                cursor.execute("SELECT *" + operations_query)
+                operation_rows = cursor.fetchall()
+
                 response = [
                     {
                         "id": row[0],
@@ -1254,7 +1271,7 @@ def correct_resource_definitions(request):
                         "access_id": row[2],
                         "tenant_id": row[3],
                     }
-                    for row in list_rows + string_rows
+                    for row in list_rows + string_rows + hbi_rows + operation_rows
                 ]
 
             return HttpResponse(json.dumps(response), content_type="application/json", status=200)
@@ -1264,6 +1281,12 @@ def correct_resource_definitions(request):
             count = cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(*)" + string_query)
+            count += cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*)" + hbi_query)
+            count += cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*)" + operations_query)
             count += cursor.fetchone()[0]
 
         return HttpResponse(f"{count} resource definitions would be corrected", status=200)
@@ -1295,6 +1318,26 @@ def correct_resource_definitions(request):
                 resource_definition.save()
                 count += 1
 
+            cursor.execute("SELECT id " + hbi_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter = normalize_hbi_attribute_filter(
+                    resource_definition.attributeFilter
+                )
+                resource_definition.save()
+                count += 1
+
+            cursor.execute("SELECT id " + operations_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter = normalize_operation_in_attribute_filter(
+                    resource_definition.attributeFilter
+                )
+                resource_definition.save()
+                count += 1
+
         return HttpResponse(f"Updated {count} bad resource definitions", status=200)
 
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
@@ -1311,6 +1354,32 @@ def normalize_attribute_filter(attribute_filter):
             attribute_filter["value"] = [item.strip() for item in value.split(",")]
         else:
             attribute_filter["operation"] = "equal"
+    return attribute_filter
+
+
+def normalize_hbi_attribute_filter(attribute_filter):
+    """Set Attribute Filter 'operation' to 'in' and convert 'value' into list."""
+    value = attribute_filter.get("value")
+    attribute_filter["operation"] = "in"
+    if not isinstance(value, list):
+        if isinstance(value, dict):
+            if "id" not in value:
+                attribute_filter["value"] = [None]
+            else:
+                attribute_filter["value"] = [value["id"]]
+        else:
+            attribute_filter["value"] = [value]
+    return attribute_filter
+
+
+def normalize_operation_in_attribute_filter(attribute_filter):
+    """Set Attribute Filter invalid 'operation' to valid operation if value type is 'str', 'int' or 'list'."""
+    op = attribute_filter.get("operation")
+    value = attribute_filter.get("value")
+    if op != "equal" and isinstance(value, (str, int)):
+        attribute_filter["operation"] = "equal"
+    elif op != "in" and isinstance(value, list):
+        attribute_filter["operation"] = "in"
     return attribute_filter
 
 
@@ -1410,23 +1479,7 @@ def retrieve_ungrouped_workspace(request):
     try:
         with transaction.atomic():
             tenant = Tenant.objects.get(org_id=org_id)
-            ungrouped_hosts = Workspace.objects.select_for_update().filter(
-                tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS
-            )
-            if not ungrouped_hosts.exists():
-                default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-                ungrouped_hosts, _ = Workspace.objects.get_or_create(
-                    tenant=tenant,
-                    type=Workspace.Types.UNGROUPED_HOSTS,
-                    name=Workspace.SpecialNames.UNGROUPED_HOSTS,
-                    parent=default,
-                )
-                dual_write_handler = RelationApiDualWriteWorkspacepHandler(
-                    ungrouped_hosts, ReplicationEventType.CREATE_WORKSPACE
-                )
-                dual_write_handler.replicate_new_workspace()
-            else:
-                ungrouped_hosts = ungrouped_hosts.get()
+            ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
             return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:
@@ -1476,3 +1529,101 @@ def lookup_resource(request):
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return HttpResponse(f"Error occurred in call to lookup resources endpoint: {str(e)}", status=500)
+
+@require_http_methods(["GET", "DELETE"])
+def workspace_removal(request):
+    """
+    Get or delete standard workspaces.
+
+    GET /_private/api/utils/workspace/
+        ?detail=false (default) : return count only
+        ?detail=true            : return list of standard workspaces
+
+    DELETE /_private/api/utils/workspace/
+        ?id=<workspace_id>                  : delete a single workspace
+        (no id)                             : delete all standard workspaces
+        ?without_child_only=false (default) : delete all standard workspaces
+        ?without_child_only=true            : delete only standard workspaces without children
+    """
+    query_params = request.GET
+    logger.info(f"Workspace list or removal: {request.method} {request.user.username}")
+
+    if request.method == "DELETE" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=403)
+
+    # GET
+    if request.method == "GET":
+        if query_params.get("detail") == "true":
+            workspaces = Workspace.objects.filter(type=Workspace.Types.STANDARD)
+            serialized_ws = WorkspaceSerializer(workspaces, many=True).data
+            # Add tenant id into response
+            for ws_obj, ws_data in zip(workspaces, serialized_ws):
+                ws_data["tenant_id"] = ws_obj.tenant_id
+            payload = {"count": len(serialized_ws), "data": serialized_ws}
+            return JsonResponse(payload, status=200)
+
+        ws_count = Workspace.objects.filter(type=Workspace.Types.STANDARD).count()
+        return HttpResponse(
+            f"{ws_count} standard workspace(s) eligible for removal.", content_type="text/plain", status=200
+        )
+
+    # DELETE
+    # delete 1 standard workspace
+    if ws_id := query_params.get("id"):
+        try:
+            uuid.UUID(str(ws_id))
+        except ValueError:
+            return HttpResponse("Invalid workspace id format.", content_type="text/plain", status=400)
+
+        if not Workspace.objects.filter(type=Workspace.Types.STANDARD, id=ws_id).first():
+            return HttpResponse(
+                f"Standard workspace with id='{ws_id}' not found.", content_type="text/plain", status=404
+            )
+
+        if ws := Workspace.objects.filter(type=Workspace.Types.STANDARD, id=ws_id, children__isnull=True).first():
+            try:
+                with transaction.atomic():
+                    dual_write_handler = RelationApiDualWriteWorkspaceHandler(
+                        ws, ReplicationEventType.DELETE_WORKSPACE
+                    )
+                    dual_write_handler.replicate_deleted_workspace()
+                    ws.delete()
+                logger.info(f"Deleted workspace id='{ws_id}'")
+                return HttpResponse(f"Workspace with id='{ws_id}' deleted.", content_type="text/plain", status=200)
+            except Exception as e:
+                logger.exception(f"Workspace id='{ws_id}' deletion failed: {e}")
+                return HttpResponse(str(e), status=500)
+
+        return HttpResponse(
+            f"Workspace with id='{ws_id}' cannot be removed because it has child workspace.",
+            content_type="text/plain",
+            status=400,
+        )
+
+    # delete all standard workspaces
+    ws_count = Workspace.objects.filter(type=Workspace.Types.STANDARD).count()
+    try:
+        with transaction.atomic():
+            while True:
+                workspaces = Workspace.objects.filter(type=Workspace.Types.STANDARD, children__isnull=True)
+                ws_without_child_count = workspaces.count()
+                if not workspaces:
+                    break
+                for ws in workspaces:
+                    dual_write_handler = RelationApiDualWriteWorkspaceHandler(
+                        ws, ReplicationEventType.DELETE_WORKSPACE
+                    )
+                    dual_write_handler.replicate_deleted_workspace()
+                    ws.delete()
+                if query_params.get("without_child_only", "") == "true":
+                    return HttpResponse(
+                        f"{ws_without_child_count} workspace(s) deleted, "
+                        f"another {ws_count - ws_without_child_count} standard workspace(s) exist in database.",
+                        content_type="text/plain",
+                        status=200,
+                    )
+        logger.info("All standard workspaces successfully deleted.")
+        return HttpResponse(f"{ws_count} workspace(s) deleted.", content_type="text/plain", status=200)
+    except Exception as e:
+        logger.exception(f"Bulk workspace deletion failed: {e}")
+        return HttpResponse(str(e), status=500)

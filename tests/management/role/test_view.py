@@ -263,7 +263,9 @@ class RoleViewsetTests(IdentityRequest):
         Access.objects.all().delete()
         ExtTenant.objects.all().delete()
         ExtRoleRelation.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(type=Workspace.Types.UNGROUPED_HOSTS).delete()
+        Workspace.objects.filter(type=Workspace.Types.DEFAULT).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
         # we need to delete old test_tenant's that may exist in cache
         test_tenant_org_id = "100001"
@@ -2056,6 +2058,46 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
         self.assertEqual(response.data["errors"][0]["detail"], "attributeFilter operation 'in' expects a List value")
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="inventory")
+    def test_retrieving_role_replaces_null_value(self):
+        """Test that we can replace the null value in resource definition when retrieving role."""
+        role_name = "test-role"
+        Permission.objects.create(permission="inventory:*:*", tenant=self.tenant)
+        access_data = [
+            {
+                "permission": "inventory:*:*",
+                "resourceDefinitions": [
+                    {
+                        "attributeFilter": {
+                            "key": "group.id",
+                            "operation": "in",
+                            "value": [None],
+                        }
+                    }
+                ],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # test that we can retrieve the role
+        url = reverse("v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertIsNotNone(response.data.get("name"))
+        self.assertEqual(role_name, response.data.get("name"))
+        self.assertIsInstance(response.data.get("access"), list)
+        self.assertEqual(access_data, response.data.get("access"))
+
+        # test that null value will be replaced
+        with self.settings(REMOVE_NULL_VALUE=True):
+            response = client.get(url, **self.headers)
+        ungrouped_hosts_id = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+        access_data[0]["resourceDefinitions"][0]["attributeFilter"]["value"] = [str(ungrouped_hosts_id.id)]
+        self.assertEqual(response.data.get("access"), access_data)
 
 
 class RoleViewNonAdminTests(IdentityRequest):

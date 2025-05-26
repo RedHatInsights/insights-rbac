@@ -25,9 +25,11 @@ from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
 from management.cache import JWTCache
+from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 
 from api.models import User
 
@@ -148,3 +150,27 @@ def get_jwt_from_redis(conn, grant_type, client_id, client_secret, scopes, url):
     except Exception as e:
         logger.error(f"error occurred when trying to retrieve JWT token. {e}")
         return None
+
+@transaction.atomic
+def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
+    """
+    Retrieve the ungrouped workspace for the given tenant.
+
+    Args:
+        tenant (str): The tenant for which to retrieve the ungrouped workspace.
+    Returns:
+        Workspace: The ungrouped workspace object for the given tenant.
+    """
+    # fetch parent only once
+    default_ws = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+    # single select_for_update + get_or_create
+    workspace, created = Workspace.objects.select_for_update().get_or_create(
+        tenant=tenant,
+        type=Workspace.Types.UNGROUPED_HOSTS,
+        defaults={"name": Workspace.SpecialNames.UNGROUPED_HOSTS, "parent": default_ws},
+    )
+    if created:
+        RelationApiDualWriteWorkspaceHandler(
+            workspace, ReplicationEventType.CREATE_WORKSPACE
+        ).replicate_new_workspace()
+    return workspace

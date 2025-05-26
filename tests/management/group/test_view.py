@@ -3687,12 +3687,27 @@ class GroupViewsetTests(IdentityRequest):
         url = url_base + f"&username_only=true"
         response = client.get(url, **self.headers)
 
-        print(response.json())
-
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data").get("serviceAccounts")), sa_count)
         self.assertEqual(len(response.data.get("data").get("users")), user_count)
         self.assertEqual(int(response.data.get("meta").get("count")), sa_count + user_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_group_principals_service_account_not_found(self, sa_mock):
+        """Test adding the service account with not existing uuid returns 404 Bad Request."""
+        sa_mock.return_value = []
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+
+        # Valid but not existing UUID
+        uuid = uuid4()
+        request_body = {"principals": [{"clientId": uuid, "type": "service-account"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.json().get("errors")[0].get("detail"), f"Service account(s) {{'{uuid}'}} not found.")
 
 
 class GroupViewNonAdminTests(IdentityRequest):
