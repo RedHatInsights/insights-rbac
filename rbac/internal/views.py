@@ -1503,7 +1503,7 @@ def workspace_removal(request):
                     dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                         ws, ReplicationEventType.DELETE_WORKSPACE
                     )
-                    dual_write_handler.replicate_deleted_workspace()
+                    dual_write_handler.replicate_deleted_workspace(skip_ws_events=True)
                     ws.delete()
                 logger.info(f"Deleted workspace id='{ws_id}'")
                 return HttpResponse(f"Workspace with id='{ws_id}' deleted.", content_type="text/plain", status=200)
@@ -1530,7 +1530,7 @@ def workspace_removal(request):
                     dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                         ws, ReplicationEventType.DELETE_WORKSPACE
                     )
-                    dual_write_handler.replicate_deleted_workspace()
+                    dual_write_handler.replicate_deleted_workspace(skip_ws_events=True)
                     ws.delete()
                 if query_params.get("without_child_only", "") == "true":
                     return HttpResponse(
