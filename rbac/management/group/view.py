@@ -548,7 +548,7 @@ class GroupViewSet(
         user: User,
         service_accounts: Iterable[dict],
     ):
-        """Validate service account in it service and populate user IDs if needed."""
+        """Validate service account in IT Service and populate user IDs if needed."""
         # Fetch all the user's service accounts from IT. If we are on a development or testing environment, we might
         # want to skip calling IT
         it_service = ITService()
