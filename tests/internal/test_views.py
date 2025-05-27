@@ -3165,7 +3165,10 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.content, b"Destructive operations disallowed.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_workspace_delete_all(self):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_workspace_delete_all(self, replicate, replicate_workspace):
         """Test we can remove all standard workspaces."""
         standard_ws = Workspace.objects.filter(type=Workspace.Types.STANDARD)
         self.assertEqual(standard_ws.count(), 1)
@@ -3177,6 +3180,8 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.content, b"1 workspace(s) deleted.")
         standard_ws = Workspace.objects.filter(type=Workspace.Types.STANDARD)
         self.assertEqual(standard_ws.count(), 0)
+        replicate.assert_called_once()
+        replicate_workspace.assert_not_called()
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_workspace_delete_all_with_3_children(self):
@@ -3269,7 +3274,10 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.content.decode(), "Invalid workspace id format.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_workspace_delete_workspace_only_without_children(self):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_workspace_delete_workspace_only_without_children(self, replicate, replicate_workspace):
         """Test we can remove only standard workspaces without children."""
         depth = 2
         branching = 2
@@ -3296,3 +3304,5 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
             response.content.decode(), f"5 workspace(s) deleted, another 2 standard workspace(s) exist in database."
         )
         self.assertEqual(Workspace.objects.filter(type=Workspace.Types.STANDARD).count(), 2)
+        self.assertEqual(replicate.call_count, 5)
+        replicate_workspace.assert_not_called()
