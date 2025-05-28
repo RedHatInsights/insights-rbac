@@ -16,10 +16,8 @@
 #
 
 """View for internal tenant management."""
-import http.client
 import json
 import logging
-import os
 import uuid
 from contextlib import contextmanager
 
@@ -35,8 +33,9 @@ from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 from grpc import RpcError
+from internal.JWT import JWTManager, JWTProvider
 from internal.errors import SentryDiagnosticError, UserNotFoundError
-from internal.utils import delete_bindings, get_jwt_from_redis, get_or_create_ungrouped_workspace
+from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
 from kessel.relations.v1beta1 import common_pb2
 from kessel.relations.v1beta1 import lookup_pb2
 from kessel.relations.v1beta1 import lookup_pb2_grpc
@@ -84,44 +83,14 @@ from api.tasks import (
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
-# environment variables
-client_id = os.getenv("CLIENT_ID")
-client_secret = os.getenv("CLIENT_SECRET")
-
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 PROXY = PrincipalProxy()
-JWT = JWTCache()
+jwt_cache = JWTCache()
+jwt_provider = JWTProvider()
+jwt_manager = JWTManager(jwt_provider, jwt_cache)
 
-
-class SSOservice:
-    """Class to handle communication with SSO stage service."""
-
-    # Instance variable for the class.
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        """Create a single instance of the class."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls, *args, **kwargs)
-
-        return cls._instance
-
-    def __init__(self):
-        """Establish SSO connection information."""
-        self.conn = None
-
-    def get_conn(self):
-        """Get connection to sso stage."""
-        if settings.REDHAT_STAGE_SSO is not None:
-            self.conn = http.client.HTTPSConnection(settings.REDHAT_STAGE_SSO)
-        return self.conn
-
-
-sso_service = SSOservice()
-token = get_jwt_from_redis(
-    sso_service.get_conn(), settings.TOKEN_GRANT_TYPE, client_id, client_secret, settings.SCOPE, settings.OPENID_URL
-)
+token = jwt_manager.get_jwt_from_redis()
 
 
 @contextmanager
@@ -1504,9 +1473,6 @@ def retrieve_ungrouped_workspace(request):
 
 def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
-    if client_id is None or client_secret is None:
-        raise Exception("Missing client_id or client_secret in environment file.")
-
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 

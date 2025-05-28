@@ -16,13 +16,10 @@
 #
 
 """Utilities for Internal RBAC use."""
-
-import json
 import logging
 
 from django.db import transaction
 from django.urls import resolve
-from management.cache import JWTCache
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -33,7 +30,6 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
-JWT = JWTCache()
 
 
 def build_internal_user(request, json_rh_auth):
@@ -96,50 +92,6 @@ def delete_bindings(bindings):
             bindings.delete()
         info["relations"] = [stringify_spicedb_relationship(relation) for relation in relations_to_remove]
     return info
-
-
-def get_jwt_token(conn, grant_type, client_id, client_secret, scopes, url):
-    """Retrieve jwt token from Redhat SSO."""
-    payload = f"grant_type={grant_type}&client_id={client_id}&client_secret={client_secret}&scope={scopes}"
-
-    headers = {"content-type": "application/x-www-form-urlencoded"}
-
-    conn.request("POST", url, payload, headers)
-
-    res = conn.getresponse()
-    data = res.read()
-    json_data = json.loads(data)
-
-    token = json_data["access_token"]
-    return token
-
-
-def get_jwt_from_redis(conn, grant_type, client_id, client_secret, scopes, url):
-    """Retrieve jwt token from redis or generate from Redhat SSO if not exists in redis."""
-    # Test the connection
-    if conn is None:
-        return None
-    try:
-        # Try retrieve token from redis
-        token = JWT.get_jwt_response()
-
-        # If token not is redis
-        if not token:
-            token = get_jwt_token(conn, grant_type, client_id, client_secret, scopes, url)
-            # Token obtained store it in redis
-            if token:
-                JWT.set_jwt_response(token)
-                logger.info("Token stored in redis.")
-            else:
-                logger.error("Failed to store jwt token in redis.")
-        else:
-            # Token exists return it
-            logger.info("Token retrieved from redis.")
-        return token
-
-    except Exception as e:
-        logger.error(f"error occurred when trying to retrieve JWT token. {e}")
-        return None
 
 
 @transaction.atomic
