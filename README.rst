@@ -154,9 +154,9 @@ Verify that you cannot access any endpoints requiring auth: ::
 
 Verify that if you pass in the correct headers/values, you *can* access the endpoint: ::
 
-  curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-account: 10001' -H 'x-rh-rbac-client-id: catalog'
+  curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-org-id: 10001' -H 'x-rh-rbac-client-id: catalog'
 
-Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-account' header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
+Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-org-id' header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
 
 You can also send a request *with* the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
 
