@@ -21,11 +21,6 @@ import logging
 
 from django.conf import settings
 
-from rbac.env import ENVIRONMENT
-
-client_id = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
-client_secret = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
-
 logger = logging.getLogger(__name__)
 
 
@@ -44,20 +39,20 @@ class JWTProvider:
 
     def __init__(self):
         """Establish SSO connection information."""
-        self.conn = None
+        self.connection = None
 
     def get_conn(self):
         """Get connection to sso stage."""
         if settings.REDHAT_STAGE_SSO is not None:
-            self.conn = http.client.HTTPSConnection(settings.REDHAT_STAGE_SSO)
-        return self.conn
+            self.connection = http.client.HTTPSConnection(settings.REDHAT_STAGE_SSO)
+        return self.connection
 
     def get_jwt_token(self, client_id, client_secret):
         """Retrieve jwt token from Redhat SSO."""
-        conn = self.get_conn()
+        connection = self.get_conn()
 
         # Test the connection
-        if conn is None:
+        if connection is None:
             return None
 
         if client_id is None or client_secret is None:
@@ -65,16 +60,16 @@ class JWTProvider:
 
         payload = (
             f"grant_type={settings.TOKEN_GRANT_TYPE}&"
-            f"client_id={client_id}&"
-            f"client_secret={client_secret}&"
+            f"client_id={settings.RELATIONS_API_CLIENT_ID}&"
+            f"client_secret={settings.RELATIONS_API_CLIENT_SECRET}&"
             f"scope={settings.SCOPE}"
         )
 
         headers = {"content-type": "application/x-www-form-urlencoded"}
 
-        conn.request("POST", settings.OPENID_URL, payload, headers)
+        connection.request("POST", settings.OPENID_URL, payload, headers)
 
-        res = conn.getresponse()
+        res = connection.getresponse()
         data = res.read()
         json_data = json.loads(data)
 
@@ -87,21 +82,23 @@ class JWTManager:
 
     def __init__(self, jwt_provider, jwt_cache):
         """Establish connection to JWT cache and provider."""
-        self.JWT_Cache = jwt_cache
-        self.JWT_Provider = jwt_provider
+        self.jwt_cache = jwt_cache
+        self.jwt_provider = jwt_provider
 
     def get_jwt_from_redis(self):
         """Retrieve jwt token from redis or generate from Redhat SSO if not exists in redis."""
         try:
             # Try retrieve token from redis
-            token = self.JWT_Cache.get_jwt_response()
+            token = self.jwt_cache.get_jwt_response()
 
             # If token not is redis
             if not token:
-                token = self.JWT_Provider.get_jwt_token(client_id, client_secret)
+                token = self.jwt_provider.get_jwt_token(
+                    settings.RELATIONS_API_CLIENT_ID, settings.RELATIONS_API_CLIENT_SECRET
+                )
                 # Token obtained store it in redis
                 if token:
-                    self.JWT_Cache.set_jwt_response(token)
+                    self.jwt_cache.set_jwt_response(token)
                     logger.info("Token stored in redis.")
                 else:
                     logger.error("Failed to store jwt token in redis.")

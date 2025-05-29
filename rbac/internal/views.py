@@ -33,8 +33,8 @@ from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 from grpc import RpcError
-from internal.JWT import JWTManager, JWTProvider
 from internal.errors import SentryDiagnosticError, UserNotFoundError
+from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
 from kessel.relations.v1beta1 import common_pb2
 from kessel.relations.v1beta1 import lookup_pb2
@@ -90,13 +90,13 @@ jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
 
-token = jwt_manager.get_jwt_from_redis()
-
 
 @contextmanager
 def create_client_channel(addr):
     """Create secure channel for grpc requests."""
     # Call credential object will be invoked for every single RPC
+    token = jwt_manager.get_jwt_from_redis()
+
     call_credentials = grpc.access_token_call_credentials(token)
 
     combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
