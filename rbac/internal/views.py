@@ -1503,14 +1503,14 @@ def lookup_resource(request):
 
         if responses:
             for r in responses:
-                return HttpResponse(r.resource)
-        return HttpResponse("No resource found")
+                return JsonResponse(r.resource)
+        return JsonResponse("No resource found")
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
-        return HttpResponse("Error occurred in gRPC call", status=500)
+        return JsonResponse({'detail': "Error occurred in gRPC call", 'error': str(e)}, status=500)
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        return HttpResponse(f"Error occurred in call to lookup resources endpoint: {str(e)}", status=500)
+        return JsonResponse({'detail': "Error occurred in call to lookup resources endpoint", 'error': str(e)}, status=500)
 
 
 @require_http_methods(["GET", "DELETE"])
