@@ -54,6 +54,7 @@ from migration_tool.in_memory_tuples import (
 )
 from migration_tool.utils import create_relationship
 from tests.identity_request import IdentityRequest
+from tests.internal.utils import add_principal_to_group, add_roles_to_group, create_group, create_role
 from tests.management.role.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
 
@@ -3306,3 +3307,91 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(Workspace.objects.filter(type=Workspace.Types.STANDARD).count(), 2)
         self.assertEqual(replicate.call_count, 5)
         replicate_workspace.assert_not_called()
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@redhat.com",
+                    "is_org_admin": "true",
+                    "org_id": "12345",
+                }
+            ],
+        },
+    )
+    def test_relation_removal(self, _, replicate):
+        """Test that we can remove relations."""
+        replicator = InMemoryRelationReplicator(self._tuples)
+        replicate.side_effect = replicator.replicate
+        role_name = "test_role"
+        response = create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.json()["uuid"]
+
+        group_name = "test_group"
+        response = create_group(group_name, headers=self.headers)
+        group_uuid = response.json()["uuid"]
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        add_roles_to_group(group_uuid=group_uuid, role_uuids=[role_uuid], headers=self.headers)
+        role = Role.objects.get(name=role_name)
+        binding = role.binding_mappings.first()
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", binding.mappings["id"]),
+                    relation("subject"),
+                    subject("rbac", "group", group_uuid, "member"),
+                )
+            ),
+        )
+        url = f"/_private/api/utils/relations_removal/?resource_name={role_name}&subject_name={group_name}&relation_type=role-group&tenant_id={self.tenant.id}"
+        response = self.client.delete(url, **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(
+            0,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", binding.mappings["id"]),
+                    relation("subject"),
+                    subject("rbac", "group", group_uuid, "member"),
+                )
+            ),
+        )
+
+        # Remove user from group
+        user_name = "test_user"
+        user_id = "12345"
+        Principal.objects.create(username=user_name, user_id=user_id, tenant=self.tenant)
+        add_principal_to_group(group_uuid=group_uuid, username=user_name, headers=self.headers)
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", group_uuid),
+                    relation("member"),
+                    subject("rbac", "principal", f"redhat/{user_id}"),
+                )
+            ),
+        )
+        url = f"/_private/api/utils/relations_removal/?resource_name={user_name}&subject_name={group_name}&relation_type=user-group&tenant_id={self.tenant.id}"
+        response = self.client.delete(url, **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(
+            0,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", group_uuid),
+                    relation("member"),
+                    subject("rbac", "principal", f"redhat/{user_id}"),
+                )
+            ),
+        )

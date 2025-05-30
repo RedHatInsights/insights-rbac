@@ -98,6 +98,7 @@ urlpatterns = [
     path("api/utils/principal/", views.principal_removal),
     path("api/utils/user_lookup/", views.user_lookup),
     path("api/utils/workspace/", views.workspace_removal),
+    path("api/utils/relations_removal/", views.relations_removal),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

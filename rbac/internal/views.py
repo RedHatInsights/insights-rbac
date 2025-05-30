@@ -34,6 +34,7 @@ from django.views.decorators.http import require_http_methods
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
 from management.cache import TenantCache
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -1544,3 +1545,60 @@ def workspace_removal(request):
     except Exception as e:
         logger.exception(f"Bulk workspace deletion failed: {e}")
         return HttpResponse(str(e), status=500)
+
+
+@require_http_methods(["DELETE"])
+def relations_removal(request):
+    """Remove relations for a role.
+
+    DELETE /_private/api/utils/relations_removal/?resource_name=xxx&subject_name=xxx&tenant_id=xxx&relation_type=xxx
+    relation_type can be either "role-group" or "user-group".
+    """
+    if not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=403)
+
+    resource_name = request.GET.get("resource_name")
+    subject_name = request.GET.get("subject_name")
+    relation_type = request.GET.get("relation_type")
+    tenant_id = request.GET.get("tenant_id")
+    if not resource_name or not subject_name or not relation_type or not tenant_id:
+        return HttpResponse(
+            "Invalid request, "
+            'must supply "resource_name", "subject_name", "relation_type", and "tenant_id" query parameters.',
+            status=400,
+        )
+
+    tenant = get_object_or_404(Tenant, id=tenant_id)
+    if relation_type == "role-group":
+        group = Group.objects.get(name=subject_name, tenant=tenant)
+        removed_roles = [Role.objects.filter(name=resource_name, tenant=tenant).first()]
+        if removed_roles:
+            dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
+            dual_write_handler.generate_relations_to_remove_roles(removed_roles)
+            dual_write_handler.replicate()
+
+        else:  # role has already been removed
+            return HttpResponse(
+                f"Role {resource_name} has already been deleted.",
+                status=400,
+            )
+    elif relation_type == "user-group":
+        group = Group.objects.get(name=subject_name, tenant=tenant)
+        removed_users = [Principal.objects.filter(username=resource_name, tenant=tenant).first()]
+        if removed_users:
+            dual_write_handler = RelationApiDualWriteGroupHandler(
+                group,
+                ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
+            )
+            dual_write_handler.replicate_removed_principals(removed_users)
+        else:  # user has already been removed
+            return HttpResponse(
+                f"User {resource_name} has already been deleted.",
+                status=400,
+            )
+    else:
+        return HttpResponse(
+            'Invalid request, "relation_type" must be either "role-group" or "user-group".',
+            status=400,
+        )
+    return HttpResponse(f"Relations for {resource_name} removed.", status=204)

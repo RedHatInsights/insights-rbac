@@ -72,6 +72,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     def _generate_member_relations(self):
         """Generate user-groups relations."""
         relations = []
+
         for principal in self.principals:
             relationship = self.group.relationship_to_principal(principal)
             if relationship is None:
