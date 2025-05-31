@@ -16,7 +16,6 @@
 #
 
 """Utilities for Internal RBAC use."""
-
 import logging
 
 from django.db import transaction

@@ -2542,6 +2542,69 @@
           }
         }
       }
+    },
+    "/_private/api/relations/lookup_resource/": {
+      "post": {
+        "tags": [
+          "Relations"
+        ],
+        "summary": "Get a resource from relations api.",
+        "description": "Returns resource from relations api.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "resource_type": {
+                  "name": "group",
+                  "namespace": "rbac"
+                },
+                "relation": "member",
+                "subject": {
+                  "subject": {
+                    "type": {
+                      "namespace": "rbac",
+                      "name": "principal"
+                    },
+                    "id": "bob"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resource returned."
+          },
+          "204": {
+            "description": "No resource found."
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error500"
+                },
+                "examples": {
+                  "gRPCError": {
+                    "value": {
+                      "detail": "Error occurred in gRPC call",
+                      "error": "gRPC Error"
+                    }
+                  },
+                  "Error": {
+                    "value": {
+                      "detail": "Error occurred in call to lookup resources endpoint",
+                      "error": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -2612,6 +2675,27 @@
           "error": {
             "type": "string",
             "example": "Invalid request - bad input provided"
+          }
+        }
+      },
+      "Error500": {
+        "description": "Unexpected Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "detail": {
+                  "type": "string",
+                  "example": "Error occurred in gRPC call"
+                },
+                "error": {
+                  "type": "string",
+                  "example": "Some error message"
+                }
+              },
+              "required": ["detail", "error"]
+            }
           }
         }
       },
