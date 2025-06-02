@@ -15,16 +15,17 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group viewset."""
-from datetime import timedelta
+import json
 import random
+from datetime import timedelta
 from unittest.mock import call, patch, ANY, Mock
 from uuid import uuid4
-import json
-from django.db import transaction
+
 from django.conf import settings
+from django.db import transaction
+from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
-from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.test import APIClient
@@ -47,9 +48,8 @@ from management.models import (
     Workspace,
 )
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_mapping.model import TenantMapping
-
+from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -418,11 +418,13 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_by_guids_with_invalid_guid(self):
         """Test that an invalid guid in a list of guids returns an error."""
-        url = "{}?uuids=invalid"
+        url = f"{reverse('v1_management:group-list')}?uuid=invalid"
         client = APIClient()
         response = client.get(url, **self.headers)
-        # FIXME: This seems inconsistent with GUID validation we added elsewhere
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        response_body = response.json()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response_body.get("errors")[0].get("detail"), "invalid is not a valid UUID.")
+        self.assertEqual(response_body.get("errors")[0].get("source"), "groups uuid filter")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -474,96 +476,6 @@ class GroupViewsetTests(IdentityRequest):
         for key in GroupInputSerializer().fields.keys():
             self.assertIn(key, group.keys())
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": 200,
-            "data": [
-                {
-                    "org_id": "100001",
-                    "is_org_admin": False,
-                    "is_internal": False,
-                    "id": 52567473,
-                    "username": "user_based_principal",
-                    "account_number": "1111111",
-                    "is_active": True,
-                }
-            ],
-        },
-    )
-    @patch(
-        "management.principal.it_service.ITService.request_service_accounts",
-        return_value=[
-            {
-                "clientId": "b7a82f30-bcef-013c-2452-6aa2427b506c",
-                "name": f"service_account_name",
-                "description": f"Service Account description",
-                "owner": "jsmith",
-                "username": "service_account-b7a82f30-bcef-013c-2452-6aa2427b506c",
-                "time_created": 1706784741,
-                "type": "service-account",
-            }
-        ],
-    )
-    def test_read_group_list_principalCount(self, mock_request, sa_mock_request):
-        """Test that correct number is returned for principalCount."""
-        # Create a test data - group with 1 user based and 1 service account principal
-        group_name = "TestGroup"
-        group = Group(name=group_name, tenant=self.tenant)
-        group.save()
-
-        user_based_principal = Principal(username="user_based_principal", tenant=self.test_tenant)
-        user_based_principal.save()
-
-        sa_uuid = "b7a82f30-bcef-013c-2452-6aa2427b506c"
-        sa_based_principal = Principal(
-            username="service_account-" + sa_uuid,
-            tenant=self.tenant,
-            type="service-account",
-            service_account_id=sa_uuid,
-        )
-        sa_based_principal.save()
-
-        group.principals.add(user_based_principal, sa_based_principal)
-        self.group.save()
-
-        # Test that /groups/{uuid}/principals/ returns correct count of user based principals
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(int(response.data.get("meta").get("count")), 1)
-        self.assertEqual(len(response.data.get("data")), 1)
-        principal_out = response.data.get("data")[0]
-        self.assertEqual(principal_out["username"], user_based_principal.username)
-
-        # Test that /groups/{uuid}/principals/?principal_type=service-account returns
-        # correct count of service account based principals
-        url = (
-            f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}?principal_type=service-account"
-        )
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(int(response.data.get("meta").get("count")), 1)
-        self.assertEqual(len(response.data.get("data")), 1)
-        sa_out = response.data.get("data")[0]
-        self.assertEqual(sa_out["username"], sa_based_principal.username)
-
-        # Test that /groups/?name=<group_name> returns 1 group with principalCount for only user based principals
-        url = f"{reverse('v1_management:group-list')}?name={group_name}"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 1)
-
-        group = response.data.get("data")[0]
-        self.assertEqual(group["principalCount"], 1)
-
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -582,7 +494,7 @@ class GroupViewsetTests(IdentityRequest):
         },
     )
     def test_get_group_principal_count_username_filter(self, mock_request):
-        "Test that when filtering a group with a username filter that principalCount is returned"
+        """Test that when filtering a group with a username filter that principalCount is returned."""
         url = reverse("v1_management:group-list")
         url = "{}?username={}".format(url, self.test_principal.username)
         client = APIClient()
@@ -592,7 +504,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(principalCount, 2)
 
     def test_get_group_principal_count_exclude_username_filter(self):
-        "Test that when filtering a group with the exclude_username filter that principalCount is returned"
+        """Test that when filtering a group with the exclude_username filter that principalCount is returned."""
         # Create test group
         group_name = "TestGroup"
         group = Group(name=group_name, tenant=self.tenant)
@@ -932,19 +844,6 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
-    def test_failure_adding_principals_to_admin_default(self, mock_request):
-        """Test that adding a principal to an admin default group will fail."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.adminGroup.uuid})
-        client = APIClient()
-        username = "test_user"
-        test_data = {"principals": [{"username": username}]}
-        response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
     def test_update_group_invalid(self):
         """Test that updating an invalid group returns an error."""
         url = reverse("v1_management:group-detail", kwargs={"uuid": uuid4()})
@@ -1161,372 +1060,6 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_group_principals_invalid_method(self):
-        """Test that using an unsupported REST method returns an error."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": uuid4()})
-        client = APIClient()
-        response = client.put(url, {}, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "errors": [
-                {
-                    "detail": "Unexpected error.",
-                    "status": status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    "source": "principals",
-                }
-            ],
-        },
-    )
-    def test_add_group_principals_failure(self, mock_request):
-        """Test that adding a principal to a group returns the proper response on failure."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
-        new_username = uuid4()
-        test_data = {
-            "principals": [
-                {"username": self.principal.username},
-                {"username": new_username},
-            ]
-        }
-        response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.data[0]["detail"], "Unexpected error.")
-        self.assertEqual(response.data[0]["status"], 500)
-        self.assertEqual(response.data[0]["source"], "principals")
-
-    def test_add_group_principal_invalid_guid(self):
-        """Test that adding a principal to a group with an invalid GUID causes a 400."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": "invalid_guid"})
-        client = APIClient()
-        test_data = {"principals": [{"username": self.principal.username}]}
-        response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_add_user", "user_id": -448717}]},
-    )
-    def test_add_or_remove_principals_from_special_group(self, _):
-        """Test that adding or removing principals from a special group returns an error."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
-        test_data = {"principals": [{"username": self.principal.username}]}
-
-        # Not allowed for platfrom default groups
-        self.group.platform_default = True
-        self.group.system = False
-        self.group.save()
-        response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        response = client.delete(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": []},
-    )
-    def test_add_group_principal_not_exists(self, mock_request, mock_method):
-        """Test that adding a non-existing principal into existing group causes a 404"""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
-        test_data = {"principals": [{"username": "not_existing_username"}]}
-
-        response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIsNone(mock_method.call_args)
-
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": 200,
-            "data": [{"username": "test_add_user", "user_id": -448717}],
-        },
-    )
-    @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_add_group_principals_success(self, send_kafka_message, mock_request, mock_method):
-        """Test that adding a principal to a group returns successfully."""
-        # Create a group and a cross account user.
-        with self.settings(NOTIFICATIONS_ENABLED=True):
-            test_group = Group.objects.create(name="test", tenant=self.tenant)
-            cross_account_user = Principal.objects.create(
-                username="cross_account_user", cross_account=True, tenant=self.tenant
-            )
-
-            org_id = self.customer_data["org_id"]
-
-            url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
-            client = APIClient()
-            username = "test_add_user"
-            test_data = {
-                "principals": [
-                    {"username": username},
-                    {"username": cross_account_user.username},
-                ]
-            }
-
-            response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            principal = Principal.objects.get(username=username)
-
-            # Only the user exists in IT will be created and added to the group
-            # cross account users won't be added
-            self.assertEqual(len(response.data.get("principals")), 1)
-            self.assertEqual(
-                response.data.get("principals")[0],
-                {"username": username, "user_id": int(principal.user_id)},
-            )
-            self.assertEqual(principal.tenant, self.tenant)
-
-            # test whether added principals into a group is added correctly within audit log database
-            al_url = "/api/rbac/v1/auditlogs/"
-            al_client = APIClient()
-            al_response = al_client.get(al_url, **self.headers)
-            retrieve_data = al_response.data.get("data")
-            al_list = retrieve_data
-            al_dict = al_list[0]
-
-            al_dict_principal_username = al_dict["principal_username"]
-            al_dict_description = al_dict["description"]
-            al_dict_resource = al_dict["resource_type"]
-            al_dict_action = al_dict["action"]
-
-            self.assertEqual(self.user_data["username"], al_dict_principal_username)
-            self.assertIsNotNone(al_dict_description)
-            self.assertEqual(al_dict_resource, "group")
-            self.assertEqual(al_dict_action, "add")
-
-            actual_call_arg = mock_method.call_args[0][0]
-            self.assertEqual(
-                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717"),
-                actual_call_arg,
-            )
-
-            send_kafka_message.assert_called_with(
-                settings.NOTIFICATIONS_TOPIC,
-                {
-                    "bundle": "console",
-                    "application": "rbac",
-                    "event_type": "group-updated",
-                    "timestamp": ANY,
-                    "events": [
-                        {
-                            "metadata": {},
-                            "payload": {
-                                "name": test_group.name,
-                                "username": self.user_data["username"],
-                                "uuid": str(test_group.uuid),
-                                "operation": "added",
-                                "principal": username,
-                            },
-                        }
-                    ],
-                    "org_id": org_id,
-                },
-                ANY,
-            )
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": []},
-    )
-    def test_get_group_principals_empty(self, mock_request):
-        """Test that getting principals from an empty group returns successfully."""
-        client = APIClient()
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.emptyGroup.uuid})
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("meta").get("count"), 0)
-        self.assertEqual(response.data.get("data"), [])
-
-    def test_get_group_principals_invalid_guid(self):
-        client = APIClient()
-        url = reverse("v1_management:group-principals", kwargs={"uuid": "invalid"})
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_get_group_principals_invalid_sort_order(self):
-        """Test that an invalid value for sort order is rejected."""
-        client = APIClient()
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.emptyGroup.uuid})
-        url += "?order_by=themis"
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": []},
-    )
-    def test_get_group_principals_nonempty(self, mock_request):
-        """Test that getting principals from a nonempty group returns successfully."""
-        mock_request.return_value["data"] = [
-            {"username": self.principal.username},
-            {"username": self.principalB.username},
-        ]
-
-        client = APIClient()
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-
-        response = client.get(url, **self.headers)
-
-        call_args, kwargs = mock_request.call_args_list[0]
-        username_arg = call_args[0]
-
-        for username in [self.principal.username, self.principalB.username]:
-            self.assertTrue(username in username_arg)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
-        self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
-        self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
-    def test_get_group_principals_nonempty_admin_only(self, mock_request):
-        """Test that getting principals from a nonempty group returns successfully."""
-
-        client = APIClient()
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid}) + f"?admin_only=true"
-
-        response = client.get(url, **self.headers)
-
-        call_args, kwargs = mock_request.call_args_list[0]
-        username_arg = call_args[0]
-
-        mock_request.assert_called_with(
-            ANY,
-            org_id=ANY,
-            options={
-                "sort_order": None,
-                "username_only": "false",
-                "admin_only": True,
-                "principal_type": "user",
-            },
-        )
-
-        self.assertTrue(self.principal.username in username_arg)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 1)
-        self.assertEqual(response.data.get("data")[0].get("username"), "test_user")
-
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
-    @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_remove_group_principals_success(self, send_kafka_message, mock_request, mock_method):
-        """Test that removing a principal to a group returns successfully."""
-        self.maxDiff = None
-        with self.settings(NOTIFICATIONS_ENABLED=True):
-            test_user = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="123798")
-            self.group.principals.add(test_user)
-
-            url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-            client = APIClient()
-
-            org_id = self.customer_data["org_id"]
-
-            url = "{}?usernames={}".format(url, "test_user")
-            response = client.delete(url, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-
-            # test whether correctly added to audit logs
-            al_url = "/api/rbac/v1/auditlogs/"
-            al_client = APIClient()
-            al_response = al_client.get(al_url, **self.headers)
-            retrieve_data = al_response.data.get("data")
-            al_list = retrieve_data
-            for al_record in al_list:
-                if al_record["action"] == "remove":
-                    al_dict = al_record
-                    break
-
-            al_dict_principal_username = al_dict["principal_username"]
-            al_dict_description = al_dict["description"]
-            al_dict_resource = al_dict["resource_type"]
-            al_dict_action = al_dict["action"]
-
-            self.assertEqual(self.user_data["username"], al_dict_principal_username)
-            self.assertIsNotNone(al_dict_description)
-            self.assertEqual(al_dict_resource, "group")
-            self.assertEqual(al_dict_action, "remove")
-
-            send_kafka_message.assert_called_with(
-                settings.NOTIFICATIONS_TOPIC,
-                {
-                    "bundle": "console",
-                    "application": "rbac",
-                    "event_type": "group-updated",
-                    "timestamp": ANY,
-                    "events": [
-                        {
-                            "metadata": {},
-                            "payload": {
-                                "name": self.group.name,
-                                "username": self.user_data["username"],
-                                "uuid": str(self.group.uuid),
-                                "operation": "removed",
-                                "principal": test_user.username,
-                            },
-                        }
-                    ],
-                    "org_id": org_id,
-                },
-                ANY,
-            )
-
-            actual_call_arg = mock_method.call_args[0][0]
-            self.assertEqual(
-                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798"),
-                actual_call_arg,
-            )
-
-    def test_remove_group_principals_invalid(self):
-        """Test that removing a principal returns an error with invalid data format."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
-        response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            str(response.data.get("errors")[0].get("detail")),
-            "Query parameter service-accounts or usernames is required.",
-        )
-
-    def test_remove_group_principals_invalid_guid(self):
-        """Test that removing a principal returns an error when GUID is invalid."""
-        invalid_uuid = "invalid"
-        url = reverse("v1_management:group-principals", kwargs={"uuid": invalid_uuid})
-        client = APIClient()
-        response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            str(response.data.get("errors")[0].get("detail")),
-            f"{invalid_uuid} is not a valid UUID.",
-        )
-
-    def test_remove_group_principals_invalid_username(self):
-        """Test that removing a principal returns an error for invalid username."""
-        invalid_username = "invalid_3098408"
-        url = (
-            reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-            + f"?usernames={invalid_username}"
-        )
-        client = APIClient()
-        response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-        err_message = f"User(s) {{'{invalid_username}'}} not found in the group '{self.group.name}'."
-        self.assertEqual(str(response.data.get("errors")[0].get("detail")), err_message)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1864,92 +1397,6 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("system"), False)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": []},
-    )
-    def test_principal_username_filter_for_group_roles_no_match(self, mock_request):
-        """Test principal_username filter for getting principals for a group."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-        url = "{}?principal_username=test".format(url)
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        principals = response.data.get("data")
-
-        mock_request.assert_called_with(
-            [],
-            options={
-                "sort_order": None,
-                "username_only": "false",
-                "principal_type": "user",
-            },
-            org_id=self.customer_data["org_id"],
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(principals), 0)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
-    def test_principal_username_filter_for_group_roles_match(self, mock_request):
-        """Test principal_username filter for getting principals for a group."""
-        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
-        url = "{}?principal_username={}".format(url, self.principal.username)
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        principals = response.data.get("data")
-
-        mock_request.assert_called_with(
-            [self.principal.username],
-            options={
-                "sort_order": None,
-                "username_only": "false",
-                "principal_type": "user",
-            },
-            org_id=self.customer_data["org_id"],
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(principals), 1)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
-    def test_principal_get_ordering_username_success(self, mock_request):
-        """Test that passing a username order_by parameter calls the proxy correctly."""
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=username"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        principals = response.data.get("data")
-        expected_principals = sorted([self.principal.username, self.principalB.username])
-
-        mock_request.assert_called_with(
-            expected_principals,
-            options={
-                "sort_order": "asc",
-                "username_only": "false",
-                "principal_type": "user",
-            },
-            org_id=self.customer_data["org_id"],
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(principals), 1)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
-    def test_principal_get_ordering_nonusername_fail(self, mock_request):
-        """Test that passing a username order_by parameter with invalid value returns 400."""
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=best_joke"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        principals = response.data.get("data")
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(principals, None)
 
     @patch("management.group.relation_api_dual_write_subject_handler.OutboxReplicator._save_replication_event")
     def test_add_group_roles_system_policy_create_success(self, mock_method):
@@ -2366,6 +1813,7 @@ class GroupViewsetTests(IdentityRequest):
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
     def test_add_group_roles_bad_group_guid(self):
+        """Test that adding a role to invalid group returns 400."""
         group_url = reverse("v1_management:group-roles", kwargs={"uuid": "master_exploder"})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid]}
@@ -2754,6 +2202,337 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+
+class GroupPrincipalViewsetTests(GroupViewsetTests):
+    """
+    Test the group viewset and its principals endpoints.
+    - GET /groups/<uuid>/principals/
+    - POST /groups/<uuid>/principals/
+    - DELETE /groups/<uuid>/principals/
+    """
+
+    def test_get_group_principals_invalid_method(self):
+        """Test that using an unsupported REST method returns an error."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": uuid4()})
+        client = APIClient()
+        response = client.put(url, {}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_get_group_principals_empty(self, mock_request):
+        """Test that getting principals from an empty group returns successfully."""
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.emptyGroup.uuid})
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+        self.assertEqual(response.data.get("data"), [])
+
+    def test_get_group_principals_invalid_guid(self):
+        """Test that getting principals from not existing group returns 400."""
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": "invalid"})
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_get_group_principals_nonempty(self, mock_request):
+        """Test that getting principals from a nonempty group returns successfully."""
+        mock_request.return_value["data"] = [
+            {"username": self.principal.username},
+            {"username": self.principalB.username},
+        ]
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+
+        response = client.get(url, **self.headers)
+
+        call_args, kwargs = mock_request.call_args_list[0]
+        username_arg = call_args[0]
+
+        for username in [self.principal.username, self.principalB.username]:
+            self.assertTrue(username in username_arg)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
+        self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user", "is_org_admin": True}]},
+    )
+    def test_get_group_principals_nonempty_admin_only(self, mock_request):
+        """Test that getting org admins only from a nonempty group returns successfully."""
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid}) + f"?admin_only=true"
+
+        response = client.get(url, **self.headers)
+
+        call_args, kwargs = mock_request.call_args_list[0]
+        username_arg = call_args[0]
+
+        mock_request.assert_called_with(
+            ANY,
+            org_id=ANY,
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "admin_only": True,
+                "principal_type": "user",
+            },
+        )
+
+        self.assertTrue(self.principal.username in username_arg)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0].get("username"), "test_user")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {"username": "test_user", "is_org_admin": False},
+                {"username": "test_admin", "is_org_admin": True},
+            ],
+        },
+    )
+    def test_get_group_principals_nonempty_admin_only_false(self, mock_request):
+        """Test that getting all principals from a nonempty group returns successfully with 'admin_only=false'."""
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid}) + f"?admin_only=false"
+
+        response = client.get(url, **self.headers)
+
+        call_args, kwargs = mock_request.call_args_list[0]
+        username_arg = call_args[0]
+
+        mock_request.assert_called_with(
+            ANY,
+            org_id=ANY,
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "principal_type": "user",
+            },
+        )
+
+        self.assertTrue(self.principal.username in username_arg)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(response.data.get("data")[0].get("username"), "test_user")
+        self.assertEqual(response.data.get("data")[1].get("username"), "test_admin")
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_based_principal",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch(
+        "management.principal.it_service.ITService.request_service_accounts",
+        return_value=[
+            {
+                "clientId": "b7a82f30-bcef-013c-2452-6aa2427b506c",
+                "name": f"service_account_name",
+                "description": f"Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-b7a82f30-bcef-013c-2452-6aa2427b506c",
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ],
+    )
+    def test_read_group_list_principalCount(self, mock_request, sa_mock_request):
+        """Test that correct number is returned for principalCount."""
+        # Create a test data - group with 1 user based and 1 service account principal
+        group_name = "TestGroup"
+        group = Group(name=group_name, tenant=self.tenant)
+        group.save()
+
+        user_based_principal = Principal(username="user_based_principal", tenant=self.test_tenant)
+        user_based_principal.save()
+
+        sa_uuid = "b7a82f30-bcef-013c-2452-6aa2427b506c"
+        sa_based_principal = Principal(
+            username="service_account-" + sa_uuid,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_uuid,
+        )
+        sa_based_principal.save()
+
+        group.principals.add(user_based_principal, sa_based_principal)
+        self.group.save()
+
+        # Test that /groups/{uuid}/principals/ returns correct count of user based principals
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+        principal_out = response.data.get("data")[0]
+        self.assertEqual(principal_out["username"], user_based_principal.username)
+
+        # Test that /groups/{uuid}/principals/?principal_type=service-account returns
+        # correct count of service account based principals
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}?principal_type=service-account"
+        )
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+        sa_out = response.data.get("data")[0]
+        self.assertEqual(sa_out["username"], sa_based_principal.username)
+
+        # Test that /groups/?name=<group_name> returns 1 group with principalCount for only user based principals
+        url = f"{reverse('v1_management:group-list')}?name={group_name}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        group = response.data.get("data")[0]
+        self.assertEqual(group["principalCount"], 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_principal_username_filter_for_group_roles_no_match(self, mock_request):
+        """Test principal_username filter for getting principals for a group."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        url = "{}?principal_username=test".format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get("data")
+
+        mock_request.assert_called_with(
+            [],
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "principal_type": "user",
+            },
+            org_id=self.customer_data["org_id"],
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 0)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_principal_username_filter_for_group_roles_match(self, mock_request):
+        """Test principal_username filter for getting principals for a group."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        url = "{}?principal_username={}".format(url, self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get("data")
+
+        mock_request.assert_called_with(
+            [self.principal.username],
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "principal_type": "user",
+            },
+            org_id=self.customer_data["org_id"],
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_principal_get_ordering_asc_username_success(self, mock_request):
+        """Test that passing a username order_by parameter (asc) calls the proxy correctly."""
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=username"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get("data")
+        expected_principals = sorted([self.principal.username, self.principalB.username])
+
+        mock_request.assert_called_with(
+            expected_principals,
+            options={
+                "sort_order": "asc",
+                "username_only": "false",
+                "principal_type": "user",
+            },
+            org_id=self.customer_data["org_id"],
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_principal_get_ordering_desc_username_success(self, mock_request):
+        """Test that passing a username order_by parameter (desc) calls the proxy correctly."""
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=-username"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get("data")
+        expected_principals = sorted([self.principal.username, self.principalB.username])
+
+        mock_request.assert_called_with(
+            expected_principals,
+            options={
+                "sort_order": "des",
+                "username_only": "false",
+                "principal_type": "user",
+            },
+            org_id=self.customer_data["org_id"],
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_principal_get_ordering_nonusername_fail(self, mock_request):
+        """Test that passing a username order_by parameter with invalid value returns 400."""
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=best_joke"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get("data")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(principals, None)
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -2862,7 +2641,10 @@ class GroupViewsetTests(IdentityRequest):
 
         mock_request.return_value = mocked_values
 
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+        )
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -2892,66 +2674,6 @@ class GroupViewsetTests(IdentityRequest):
                 self.assertEqual(sa.get("owner"), mock_sa["owner"])
                 self.assertEqual(sa.get("type"), "service-account")
                 self.assertEqual(sa.get("username"), mock_sa["username"])
-
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts")
-    def test_remove_group_service_account_success(self, mock_request):
-        """Test that getting the "service-account" type principals from a nonempty group returns successfully."""
-        mocked_values = []
-        for uuid in self.sa_client_ids:
-            mocked_values.append(
-                {
-                    "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
-                    "description": f"Service Account description {uuid.split('-')[0]}",
-                    "owner": "jsmith",
-                    "username": "service_account-" + uuid,
-                    "time_created": 1706784741,
-                    "type": "service-account",
-                }
-            )
-
-        mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(int(response.data.get("meta").get("count")), 3)
-        self.assertEqual(len(response.data.get("data")), 3)
-
-        remove_sa = []
-        for sa in mocked_values:
-            remove_sa.append(sa["clientId"])
-        sa_line = ",".join(remove_sa)
-
-        url = (
-            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service-accounts={sa_line}"
-        )
-        response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-
-        # test whether correctly added to audit logs
-        al_url = "/api/rbac/v1/auditlogs/"
-        al_client = APIClient()
-        al_response = al_client.get(al_url, **self.headers)
-        retrieve_data = al_response.data.get("data")
-        al_list = retrieve_data
-        for al_record in al_list:
-            if al_record["action"] == "remove":
-                al_dict = al_record
-                break
-
-        al_dict_principal_username = al_dict["principal_username"]
-        al_dict_description = al_dict["description"]
-        al_dict_resource = al_dict["resource_type"]
-        al_dict_action = al_dict["action"]
-
-        self.assertEqual(self.user_data["username"], al_dict_principal_username)
-        self.assertIsNotNone(al_dict_description)
-        self.assertEqual(al_dict_resource, "group")
-        self.assertEqual(al_dict_action, "remove")
 
     def test_get_group_service_account_username_only_success(self):
         """
@@ -3208,7 +2930,10 @@ class GroupViewsetTests(IdentityRequest):
                 )
 
     def test_get_group_principals_check_service_account_ids_non_existent(self):
-        """Test that when checking non-existent service account client IDs from another group the endpoint flags them as not present."""
+        """
+        Test that when checking non-existent service account client IDs from another group
+        the endpoint flags them as not present.
+        """
 
         # Create the UUIDs to be specified in the request.
         not_in_group = uuid4()
@@ -3357,7 +3082,10 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_principals_check_service_account_ids_empty_client_ids(self):
         """Test that an empty service account IDs query param returns a bad request response"""
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids="
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?service_account_client_ids="
+        )
         client = APIClient()
         response: Response = client.get(url, **self.headers)
 
@@ -3377,7 +3105,10 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_principals_check_service_account_ids_blank_string(self):
         """Test that a blank service account IDs query param returns a bad request response"""
-        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=     "
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?service_account_client_ids=     "
+        )
         client = APIClient()
         response: Response = client.get(url, **self.headers)
 
@@ -3691,6 +3422,822 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data").get("serviceAccounts")), sa_count)
         self.assertEqual(len(response.data.get("data").get("users")), user_count)
         self.assertEqual(int(response.data.get("meta").get("count")), sa_count + user_count)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_principals_service_account_filter_name(self, mock_request):
+        """Test that filtering the "service-account" type principals by name returns successfully."""
+        mocked_values = []
+        names = ("name ABC", "name 123", "name Test")
+        for i, uuid in enumerate(self.sa_client_ids):
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": names[i],
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+            f"&service_account_name={names[0]}"
+        )
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertEqual(sa.get("name"), names[0])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_principals_service_account_partial_filter_name(self, mock_request):
+        """Test that partial filtering the "service-account" type principals by name returns successfully."""
+        mocked_values = []
+        names = ("name ABC", "name 123", "name Test")
+        for i, uuid in enumerate(self.sa_client_ids):
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": names[i],
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+            f"&service_account_name={names[1][-3:]}"
+        )
+
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertEqual(sa.get("name"), names[1])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_principals_service_account_filter_description(self, mock_request):
+        """Test that filtering the "service-account" type principals by description returns successfully."""
+        mocked_values = []
+        description = ("description ABC", "description 123", "description Test")
+        for i, uuid in enumerate(self.sa_client_ids):
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"Service Account name {uuid.split('-')[0]}",
+                    "description": description[i],
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+            f"&service_account_description={description[0]}"
+        )
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertEqual(sa.get("description"), description[0])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_principals_service_account_partial_filter_description(self, mock_request):
+        """Test that partial filtering the "service-account" type principals by description returns successfully."""
+        mocked_values = []
+        description = ("description ABC", "description 123", "description Test")
+        for i, uuid in enumerate(self.sa_client_ids):
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"Service Account name {uuid.split('-')[0]}",
+                    "description": description[i],
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+            f"&service_account_description={description[1][-3:]}"
+        )
+
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertEqual(sa.get("description"), description[1])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_principals_service_account_filter_name_and_description(self, mock_request):
+        """Test that filtering the "service-account" type principals by name and description returns successfully."""
+        mocked_values = []
+        description = ("description ABC", "description Test", "description Test")
+        names = ("name Test", "name 123", "name Test")
+        for i, uuid in enumerate(self.sa_client_ids):
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": names[i],
+                    "description": description[i],
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+            f"&service_account_description={description[2]}"
+            f"&service_account_name={names[0]}"
+        )
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertEqual(sa.get("description"), description[2])
+        self.assertEqual(sa.get("name"), names[0])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_principals_service_account_partial_filter_name_and_description(self, mock_request):
+        """
+        Test that partial filtering the "service-account" type principals
+        by name and description returns successfully.
+        """
+        mocked_values = []
+        description = ("description ABC", "description Test", "description Test")
+        names = ("name Test", "name 123", "name Test")
+        for i, uuid in enumerate(self.sa_client_ids):
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": names[i],
+                    "description": description[i],
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+            f"&service_account_description={description[2][-4:]}"
+            f"&service_account_name={names[0][-3:]}"
+        )
+
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertEqual(sa.get("description"), description[2])
+        self.assertEqual(sa.get("name"), names[0])
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_failure_adding_principals_to_admin_default(self, mock_request):
+        """Test that adding a principal to an admin default group will fail."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.adminGroup.uuid})
+        client = APIClient()
+        username = "test_user"
+        test_data = {"principals": [{"username": username}]}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"), "ADD PRINCIPALS cannot be performed on system groups."
+        )
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "errors": [
+                {
+                    "detail": "Unexpected error.",
+                    "status": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "source": "principals",
+                }
+            ],
+        },
+    )
+    def test_add_group_principals_failure(self, mock_request):
+        """Test that adding a principal to a group returns the proper response on failure."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        new_username = uuid4()
+        test_data = {
+            "principals": [
+                {"username": self.principal.username},
+                {"username": new_username},
+            ]
+        }
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data[0]["detail"], "Unexpected error.")
+        self.assertEqual(response.data[0]["status"], 500)
+        self.assertEqual(response.data[0]["source"], "principals")
+
+    def test_add_group_principal_invalid_guid(self):
+        """Test that adding a principal to a group with an invalid GUID causes a 400."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": "invalid_guid"})
+        client = APIClient()
+        test_data = {"principals": [{"username": self.principal.username}]}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_add_user", "user_id": 448717}]},
+    )
+    def test_add_principals_into_special_group(self, _):
+        """Test that adding principals into a special group returns an error."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        test_data = {"principals": [{"username": self.principal.username}]}
+
+        # Not allowed for 'Default Access' group
+        self.group.platform_default = True
+        self.group.admin_default = False
+        self.group.system = True
+        self.group.save()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"),
+            "ADD PRINCIPALS cannot be performed on system groups.",
+        )
+
+        # Not allowed for 'Custom Default Access' group
+        self.group.platform_default = True
+        self.group.admin_default = False
+        self.group.system = False
+        self.group.save()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"),
+            "ADD PRINCIPALS cannot be performed on platform_default groups.",
+        )
+
+        # Not allowed for 'Default Admin Access' group
+        self.group.platform_default = False
+        self.group.admin_default = True
+        self.group.system = True
+        self.group.save()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"),
+            "ADD PRINCIPALS cannot be performed on system groups.",
+        )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_add_group_principal_not_exists(self, mock_request, mock_method):
+        """Test that adding a non-existing principal into existing group causes a 404."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        test_data = {"principals": [{"username": "not_existing_username"}]}
+
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIsNone(mock_method.call_args)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_add_user", "user_id": -448717}],
+        },
+    )
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_add_group_principals_success(self, send_kafka_message, mock_request, mock_method):
+        """Test that adding a principal to a group returns successfully."""
+        # Create a group and a cross account user.
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            test_group = Group.objects.create(name="test", tenant=self.tenant)
+            cross_account_user = Principal.objects.create(
+                username="cross_account_user", cross_account=True, tenant=self.tenant
+            )
+
+            org_id = self.customer_data["org_id"]
+
+            url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
+            client = APIClient()
+            username = "test_add_user"
+            test_data = {
+                "principals": [
+                    {"username": username},
+                    {"username": cross_account_user.username},
+                ]
+            }
+
+            response = client.post(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            principal = Principal.objects.get(username=username)
+
+            # Only the user exists in IT will be created and added to the group
+            # cross account users won't be added
+            self.assertEqual(len(response.data.get("principals")), 1)
+            self.assertEqual(
+                response.data.get("principals")[0],
+                {"username": username, "user_id": int(principal.user_id)},
+            )
+            self.assertEqual(principal.tenant, self.tenant)
+
+            # test whether added principals into a group is added correctly within audit log database
+            al_url = "/api/rbac/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "add")
+
+            actual_call_arg = mock_method.call_args[0][0]
+            self.assertEqual(
+                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717"),
+                actual_call_arg,
+            )
+
+            send_kafka_message.assert_called_with(
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "group-updated",
+                    "timestamp": ANY,
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": test_group.name,
+                                "username": self.user_data["username"],
+                                "uuid": str(test_group.uuid),
+                                "operation": "added",
+                                "principal": username,
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
+            )
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_group_principals_service_account(self, sa_mock):
+        """Test adding the service account into group returns successfully."""
+        sa_uuid = self.sa_client_ids[0]
+        sa_mock.return_value = [
+            {
+                "clientId": sa_uuid,
+                "name": f"service_account_name_{sa_uuid.split('-')[0]}",
+                "description": f"Service Account description {sa_uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sa = Group.objects.get(uuid=self.group.uuid).principals.filter(
+            type=Principal.Types.SERVICE_ACCOUNT, service_account_id=sa_uuid
+        )
+        self.assertEqual(sa.count(), 1)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_group_principals_service_account_fail(self, sa_mock):
+        """Test adding the service account into group without type in request body returns 400 Bad Request."""
+        sa_uuid = self.sa_client_ids[0]
+        sa_mock.return_value = [
+            {
+                "clientId": sa_uuid,
+                "name": f"service_account_name_{sa_uuid.split('-')[0]}",
+                "description": f"Service Account description {sa_uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+
+        # Missing type in request body = principal is considered as user type so 'username' is required
+        request_body = {"principals": [{"clientId": sa_uuid}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"), "the username is required for user principals"
+        )
+
+        # Invalid UUID
+        request_body = {"principals": [{"clientId": "invalid_uuid"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json().get("errors")[0].get("detail"), "Must be a valid UUID.")
+
+        # Invalid principal type
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "invalid_type"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"),
+            "The principal type must be either 'user' or 'service-account'",
+        )
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_group_principals_service_account_not_found(self, sa_mock):
+        """Test adding the service account with not existing uuid returns 404 Bad Request."""
+        sa_mock.return_value = []
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+
+        # Valid but not existing UUID
+        uuid = uuid4()
+        request_body = {"principals": [{"clientId": uuid, "type": "service-account"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.json().get("errors")[0].get("detail"), f"Service account(s) {{'{uuid}'}} not found.")
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_group_principals_both_types(self, sa_mock, user_mock):
+        """Test adding both principal types into group returns successfully."""
+        sa_uuid = self.sa_client_ids[0]
+        sa_mock.return_value = [
+            {
+                "clientId": sa_uuid,
+                "name": f"service_account_name_{sa_uuid.split('-')[0]}",
+                "description": f"Service Account description {sa_uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        username = "test-username"
+        user_mock.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                    "user_id": 123,
+                }
+            ],
+        }
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        request_body = {"principals": [{"username": username}, {"clientId": sa_uuid, "type": "service-account"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        users = Group.objects.get(uuid=self.group.uuid).principals.filter(type=Principal.Types.USER, username=username)
+        self.assertEqual(users.count(), 1)
+        sa = Group.objects.get(uuid=self.group.uuid).principals.filter(
+            type=Principal.Types.SERVICE_ACCOUNT, service_account_id=sa_uuid
+        )
+        self.assertEqual(sa.count(), 1)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_remove_group_principals_success(self, send_kafka_message, mock_request, mock_method):
+        """Test that removing a principal from a group returns successfully."""
+        self.maxDiff = None
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            test_user = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="123798")
+            self.group.principals.add(test_user)
+
+            url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+            client = APIClient()
+
+            org_id = self.customer_data["org_id"]
+
+            url = f"{url}?usernames={test_user.username}"
+            response = client.delete(url, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+            # test whether correctly added to audit logs
+            al_url = "/api/rbac/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            for al_record in al_list:
+                if al_record["action"] == "remove":
+                    al_dict = al_record
+                    break
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "remove")
+
+            send_kafka_message.assert_called_with(
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "group-updated",
+                    "timestamp": ANY,
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": self.group.name,
+                                "username": self.user_data["username"],
+                                "uuid": str(self.group.uuid),
+                                "operation": "removed",
+                                "principal": test_user.username,
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
+            )
+
+            actual_call_arg = mock_method.call_args[0][0]
+            self.assertEqual(
+                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798"),
+                actual_call_arg,
+            )
+
+    def test_remove_group_principals_invalid(self):
+        """Test that removing a principal returns an error with invalid data format."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "Query parameter service-accounts or usernames is required.",
+        )
+
+    def test_remove_group_principals_invalid_guid(self):
+        """Test that removing a principal returns an error when GUID is invalid."""
+        invalid_uuid = "invalid"
+        url = reverse("v1_management:group-principals", kwargs={"uuid": invalid_uuid})
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            f"{invalid_uuid} is not a valid UUID.",
+        )
+
+    def test_remove_group_principals_invalid_username(self):
+        """Test that removing a principal returns an error for invalid username."""
+        invalid_username = "invalid_3098408"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+            + f"?usernames={invalid_username}"
+        )
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        err_message = f"User(s) {{'{invalid_username}'}} not found in the group '{self.group.name}'."
+        self.assertEqual(str(response.data.get("errors")[0].get("detail")), err_message)
+
+    def test_remove_group_principals_service_account(self):
+        """Test that removing a service account from a group returns successfully."""
+        sa_uuid = self.sa_client_ids[0]
+
+        # Service account is in the group
+        principals = Group.objects.get(uuid=self.group.uuid).principals.all()
+        sa_username = "service-account-" + sa_uuid
+        self.assertIn(sa_username, [p.username for p in principals])
+
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+            + f"?service-accounts={sa_uuid}"
+        )
+
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Service account is not in the group
+        principals = Group.objects.get(uuid=self.group.uuid).principals.all()
+        sa_username = "service-account-" + sa_uuid
+        self.assertNotIn(sa_username, [p.username for p in principals])
+
+        # Service account exists in database (was removed only from the group)
+        self.assertIsNotNone(Principal.objects.get(username=sa_username))
+
+    def test_remove_group_principals_service_account_fail(self):
+        """Test that removing a service account returns an error for invalid client id."""
+        invalid_client_id = "invalid_3098408"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+            + f"?service-accounts={invalid_client_id}"
+        )
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        err_message = f"Service account(s) {{'{invalid_client_id}'}} not found in the group '{self.group.name}'"
+        self.assertEqual(str(response.data.get("errors")[0].get("detail")), err_message)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_remove_group_service_account_success(self, mock_request):
+        """Test that removing the "service-account" type principals from a nonempty group returns successfully."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            "?principal_type=service-account"
+        )
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        remove_sa = []
+        for sa in mocked_values:
+            remove_sa.append(sa["clientId"])
+        sa_line = ",".join(remove_sa)
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service-accounts={sa_line}"
+        )
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # test whether correctly added to audit logs
+        al_url = "/api/rbac/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        for al_record in al_list:
+            if al_record["action"] == "remove":
+                al_dict = al_record
+                break
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "remove")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_add_user", "user_id": -448717}]},
+    )
+    def test_remove_principals_from_special_group(self, _):
+        """Test that removing principals from a special group returns an error."""
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        test_data = {"principals": [{"username": self.principal.username}]}
+
+        # Not allowed for 'Default Access' group
+        self.group.platform_default = True
+        self.group.admin_default = False
+        self.group.system = True
+        self.group.save()
+
+        response = client.delete(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"),
+            "REMOVE PRINCIPALS cannot be performed on system groups.",
+        )
+
+        # Not allowed for 'Default Admin Access' group
+        self.group.platform_default = False
+        self.group.admin_default = True
+        self.group.system = True
+        self.group.save()
+
+        response = client.delete(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"),
+            "REMOVE PRINCIPALS cannot be performed on system groups.",
+        )
 
 
 class GroupViewNonAdminTests(IdentityRequest):
