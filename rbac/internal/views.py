@@ -32,6 +32,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
+from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
@@ -1486,7 +1487,7 @@ def lookup_resource(request):
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
 
-            request = lookup_pb2.LookupResourcesRequest(
+            request_data = lookup_pb2.LookupResourcesRequest(
                 resource_type=common_pb2.ObjectType(
                     name=resource_type_name,
                     namespace=resource_type_namespace,
@@ -1499,11 +1500,15 @@ def lookup_resource(request):
                     ),
                 ),
             )
-        responses = stub.LookupResources(request)
+        responses = stub.LookupResources(request_data)
 
         if responses:
+            response_data = []
             for r in responses:
-                return JsonResponse(r.resource, status=200)
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"resources": response_data}
+            return JsonResponse(json_response, status=200)
         return JsonResponse("No resource found", status=204)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
