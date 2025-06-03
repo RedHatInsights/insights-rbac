@@ -138,6 +138,9 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
           ]
         }
         """
+        if request.query_params.get("order_by") == "-permission":
+            self.queryset = self.queryset.order_by("-permission_collate")
+            self.ordering = "-permission_collate"
         return super().list(request=request, args=args, kwargs=kwargs)
 
     @action(detail=False)
