@@ -81,6 +81,9 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 )
 
         if check_total_workspace_count_exceeded(request):
+            # If two transactions to create workspaces happen at the same time both will get the okay to add the workspace
+            # which could lead to the case where there is an extra workspace over the allowed limit in the data
+            # locking will have a scalability impact so better not to catch this condition
             raise PermissionDenied("The total number of workspaces allowed for this organisation has been exceeded.")
 
         return super().create(request=request, args=args, kwargs=kwargs)
