@@ -17,7 +17,7 @@ More info is available through platformdocs_.
 Getting Started
 ===============
 
-This is a Python project developed using Python 3.9. Make sure you have at least this version installed.
+This is a Python project developed using Python 3.12. Make sure you have at least this version installed.
 
 Additionally, the development environment installation requires the postgresql-devel package installed for your distribution before running properly.
 
@@ -154,9 +154,9 @@ Verify that you cannot access any endpoints requiring auth: ::
 
 Verify that if you pass in the correct headers/values, you *can* access the endpoint: ::
 
-  curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-account: 10001' -H 'x-rh-rbac-client-id: catalog'
+  curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-org-id: 10001' -H 'x-rh-rbac-client-id: catalog'
 
-Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-account' header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
+Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-org-id' header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
 
 You can also send a request *with* the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
 
@@ -187,7 +187,7 @@ This will rebuild the tox virtual env and then run all tests.
 
 To run unit tests specifically::
 
-    tox -e py39
+    tox -e py312
 
 To lint the code base ::
 

@@ -557,7 +557,7 @@ class MigrateTestTupleStore(TestCase):
         )
 
         # Last two are implicit default parent relations – these can be removed
-        self.assertEquals(
+        self.assertEqual(
             1,
             self.relations.count_tuples(
                 all_of(
@@ -568,7 +568,7 @@ class MigrateTestTupleStore(TestCase):
             ),
         )
 
-        self.assertEquals(
+        self.assertEqual(
             1,
             self.relations.count_tuples(
                 all_of(
@@ -579,4 +579,4 @@ class MigrateTestTupleStore(TestCase):
             ),
         )
 
-        self.assertEquals(31, len(self.relations))
+        self.assertEqual(31, len(self.relations))

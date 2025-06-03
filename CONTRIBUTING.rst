@@ -7,7 +7,7 @@ The following are a set of guidelines for contributing to insights-rbac. These a
 guidelines, not rules. Use your best judgement. Feel free to suggest changes to
 this document in a pull-request.
 
-This document uses `RFC 2119 <https://www.ietf.org/rfc/rfc2119.txt/>`_ keywords to indicate requirement levels.
+This document uses `RFC 2119 <https://www.ietf.org/rfc/rfc2119.txt>`_ keywords to indicate requirement levels.
 
 Reporting Bugs & Requesting Features
 ------------------------------------
@@ -50,11 +50,11 @@ In general, we believe that code is read just as much as it is executed. So,
 writing readable code is just as important as writing functional code.
 
 Pull-requests MUST follow Python style conventions (e.g. `PEP
-8 <https://www.python.org/dev/peps/pep-0008 />`_ and `PEP
-20 <https://www.python.org/dev/peps/pep-0020 />`_ and
+8 <https://www.python.org/dev/peps/pep-0008>`_ and `PEP
+20 <https://www.python.org/dev/peps/pep-0020>`_ and
 conform to generally recognized best practices. Pull-requests MAY also choose
 to conform to additional style guidelines, e.g. `Google's Python Style
-Guide <https://google.github.io/styleguide/pyguide.html />`_.
+Guide <https://google.github.io/styleguide/pyguide.html>`_.
 
 We do use automation whenever possible to ensure a basic level of
 acceptability. Pull-requests MUST pass a linter (pylint or flake8) without

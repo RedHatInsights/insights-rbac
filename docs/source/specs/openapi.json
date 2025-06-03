@@ -3870,7 +3870,7 @@
             "then": {
               "properties": {
                 "value": {
-                  "type": "string",
+                  "type": ["string", null],
                   "example": "123456"
                 }
               }
@@ -3888,11 +3888,12 @@
                   "value": {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": ["string", null]
                     },
                     "example": [
                       "value1",
-                      "value2"
+                      "value2",
+                      null
                     ]
                   }
                 }
