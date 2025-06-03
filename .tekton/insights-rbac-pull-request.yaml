@@ -246,7 +246,7 @@ spec:
             value: $(params.POSTGRESQL_PORT)
           - name: DATABASE_HOST
             value: $(params.DATABASE_HOST)
-          image: registry.access.redhat.com/ubi9/python-39:latest
+          image: registry.access.redhat.com/ubi9/python-312:latest
           name: unit-tests
           script: |
             #!/bin/bash
