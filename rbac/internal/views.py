@@ -1482,6 +1482,7 @@ def lookup_resource(request):
     resource_type_namespace = req_data["resource_type"]["namespace"]
     resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
     resource_subject_id = req_data["subject"]["subject"]["id"]
+    resource_relation = req_data["relation"]
 
     try:
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
@@ -1492,7 +1493,7 @@ def lookup_resource(request):
                     name=resource_type_name,
                     namespace=resource_type_namespace,
                 ),
-                relation="member",
+                relation=resource_relation,
                 subject=common_pb2.SubjectReference(
                     subject=common_pb2.ObjectReference(
                         type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
