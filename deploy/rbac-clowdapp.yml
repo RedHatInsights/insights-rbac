@@ -1458,7 +1458,7 @@ parameters:
   description: The limit of workspace hierarchy depth
   value: '2'
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
-  description: The limit of workspace hierarchy depth
+  description: When true, prevents the ability to create peer workspaces against the default workspace
   value: 'True'
 - name: SCOPES
   description: The Scope for token generation
