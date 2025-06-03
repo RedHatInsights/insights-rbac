@@ -16,11 +16,12 @@
 #
 
 """View for internal tenant management."""
-
 import json
 import logging
 import uuid
+from contextlib import contextmanager
 
+import grpc
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
@@ -31,9 +32,15 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
+from google.protobuf import json_format
+from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
+from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
-from management.cache import TenantCache
+from kessel.relations.v1beta1 import common_pb2
+from kessel.relations.v1beta1 import lookup_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc
+from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -80,6 +87,24 @@ from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 PROXY = PrincipalProxy()
+jwt_cache = JWTCache()
+jwt_provider = JWTProvider()
+jwt_manager = JWTManager(jwt_provider, jwt_cache)
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    # Call credential object will be invoked for every single RPC
+    token = jwt_manager.get_jwt_from_redis()
+
+    call_credentials = grpc.access_token_call_credentials(token)
+
+    combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
+
+    secure_channel = grpc.secure_channel(addr, combined_credentials)
+
+    yield secure_channel
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -1445,6 +1470,55 @@ def retrieve_ungrouped_workspace(request):
             return HttpResponse(json.dumps(data), content_type="application/json", status=201)
     except Exception as e:
         return HttpResponse(str(e), status=500)
+
+
+def lookup_resource(request):
+    """POST to retrieve resource details from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    # Request parameters for resource lookup on relations api from post request
+    resource_type_name = req_data["resource_type"]["name"]
+    resource_type_namespace = req_data["resource_type"]["namespace"]
+    resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
+    resource_subject_id = req_data["subject"]["subject"]["id"]
+    resource_relation = req_data["relation"]
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+            request_data = lookup_pb2.LookupResourcesRequest(
+                resource_type=common_pb2.ObjectType(
+                    name=resource_type_name,
+                    namespace=resource_type_namespace,
+                ),
+                relation=resource_relation,
+                subject=common_pb2.SubjectReference(
+                    subject=common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
+                        id=resource_subject_id,
+                    ),
+                ),
+            )
+        responses = stub.LookupResources(request_data)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"resources": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No resource found", status=204)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to lookup resources endpoint", "error": str(e)}, status=500
+        )
 
 
 @require_http_methods(["GET", "DELETE"])

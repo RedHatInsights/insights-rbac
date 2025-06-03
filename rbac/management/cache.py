@@ -249,6 +249,36 @@ class JWKSCache(BasicCache):
         super().save(self.JWKS_CACHE_KEY, response, "JWKS response")
 
 
+class JWTCache(BasicCache):
+    """Redis-based caching for the storage of JWT token."""
+
+    JWT_CACHE_KEY = "rbac::jwt::relations"
+
+    def key_for(self):
+        """Redis key for the JWT token response."""
+        return "rbac::jwt::relations"
+
+    def set_cache(self, pipe, key, item):
+        """Set cache to redis."""
+        pipe.hset(key=key, value=json.dumps(item), name="token")
+        pipe.expire(name=key, time=settings.IT_TOKEN_JKWS_CACHE_LIFETIME)
+        pipe.execute()
+
+    def get_from_redis(self, args):
+        """Get object from redis based on args."""
+        obj = self.connection.hget(*(self.JWT_CACHE_KEY, args[1]))
+        if obj:
+            return json.loads(obj)
+
+    def get_jwt_response(self):
+        """Get the JWT token response from Redis."""
+        return super().get_cached(self.JWT_CACHE_KEY, "Unable to fetch the JWT response from Redis")
+
+    def set_jwt_response(self, response):
+        """Save the JWT token response in Redis."""
+        super().save(self.JWT_CACHE_KEY, response, "JWT response")
+
+
 def skip_purging_cache_for_public_tenant(tenant):
     """Skip purging cache for public tenant."""
     # Cache is by tenant org_id and user_id, we don't have to purge cache for public tenant

@@ -1,5 +1,5 @@
 default_language_version:
-  python: python3.9
+  python: python3.12
 repos:
 - repo: https://github.com/PyCQA/flake8
   rev: "7.2.0"
@@ -12,7 +12,7 @@ repos:
   rev: 25.1.0
   hooks:
   - id: black
-    args: ["--check", "-l", "119", "-t", "py39", "rbac", "tests", "--diff"]
+    args: ["--check", "-l", "119", "-t", "py312", "rbac", "tests", "--diff"]
     require_serial: true
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v5.0.0
