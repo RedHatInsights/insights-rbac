@@ -17,6 +17,7 @@
 
 """Sources for fetching JSON Web KeySets for validating JWT signatures."""
 
+from json import JSONDecodeError
 import logging
 from typing import Protocol
 
@@ -51,65 +52,29 @@ class OIDCConfigurationJWKSSource(JWKSSource):
     def fetch_jwks(self) -> dict:
         """Fetch the JWKS from the well-known URL."""
         # Attempt getting the OIDC configuration.
-        try:
-            oidc_response: Response = requests.get(url=self.oidc_configuration_url)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
-            logger.error("Unable to fetch the OIDC configuration to validate the token: %s", ce)
-
-            raise UnableMeetPrerequisitesError("unable to fetch the OIDC configuration to validate the token")
-
-        if not status.is_success(oidc_response.status_code):
-            logger.error(
-                f"Unable to get the OIDC configuration payload when attempting to validate a JWT token due to an"
-                f" unexpected status code: {oidc_response.status_code}. Response body:"
-                f" {oidc_response.content.decode()}"
-            )
-            raise UnableMeetPrerequisitesError(
-                "unexpected status code received from IT when attempting to fetch the OIDC configuration"
-            )
-
-        logger.debug('OIDC configuration fetched from "%s"', self.oidc_configuration_url)
+        oidc_configuration = _request_json(url=self.oidc_configuration_url)
 
         # Attempt getting their public certificates' URL.
         try:
-            jwks_uri = oidc_response.json()["jwks_uri"]
+            jwks_uri = oidc_configuration["jwks_uri"]
         except KeyError:
             logger.error(
                 f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
-                f" {oidc_response.content.decode()}"
+                f" {oidc_configuration}"
             )
             raise UnableMeetPrerequisitesError('the "jwks_uri" key was not present in the response payload')
 
         if not jwks_uri:
             logger.error(
                 f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
-                f" {oidc_response.content.decode()}"
+                f" {oidc_configuration}"
             )
             raise UnableMeetPrerequisitesError('the "jwks_uri" key has an empty value')
 
         logger.debug('JWKS URI extracted: "%s"', jwks_uri)
 
         # Attempt getting their public certificates.
-        try:
-            jwks_certificates_response: Response = requests.get(url=jwks_uri)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
-            logger.error("unable to fetch the JWKS certificates to validate the token: %s", ce)
-
-            raise UnableMeetPrerequisitesError("unable to fetch the JWKS certificates to validate the token")
-
-        if not status.is_success(jwks_certificates_response.status_code):
-            logger.error(
-                "Unable to obtain the JWK certificates when attempting to validate a JWT token. Response code:"
-                f"{jwks_certificates_response.status_code}. Response body:"
-                f" {jwks_certificates_response.content.decode()}"
-            )
-            raise UnableMeetPrerequisitesError(
-                "unexpected status code received from IT when attempting to fetch the JWKS certificates"
-            )
-
-        logger.debug('JWKS fetched from "%s"', jwks_uri)
-
-        return jwks_certificates_response.json()
+        return _request_json(url=jwks_uri)
 
 
 class JWKSCacheSource(JWKSSource):
@@ -140,5 +105,38 @@ class JWKSCacheSource(JWKSSource):
             logger.debug("JWKS response loaded from cache. Skipped fetching the source configuration.")
         else:
             jwks_certificates = self.jwks_source.fetch_jwks()
+            self.jwks_cache.set_jwks_response(jwks_certificates)
 
         return jwks_certificates
+
+
+def _request_json(url: str) -> dict:
+    """Helper function to make a GET request and return the JSON response."""
+    try:
+        response: Response = requests.get(url=url)
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
+        logger.error("Unable to fetch %s to validate the token: %s", url, ce)
+
+        raise UnableMeetPrerequisitesError(f"unable to fetch {url} to validate the token") from ce
+
+    if not status.is_success(response.status_code):
+        logger.error(
+            f"Unable to get {url} when attempting to validate a JWT token due to an"
+            f" unexpected status code: {response.status_code}. Response body:"
+            f" {response.content.decode()}"
+        )
+        raise UnableMeetPrerequisitesError(
+            f"unexpected status code '{response.status_code}' received from {url} "
+            "when attempting to fetch the OIDC configuration"
+        )
+
+    logger.debug(f'JSON fetch from "{url}"')
+
+    try:
+        return response.json()
+    except JSONDecodeError as e:
+        logger.error(
+            f"Unable to decode the JSON response from {url} when attempting to validate a JWT token. "
+            f"Raised error: {e}. Response body: {response.content.decode()}"
+        )
+        raise UnableMeetPrerequisitesError("unable to decode the JSON response from the OIDC configuration") from e

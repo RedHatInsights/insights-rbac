@@ -131,8 +131,8 @@ class TokenValidatorTests(IdentityRequest):
                 "no new instances of the token validator class should have been created since it is supposed to be a singleton",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_cache(
         self, import_key_set: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -151,9 +151,9 @@ class TokenValidatorTests(IdentityRequest):
         # JWKS response from cache.
         get.assert_not_called()
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -176,9 +176,9 @@ class TokenValidatorTests(IdentityRequest):
         # And the "import key set" method should also have been called with the same contents.
         import_key_set.assert_called_with(self.jwks_certificates_response_json)
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_network_errors(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -217,14 +217,15 @@ class TokenValidatorTests(IdentityRequest):
                 )
 
                 self.assertEqual(
-                    "unable to fetch the OIDC configuration to validate the token",
+                    "unable to fetch http://localhost:999/auth/realms/redhat-external/.well-known/openid-configuration "
+                    "to validate the token",
                     str(e),
                     "unexpected error message for the exception",
                 )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_not_ok(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -262,14 +263,15 @@ class TokenValidatorTests(IdentityRequest):
             )
 
             self.assertEqual(
-                "unexpected status code received from IT when attempting to fetch the OIDC configuration",
+                "unexpected status code '400' received from http://localhost:999/auth/realms/redhat-external/.well-known/openid-configuration "
+                "when attempting to fetch the OIDC configuration",
                 str(e),
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_not_jwks_url(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -312,9 +314,9 @@ class TokenValidatorTests(IdentityRequest):
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_empty_jwks_url(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -357,9 +359,9 @@ class TokenValidatorTests(IdentityRequest):
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_jwks_network_error(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -404,14 +406,15 @@ class TokenValidatorTests(IdentityRequest):
                 )
 
                 self.assertEqual(
-                    "unable to fetch the JWKS certificates to validate the token",
+                    "unable to fetch http://localhost/auth/realms/redhat-external/protocol/openid-connect/certs "
+                    "to validate the token",
                     str(e),
                     "unexpected error message for the exception",
                 )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_jwks_not_ok(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -448,14 +451,15 @@ class TokenValidatorTests(IdentityRequest):
             )
 
             self.assertEqual(
-                "unexpected status code received from IT when attempting to fetch the JWKS certificates",
+                "unexpected status code '400' received from http://localhost/auth/realms/redhat-external/protocol/openid-connect/certs "
+                "when attempting to fetch the OIDC configuration",
                 str(e),
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_import_key_set_error(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
