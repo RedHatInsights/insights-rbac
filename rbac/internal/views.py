@@ -1522,7 +1522,7 @@ def lookup_resource(request):
 
 
 def check_relation(request):
-    """POST to retrieve resource details from relations api."""
+    """POST to check relationship from relations api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 
