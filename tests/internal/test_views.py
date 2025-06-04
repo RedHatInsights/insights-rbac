@@ -541,8 +541,8 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
         fixture.bootstrap_tenant(self.tenant)
         role_system = fixture.new_system_role(name="system_role", permissions=permissions)
-        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=replicator)
-        dual_write_handler.replicate_new_system_role(role_system)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role_system, replicator=replicator)
+        dual_write_handler.replicate_new_system_role()
 
         role_custom = fixture.new_custom_role(
             name="custom_role",
