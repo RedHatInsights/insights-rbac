@@ -18,7 +18,7 @@
 import requests
 
 from django.conf import settings
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 from rest_framework import status
 
 from management.authorization.scope_claims import ScopeClaims
@@ -26,6 +26,8 @@ from management.authorization.token_validator import ITSSOTokenValidator, Invali
 from management.authorization.token_validator import UnableMeetPrerequisitesError
 from tests.identity_request import IdentityRequest
 from unittest import mock
+
+from tests.management.authorization.token_fixtures import InMemoryIssuer
 
 
 # IT path to fetch the service accounts.
@@ -47,6 +49,7 @@ class TokenValidatorTests(IdentityRequest):
         settings.IT_SERVICE_TIMEOUT_SECONDS = 10
 
         self.token_validator = ITSSOTokenValidator()
+        self.token_validator.reset_jwks_source()
 
         # Copy and paste the token validator's way of building the different elements that are required to then
         # properly check the token's claims. The goal is this to be like a double check in case the way of building
@@ -686,3 +689,34 @@ class TokenValidatorTests(IdentityRequest):
             )
 
             self.assertEqual("The token's claims are invalid", str(e), "unexpected exception message")
+
+    def test_get_user_from_bearer_token_parses_claims(self):
+        """Test that the user is correctly built from the bearer token claims."""
+        # Prepare a mocked request with a mocked bearer token.
+        issuer = InMemoryIssuer.generate()
+        self.token_validator.set_jwks_source(issuer, issuer.iss)
+        token = issuer.issue_jwt(
+            {},
+            {
+                "sub": "u1",
+                "preferred_username": "user1",
+                "organization": {
+                    "id": "org1",
+                },
+                "client_id": "client1",
+            },
+        )
+
+        request_factory = RequestFactory()
+        request = request_factory.get(
+            "/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        user = self.token_validator.get_user_from_bearer_token(request)
+
+        self.assertIsNotNone(user)
+        self.assertEqual("user1", user.username)
+        self.assertEqual("org1", user.org_id)
+        self.assertEqual("u1", user.user_id)
+        self.assertEqual("client1", user.client_id)

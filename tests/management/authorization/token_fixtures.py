@@ -3,11 +3,13 @@
 from joserfc import jwt
 from joserfc.jwk import ECKey
 from joserfc.jwk import Key
-from management.authorization.token_validator import JWKSSource
+from management.authorization.jwks_source import JWKSSource
 
 
 class InMemoryIssuer(JWKSSource):
     """In-memory JWKSSource for testing purposes."""
+
+    iss = "http://localhost"
 
     def __init__(self, key: Key):
         """
@@ -35,6 +37,8 @@ class InMemoryIssuer(JWKSSource):
         :param claims: The JWT claims.
         :return: The signed JWT as a string.
         """
+        header.update({"alg": "ES256", "typ": "JWT"})
+        claims.update({"iss": self.iss})
         return jwt.encode(
             header=header,
             claims=claims,
