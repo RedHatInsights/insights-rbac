@@ -122,6 +122,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "rbac.middleware.DisableCSRF",
     "django.middleware.security.SecurityMiddleware",
+    "rbac.middleware.NullByteRejectMiddleware",
     "django.middleware.common.CommonMiddleware",
     "rbac.middleware.IdentityHeaderMiddleware",
     "internal.middleware.InternalIdentityHeaderMiddleware",
