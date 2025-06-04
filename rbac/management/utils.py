@@ -93,7 +93,6 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
         return None
     except (MissingAuthorizationError, InvalidTokenError):
         # If the token is not valid, we return None.
-        print("Invalid token or missing authorization header.")
         return None
 
 
