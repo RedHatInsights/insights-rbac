@@ -54,8 +54,8 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.role.definer import delete_permission
 from management.role.model import Access
-from management.role.relation_api_dual_write_handler import delete_permission
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -717,8 +717,8 @@ def permission_removal(request):
                 logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
                 delete_permission(permission_obj)
                 return HttpResponse(f"Permission '{permission}' deleted.", status=204)
-            except Exception:
-                return HttpResponse("Permission cannot be deleted.", status=400)
+            except Exception as e:
+                return HttpResponse(f"Permission cannot be deleted. {str(e)}", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
 
