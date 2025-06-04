@@ -447,6 +447,8 @@ objects:
                 key: rbac-client-secret
                 name: service-accounts
                 optional: true
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
           - name: SCOPES
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
