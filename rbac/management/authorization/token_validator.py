@@ -18,12 +18,14 @@
 """A token introspector class which validates that the given token is valid."""
 import logging
 import re
+from typing import Tuple
 
 import requests
 from django.conf import settings
 from joserfc import jwt
 from joserfc.jwk import KeySet
 from joserfc.jwt import JWTClaimsRegistry, Token
+from api.models import User
 from management.cache import JWKSCache
 from requests import Response
 from rest_framework import status
@@ -153,15 +155,12 @@ class ITSSOTokenValidator:
             logger.error(f"Unable to import IT's public keys to validate the token: {e}")
             raise UnableMeetPrerequisitesError("unable to import IT's public keys to validate the token")
 
-    def validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> str:
+    def _validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> Tuple[str, Token]:
         """Validate the JWT token issued by Red Hat's SSO.
 
         Performs validations on the issuer, audience and scope of the token. Raises exceptions if the token is not
         valid. Finally, it returns the received Bearer token in order to be able to forward it as is to IT.
         """
-        if settings.IT_BYPASS_TOKEN_VALIDATION:
-            return "mocked-invalid-bearer-token-because-token-validation-is-disabled"
-
         bearer_token: str = request.headers.get("Authorization")
         if not bearer_token:
             logger.debug(
@@ -217,4 +216,49 @@ class ITSSOTokenValidator:
             )
             raise InvalidTokenError("The token's claims are invalid")
 
+        return bearer_token, token
+
+    def validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> str
+        """Validate the JWT token issued by Red Hat's SSO.
+
+        Performs validations on the issuer, audience and scope of the token. Raises exceptions if the token is not
+        valid. Finally, it returns the received Bearer token in order to be able to forward it as is to IT.
+        """
+        if settings.IT_BYPASS_TOKEN_VALIDATION:
+            return "mocked-invalid-bearer-token-because-token-validation-is-disabled"
+
+        bearer_token, _ = self._validate_token(request, additional_scopes_to_validate)
         return bearer_token
+
+    def get_user_from_bearer_token(self, request: Request) -> User:
+        """Validate the JWT token and parse into a User object.
+        
+        Performs validations on the issuer, audience and scope of the token. Raises exceptions if the token is not
+        valid. Finally, it returns the User object corresponding to the token.
+        """
+        if settings.IT_BYPASS_TOKEN_VALIDATION:
+            user = User()
+            user.user_id = "mocked-user-id-because-token-validation-is-disabled"
+            user.username = "mocked-username-because-token-validation-is-disabled"
+            user.org_id = "mocked-org-id-because-token-validation-is-disabled"
+            user.account = "mocked-account-number-because-token-validation-is-disabled"
+            user.bearer_token = "mocked-invalid-bearer-token-because-token-validation-is-disabled"
+            user.admin = False
+            return user
+
+        bearer_token, jwt = self._validate_token(request, set())
+        
+        # Assumes a particular token shape
+        # TODO: support multiple based on scope similar to gateway code
+        user = User()
+        user.user_id = jwt.claims.get("sub")
+        user.username = jwt.claims.get("preferred_username")
+        user.org_id = jwt.claims.get("organization", {}).get("id", None)
+        user.account = jwt.claims.get("organization", {}).get("account_number", None)
+        user.admin = "org:admin:all" in jwt.claims.get("roles", [])
+        user.bearer_token = bearer_token
+        user.client_id = jwt.claims.get("client_id", "")
+        # TODO user.is_service_account ?
+
+        return user
+

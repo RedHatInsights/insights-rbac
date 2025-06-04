@@ -23,6 +23,9 @@ from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
+from management.authorization.invalid_token import InvalidTokenError
+from management.authorization.missing_authorization import MissingAuthorizationError
+from management.authorization.token_validator import ITSSOTokenValidator
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
@@ -70,6 +73,24 @@ def build_user_from_psk(request):
         user.admin = True
         user.system = True
     return user
+
+
+def build_system_user_from_token(request) -> Optional[User]:
+    """Build a system user from the token."""
+    # Token validator class uses a singleton
+    token_validator = ITSSOTokenValidator()
+    try:
+        user = token_validator.get_user_from_bearer_token(request)
+        system_users = json.loads(os.environ.get("SYSTEM_USERS", "{}"))
+        if user and user.user_id in system_users:
+            system_user = system_users[user.user_id]
+            user.system = True
+            user.admin = system_user.get("admin", False)
+            user.is_service_account = system_user.get("is_service_account", False)
+        return user
+    except (MissingAuthorizationError, InvalidTokenError):
+        # If the token is not valid, we return None.
+        return None
 
 
 def get_principal_from_request(request):
