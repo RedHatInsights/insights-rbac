@@ -17,14 +17,16 @@
 
 """Sources for fetching JSON Web KeySets for validating JWT signatures."""
 
+import logging
 from typing import Protocol
 
 import requests
-from management.authorization.token_validator import logger
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
 from management.cache import JWKSCache
 from requests import Response
 from rest_framework import status
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class JWKSSource(Protocol):
