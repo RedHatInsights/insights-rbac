@@ -589,6 +589,38 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_s2s_system_user_not_configured_for_auth_headers_is_not_allowed(self):
+        class TokenValidatorStub(TokenValidator):
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header != "Bearer testtoken":
+                    raise InvalidTokenError("Invalid token")
+                return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", new=TokenValidatorStub()):
+            self.org_id = "4321"
+            tenant = Tenant.objects.create(org_id=self.org_id)
+            root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
+            default = Workspace.objects.create(
+                name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root
+            )
+            Workspace.objects.create(
+                name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default
+            )
+            request = self.request_context["request"]
+            client = APIClient()
+
+            # Request with token, but cannot override org id
+            self.env = EnvironmentVarGuard()
+            self.env.set("SYSTEM_USERS", r'{"u1": {"admin": true}}')
+            client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+            self.service_headers = {
+                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+            }
+            response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            # Expects 400 due to no org id
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class AccessHandlingTest(TestCase):
     """Tests against getting user access in the IdentityHeaderMiddleware."""

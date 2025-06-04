@@ -1462,6 +1462,10 @@ def retrieve_ungrouped_workspace(request):
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
     org_id = request.user.org_id
+
+    if not org_id:
+        return HttpResponse("No org_id found for the user.", status=400)
+
     try:
         with transaction.atomic():
             tenant = Tenant.objects.get(org_id=org_id)
