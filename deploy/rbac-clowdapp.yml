@@ -1466,6 +1466,6 @@ parameters:
 - name: TOKEN_GRANT_TYPE
   description: The grant type for token generation
   value: 'client_credentials'
-- name: RELATIONS_API_SERVER
+- name: RELATIONS_API_GRPC_SERVER
   description: The grant type for token generation
   value: 'localhost:9000'
