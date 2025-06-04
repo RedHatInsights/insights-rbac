@@ -37,9 +37,9 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
+from kessel.relations.v1beta1 import check_pb2, lookup_pb2
+from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
-from kessel.relations.v1beta1 import lookup_pb2
-from kessel.relations.v1beta1 import lookup_pb2_grpc
 from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
@@ -1518,6 +1518,50 @@ def lookup_resource(request):
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
             {"detail": "Error occurred in call to lookup resources endpoint", "error": str(e)}, status=500
+        )
+
+
+def check_relation(request):
+    """POST to retrieve resource details from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    # Request parameters for resource lookup on relations api from post request
+    resource_type_name = req_data["resource_type"]["name"]
+    resource_type_namespace = req_data["resource_type"]["namespace"]
+    resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
+    resource_subject_id = req_data["subject"]["subject"]["id"]
+    resource_relation = req_data["relation"]
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = check_pb2_grpc.KesselCheckServiceStub(channel)
+
+            request_data = check_pb2.CheckRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_type_name),
+                    id=resource_subject_id,
+                ),
+                relation=resource_relation,
+                subject=common_pb2.SubjectReference(
+                    subject=common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
+                        id=resource_subject_id,
+                    ),
+                ),
+            )
+        responses = stub.Check(request_data)
+
+        if responses:
+            return HttpResponse(responses, status=200)
+        return JsonResponse("No relation found", status=204)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to check relation endpoint", "error": str(e)}, status=500
         )
 
 
