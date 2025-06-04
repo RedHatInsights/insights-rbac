@@ -1530,7 +1530,8 @@ def check_relation(request):
     resource_type_name = req_data["resource_type"]["name"]
     resource_type_namespace = req_data["resource_type"]["namespace"]
     resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
-    resource_subject_id = req_data["subject"]["subject"]["id"]
+    subject_id = req_data["subject"]["subject"]["id"]
+    resource_id = req_data["resource_type"]["id"]
     resource_relation = req_data["relation"]
 
     try:
@@ -1540,13 +1541,13 @@ def check_relation(request):
             request_data = check_pb2.CheckRequest(
                 resource=common_pb2.ObjectReference(
                     type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_type_name),
-                    id=resource_subject_id,
+                    id=resource_id,
                 ),
                 relation=resource_relation,
                 subject=common_pb2.SubjectReference(
                     subject=common_pb2.ObjectReference(
                         type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
-                        id=resource_subject_id,
+                        id=subject_id,
                     ),
                 ),
             )
