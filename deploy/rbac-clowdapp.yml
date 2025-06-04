@@ -447,12 +447,12 @@ objects:
                 key: rbac-client-secret
                 name: service-accounts
                 optional: true
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
           - name: SCOPES
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
             value: ${TOKEN_GRANT_TYPE}
-          - name: RELATIONS_API_GRPC_SERVER
-            value: ${RELATIONS_API_GRPC_SERVER}
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
@@ -1466,6 +1466,3 @@ parameters:
 - name: TOKEN_GRANT_TYPE
   description: The grant type for token generation
   value: 'client_credentials'
-- name: RELATIONS_API_GRPC_SERVER
-  description: The grant type for token generation
-  value: 'localhost:9000'
