@@ -51,10 +51,8 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
         user = None
         # If the path starts with /_private/_s2s/, it is using psk to authenticate
         if request.path.startswith("/_private/_s2s/"):
-            user = build_user_from_psk(request)
-            if not user:
-                # Try to get identity from bearer token.
-                user = build_system_user_from_token(request, self.token_validator)
+            user = build_user_from_psk(request) or build_system_user_from_token(request, self.token_validator)
+
             if not user:
                 logger.error("Could not obtain identity on request.")
                 return HttpResponseForbidden()
