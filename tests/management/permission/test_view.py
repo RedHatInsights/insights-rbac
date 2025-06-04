@@ -152,7 +152,7 @@ class PermissionViewsetTests(IdentityRequest):
             Permission.objects.filter(application__in=["rbac", "acme"]).values_list("permission", flat=True)
         )
         url = LIST_URL
-        url = f"{url}?application=rbac,acme"
+        url = f"{url}?application=rbac,acme&order_by=-permission"
         response = CLIENT.get(url, **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
         self.assertEqual(response.status_code, status.HTTP_200_OK)
