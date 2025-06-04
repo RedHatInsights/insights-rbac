@@ -544,7 +544,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             response = client.post(f"/_private/_s2s/workspaces/ungrouped/", **request.META)
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-            # Request with psk
+            # Request with token
             self.env = EnvironmentVarGuard()
             self.env.set("SYSTEM_USERS", r'{"u1": {"admin": true, "allow_any_org": true}}')
             client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
@@ -556,6 +556,37 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
 
             # Can not use psk to access apis other than _s2s
             response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_s2s_system_user_not_configured_is_not_allowed(self):
+        class TokenValidatorStub(TokenValidator):
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header != "Bearer testtoken":
+                    raise InvalidTokenError("Invalid token")
+                return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", new=TokenValidatorStub()):
+            self.org_id = "4321"
+            tenant = Tenant.objects.create(org_id=self.org_id)
+            root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
+            default = Workspace.objects.create(
+                name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root
+            )
+            Workspace.objects.create(
+                name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default
+            )
+            request = self.request_context["request"]
+            client = APIClient()
+
+            # Request with token, but not matching configuration
+            self.env = EnvironmentVarGuard()
+            self.env.set("SYSTEM_USERS", r'{"other_user": {"admin": true, "allow_any_org": true}}')
+            client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+            self.service_headers = {
+                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+            }
+            response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
