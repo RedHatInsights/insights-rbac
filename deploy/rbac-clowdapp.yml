@@ -451,8 +451,8 @@ objects:
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
             value: ${TOKEN_GRANT_TYPE}
-          - name: RELATIONS_API_GRPC_SERVER
-            value: ${RELATIONS_API_GRPC_SERVER}
+          - name: RELATIONS_API_SERVER
+            value: ${RELATIONS_API_SERVER}
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
