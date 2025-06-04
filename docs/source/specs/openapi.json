@@ -3845,6 +3845,21 @@
           "value"
         ],
         "properties": {
+          "schema": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
+              },
+              {
+                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
+              }
+            ]
+          }
+        }
+      },
+      "ResourceDefinitionFilterOperationEqual": {
+        "type": "object",
+        "properties": {
           "key": {
             "type": "string",
             "example": "cost-management.aws.account"
@@ -3852,26 +3867,36 @@
           "operation": {
             "type": "string",
             "enum": [
-              "equal",
+              "equal"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "example": "123456",
+            "nullable": true
+          }
+        }
+      },
+      "ResourceDefinitionFilterOperationIn": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "cost-management.aws.account"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
               "in"
             ]
           },
           "value": {
-            "oneOf": [
-              {
-                "type": "string",
-                "example": "123456",
-                "nullable": true
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "nullable": true
-                },
-                "example": ["value1", null, "value2"]
-              }
-            ]
+            "type": "array",
+            "items": {
+              "type": "string",
+              "nullable": true
+            },
+            "example": ["value1", null, "value2"]
           }
         }
       },
