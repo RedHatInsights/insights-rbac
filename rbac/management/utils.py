@@ -25,7 +25,7 @@ from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
-from management.authorization.token_validator import ITSSOTokenValidator
+from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
@@ -75,10 +75,9 @@ def build_user_from_psk(request):
     return user
 
 
-def build_system_user_from_token(request) -> Optional[User]:
+def build_system_user_from_token(request, token_validator: TokenValidator) -> Optional[User]:
     """Build a system user from the token."""
     # Token validator class uses a singleton
-    token_validator = ITSSOTokenValidator()
     try:
         user = token_validator.get_user_from_bearer_token(request)
         system_users = json.loads(os.environ.get("SYSTEM_USERS", "{}"))
@@ -87,9 +86,14 @@ def build_system_user_from_token(request) -> Optional[User]:
             user.system = True
             user.admin = system_user.get("admin", False)
             user.is_service_account = system_user.get("is_service_account", False)
-        return user
+            if system_user.get("allow_any_org", False):
+                user.account = request.META.get(RH_RBAC_ACCOUNT, user.account)
+                user.org_id = request.META.get(RH_RBAC_ORG_ID, user.org_id)
+            return user
+        return None
     except (MissingAuthorizationError, InvalidTokenError):
         # If the token is not valid, we return None.
+        print("Invalid token or missing authorization header.")
         return None
 
 

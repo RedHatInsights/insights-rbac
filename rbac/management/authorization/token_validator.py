@@ -16,9 +16,10 @@
 #
 
 """A token introspector class which validates that the given token is valid."""
+from abc import ABC, abstractmethod
 import logging
 import re
-from typing import Tuple
+from typing import Protocol, Tuple
 
 import requests
 from django.conf import settings
@@ -39,11 +40,153 @@ from .unable_meet_prerequisites import UnableMeetPrerequisitesError
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class ITSSOTokenValidator:
+class JWKSSource(Protocol):
+    """Protocol for a source that provides JSON Web Key Sets (JWKS)."""
+
+    def fetch_jwks(self) -> dict:
+        """Fetch the JSON Web Key Set (JWKS) from the source."""
+        ...
+
+
+class OIDCConfigurationJWKSSource(JWKSSource):
+    """Fetch JWKS from the well-known URL."""
+
+    def __init__(self, url: str):
+        """
+        Initialize OIDCConfigurationJWKSSource with the given OIDC configuration URL.
+
+        See: https://openid.net/specs/openid-connect-discovery-1_0.html
+        """
+        self.oidc_configuration_url = url
+
+    def fetch_jwks(self) -> dict:
+        """Fetch the JWKS from the well-known URL."""
+        # Attempt getting the OIDC configuration.
+        try:
+            oidc_response: Response = requests.get(url=self.oidc_configuration_url)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
+            logger.error("Unable to fetch the OIDC configuration to validate the token: %s", ce)
+
+            raise UnableMeetPrerequisitesError("unable to fetch the OIDC configuration to validate the token")
+
+        if not status.is_success(oidc_response.status_code):
+            logger.error(
+                f"Unable to get the OIDC configuration payload when attempting to validate a JWT token due to an"
+                f" unexpected status code: {oidc_response.status_code}. Response body:"
+                f" {oidc_response.content.decode()}"
+            )
+            raise UnableMeetPrerequisitesError(
+                "unexpected status code received from IT when attempting to fetch the OIDC configuration"
+            )
+
+        logger.debug('OIDC configuration fetched from "%s"', self.oidc_configuration_url)
+
+        # Attempt getting their public certificates' URL.
+        try:
+            jwks_uri = oidc_response.json()["jwks_uri"]
+        except KeyError:
+            logger.error(
+                f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
+                f" {oidc_response.content.decode()}"
+            )
+            raise UnableMeetPrerequisitesError('the "jwks_uri" key was not present in the response payload')
+
+        if not jwks_uri:
+            logger.error(
+                f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
+                f" {oidc_response.content.decode()}"
+            )
+            raise UnableMeetPrerequisitesError('the "jwks_uri" key has an empty value')
+
+        logger.debug('JWKS URI extracted: "%s"', jwks_uri)
+
+        # Attempt getting their public certificates.
+        try:
+            jwks_certificates_response: Response = requests.get(url=jwks_uri)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
+            logger.error("unable to fetch the JWKS certificates to validate the token: %s", ce)
+
+            raise UnableMeetPrerequisitesError("unable to fetch the JWKS certificates to validate the token")
+
+        if not status.is_success(jwks_certificates_response.status_code):
+            logger.error(
+                "Unable to obtain the JWK certificates when attempting to validate a JWT token. Response code:"
+                f"{jwks_certificates_response.status_code}. Response body:"
+                f" {jwks_certificates_response.content.decode()}"
+            )
+            raise UnableMeetPrerequisitesError(
+                "unexpected status code received from IT when attempting to fetch the JWKS certificates"
+            )
+
+        logger.debug('JWKS fetched from "%s"', jwks_uri)
+
+        return jwks_certificates_response.json()
+
+
+class JWKSCacheSource(JWKSSource):
+    """Delegates to a JWKSSource and then caches the result using a JWKSCache."""
+
+    def __init__(self, jwks_source: JWKSSource, cache: JWKSCache):
+        """Initialize JWKSCacheSource with a JWKSSource and a JWKSCache."""
+        self.jwks_source = jwks_source
+        self.jwks_cache = cache
+
+    def fetch_jwks(self) -> dict:
+        """Retrieve the cached JWKS, or fetch the JWKS from the source and cache it."""
+        try:
+            jwks_certificates = self.jwks_cache.get_jwks_response()
+        except Exception as e:
+            jwks_certificates = None
+            logger.debug(
+                "Fetching the JSON Web Key Set from Redis raised an exception, attempting to fetch the keys from the"
+                f" OIDC configuration instead. Raised error: {e}"
+            )
+
+        if jwks_certificates:
+            logger.debug("JWKS response loaded from cache. Skipped fetching the OIDC configuration.")
+        else:
+            jwks_certificates = self.jwks_source.fetch_jwks()
+
+        return jwks_certificates
+
+
+class TokenValidator(ABC):
+    """Protocol for a token validator."""
+
+    @abstractmethod
+    def _validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> Tuple[str, Token]:
+        """Validate the JWT token and return the Bearer token and the decoded Token object."""
+        ...
+
+    def _parse_standard_claims(self, user: User, jwt: Token) -> None:
+        """Parse standard claims from the JWT token and return a User object."""
+        user.user_id = jwt.claims.get("sub")
+        user.username = jwt.claims.get("preferred_username")
+        user.client_id = jwt.claims.get("client_id", "")
+
+    def validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> str:
+        """Validate the JWT token and return the Bearer token."""
+        bearer_token, _ = self._validate_token(request, additional_scopes_to_validate)
+        return bearer_token
+
+    def get_user_from_bearer_token(self, request: Request) -> User:
+        """Validate the JWT token and return a User object."""
+        bearer_token, jwt = self._validate_token(request, set())
+
+        # Assumes standard claims. Override for additional or custom claims.
+        user = User()
+        self._parse_standard_claims(user, jwt)
+        user.bearer_token = bearer_token
+
+        return user
+
+
+class ITSSOTokenValidator(TokenValidator):
     """JWT token  validator."""
 
     # Instance variable for the class.
     _instance = None
+    _jwks_source: JWKSSource
 
     def __new__(cls, *args, **kwargs):
         """Create a single instance of the class."""
@@ -67,86 +210,14 @@ class ITSSOTokenValidator:
         self.oidc_configuration_url = f"{self.host}/.well-known/openid-configuration"
 
         # Initialize the cache dependency.
-        self.jwks_cache = JWKSCache()
+        jwks_cache = JWKSCache()
+
+        self._jwks_source = JWKSCacheSource(
+            jwks_source=OIDCConfigurationJWKSSource(self.oidc_configuration_url), cache=jwks_cache
+        )
 
     def _get_json_web_keyset(self) -> KeySet:
-        try:
-            jwks_certificates = self.jwks_cache.get_jwks_response()
-        except Exception as e:
-            jwks_certificates = None
-            logger.debug(
-                "Fetching the JSON Web Key Set from Redis raised an exception, attempting to fetch the keys from the"
-                f" OIDC configuration instead. Raised error: {e}"
-            )
-
-        if jwks_certificates:
-            logger.debug("JWKS response loaded from cache. Skipped fetching the OIDC configuration.")
-        else:
-            # Attempt getting IT's OIDC configuration.
-            try:
-                oidc_response: Response = requests.get(url=self.oidc_configuration_url)
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
-                logger.error("Unable to fetch the OIDC configuration to validate the token: %s", ce)
-
-                raise UnableMeetPrerequisitesError("unable to fetch the OIDC configuration to validate the token")
-
-            if not status.is_success(oidc_response.status_code):
-                logger.error(
-                    f"Unable to get the OIDC configuration payload when attempting to validate a JWT token due to an"
-                    f" unexpected status code: {oidc_response.status_code}. Response body:"
-                    f" {oidc_response.content.decode()}"
-                )
-                raise UnableMeetPrerequisitesError(
-                    "unexpected status code received from IT when attempting to fetch the OIDC configuration"
-                )
-
-            logger.debug('OIDC configuration fetched from "%s"', self.oidc_configuration_url)
-
-            # Attempt getting their public certificates' URL.
-            try:
-                jwks_uri = oidc_response.json()["jwks_uri"]
-            except KeyError:
-                logger.error(
-                    f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
-                    f" {oidc_response.content.decode()}"
-                )
-                raise UnableMeetPrerequisitesError('the "jwks_uri" key was not present in the response payload')
-
-            if not jwks_uri:
-                logger.error(
-                    f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
-                    f" {oidc_response.content.decode()}"
-                )
-                raise UnableMeetPrerequisitesError('the "jwks_uri" key has an empty value')
-
-            logger.debug('JWKS URI extracted: "%s"', jwks_uri)
-
-            # Attempt getting their public certificates.
-            try:
-                jwks_certificates_response: Response = requests.get(url=jwks_uri)
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
-                logger.error("unable to fetch the JWKS certificates to validate the token: %s", ce)
-
-                raise UnableMeetPrerequisitesError("unable to fetch the JWKS certificates to validate the token")
-
-            if not status.is_success(jwks_certificates_response.status_code):
-                logger.error(
-                    "Unable to obtain the JWK certificates when attempting to validate a JWT token. Response code:"
-                    f"{jwks_certificates_response.status_code}. Response body:"
-                    f" {jwks_certificates_response.content.decode()}"
-                )
-                raise UnableMeetPrerequisitesError(
-                    "unexpected status code received from IT when attempting to fetch the JWKS certificates"
-                )
-
-            logger.debug('JWKS fetched from "%s"', jwks_uri)
-
-            # Cache the JWKS contents.
-            self.jwks_cache.set_jwks_response(jwks_certificates_response.json())
-
-            logger.debug("JWKS response stored in cache")
-
-            jwks_certificates = jwks_certificates_response.json()
+        jwks_certificates = self._jwks_source.fetch_jwks()
 
         # Import the certificates.
         try:
@@ -218,7 +289,7 @@ class ITSSOTokenValidator:
 
         return bearer_token, token
 
-    def validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> str
+    def validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> str:
         """Validate the JWT token issued by Red Hat's SSO.
 
         Performs validations on the issuer, audience and scope of the token. Raises exceptions if the token is not
@@ -227,12 +298,11 @@ class ITSSOTokenValidator:
         if settings.IT_BYPASS_TOKEN_VALIDATION:
             return "mocked-invalid-bearer-token-because-token-validation-is-disabled"
 
-        bearer_token, _ = self._validate_token(request, additional_scopes_to_validate)
-        return bearer_token
+        return super().validate_token(request, additional_scopes_to_validate)
 
     def get_user_from_bearer_token(self, request: Request) -> User:
         """Validate the JWT token and parse into a User object.
-        
+
         Performs validations on the issuer, audience and scope of the token. Raises exceptions if the token is not
         valid. Finally, it returns the User object corresponding to the token.
         """
@@ -247,18 +317,15 @@ class ITSSOTokenValidator:
             return user
 
         bearer_token, jwt = self._validate_token(request, set())
-        
+
         # Assumes a particular token shape
         # TODO: support multiple based on scope similar to gateway code
         user = User()
-        user.user_id = jwt.claims.get("sub")
-        user.username = jwt.claims.get("preferred_username")
+        super()._parse_standard_claims(user, jwt)
         user.org_id = jwt.claims.get("organization", {}).get("id", None)
         user.account = jwt.claims.get("organization", {}).get("account_number", None)
         user.admin = "org:admin:all" in jwt.claims.get("roles", [])
         user.bearer_token = bearer_token
-        user.client_id = jwt.claims.get("client_id", "")
         # TODO user.is_service_account ?
 
         return user
-

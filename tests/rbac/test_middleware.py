@@ -19,6 +19,7 @@ import collections
 from functools import partial
 import json
 import os
+from typing import Tuple
 from unittest import mock
 from unittest.mock import Mock, MagicMock, patch
 from django.conf import settings
@@ -32,9 +33,13 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.urls import clear_url_caches, get_resolver, resolve
+from joserfc.jwt import Token
 
+from api.common import RH_RBAC_ORG_ID
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
+from management.authorization.invalid_token import InvalidTokenError
+from management.authorization.token_validator import TokenValidator
 from management.cache import TenantCache
 from management.group.definer import seed_group
 from management.tenant_mapping.model import TenantMapping
@@ -515,6 +520,43 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         # Can not use psk to access apis other than _s2s
         response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_s2s_can_be_accessed_through_bearer_jwt(self):
+        class TokenValidatorStub(TokenValidator):
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header != "Bearer testtoken":
+                    raise InvalidTokenError("Invalid token")
+                return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", new=TokenValidatorStub()):
+            self.org_id = "4321"
+            tenant = Tenant.objects.create(org_id=self.org_id)
+            root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
+            default = Workspace.objects.create(
+                name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root
+            )
+            Workspace.objects.create(
+                name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default
+            )
+            request = self.request_context["request"]
+            client = APIClient()
+            response = client.post(f"/_private/_s2s/workspaces/ungrouped/", **request.META)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+            # Request with psk
+            self.env = EnvironmentVarGuard()
+            self.env.set("SYSTEM_USERS", r'{"u1": {"admin": true, "allow_any_org": true}}')
+            client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+            self.service_headers = {
+                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+            }
+            response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Can not use psk to access apis other than _s2s
+            response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class AccessHandlingTest(TestCase):
