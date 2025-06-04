@@ -29,16 +29,20 @@ class InMemoryIssuer(JWKSSource):
         """Return the JWKS."""
         return {"keys": [self.key.as_dict()]}
 
-    def issue_jwt(self, header: dict, claims: dict) -> str:
+    def issue_jwt(self, header: dict, claims: dict, include_defaults: bool = True) -> str:
         """
         Issue a JWT with the given header and claims.
 
         :param header: The JWT header.
         :param claims: The JWT claims.
+        :param include_defaults: Whether to include default values in the header and claims.
+                                 This can be useful for testing purposes.
         :return: The signed JWT as a string.
         """
-        header.update({"alg": "ES256", "typ": "JWT"})
-        claims.update({"iss": self.iss})
+        if include_defaults:
+            header.setdefault("alg", "ES256")
+            header.setdefault("typ", "JWT")
+            claims.setdefault("iss", self.iss)
         return jwt.encode(
             header=header,
             claims=claims,

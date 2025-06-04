@@ -720,3 +720,28 @@ class TokenValidatorTests(IdentityRequest):
         self.assertEqual("org1", user.org_id)
         self.assertEqual("u1", user.user_id)
         self.assertEqual("client1", user.client_id)
+
+    def test_does_not_parse_user_from_invalid_token(self):
+        issuer = InMemoryIssuer.generate()
+        self.token_validator.set_jwks_source(issuer, issuer.iss)
+        # Generate from a different issuer to simulate an invalid token
+        token = InMemoryIssuer.generate().issue_jwt(
+            {},
+            {
+                "sub": "u1",
+                "preferred_username": "user1",
+                "organization": {
+                    "id": "org1",
+                },
+                "client_id": "client1",
+            },
+        )
+
+        request_factory = RequestFactory()
+        request = request_factory.get(
+            "/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        with self.assertRaises(InvalidTokenError):
+            self.token_validator.get_user_from_bearer_token(request)

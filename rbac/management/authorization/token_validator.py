@@ -44,7 +44,17 @@ class TokenValidator(ABC):
     def _validate_token(
         self, request: HttpRequest, additional_scopes_to_validate: set[ScopeClaims]
     ) -> Tuple[str, Token]:
-        """Validate the JWT token and return the Bearer token and the decoded Token object."""
+        """
+        Parse the bearer token from the request and validate it as a JWT.
+
+        If valid, return the Bearer token and the decoded JWT token.
+        If invalid, raise an InvalidTokenError.
+        If there is no Authorization header, raise a MissingAuthorizationError.
+
+        :param request: The HTTP request containing the Authorization header.
+        :param additional_scopes_to_validate: Required scopes for a valid token.
+        :return: A tuple containing the Bearer token and the decoded JWT token.
+        """
         ...
 
     def _parse_standard_claims(self, user: User, jwt: Token) -> None:
