@@ -447,6 +447,8 @@ objects:
                 key: rbac-client-secret
                 name: service-accounts
                 optional: true
+          - name: RELATIONS_API_SERVER
+            value: ${RELATIONS_API_SERVER}
           - name: SCOPES
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
@@ -1464,3 +1466,6 @@ parameters:
 - name: TOKEN_GRANT_TYPE
   description: The grant type for token generation
   value: 'client_credentials'
+- name: RELATIONS_API_SERVER
+  description: The gRPC API server to use for the relation
+  value: "localhost:9000"
