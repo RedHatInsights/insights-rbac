@@ -23,6 +23,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.db import transaction
 from django.db.models.query import QuerySet
+from django.http import Http404
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
@@ -157,6 +158,9 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
     added_roles: list[Role] = []
 
+    if [*system_roles, *custom_roles] == []:
+        raise Http404("Role(s) is invalid/non-existent and therefore cannot be added to the group.")
+
     for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
         # higher than "read" into a group.
@@ -176,6 +180,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         # Only add the role if it was not attached
         if system_policy.roles.filter(pk=role.pk).exists():
+            logger.info("This role already exists within the group.")
             continue
 
         system_policy.roles.add(role)
