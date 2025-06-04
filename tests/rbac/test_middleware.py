@@ -43,6 +43,7 @@ from management.authorization.token_validator import TokenValidator
 from management.cache import TenantCache
 from management.group.definer import seed_group
 from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
@@ -480,6 +481,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
         self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
+        self.bootstrap_service = V2TenantBootstrapService(replicator=InMemoryRelationReplicator())
 
     def test_internal_user_can_access_private_api(self):
         request = self.internal_request_context["request"]
@@ -497,13 +499,11 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
 
     def test_s2s_can_be_accessed_through_psk(self):
         self.org_id = "4321"
-        tenant = Tenant.objects.create(org_id=self.org_id)
-        root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
-        default = Workspace.objects.create(name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
-        Workspace.objects.create(name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default)
+        self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+        self.bootstrap_service.create_ungrouped_workspace(self.org_id)
         request = self.request_context["request"]
         client = APIClient()
-        response = client.post(f"/_private/_s2s/workspaces/ungrouped/", **request.META)
+        response = client.post("/_private/_s2s/workspaces/ungrouped/", **request.META)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
         # Request with psk
@@ -514,11 +514,11 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
             "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
         }
-        response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+        response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Can not use psk to access apis other than _s2s
-        response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
+        response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_s2s_can_be_accessed_through_bearer_jwt(self):
@@ -531,17 +531,11 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
 
         with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
             self.org_id = "4321"
-            tenant = Tenant.objects.create(org_id=self.org_id)
-            root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
-            default = Workspace.objects.create(
-                name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root
-            )
-            Workspace.objects.create(
-                name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default
-            )
+            self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+            self.bootstrap_service.create_ungrouped_workspace(self.org_id)
             request = self.request_context["request"]
             client = APIClient()
-            response = client.post(f"/_private/_s2s/workspaces/ungrouped/", **request.META)
+            response = client.post("/_private/_s2s/workspaces/ungrouped/", **request.META)
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
             # Request with token
@@ -551,11 +545,11 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             self.service_headers = {
                 "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
             }
-            response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
             # Can not use psk to access apis other than _s2s
-            response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
+            response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_s2s_system_user_not_configured_is_not_allowed(self):
@@ -568,15 +562,10 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
 
         with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
             self.org_id = "4321"
-            tenant = Tenant.objects.create(org_id=self.org_id)
-            root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
-            default = Workspace.objects.create(
-                name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root
-            )
-            Workspace.objects.create(
-                name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default
-            )
-            request = self.request_context["request"]
+
+            self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+            self.bootstrap_service.create_ungrouped_workspace(self.org_id)
+
             client = APIClient()
 
             # Request with token, but not matching configuration
@@ -586,7 +575,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             self.service_headers = {
                 "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
             }
-            response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_s2s_system_user_not_configured_for_auth_headers_is_not_allowed(self):
@@ -599,15 +588,8 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
 
         with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
             self.org_id = "4321"
-            tenant = Tenant.objects.create(org_id=self.org_id)
-            root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
-            default = Workspace.objects.create(
-                name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root
-            )
-            Workspace.objects.create(
-                name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default
-            )
-            request = self.request_context["request"]
+            self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+            self.bootstrap_service.create_ungrouped_workspace(self.org_id)
             client = APIClient()
 
             # Request with token, but cannot override org id
@@ -617,7 +599,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             self.service_headers = {
                 "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
             }
-            response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
             # Expects 400 due to no org id
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
