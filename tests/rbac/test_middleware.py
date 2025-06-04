@@ -529,7 +529,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
                     raise InvalidTokenError("Invalid token")
                 return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
 
-        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", new=TokenValidatorStub()):
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
             self.org_id = "4321"
             tenant = Tenant.objects.create(org_id=self.org_id)
             root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
@@ -566,7 +566,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
                     raise InvalidTokenError("Invalid token")
                 return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
 
-        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", new=TokenValidatorStub()):
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
             self.org_id = "4321"
             tenant = Tenant.objects.create(org_id=self.org_id)
             root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
@@ -597,7 +597,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
                     raise InvalidTokenError("Invalid token")
                 return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
 
-        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", new=TokenValidatorStub()):
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
             self.org_id = "4321"
             tenant = Tenant.objects.create(org_id=self.org_id)
             root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
