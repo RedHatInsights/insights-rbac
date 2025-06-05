@@ -15,7 +15,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper utilities for management module."""
-import json
 import os
 import uuid
 from typing import Optional
@@ -26,7 +25,7 @@ from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
-from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
+from management.authorization.token_validator import TokenValidator
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService

@@ -17,8 +17,8 @@
 
 """Sources for fetching JSON Web KeySets for validating JWT signatures."""
 
-from json import JSONDecodeError
 import logging
+from json import JSONDecodeError
 from typing import Protocol
 
 import requests
@@ -111,7 +111,7 @@ class JWKSCacheSource(JWKSSource):
 
 
 def _request_json(url: str) -> dict:
-    """Helper function to make a GET request and return the JSON response."""
+    """Perform an JWKS related GET request and return the JSON response."""
     try:
         response: Response = requests.get(url=url)
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
