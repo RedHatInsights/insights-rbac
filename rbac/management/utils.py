@@ -21,6 +21,7 @@ import uuid
 from typing import Optional
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.authorization.invalid_token import InvalidTokenError
@@ -45,7 +46,7 @@ SERVICE_ACCOUNT_KEY = "service-account"
 
 def validate_psk(psk, client_id):
     """Validate the PSK for the client."""
-    psks = json.loads(os.environ.get("SERVICE_PSKS", "{}"))
+    psks = settings.SERVICE_PSKS
     client_config = psks.get(client_id, {})
     primary_key = client_config.get("secret")
     alt_key = client_config.get("alt-secret")
@@ -80,7 +81,7 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
     # Token validator class uses a singleton
     try:
         user = token_validator.get_user_from_bearer_token(request)
-        system_users = json.loads(os.environ.get("SYSTEM_USERS", "{}"))
+        system_users = settings.SYSTEM_USERS
         if user and user.user_id in system_users:
             system_user = system_users[user.user_id]
             user.system = True

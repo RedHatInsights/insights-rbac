@@ -403,13 +403,12 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
             self.assertEqual(middleware.should_load_user_permissions(request, user), False)
 
 
+@override_settings(SERVICE_PSKS={"catalog": {"secret": "abc123"}})
 class ServiceToService(IdentityRequest):
     """Tests requests without an identity header."""
 
     def setUp(self):
         """Setup tests."""
-        self.env = EnvironmentVarGuard()
-        self.env.set("SERVICE_PSKS", '{"catalog": {"secret": "abc123"}}')
         self.account_id = "1234"
         self.org_id = "4321"
         self.service_headers = {
@@ -507,19 +506,18 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
         # Request with psk
-        self.env = EnvironmentVarGuard()
-        self.env.set("SERVICE_PSKS", '{"hbi": {"secret": "abc123"}}')
-        self.service_headers = {
-            "HTTP_X_RH_RBAC_PSK": "abc123",
-            "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
-            "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
-        }
-        response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        with override_settings(SERVICE_PSKS={"hbi": {"secret": "abc123"}}):
+            self.service_headers = {
+                "HTTP_X_RH_RBAC_PSK": "abc123",
+                "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
+                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+            }
+            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        # Can not use psk to access apis other than _s2s
-        response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            # Can not use psk to access apis other than _s2s
+            response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_s2s_can_be_accessed_through_bearer_jwt(self):
         class TokenValidatorStub(TokenValidator):
@@ -539,18 +537,17 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
             # Request with token
-            self.env = EnvironmentVarGuard()
-            self.env.set("SYSTEM_USERS", r'{"u1": {"admin": true, "allow_any_org": true}}')
-            client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
-            self.service_headers = {
-                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
-            }
-            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
-            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+            with override_settings(SYSTEM_USERS={"u1": {"admin": True, "allow_any_org": True}}):
+                client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+                self.service_headers = {
+                    "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+                }
+                response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+                self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-            # Can not use psk to access apis other than _s2s
-            response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+                # Can not use psk to access apis other than _s2s
+                response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_s2s_system_user_not_configured_is_not_allowed(self):
         class TokenValidatorStub(TokenValidator):
@@ -593,15 +590,14 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
             client = APIClient()
 
             # Request with token, but cannot override org id
-            self.env = EnvironmentVarGuard()
-            self.env.set("SYSTEM_USERS", r'{"u1": {"admin": true}}')
-            client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
-            self.service_headers = {
-                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
-            }
-            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
-            # Expects 400 due to no org id
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            with override_settings(SYSTEM_USERS={"u1": {"admin": True}}):
+                client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+                self.service_headers = {
+                    "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+                }
+                response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+                # Expects 400 due to no org id
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class AccessHandlingTest(TestCase):

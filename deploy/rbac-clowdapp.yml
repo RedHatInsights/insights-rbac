@@ -510,6 +510,12 @@ objects:
                 key: psks.json
                 name: ${RBAC_PSKS}
                 optional: false
+          - name: SYSTEM_USERS
+            valueFrom:
+              secretKeyRef:
+                key: system-users.json
+                name: ${RBAC_SYSTEM_USERS}
+                optional: true
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
@@ -1142,6 +1148,11 @@ parameters:
 - displayName: RBAC PSKs
   name: RBAC_PSKS
   value: rbac-psks
+  description: Name of the secret containing PSK configuration.
+- displayName: RBAC system users
+  name: RBAC_SYSTEM_USERS
+  value: rbac-system-users
+  description: Name of the secret containing system user configuration.
 - displayName: Service Dependency Name
   name: SERVICE_DEPENDENCY_NAME
   value: rbac-pgsql
