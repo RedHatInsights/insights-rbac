@@ -57,8 +57,8 @@ class TokenValidator(ABC):
         """
         ...
 
-    def _parse_standard_claims(self, user: User, jwt: Token) -> None:
-        """Parse standard claims from the JWT token and return a User object."""
+    def _parse_claims(self, user: User, jwt: Token) -> None:
+        """Parse standard claims from the JWT token, mutating the User object."""
         user.user_id = jwt.claims.get("sub")
         user.username = jwt.claims.get("preferred_username")
         user.client_id = jwt.claims.get("client_id", "")
@@ -74,14 +74,14 @@ class TokenValidator(ABC):
 
         # Assumes standard claims. Override for additional or custom claims.
         user = User()
-        self._parse_standard_claims(user, jwt)
+        self._parse_claims(user, jwt)
         user.bearer_token = bearer_token
 
         return user
 
 
 class ITSSOTokenValidator(TokenValidator):
-    """JWT token  validator."""
+    """JWT token validator."""
 
     # Instance variable for the class.
     _instance = None
@@ -206,6 +206,14 @@ class ITSSOTokenValidator(TokenValidator):
 
         return super().validate_token(request, additional_scopes_to_validate)
 
+    def _parse_claims(self, user: User, jwt: Token) -> None:
+        super()._parse_claims(user, jwt)
+        # Assumes a particular token shape
+        # TODO: support multiple based on scope similar to gateway code
+        user.org_id = jwt.claims.get("organization", {}).get("id", None)
+        user.account = jwt.claims.get("organization", {}).get("account_number", None)
+        user.admin = "org:admin:all" in jwt.claims.get("roles", [])
+
     def get_user_from_bearer_token(self, request: HttpRequest) -> User:
         """Validate the JWT token and parse into a User object.
 
@@ -224,13 +232,8 @@ class ITSSOTokenValidator(TokenValidator):
 
         bearer_token, jwt = self._validate_token(request, set())
 
-        # Assumes a particular token shape
-        # TODO: support multiple based on scope similar to gateway code
         user = User()
-        super()._parse_standard_claims(user, jwt)
-        user.org_id = jwt.claims.get("organization", {}).get("id", None)
-        user.account = jwt.claims.get("organization", {}).get("account_number", None)
-        user.admin = "org:admin:all" in jwt.claims.get("roles", [])
+        self._parse_claims(user, jwt)
         user.bearer_token = bearer_token
         # TODO user.is_service_account ?
 

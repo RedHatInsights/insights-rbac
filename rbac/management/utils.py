@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper utilities for management module."""
+import logging
 import os
 import uuid
 from typing import Optional
@@ -41,6 +42,9 @@ USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
 PRINCIPAL_PERMISSION_INSTANCE = PrincipalAccessPermission()
 SERVICE_ACCOUNT_KEY = "service-account"
+
+
+logger = logging.getLogger(__name__)
 
 
 def validate_psk(psk, client_id):
@@ -89,7 +93,17 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
             if system_user.get("allow_any_org", False):
                 user.account = request.META.get(RH_RBAC_ACCOUNT, user.account)
                 user.org_id = request.META.get(RH_RBAC_ORG_ID, user.org_id)
-            return user
+            # Could allow authn without org_id, but this breaks some code paths
+            # which assume there is either no user, or a user with an org_id.
+            # An AnonymousUser does not work yet.
+            # Hence, if no org_id, consider authentication invalid.
+            if user.org_id:
+                if user.org_id != request.META.get(RH_RBAC_ORG_ID, user.org_id):
+                    logger.warning(
+                        "Token org_id does not match org_id header. Ignoring token for user_id %s", user.user_id
+                    )
+                    return None
+                return user
         return None
     except (MissingAuthorizationError, InvalidTokenError):
         # If the token is not valid, we return None.

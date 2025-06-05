@@ -21,6 +21,7 @@ from django.conf import settings
 from django.test import RequestFactory, override_settings
 from rest_framework import status
 
+from api.models import User
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
 from management.authorization.token_validator import UnableMeetPrerequisitesError
@@ -696,34 +697,72 @@ class TokenValidatorTests(IdentityRequest):
 
     def test_get_user_from_bearer_token_parses_claims(self):
         """Test that the user is correctly built from the bearer token claims."""
-        # Prepare a mocked request with a mocked bearer token.
+        # Override jwks source to use the in-memory issuer for testing.
         issuer = InMemoryIssuer.generate()
         self.token_validator.set_jwks_source(issuer, issuer.iss)
-        token = issuer.issue_jwt(
-            {},
-            {
-                "sub": "u1",
-                "preferred_username": "user1",
-                "organization": {
-                    "id": "org1",
+
+        for claims, expected_user in [
+            (
+                {
+                    "sub": "u1",
+                    "preferred_username": "user1",
+                    "organization": {
+                        "id": "org1",
+                    },
+                    "client_id": "client1",
+                    "roles": ["org:admin:all"],
                 },
-                "client_id": "client1",
-            },
-        )
+                User(
+                    user_id="u1",
+                    username="user1",
+                    org_id="org1",
+                    client_id="client1",
+                    admin=True,
+                ),
+            ),
+            (
+                {
+                    "sub": "u2",
+                    "preferred_username": "user2",
+                    "organization": {
+                        "id": "org2",
+                    },
+                    "client_id": "client2",
+                },
+                User(
+                    user_id="u2",
+                    username="user2",
+                    org_id="org2",
+                    client_id="client2",
+                ),
+            ),
+            (
+                {
+                    "sub": "u2",
+                    "preferred_username": "user2",
+                },
+                User(
+                    user_id="u2",
+                    username="user2",
+                ),
+            ),
+        ]:
+            with self.subTest(sub=claims["sub"]):
+                token = issuer.issue_jwt(
+                    {},
+                    claims,
+                )
+                expected_user.bearer_token = token
 
-        request_factory = RequestFactory()
-        request = request_factory.get(
-            "/",
-            HTTP_AUTHORIZATION=f"Bearer {token}",
-        )
+                request_factory = RequestFactory()
+                request = request_factory.get(
+                    "/",
+                    HTTP_AUTHORIZATION=f"Bearer {token}",
+                )
 
-        user = self.token_validator.get_user_from_bearer_token(request)
+                user = self.token_validator.get_user_from_bearer_token(request)
 
-        self.assertIsNotNone(user)
-        self.assertEqual("user1", user.username)
-        self.assertEqual("org1", user.org_id)
-        self.assertEqual("u1", user.user_id)
-        self.assertEqual("client1", user.client_id)
+                self.assertEqual(expected_user, user)
 
     def test_does_not_parse_user_from_invalid_token(self):
         issuer = InMemoryIssuer.generate()
