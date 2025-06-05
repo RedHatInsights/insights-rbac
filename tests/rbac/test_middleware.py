@@ -404,7 +404,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
 
 @override_settings(SERVICE_PSKS={"catalog": {"secret": "abc123"}})
-class ServiceToService(IdentityRequest):
+class ServiceToServiceWithPSK(IdentityRequest):
     """Tests requests without an identity header."""
 
     def setUp(self):
@@ -456,6 +456,89 @@ class ServiceToService(IdentityRequest):
         url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_CLIENT_ID"] = "bad-service"
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_valid_psk_client_id_and_account_returns_200(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+@override_settings(SYSTEM_USERS={"u1": {"admin": True, "allow_any_org": True, "is_service_account": True}})
+class ServiceToServiceWithToken(IdentityRequest):
+    """Tests requests without an identity header."""
+
+    class TokenValidatorStub(TokenValidator):
+        """A stub for TokenValidator which only allows one hard coded test bearer token."""
+
+        def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+            authorization = request.headers.get("Authorization", "")
+            if authorization == "Bearer testtoken_u1":
+                return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+            if authorization == "Bearer testtoken_u2":
+                return "testtoken", Token({}, {"sub": "u2", "preferred_username": "u2", "client_id": "c2"})
+            raise InvalidTokenError(f"Invalid token: {authorization}")
+
+    def setUp(self):
+        """Setup tests."""
+        self.account_id = "1234"
+        self.org_id = "4321"
+        self.service_headers = {
+            "HTTP_Authorization": "Bearer testtoken_u1",
+            "HTTP_X_RH_RBAC_ACCOUNT": self.account_id,
+            "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+        }
+        patch_token_validator = patch(
+            "rbac.middleware.IdentityHeaderMiddleware.token_validator", self.TokenValidatorStub()
+        )
+        patch_token_validator.start()
+        self.addCleanup(patch_token_validator.stop)
+
+    def test_no_identity_or_token_returns_401(self):
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        self.service_headers = {}
+        response = client.get(url, {})
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_invalid_token_returns_401(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer someothertoken")
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_invalid_account_returns_404(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_no_identity_and_non_system_user_token_returns_401(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        self.service_headers["HTTP_Authorization"] = "Bearer testtoken_u2"  # u2 is not a system user
         response = client.get(url, **self.service_headers)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
