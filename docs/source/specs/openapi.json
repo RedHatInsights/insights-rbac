@@ -1,5 +1,5 @@
 {
-  "openapi": "3.1.1",
+  "openapi": "3.0.0",
   "info": {
     "description": "The API for Role Based Access Control.",
     "version": "1.0.0",
@@ -3845,6 +3845,21 @@
           "value"
         ],
         "properties": {
+          "schema": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
+              },
+              {
+                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
+              }
+            ]
+          }
+        }
+      },
+      "ResourceDefinitionFilterOperationEqual": {
+        "type": "object",
+        "properties": {
           "key": {
             "type": "string",
             "example": "cost-management.aws.account"
@@ -3852,55 +3867,38 @@
           "operation": {
             "type": "string",
             "enum": [
-              "equal",
+              "equal"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "example": "123456",
+            "nullable": true
+          }
+        }
+      },
+      "ResourceDefinitionFilterOperationIn": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "cost-management.aws.account"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
               "in"
             ]
           },
-          "value": {}
-        },
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "operation": {
-                  "const": "equal"
-                }
-              }
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "nullable": true
             },
-            "then": {
-              "properties": {
-                "value": {
-                  "type": ["string", null],
-                  "example": "123456"
-                }
-              }
-            },
-            "else": {
-              "if": {
-                "properties": {
-                  "operation": {
-                    "const": "in"
-                  }
-                }
-              },
-              "then": {
-                "properties": {
-                  "value": {
-                    "type": "array",
-                    "items": {
-                      "type": ["string", null]
-                    },
-                    "example": [
-                      "value1",
-                      "value2",
-                      null
-                    ]
-                  }
-                }
-              }
-            }
+            "example": ["value1", null, "value2"]
           }
-        ]
+        }
       },
       "ResourceDefinition": {
         "required": [
