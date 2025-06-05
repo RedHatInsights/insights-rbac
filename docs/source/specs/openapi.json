@@ -3838,27 +3838,22 @@
         ]
       },
       "ResourceDefinitionFilter": {
-        "type": "object",
-        "required": [
-          "key",
-          "operation",
-          "value"
-        ],
-        "properties": {
-          "schema": {
-            "oneOf": [
+          "oneOf": [
               {
                 "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
               },
               {
                 "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
               }
-            ]
-          }
-        }
-      },
+          ]
+     },
       "ResourceDefinitionFilterOperationEqual": {
         "type": "object",
+        "required": [
+            "key",
+            "operation",
+            "value"
+        ],
         "properties": {
           "key": {
             "type": "string",
@@ -3879,6 +3874,11 @@
       },
       "ResourceDefinitionFilterOperationIn": {
         "type": "object",
+        "required": [
+            "key",
+            "operation",
+            "value"
+        ],
         "properties": {
           "key": {
             "type": "string",
