@@ -109,7 +109,7 @@ class V2ResultsSetPagination(StandardResultsSetPagination):
 
     def paginate_queryset(self, queryset, request, view=None):
         """Override paginate_queryset for V2."""
-        request_limit = request.GET.get(self.limit_query_param)
+        request_limit = request.query_params.get(self.limit_query_param)
         if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
             self.max_limit = None
             self.default_limit = len(queryset)
