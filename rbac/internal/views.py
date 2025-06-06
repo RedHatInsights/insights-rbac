@@ -1476,7 +1476,7 @@ def lookup_resource(request):
     resource_subject_id = req_data["subject"]["subject"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()
-    
+
     try:
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
@@ -1528,6 +1528,7 @@ def check_relation(request):
     subject_id = req_data["subject"]["subject"]["id"]
     resource_id = req_data["resource_type"]["id"]
     resource_relation = req_data["relation"]
+    token = jwt_manager.get_jwt_from_redis()
 
     try:
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
@@ -1546,7 +1547,9 @@ def check_relation(request):
                     ),
                 ),
             )
-        responses = stub.Check(request_data)
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.Check(request_data, metadata=metadata)
 
         if responses:
             return HttpResponse(responses, status=200)
