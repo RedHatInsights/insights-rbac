@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
@@ -25,6 +26,8 @@ from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
 
+
+from api.models import Tenant
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
@@ -69,14 +72,22 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
-        tenant = request.tenant
-        parent_id = request.data.get("parent_id")
+        tenant: Tenant = request.tenant
+        parent_id: str = request.data.get("parent_id")
 
         if parent_id and tenant:
-            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
+            try:
+                parent_workspace: Workspace = Workspace.objects.get(id=parent_id, tenant=tenant)
+            except ObjectDoesNotExist:
                 raise serializers.ValidationError(
                     {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
                 )
+
+            if parent_workspace.type == Workspace.Types.UNGROUPED_HOSTS:
+                raise serializers.ValidationError(
+                    {"parent_id": "Parent workspace cannot be of the 'ungrouped-hosts' type"}
+                )
+
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):
