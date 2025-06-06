@@ -1110,7 +1110,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(g1, roles=[role])
 
         t2 = self.switch_to_new_tenant("tenant2", "7654321")
-        g2, _ = self.given_group("g2", ["u1", "u2"])
+        g2, _ = self.given_group("g2", ["u3", "u4"])
         self.given_roles_assigned_to_group(g2, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
@@ -1131,7 +1131,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(g1, roles=[role])
 
         t2 = self.switch_to_new_tenant("tenant2", "7654321")
-        g2, _ = self.given_group("g2", ["u1", "u2"])
+        g2, _ = self.given_group("g2", ["u3", "u4"])
         self.given_roles_assigned_to_group(g2, roles=[role])
 
         self.given_roles_unassigned_from_group(g1, roles=[role])
