@@ -95,15 +95,7 @@ jwt_manager = JWTManager(jwt_provider, jwt_cache)
 @contextmanager
 def create_client_channel(addr):
     """Create secure channel for grpc requests."""
-    # Call credential object will be invoked for every single RPC
-    token = jwt_manager.get_jwt_from_redis()
-
-    call_credentials = grpc.access_token_call_credentials(token)
-
-    combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
-
-    secure_channel = grpc.secure_channel(addr, combined_credentials)
-
+    secure_channel = grpc.insecure_channel(addr)
     yield secure_channel
 
 
@@ -1484,7 +1476,7 @@ def lookup_resource(request):
     resource_subject_id = req_data["subject"]["subject"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()
-
+    
     try:
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
