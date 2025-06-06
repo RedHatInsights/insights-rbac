@@ -116,6 +116,7 @@ class V2ResultsSetPaginationTest(TestCase):
         self.mock_queryset = range(100)
 
     def test_default_limit(self):
+        """Test the default limit."""
         request = Request(self.factory.get("/foo/"))
         paginated_queryset = self.paginator.paginate_queryset(self.mock_queryset, request)
         self.assertEqual(len(paginated_queryset), StandardResultsSetPagination.default_limit)
@@ -123,6 +124,7 @@ class V2ResultsSetPaginationTest(TestCase):
         self.assertEqual(self.paginator.max_limit, StandardResultsSetPagination.max_limit)
 
     def test_explicit_limit(self):
+        """Test an explicit limit."""
         request = Request(self.factory.get("/foo/?limit=5"))
         paginated_queryset = self.paginator.paginate_queryset(self.mock_queryset, request)
         self.assertEqual(len(paginated_queryset), 5)
@@ -130,9 +132,18 @@ class V2ResultsSetPaginationTest(TestCase):
         self.assertEqual(self.paginator.max_limit, StandardResultsSetPagination.max_limit)
 
     def test_no_limit(self):
+        """Test no limit."""
         request = Request(self.factory.get("/foo/?limit=-1"))
         all_records = self.mock_queryset
         paginated_queryset = self.paginator.paginate_queryset(all_records, request)
         self.assertEqual(len(paginated_queryset), len(all_records))
         self.assertEqual(self.paginator.limit, len(all_records))
+        self.assertEqual(self.paginator.max_limit, None)
+
+    def test_empty_queryset(self):
+        """Test empty queryset with no limit."""
+        request = Request(self.factory.get("/foo/?limit=-1"))
+        paginated_queryset = self.paginator.paginate_queryset([], request)
+        self.assertEqual(len(paginated_queryset), 0)
+        self.assertEqual(self.paginator.limit, 0)
         self.assertEqual(self.paginator.max_limit, None)
