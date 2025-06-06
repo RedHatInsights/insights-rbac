@@ -25,7 +25,8 @@ from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
-from management.utils import build_user_from_psk
+from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
+from management.utils import build_system_user_from_token, build_user_from_psk
 
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant
@@ -39,6 +40,7 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
     """Middleware for the internal identity header."""
 
     header = RH_IDENTITY_HEADER
+    token_validator: TokenValidator = ITSSOTokenValidator()
 
     def process_request(self, request):
         """Process request for internal identity middleware."""
@@ -49,7 +51,8 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
         user = None
         # If the path starts with /_private/_s2s/, it is using psk to authenticate
         if request.path.startswith("/_private/_s2s/"):
-            user = build_user_from_psk(request)
+            user = build_user_from_psk(request) or build_system_user_from_token(request, self.token_validator)
+
             if not user:
                 logger.error("Could not obtain identity on request.")
                 return HttpResponseForbidden()

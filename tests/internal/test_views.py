@@ -3000,7 +3000,7 @@ class InternalS2SViewsetTests(IdentityRequest):
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, SERVICE_PSKS={"hbi": {"secret": "abc123"}})
     def test_create_ungrouped_workspace(self, replicate, replicate_workspace):
         tuples = InMemoryTuples()
         replicator = InMemoryRelationReplicator(tuples)
@@ -3011,8 +3011,6 @@ class InternalS2SViewsetTests(IdentityRequest):
         payload = {"org_ids": [org_id]}
         bootstraped_tenant = fixture.new_tenant(org_id)
         tuples.clear()
-        self.env = EnvironmentVarGuard()
-        self.env.set("SERVICE_PSKS", '{"hbi": {"secret": "abc123"}}')
         self.service_headers = {
             "HTTP_X_RH_RBAC_PSK": "abc123",
             "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
