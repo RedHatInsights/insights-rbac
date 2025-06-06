@@ -18,8 +18,10 @@
 from unittest.mock import Mock, patch
 
 from django.test import TestCase
+from rest_framework.test import APIRequestFactory
+from rest_framework.request import Request
 
-from api.common.pagination import PATH_INFO, StandardResultsSetPagination
+from api.common.pagination import PATH_INFO, StandardResultsSetPagination, V2ResultsSetPagination
 
 
 class PaginationTest(TestCase):
@@ -103,3 +105,34 @@ class PaginationTest(TestCase):
         paginator.request.META = {}
         link = paginator.get_previous_link()
         self.assertEqual(link, expected)
+
+
+class V2ResultsSetPaginationTest(TestCase):
+    """Tests against the V2ResultsSetPagination functions."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.paginator = V2ResultsSetPagination()
+        self.mock_queryset = range(100)
+
+    def test_default_limit(self):
+        request = Request(self.factory.get("/foo/"))
+        paginated_queryset = self.paginator.paginate_queryset(self.mock_queryset, request)
+        self.assertEqual(len(paginated_queryset), StandardResultsSetPagination.default_limit)
+        self.assertEqual(self.paginator.limit, StandardResultsSetPagination.default_limit)
+        self.assertEqual(self.paginator.max_limit, StandardResultsSetPagination.max_limit)
+
+    def test_explicit_limit(self):
+        request = Request(self.factory.get("/foo/?limit=5"))
+        paginated_queryset = self.paginator.paginate_queryset(self.mock_queryset, request)
+        self.assertEqual(len(paginated_queryset), 5)
+        self.assertEqual(self.paginator.limit, 5)
+        self.assertEqual(self.paginator.max_limit, StandardResultsSetPagination.max_limit)
+
+    def test_no_limit(self):
+        request = Request(self.factory.get("/foo/?limit=-1"))
+        all_records = self.mock_queryset
+        paginated_queryset = self.paginator.paginate_queryset(all_records, request)
+        self.assertEqual(len(paginated_queryset), len(all_records))
+        self.assertEqual(self.paginator.limit, len(all_records))
+        self.assertEqual(self.paginator.max_limit, None)
