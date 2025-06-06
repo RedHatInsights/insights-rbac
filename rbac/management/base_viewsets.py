@@ -17,6 +17,7 @@
 from rest_framework import mixins, viewsets
 from rest_framework.settings import api_settings
 
+from api.common.pagination import V2ResultsSetPagination
 from api.common.renderers import ProblemJSONRenderer
 
 
@@ -31,6 +32,7 @@ class BaseV2ViewSet(
     """Base views to be inherited for v2 API views."""
 
     renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES + [ProblemJSONRenderer]
+    pagination_class = V2ResultsSetPagination
 
     def get_queryset(self):
         """Dynamic override of the default queryset for v2 APIs."""
