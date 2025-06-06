@@ -100,10 +100,16 @@ def create_client_channel(addr):
 
     call_credentials = grpc.access_token_call_credentials(token)
 
-    combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
+    if settings.RELATIONS_GRPC_SSL_CHANNEL_ENABLED:
+        channel_credentials = grpc.ssl_channel_credentials()
 
-    secure_channel = grpc.secure_channel(addr, combined_credentials)
+        combined_credentials = grpc.composite_channel_credentials(channel_credentials, call_credentials)
 
+        secure_channel = grpc.secure_channel(addr, combined_credentials)
+    else:
+        combined_credentials = grpc.composite_channel_credentials(grpc.local_channel_credentials(), call_credentials)
+
+        secure_channel = grpc.secure_channel(addr, combined_credentials)
     yield secure_channel
 
 
