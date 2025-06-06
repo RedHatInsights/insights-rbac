@@ -140,7 +140,7 @@ This will allow you to simulate a JWT or basic-auth request from the gateway.
 Service to Service Requests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-RBAC also allows for service-to-service requests. These requests require a PSK, and some additional headers in order to authorize the request as an "admin". To test this locally, do the following:
+RBAC also allows for service-to-service requests. These requests require a preshared-key (PSK) or a JSON Web Token (JWT), and some additional headers in order to authorize the request as an "admin". To test this locally, do the following:
 
 First disable the local setting of the identity header in `dev_middleware.py` by [commenting this line out](https://github.com/RedHatInsights/insights-rbac/blob/b207668440faf8f951dec75ffef8891343b4131b/rbac/rbac/dev_middleware.py#L72)
 
@@ -148,11 +148,11 @@ Next, start the server with: ::
 
   make serve SERVICE_PSKS='{"catalog": {"secret": "abc123"}}'
 
-Verify that you cannot access any endpoints requiring auth: ::
+This configures an acceptable PSK. Verify that you cannot access any endpoints requiring auth: ::
 
   curl http://localhost:8000/api/rbac/v1/roles/ -v
 
-Verify that if you pass in the correct headers/values, you *can* access the endpoint: ::
+Verify that if you pass in the correct PSK headers/values, you *can* access the endpoint: ::
 
   curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-org-id: 10001' -H 'x-rh-rbac-client-id: catalog'
 
