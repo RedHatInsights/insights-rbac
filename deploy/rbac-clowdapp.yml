@@ -447,6 +447,8 @@ objects:
                 key: rbac-client-secret
                 name: service-accounts
                 optional: true
+          - name: RELATIONS_GRPC_SSL_CHANNEL_ENABLED
+            value: ${RELATIONS_GRPC_SSL_CHANNEL_ENABLED}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
           - name: SCOPES
@@ -1466,3 +1468,6 @@ parameters:
 - name: TOKEN_GRANT_TYPE
   description: The grant type for token generation
   value: 'client_credentials'
+- name: RELATIONS_GRPC_SSL_CHANNEL_ENABLED
+  description: Enable SSL for relations grpc channels
+  value: 'False'
