@@ -699,6 +699,120 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
                 self.default_workspace.name = "Default"
                 self.default_workspace.description = "Default description"
 
+    def test_update_workspace_existing_name_fail(self):
+        """Test the workspace name update (PUT) fail for already existing "name" under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
+        workspace_request_data = {"name": wsB.name}
+
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_message = response.json()
+
+        self.assertEqual(response_message.get("status"), status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response_message.get("detail"), f"A workspace with the name '{wsB.name}' already exists under same parent."
+        )
+        self.assertEqual(response_message.get("instance"), f"/api/rbac/v2/workspaces/{wsA.id}/")
+
+    def test_partial_update_workspace_existing_name_fail(self):
+        """Test the workspace name update (PATCH) fail for already existing "name" under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
+        workspace_request_data = {"name": wsB.name}
+
+        response = client.patch(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_message = response.json()
+
+        self.assertEqual(response_message.get("status"), status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response_message.get("detail"), f"A workspace with the name '{wsB.name}' already exists under same parent."
+        )
+        self.assertEqual(response_message.get("instance"), f"/api/rbac/v2/workspaces/{wsA.id}/")
+
+    def test_update_workspace_existing_name_success(self):
+        """
+        Test the workspace name update (PUT) success for already existing "name"
+        under same tenant but with different parent.
+        """
+
+        # workspaces structure:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace AA (standard)
+        #                                  -> Workspace B (standard)
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsAA = Workspace.objects.create(
+            name="Workspace AA", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=wsA
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsAA.id})
+        workspace_request_data = {"name": wsB.name}
+        # expected structure after update:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace B (standard)
+        #                                  -> Workspace B (standard)
+
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_message = response.json()
+        self.assertEqual(response_message.get("name"), wsB.name)
+        self.assertEqual(response_message.get("parent_id"), str(wsA.id))
+
+    def test_partial_update_workspace_existing_name_success(self):
+        """
+        Test the workspace name update (PATCH) success for already existing "name"
+        under same tenant but with different parent.
+        """
+
+        # workspaces structure:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace AA (standard)
+        #                                  -> Workspace B (standard)
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsAA = Workspace.objects.create(
+            name="Workspace AA", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=wsA
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsAA.id})
+        workspace_request_data = {"name": wsB.name}
+        # expected structure after update:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace B (standard)
+        #                                  -> Workspace B (standard)
+
+        response = client.patch(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_message = response.json()
+        self.assertEqual(response_message.get("name"), wsB.name)
+        self.assertEqual(response_message.get("parent_id"), str(wsA.id))
+
     @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
     def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
