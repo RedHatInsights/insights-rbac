@@ -2232,6 +2232,39 @@ class WorkspaceTestsList(WorkspaceViewTests):
         # Account for ungrouped and new standard workspace not having access
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 2)
 
+    def test_workspace_list_no_limit(self):
+        """Test that when limit == -1, we return all records"""
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+        request = request_context["request"]
+        headers = request.META
+        workspaces = [
+            Workspace(
+                name=f"Workspace {n}",
+                tenant=self.tenant,
+                type="standard",
+                parent=self.default_workspace,
+            )
+            for n in range(1, 21)
+        ]
+        Workspace.objects.bulk_create(workspaces)
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read")
+
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(len(payload.get("data")), 10)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+        response = client.get(f"{url}?type=all&limit=-1", None, format="json", **headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(len(payload.get("data")), Workspace.objects.count())
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class WorkspaceTestsDetail(WorkspaceViewTests):
