@@ -497,7 +497,6 @@ REDHAT_STAGE_SSO = ENVIRONMENT.get_value("REDHAT_STAGE_SSO", default="sso.stage.
 OPENID_URL = ENVIRONMENT.get_value("OPENID_URL", default="/auth/realms/redhat-external/protocol/openid-connect/token")
 SCOPE = ENVIRONMENT.get_value("SCOPE", default="openid")
 TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_credentials")
-RELATIONS_GRPC_SSL_CHANNEL_ENABLED = ENVIRONMENT.bool("RELATIONS_GRPC_SSL_CHANNEL_ENABLED", default=False)
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
 RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
 RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
