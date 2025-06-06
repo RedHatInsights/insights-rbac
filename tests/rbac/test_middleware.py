@@ -276,7 +276,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
             middleware(request)
             self.assertTrue(hasattr(request, "user"))
             self.assertEqual(request.user.username, self.user_data["username"])
-    
+
     @patch("rbac.middleware.resolve")
     def test_process_ignores_non_system_jwt_if_identity_header(self, mock_resolve):
         """Test that the customer, tenant and user are created."""
