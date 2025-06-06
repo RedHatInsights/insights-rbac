@@ -21,9 +21,9 @@ from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
-from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
+
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
@@ -69,14 +69,6 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
-        tenant = request.tenant
-        parent_id = request.data.get("parent_id")
-
-        if parent_id and tenant:
-            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
-                raise serializers.ValidationError(
-                    {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
-                )
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):

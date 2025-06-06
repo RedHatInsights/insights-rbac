@@ -14,13 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+import uuid
+
 from django.test import TestCase
 from rest_framework import serializers
 from api.models import Tenant
 from management.models import Workspace
 from management.workspace.service import WorkspaceService
 from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.test.utils import override_settings
 
 
@@ -62,6 +63,25 @@ class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
         with self.assertRaises(serializers.ValidationError) as context:
             self.service.create({}, self.tenant)
         self.assertIn("This field cannot be blank.", str(context.exception))
+
+    def test_create_parent_workspace_non_existing_error(self):
+        """Test the create method raises an error when the parent workspace does not exist"""
+        non_existent_parent_id = str(uuid.uuid4())
+        validated_data = {"name": "Invalid parent workspace", "parent_id": non_existent_parent_id}
+
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.create(validated_data, self.tenant)
+
+        self.assertIn(f"Parent workspace '{non_existent_parent_id}' doesn't exist in tenant", str(context.exception))
+
+    def test_create_parent_workspace_ungrouped_host_error(self):
+        """Test the create method raises an error when the specified parent workspace is of the 'ungrouped hosts' type"""
+        validated_data = {"name": "Invalid parent workspace type", "parent_id": str(self.ungrouped_workspace.id)}
+
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.create(validated_data, self.tenant)
+
+        self.assertIn(f"Parent workspace cannot be of the 'ungrouped-hosts' type", str(context.exception))
 
     def test_create_success_with_parent_id(self):
         """Test the create method successfully with a parent"""

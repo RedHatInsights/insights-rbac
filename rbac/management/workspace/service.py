@@ -18,7 +18,7 @@
 import uuid
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import transaction
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
@@ -39,6 +39,19 @@ class WorkspaceService:
                 if parent_id is None:
                     default = Workspace.objects.default(tenant=request_tenant)
                     parent_id = default.id
+                else:
+                    try:
+                        parent_workspace: Workspace = Workspace.objects.get(id=parent_id, tenant=request_tenant)
+                    except ObjectDoesNotExist:
+                        raise serializers.ValidationError(
+                            {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
+                        )
+
+                    if parent_workspace.type == Workspace.Types.UNGROUPED_HOSTS:
+                        raise serializers.ValidationError(
+                            {"parent_id": "Parent workspace cannot be of the 'ungrouped-hosts' type"}
+                        )
+
                 parent = Workspace.objects.get(id=parent_id)
                 self._enforce_hierarchy_depth(parent_id, request_tenant)
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)

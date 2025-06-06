@@ -23,9 +23,9 @@ from uuid import uuid4
 from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import clear_url_caches
+from django.urls import reverse
 from importlib import reload
 from unittest.mock import patch
-from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -967,6 +967,28 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         detail = response.data.get("detail")
         self.assertEqual(detail, "Unable to delete ungrouped-hosts workspace")
+
+    def test_unable_create_workspace_parent_ungrouped_hosts(self):
+        """Test that creating a workspace whose parent workspace is of the 'ungrouped-hosts' type is not allowed."""
+        workspace = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.ungrouped_workspace.id,
+        }
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, "Parent workspace cannot be of the 'ungrouped-hosts' type")
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
 
 @override_settings(V2_APIS_ENABLED=True)
