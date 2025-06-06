@@ -23,7 +23,7 @@ from typing import Tuple
 from unittest import mock
 from unittest.mock import Mock, MagicMock, patch
 from django.conf import settings
-from django.http import QueryDict, HttpResponse
+from django.http import Http404, QueryDict, HttpResponse
 from django.test.utils import override_settings
 from importlib import reload
 
@@ -35,7 +35,7 @@ from rest_framework.test import APIClient
 from django.urls import clear_url_caches, get_resolver, resolve
 from joserfc.jwt import Token
 
-from api.common import RH_RBAC_ORG_ID
+from api.common import RH_IDENTITY_HEADER, RH_RBAC_ORG_ID
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
 from management.authorization.invalid_token import InvalidTokenError
@@ -53,6 +53,7 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
+from rbac.settings import SYSTEM_USERS
 from tests.identity_request import IdentityRequest
 from rbac import urls
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
@@ -248,6 +249,84 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertIsNotNone(tenant)
         self.assertTrue(tenant.ready)
+
+    @patch("rbac.middleware.resolve")
+    @override_settings(SYSTEM_USERS={"testuser": {}})
+    def test_process_ignores_system_user_jwt_if_identity_header(self, mock_resolve):
+        """Test that the customer, tenant and user are created."""
+        org_id = self.org_id
+
+        class TokenValidatorStub(TokenValidator):
+            def _parse_claims(self, user: User, jwt: Token) -> None:
+                super()._parse_claims(user, jwt)
+                user.org_id = jwt.claims.get("organization", {}).get("id", None)
+
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                return "valid_token", Token(
+                    {}, {"sub": "testuser", "preferred_username": "testuser", "organization": {"id": org_id}}
+                )
+
+        with patch("rbac.middleware.IdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            request = RequestFactory().get(
+                "/api/v1/providers/",
+                HTTP_AUTHORIZATION="Bearer valid_token",
+                **{RH_IDENTITY_HEADER: self.request.META[RH_IDENTITY_HEADER]},
+            )
+            middleware = IdentityHeaderMiddleware(get_response=Mock())
+            middleware(request)
+            self.assertTrue(hasattr(request, "user"))
+            self.assertEqual(request.user.username, self.user_data["username"])
+    
+    @patch("rbac.middleware.resolve")
+    def test_process_ignores_non_system_jwt_if_identity_header(self, mock_resolve):
+        """Test that the customer, tenant and user are created."""
+        org_id = self.org_id
+
+        class TokenValidatorStub(TokenValidator):
+            def _parse_claims(self, user: User, jwt: Token) -> None:
+                super()._parse_claims(user, jwt)
+                user.org_id = jwt.claims.get("organization", {}).get("id", None)
+
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                return "valid_token", Token(
+                    {}, {"sub": "testuser", "preferred_username": "testuser", "organization": {"id": org_id}}
+                )
+
+        with patch("rbac.middleware.IdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            request = RequestFactory().get(
+                "/api/v1/providers/",
+                HTTP_AUTHORIZATION="Bearer valid_token",
+                **{RH_IDENTITY_HEADER: self.request.META[RH_IDENTITY_HEADER]},
+            )
+            middleware = IdentityHeaderMiddleware(get_response=Mock())
+            middleware(request)
+            self.assertTrue(hasattr(request, "user"))
+            self.assertEqual(request.user.username, self.user_data["username"])
+
+    @patch("rbac.middleware.resolve")
+    @override_settings(SYSTEM_USERS={"testuser": {}})
+    def test_process_parses_jwt_as_system_user(self, mock_resolve):
+        """Test that the customer, tenant and user are created."""
+        org_id = self.org_id
+
+        class TokenValidatorStub(TokenValidator):
+            def _parse_claims(self, user: User, jwt: Token) -> None:
+                super()._parse_claims(user, jwt)
+                user.org_id = jwt.claims.get("organization", {}).get("id", None)
+
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                return "valid_token", Token(
+                    {}, {"sub": "testuser", "preferred_username": "testuser", "organization": {"id": org_id}}
+                )
+
+        with patch("rbac.middleware.IdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            request = RequestFactory().get(
+                "/api/v1/providers/",
+                HTTP_AUTHORIZATION="Bearer valid_token",
+            )
+            middleware = IdentityHeaderMiddleware(get_response=Mock())
+            with self.assertRaises(Http404):
+                middleware(request)
 
     @patch("rbac.middleware.resolve")
     def test_process_existing_tenant_unchanged(self, mock_resolve):
