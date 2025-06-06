@@ -174,7 +174,7 @@ namespace Workspaces {
         @example(10)
         count: int64;
 
-        @doc("Limit of returned objects")
+        @doc("Limit of returned objects. Use -1 to return all objects.")
         @example(10)
         limit: int64 = 10;
 

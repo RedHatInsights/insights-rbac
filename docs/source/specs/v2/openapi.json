@@ -1121,7 +1121,7 @@
             "type": "integer",
             "format": "int64",
             "example": 10,
-            "description": "Limit of returned objects",
+            "description": "Limit of returned objects. Use -1 to return all objects.",
             "default": 10
           },
           "offset": {
