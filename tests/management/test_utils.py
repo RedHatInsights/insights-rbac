@@ -398,9 +398,9 @@ class UtilsTests(IdentityRequest):
 
     def test_value_to_list(self):
         """Test returning value to a list"""
-        self.assertEquals(value_to_list(1), [1])
-        self.assertEquals(value_to_list("foo"), ["foo"])
-        self.assertEquals(value_to_list(True), [True])
-        self.assertEquals(value_to_list([1]), [1])
-        self.assertEquals(value_to_list(["foo"]), ["foo"])
-        self.assertEquals(value_to_list([True]), [True])
+        self.assertEqual(value_to_list(1), [1])
+        self.assertEqual(value_to_list("foo"), ["foo"])
+        self.assertEqual(value_to_list(True), [True])
+        self.assertEqual(value_to_list([1]), [1])
+        self.assertEqual(value_to_list(["foo"]), ["foo"])
+        self.assertEqual(value_to_list([True]), [True])

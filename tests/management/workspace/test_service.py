@@ -120,6 +120,23 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
             self.service.update(self.ungrouped_workspace, validated_data)
         self.assertIn("The ungrouped-hosts workspace cannot be updated.", str(context.exception))
 
+    def test_update_name_unique_per_parent(self):
+        """Test we cannot update the workspace name if the same name already exists under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        # Try to update the Workspace A with name="Workspace B"
+        validated_data = {"name": wsB.name}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.update(wsA, validated_data)
+        self.assertIn(
+            f"A workspace with the name '{wsB.name}' already exists under same parent.", str(context.exception)
+        )
+
 
 class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
     """Tests for the destroy method"""

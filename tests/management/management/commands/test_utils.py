@@ -80,7 +80,7 @@ class TestProcessBatch(TestCase):
 
         self.assertFalse(Tenant.objects.get(org_id="1000000").ready)
         self.assertFalse(Tenant.objects.get(org_id="10000001").ready)
-        self.assertEquals(2, Tenant.objects.exclude(tenant_name="public").count())
+        self.assertEqual(2, Tenant.objects.exclude(tenant_name="public").count())
 
     def test_existing_unready_tenants_are_kept_unready_but_still_bootstrapped(self):
         Tenant.objects.create(org_id="1000000", ready=False)

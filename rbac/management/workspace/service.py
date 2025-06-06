@@ -71,9 +71,20 @@ class WorkspaceService:
             setattr(instance, attr, value)
         if parent_id is not None:
             self._enforce_hierarchy_depth(parent_id, instance.tenant)
-        instance.save()
-        dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
-        dual_write_handler.replicate_updated_workspace(instance.parent)
+        try:
+            instance.save()
+            dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
+            dual_write_handler.replicate_updated_workspace(instance.parent)
+        except ValidationError as e:
+            message = e.message_dict
+            if hasattr(e, "error_dict") and "__all__" in e.error_dict:
+                for error in e.error_dict["__all__"]:
+                    for msg in error.messages:
+                        if "unique_workspace_name_per_parent" in msg:
+                            name = validated_data.get("name")
+                            message = f"A workspace with the name '{name}' already exists under same parent."
+                            break
+            raise serializers.ValidationError(message)
         return instance
 
     def destroy(self, instance: Workspace) -> None:

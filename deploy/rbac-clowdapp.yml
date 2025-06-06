@@ -434,6 +434,25 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
+            #Relations API variables
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
+          - name: SCOPES
+            value: ${SCOPES}
+          - name: TOKEN_GRANT_TYPE
+            value: ${TOKEN_GRANT_TYPE}
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
@@ -1439,5 +1458,11 @@ parameters:
   description: The limit of workspace hierarchy depth
   value: '2'
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
-  description: The limit of workspace hierarchy depth
+  description: When true, prevents the ability to create peer workspaces against the default workspace
   value: 'True'
+- name: SCOPES
+  description: The Scope for token generation
+  value: 'openid'
+- name: TOKEN_GRANT_TYPE
+  description: The grant type for token generation
+  value: 'client_credentials'
