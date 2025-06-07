@@ -104,8 +104,10 @@ class DualWriteTestCase(TestCase):
         role = self.fixture.new_system_role(
             name=name, permissions=permissions, platform_default=platform_default, admin_default=admin_default
         )
-        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
-        dual_write_handler.replicate_new_system_role(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.replicate_new_system_role()
         return role
 
     def given_v1_role(self, name: str, default: list[str], **kwargs: list[str]) -> Role:
@@ -771,8 +773,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
-        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
-        dual_write_handler.prepare_for_update(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.prepare_for_update()
         role.admin_default = False
         role = self.fixture.update_custom_role(
             role,
@@ -813,8 +817,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
-        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
-        dual_write_handler.replicate_deleted_system_role(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.replicate_deleted_system_role()
 
         # check if relations do not exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
@@ -829,8 +835,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # Delete system role
-        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
-        dual_write_handler.replicate_deleted_system_role(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.replicate_deleted_system_role()
 
         # Check if relations do not exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
@@ -845,8 +853,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.assertSetEqual(set([admin_default]), set(parents))
 
         # Delete system role
-        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
-        dual_write_handler.replicate_deleted_system_role(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.replicate_deleted_system_role()
 
         # Check if relations do not exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
@@ -860,8 +870,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.assertEqual(len(tuples), 0)
 
         # delete system role
-        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
-        dual_write_handler.replicate_deleted_system_role(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.replicate_deleted_system_role()
 
         # check if relations do not exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))

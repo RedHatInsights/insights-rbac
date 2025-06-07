@@ -77,80 +77,84 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     _platform_default_policy_uuid: Optional[str] = None
     _admin_default_policy_uuid: Optional[str] = None
 
-    def prepare_for_update(self, role: Role):
+    def __init__(self, role: Role, replicator: Optional[RelationReplicator] = None):
+        """Initialize SeedingRelationApiDualWriteHandler."""
+        super().__init__(replicator)
+        self.role = role
+
+    def prepare_for_update(self):
         """Generate & store role's current relations."""
         if not self.replication_enabled():
             return
-        self._current_role_relations = self._generate_relations_for_role(role)
+        self._current_role_relations = self._generate_relations_for_role()
 
-    def replicate_update_system_role(self, role: Role):
+    def replicate_update_system_role(self):
         """Replicate update of system role."""
         if not self.replication_enabled():
             return
 
         self._replicate(
             ReplicationEventType.UPDATE_SYSTEM_ROLE,
-            self._create_metadata_from_role(role),
+            self._create_metadata_from_role(),
             self._current_role_relations,
-            self._generate_relations_for_role(role),
+            self._generate_relations_for_role(),
         )
 
-    def replicate_new_system_role(self, role: Role):
+    def replicate_new_system_role(self):
         """Replicate creation of new system role."""
         if not self.replication_enabled():
             return
 
         self._replicate(
             ReplicationEventType.CREATE_SYSTEM_ROLE,
-            self._create_metadata_from_role(role),
+            self._create_metadata_from_role(),
             [],
-            self._generate_relations_for_role(role),
+            self._generate_relations_for_role(),
         )
 
-    def replicate_deleted_system_role(self, role: Role):
+    def replicate_deleted_system_role(self):
         """Replicate deletion of system role."""
         if not self.replication_enabled():
             return
 
         self._replicate(
             ReplicationEventType.DELETE_SYSTEM_ROLE,
-            self._create_metadata_from_role(role),
-            self._generate_relations_for_role(role),
+            self._create_metadata_from_role(),
+            self._generate_relations_for_role(),
             [],
         )
 
-    def _generate_relations_for_role(self, role: Role) -> list[common_pb2.Relationship]:
+    def _generate_relations_for_role(self) -> list[common_pb2.Relationship]:
         """Generate system role permissions."""
         relations = []
-
         admin_default = self._get_admin_default_policy_uuid()
         platform_default = self._get_platform_default_policy_uuid()
 
         # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
-        if role.admin_default and admin_default:
+        if self.role.admin_default and admin_default:
             relations.append(
-                create_relationship(("rbac", "role"), admin_default, ("rbac", "role"), str(role.uuid), "child")
+                create_relationship(("rbac", "role"), admin_default, ("rbac", "role"), str(self.role.uuid), "child")
             )
-        if role.platform_default and platform_default:
+        if self.role.platform_default and platform_default:
             relations.append(
-                create_relationship(("rbac", "role"), platform_default, ("rbac", "role"), str(role.uuid), "child")
+                create_relationship(("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child")
             )
 
         permissions = list()
-        for access in role.access.all():
+        for access in self.role.access.all():
             v1_perm = access.permission
             v2_perm = v1_perm_to_v2_perm(v1_perm)
             permissions.append(v2_perm)
 
         for permission in permissions:
             relations.append(
-                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "principal"), str("*"), permission)
+                create_relationship(("rbac", "role"), str(self.role.uuid), ("rbac", "principal"), str("*"), permission)
             )
 
         return relations
 
-    def _create_metadata_from_role(self, role: Role) -> dict[str, object]:
-        return {"role_uuid": role.uuid}
+    def _create_metadata_from_role(self) -> dict[str, object]:
+        return {"role_uuid": self.role.uuid}
 
     def _replicate(
         self,
