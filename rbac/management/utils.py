@@ -79,7 +79,7 @@ def build_user_from_psk(request):
     return user
 
 
-class SystemUserConfig(TypedDict):
+class SystemUserConfig(TypedDict, total=False):
     """Configuration for a system user.
 
     This TypedDict defines the JSON schema for system users.
