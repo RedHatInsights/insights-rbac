@@ -135,12 +135,14 @@ By default, with the `DEVELOPMENT` variable set to `True`, the `dev_middleware.p
 This will ensure that a mock identity header will be set on all requests for you.
 You can modify this header to add new users to your tenant by changing the `username`, create new tenants by changing the `account_number`, and toggling between admin/non-admins by flipping `is_org_admin` from `True` to `False`.
 
-This will allow you to simulate a JWT or basic-auth request from the gateway.
+This will allow you to simulate a JWT or basic-auth request from the gateway. 
+It does NOT allow providing a JWT directly to RBAC, which requires a JWT issuer to be configured.
+Instead, you use the `x-rh-identity` header to simulate a request from the gateway.
 
 Service to Service Requests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-RBAC also allows for service-to-service requests. These requests require a preshared-key (PSK) or a JSON Web Token (JWT), and some additional headers in order to authorize the request as an "admin". To test this locally, do the following:
+RBAC also allows for service-to-service requests. These requests require a preshared-key (PSK) or a JSON Web Token (JWT), and some additional headers in order to authorize the request as an "admin". To test PSK auth locally, do the following:
 
 First disable the local setting of the identity header in `dev_middleware.py` by [commenting this line out](https://github.com/RedHatInsights/insights-rbac/blob/b207668440faf8f951dec75ffef8891343b4131b/rbac/rbac/dev_middleware.py#L72)
 

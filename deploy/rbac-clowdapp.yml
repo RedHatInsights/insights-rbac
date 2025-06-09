@@ -1075,6 +1075,14 @@ objects:
 - apiVersion: v1
   kind: Secret
   metadata:
+    name: rbac-system-users
+  data:
+    system-users.json: >-
+      ewogICAgImluc2VydF9zdWJfaGVyZSI6IHsKICAgICAgICAiYWRtaW4iOiB0cnVlLAogICAgICAgICJpc19zZXJ2aWNlX2FjY291bnQiOiB0cnVlLAogICAgICAgICJhbGxvd19hbnlfb3JnIjogdHJ1ZQogICAgfQp9Cg==
+  type: Opaque
+- apiVersion: v1
+  kind: Secret
+  metadata:
     name: insights-rbac
   data:
     client-id: aW5zaWdodHMtcmJhYw==
@@ -1152,7 +1160,12 @@ parameters:
 - displayName: RBAC system users
   name: RBAC_SYSTEM_USERS
   value: rbac-system-users
-  description: Name of the secret containing system user configuration.
+  description: >
+    Name of the secret containing system user configuration.
+    System user configuration JSON defines which users, when identified via JWT authentication,
+    should be considered system users, and what authority they should have.
+    The keys of the JSON are the sub values of the tokens.
+    The values follow the SystemUserConfig typed dict.
 - displayName: Service Dependency Name
   name: SERVICE_DEPENDENCY_NAME
   value: rbac-pgsql

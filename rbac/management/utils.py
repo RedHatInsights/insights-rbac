@@ -18,7 +18,7 @@
 import logging
 import os
 import uuid
-from typing import Optional
+from typing import Optional, TypedDict
 from uuid import UUID
 
 from django.conf import settings
@@ -79,12 +79,28 @@ def build_user_from_psk(request):
     return user
 
 
+class SystemUserConfig(TypedDict):
+    """Configuration for a system user.
+
+    This TypedDict defines the JSON schema for system users.
+
+    Attributes:
+        admin (bool): Whether the user has administrative privileges.
+        is_service_account (bool): Whether the user is a service account.
+        allow_any_org (bool): Whether the user is allowed to access any organization via system auth headers.
+    """
+
+    admin: bool
+    is_service_account: bool
+    allow_any_org: bool
+
+
 def build_system_user_from_token(request, token_validator: TokenValidator) -> Optional[User]:
     """Build a system user from the token."""
     # Token validator class uses a singleton
     try:
         user = token_validator.get_user_from_bearer_token(request)
-        system_users = settings.SYSTEM_USERS
+        system_users: dict[str, SystemUserConfig] = settings.SYSTEM_USERS
         if user and user.user_id in system_users:
             system_user = system_users[user.user_id]
             user.system = True
