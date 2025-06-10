@@ -158,9 +158,6 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
     added_roles: list[Role] = []
 
-    if [*system_roles, *custom_roles] == []:
-        raise Http404("Role(s) is invalid/non-existent and therefore cannot be added to the group.")
-
     for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
         # higher than "read" into a group.
@@ -180,7 +177,11 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         # Only add the role if it was not attached
         if system_policy.roles.filter(pk=role.pk).exists():
-            logger.info("This role already exists within the group.")
+            logger.debug(
+                "Skipped adding role to group: role_id=%s, group_id=%s (role already exists in group)",
+                getattr(role, "pk", repr(role)),
+                getattr(system_policy, "pk", repr(system_policy)),
+            )
             continue
 
         system_policy.roles.add(role)
@@ -239,7 +240,11 @@ def update_group_roles(group, roleset, tenant):
 def _roles_by_query_or_ids(roles_or_role_ids: Union[QuerySet[Role], list[str]]) -> QuerySet[Role]:
     if not isinstance(roles_or_role_ids, QuerySet):
         # If given an iterable of UUIDs, get the corresponding objects
-        return Role.objects.filter(uuid__in=roles_or_role_ids)
+        filtered_roles = Role.objects.filter(uuid__in=roles_or_role_ids)
+        if filtered_roles.count() == 0:
+            raise Http404("This role is nonexistent/nonvalid and cannot be added to the group")
+
+        return filtered_roles
     else:
         # Given a queryset, so because it may not be efficient (e.g. query on non indexed field)
         # keep prior behavior of querying once to get names, then use names (indexed) as base query
