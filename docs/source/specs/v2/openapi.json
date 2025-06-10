@@ -780,6 +780,141 @@
           }
         }
       }
+    },
+    "/workspaces/{id}/move/": {
+      "post": {
+        "tags": [
+          "Workspaces"
+        ],
+        "operationId": "Workspaces_move",
+        "summary": "Move a workspace to a new parent.",
+        "description": "Move a workspace to a new parent.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Unique identification of the workspace to move",
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspaces.MoveWorkspaceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem400"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Workspaces.MoveWorkspaceRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1034,6 +1169,31 @@
         ]
       },
       "Workspaces.CreateWorkspaceResponse": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspaces.Workspace"
+          }
+        ]
+      },
+      "Workspaces.MoveWorkspaceRequest": {
+        "type": "object",
+        "required": [
+          "parent_id"
+        ],
+        "properties": {
+          "parent_id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "The UUID of the new parent workspace.",
+            "default": "Parent ID of target workspace"
+          }
+        }
+      },
+      "Workspaces.MoveWorkspaceResponse": {
         "type": "object",
         "allOf": [
           {
