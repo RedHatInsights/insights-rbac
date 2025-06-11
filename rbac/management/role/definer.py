@@ -230,7 +230,8 @@ def seed_permissions():
         logger.info(f"Removing the following permissions(s): {perms_to_delete.values()}")
         # Actually remove perms no longer in DB
         with transaction.atomic():
-            perms_to_delete.delete()
+            for permission in perms_to_delete:
+                delete_permission(permission)
 
 
 def delete_permission(permission: Permission):
