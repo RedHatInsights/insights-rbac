@@ -66,12 +66,12 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
         self.generate_relations_to_add_workspace()
         self._replicate()
 
-    def replicate_updated_workspace(self, previous_parent):
+    def replicate_updated_workspace(self, previous_parent, skip_ws_events: bool = False):
         """Replicate updated principals into group."""
         if not self.replication_enabled():
             return
         self.generate_relations_to_update_workspace(previous_parent)
-        self._replicate()
+        self._replicate(skip_ws_events=skip_ws_events)
 
     def replicate_deleted_workspace(self, skip_ws_events: bool = False):
         """Replicate deleted principals into group."""
