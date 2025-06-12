@@ -125,8 +125,7 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         self.assertEqual(updated_instance.name, validated_data["name"])
         self.assertEqual(updated_instance.description, validated_data["description"])
 
-        workspace_event = replicate_workspace.call_args
-        self.assertIsNone(workspace_event)
+        replicate_workspace.assert_not_called()
 
         self.assertEqual(len(self.tuples), 0)
 
