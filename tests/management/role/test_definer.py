@@ -18,12 +18,27 @@
 from typing import Any
 from django.conf import settings
 from unittest.mock import ANY, call, patch, mock_open
-from management.role.definer import seed_roles, seed_permissions
+
 from api.models import Tenant
-from tests.core.test_kafka import copy_call_args
-from tests.identity_request import IdentityRequest
 from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
+from management.role.definer import seed_roles, seed_permissions
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    SeedingRelationApiDualWriteHandler,
+)
+from management.tenant_service.v2 import V2TenantBootstrapService
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
+from tests.core.test_kafka import copy_call_args
+from tests.identity_request import IdentityRequest
+from tests.management.role.test_dual_write import RbacFixture
 
 
 class RoleDefinerTests(IdentityRequest):
@@ -251,6 +266,90 @@ class RoleDefinerTests(IdentityRequest):
         self.assertEqual(permission.first().description, "Approval local test templates read.")
         # Previous string verb still works
         self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.role.definer.destructive_ok")
+    def test_seed_permissions_delete_permission(self, _, replicate):
+        """Test permission seeding delete permission."""
+        self.assertFalse(len(Permission.objects.all()))
+
+        # Create a permission in the database that's not in config
+        permission_to_delete = Permission.objects.create(
+            permission="dummy:permission:delete", tenant=self.public_tenant
+        )
+        relation_tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(relation_tuples)
+        replicate.side_effect = replicator.replicate
+        fixture = RbacFixture(V2TenantBootstrapService(replicator))
+        fixture.bootstrap_tenant(self.tenant)
+        role_system = fixture.new_system_role(name="system_role", permissions=["dummy:permission:delete"])
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role_system, replicator=replicator)
+        dual_write_handler.replicate_new_system_role()
+
+        role_custom = fixture.new_custom_role(
+            name="custom_role",
+            tenant=self.tenant,
+            resource_access=fixture.workspace_access(["dummy:permission:delete"]),
+        )
+        dual_write = RelationApiDualWriteHandler(
+            role_custom, ReplicationEventType.CREATE_CUSTOM_ROLE, replicator=replicator
+        )
+        dual_write.replicate_new_or_updated_role(role_custom)
+
+        # Before removing the permission
+        self.assertEqual(
+            1,
+            relation_tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("dummy_permission_delete"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+        for binding in role_custom.binding_mappings.all():
+            v2_role_id = binding.mappings["role"]["id"]
+            self.assertEqual(
+                1,
+                relation_tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role", v2_role_id),
+                        relation("dummy_permission_delete"),
+                        subject("rbac", "principal", "*"),
+                    )
+                ),
+            )
+
+        try:
+            seed_permissions()
+        except Exception:
+            self.fail(msg="seed_permissions encountered an exception")
+
+        # Verify permission was deleted from the database
+        self.assertFalse(Permission.objects.filter(id=permission_to_delete.id).exists())
+        # After removing the permission
+        self.assertEqual(
+            0,
+            relation_tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("dummy_permission_delete"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+        for binding in role_custom.binding_mappings.all():
+            v2_role_id = binding.mappings["role"]["id"]
+            self.assertEqual(
+                0,
+                relation_tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role", v2_role_id),
+                        relation("dummy_permission_delete"),
+                        subject("rbac", "principal", "*"),
+                    )
+                ),
+            )
 
     def is_create_event(self, relation: str, evt: ReplicationEvent) -> bool:
         return evt.event_type == ReplicationEventType.CREATE_SYSTEM_ROLE and any(
