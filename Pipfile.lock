@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "c5e6282fd8a23b4e2e7d931d58a7f49d50db487757f12439e4ec4d2b174afb88"
+            "sha256": "574cb1e7ee021c611f7b8fa3e57ac5d460b584c2ae6f44f85de7482211430215"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -59,11 +59,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:ad25233e93dcebe95809b1f9393c1f11a639696327793d166295fb78dd7bc597",
-                "sha256:dbe8fea9d0426c644c89ef2018ead886ccbcc22901a02b377b4e65ce1cb69a2b"
+                "sha256:4a1ced1a4218bdff0ed5b46abb54570d473154ddefafa5d121a8d96e4b76ebc1",
+                "sha256:b6a50b853f6d23af9edfed89a59800c6bc1687a947cdd3492879f7d64e002d30"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.38.33"
+            "version": "==1.38.36"
         },
         "celery": {
             "hashes": [
@@ -774,12 +774,12 @@
         },
         "relations-grpc-clients-python-kessel-project": {
             "hashes": [
-                "sha256:e70d3ad8f632ed48ff6c462c852c9ed9a84b1cbcd32a3dcf9e3f2992cbb61dfe",
-                "sha256:ec54158ed4a014c526fc0087de3f3b9d63f591bd9fd4191665dd224fe7886fef"
+                "sha256:9387d8023e3563d4e47d00cdb970f51bf048f200192f5da7966d0c9b3fb9b85b",
+                "sha256:bb01c2c6613b9d4e905d4cdad6ca14c995018bfb9b662af7651dedece0e664d1"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==0.3.9"
+            "version": "==0.3.10"
         },
         "requests": {
             "hashes": [
