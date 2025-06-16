@@ -453,6 +453,8 @@ objects:
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
             value: ${TOKEN_GRANT_TYPE}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
@@ -1490,3 +1492,6 @@ parameters:
 - name: TOKEN_GRANT_TYPE
   description: The grant type for token generation
   value: 'client_credentials'
+- name: REDHAT_SSO
+  description: The SSO url for rbac environment
+  value: 'sso.stage.redhat.com'
