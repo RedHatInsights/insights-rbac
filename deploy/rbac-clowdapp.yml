@@ -87,6 +87,8 @@ objects:
           name: model-access-permissions
         - mountPath: /opt/rbac/rbac/management/principal/umb_certs
           name: umb-certs
+        - mountPath: /opt/rbac/rbac/management/principal/umb_certificates
+          name: umb-certificates
         volumes:
         - configMap:
             name: ${CONFIG_MAP_NAME}
@@ -94,6 +96,9 @@ objects:
         - configMap:
             name: ${MODEL_ACCESS_PERMISSIONS}
           name: model-access-permissions
+        - name: umb-certificates
+          secret:
+            secretName: it-umb-key-pair
         - name: umb-certs
           secret:
             secretName: service-accounts
@@ -115,6 +120,8 @@ objects:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          - name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
+            value: ${AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_DEBUG
@@ -1495,3 +1502,6 @@ parameters:
 - name: REDHAT_SSO
   description: The SSO url for rbac environment
   value: 'sso.stage.redhat.com'
+- description: Enables grabbing the certificates from the secret that provides certificates that will be automatically renewed.
+  name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
+  value: 'false'
