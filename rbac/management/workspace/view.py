@@ -21,10 +21,11 @@ from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
-from rest_framework import serializers
+from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
+from rest_framework.response import Response
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
@@ -124,7 +125,9 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     @action(detail=True, methods=["post"], url_path="move")
     @transaction.atomic()
-    def move(self, request, *args, **kwargs):
+    def move(self, request, **kwargs):
         """Move a workspace under new parent."""
         # TODO: This method needs to be implemented
-        return super().retrieve(request=request, args=args, kwargs=kwargs)
+        return Response(
+            {"id": kwargs.get("pk"), "parent_id": request.data.get("parent_id")}, status=status.HTTP_200_OK
+        )

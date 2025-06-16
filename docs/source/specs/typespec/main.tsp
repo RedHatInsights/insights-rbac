@@ -175,8 +175,10 @@ namespace Workspaces {
       parent_id: UUID = "Parent ID of target workspace";
     }
 
-    model MoveWorkspaceResponse extends Workspace{
+    model MoveWorkspaceResponse{
         @statusCode _: 200;
+        @key id: UUID = "Workspace ID of moved workspace";
+        parent_id: UUID = "New parent ID of moved workspace";
     }
 
     model PaginationMeta {
