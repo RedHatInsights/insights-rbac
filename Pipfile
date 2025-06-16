@@ -41,6 +41,7 @@ protoc-gen-validate = "==1.2.1"
 python-dateutil = "==2.9.0.post0"
 redis = "==6.0.0"
 unleashclient = "*"
+pre-commit = "*"
 
 [dev-packages]
 sphinx-rtd-theme = "==1.3.0"
