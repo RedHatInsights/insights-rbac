@@ -18,6 +18,7 @@
 """View for permission management."""
 from django.conf import settings
 from django.db.models import Q
+from django.db.models.functions import Collate
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Access, Permission, Role
@@ -79,13 +80,20 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     """
 
-    queryset = Permission.objects.all()
+    queryset = (
+        Permission.objects.all().annotate(permission_collate=Collate("permission", "C")).order_by("permission_collate")
+    )
+
     permission_classes = (PermissionAccessPermission,)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     serializer_class = PermissionSerializer
     filterset_class = PermissionFilter
-    ordering_fields = ("application", "resource_type", "verb", "permission")
-    ordering = ("application",)
+    ordering_fields = (
+        "application",
+        "resource_type",
+        "verb",
+    )
+    ordering = ("permission_collate",)
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of permissions for the tenant.
@@ -130,6 +138,9 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
           ]
         }
         """
+        if request.query_params.get("order_by") == "-permission":
+            self.queryset = self.queryset.order_by("-permission_collate")
+            self.ordering = "-permission_collate"
         return super().list(request=request, args=args, kwargs=kwargs)
 
     @action(detail=False)
@@ -166,7 +177,6 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             context = request.query_params.get(key)
             if context:
                 filters[f"{key}__in"] = context.split(",")
-
         query_set = (
             self.filter_queryset(self.get_queryset())
             .order_by(query_field)

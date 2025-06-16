@@ -145,12 +145,12 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.data
         self.assertEqual(data.get("name"), "New Workspace")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("description"), "Workspace")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
         tuples = self.tuples.find_tuples(
             all_of(
@@ -178,12 +178,12 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.data
         self.assertEqual(data.get("name"), "Root Peer")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("description"), "Workspace")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_assign_parent_id(self):
@@ -201,13 +201,13 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         data = response.data
 
         self.assertEqual(data.get("name"), "New Workspace")
-        self.assertNotEquals(data.get("id"), "")
-        self.assertNotEquals(data.get("parent_id"), data.get("id"))
+        self.assertNotEqual(data.get("id"), "")
+        self.assertNotEqual(data.get("parent_id"), data.get("id"))
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("description"), "Workspace")
+        self.assertEqual(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_empty_body(self):
@@ -344,16 +344,16 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Updated name")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("type"), "standard")
-        self.assertEquals(data.get("description"), "Updated description")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("type"), "standard")
+        self.assertEqual(data.get("description"), "Updated description")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
-        self.assertEquals(update_workspace.name, "Updated name")
-        self.assertEquals(update_workspace.description, "Updated description")
+        self.assertEqual(update_workspace.name, "Updated name")
+        self.assertEqual(update_workspace.description, "Updated description")
         self.assertEqual(response.get("content-type"), "application/json")
 
         self.assertEqual(len(self.tuples), 0)
@@ -411,12 +411,12 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(data.get("name"), "New Workspace")
         self.assertEqual(data.get("description"), "New Workspace - description")
         self.assertEqual(data.get("id"), str(workspace.id))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("type"), "standard")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
-        self.assertEquals(update_workspace.name, "New Workspace")
+        self.assertEqual(update_workspace.name, "New Workspace")
 
     def test_update_workspace_update_parent_id(self):
         """Test for updating a workspace's parent_id."""
@@ -463,14 +463,14 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Updated name")
-        self.assertNotEquals(data.get("id"), "")
+        self.assertNotEqual(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("type"), "standard")
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(data.get("type"), "standard")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
-        self.assertEquals(update_workspace.name, "Updated name")
+        self.assertEqual(update_workspace.name, "Updated name")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_partial_update_workspace_same_tenant_parent_id(self):
@@ -699,6 +699,120 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
                 self.default_workspace.name = "Default"
                 self.default_workspace.description = "Default description"
 
+    def test_update_workspace_existing_name_fail(self):
+        """Test the workspace name update (PUT) fail for already existing "name" under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
+        workspace_request_data = {"name": wsB.name}
+
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_message = response.json()
+
+        self.assertEqual(response_message.get("status"), status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response_message.get("detail"), f"A workspace with the name '{wsB.name}' already exists under same parent."
+        )
+        self.assertEqual(response_message.get("instance"), f"/api/rbac/v2/workspaces/{wsA.id}/")
+
+    def test_partial_update_workspace_existing_name_fail(self):
+        """Test the workspace name update (PATCH) fail for already existing "name" under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
+        workspace_request_data = {"name": wsB.name}
+
+        response = client.patch(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_message = response.json()
+
+        self.assertEqual(response_message.get("status"), status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response_message.get("detail"), f"A workspace with the name '{wsB.name}' already exists under same parent."
+        )
+        self.assertEqual(response_message.get("instance"), f"/api/rbac/v2/workspaces/{wsA.id}/")
+
+    def test_update_workspace_existing_name_success(self):
+        """
+        Test the workspace name update (PUT) success for already existing "name"
+        under same tenant but with different parent.
+        """
+
+        # workspaces structure:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace AA (standard)
+        #                                  -> Workspace B (standard)
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsAA = Workspace.objects.create(
+            name="Workspace AA", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=wsA
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsAA.id})
+        workspace_request_data = {"name": wsB.name}
+        # expected structure after update:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace B (standard)
+        #                                  -> Workspace B (standard)
+
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_message = response.json()
+        self.assertEqual(response_message.get("name"), wsB.name)
+        self.assertEqual(response_message.get("parent_id"), str(wsA.id))
+
+    def test_partial_update_workspace_existing_name_success(self):
+        """
+        Test the workspace name update (PATCH) success for already existing "name"
+        under same tenant but with different parent.
+        """
+
+        # workspaces structure:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace AA (standard)
+        #                                  -> Workspace B (standard)
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsAA = Workspace.objects.create(
+            name="Workspace AA", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=wsA
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsAA.id})
+        workspace_request_data = {"name": wsB.name}
+        # expected structure after update:
+        # self.default_workspace (default) -> Workspace A (standard) -> Workspace B (standard)
+        #                                  -> Workspace B (standard)
+
+        response = client.patch(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_message = response.json()
+        self.assertEqual(response_message.get("name"), wsB.name)
+        self.assertEqual(response_message.get("parent_id"), str(wsA.id))
+
     @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
     def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
@@ -734,153 +848,6 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         response = client.put(url, workspace, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
-
-    def test_get_workspace(self):
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-        client = APIClient()
-        response = client.get(url, None, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data
-        self.assertEqual(data.get("name"), "Standard Workspace")
-        self.assertEquals(data.get("description"), "Standard Workspace - description")
-        self.assertNotEquals(data.get("id"), "")
-        self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEqual(response.get("content-type"), "application/json")
-        self.assertEqual(data.get("ancestry"), None)
-        self.assertEquals(data.get("type"), "standard")
-        self.assertEqual(response.get("content-type"), "application/json")
-
-    def test_get_workspace_with_ancestry(self):
-        base_url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-        url = f"{base_url}?include_ancestry=true"
-        client = APIClient()
-        response = client.get(url, None, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data
-        self.assertEqual(data.get("name"), "Standard Workspace")
-        self.assertEquals(data.get("description"), "Standard Workspace - description")
-        self.assertNotEquals(data.get("id"), "")
-        self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEqual(
-            data.get("ancestry"),
-            [{"name": self.root_workspace.name, "id": str(self.root_workspace.id), "parent_id": None}],
-        )
-        self.assertEquals(data.get("type"), "standard")
-        self.assertEqual(response.get("content-type"), "application/json")
-        self.assertEqual(data.get("ancestry"), None)
-
-    def test_get_workspace_with_ancestry(self):
-        base_url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-        url = f"{base_url}?include_ancestry=true"
-        client = APIClient()
-        response = client.get(url, None, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data
-        self.assertEqual(data.get("name"), "Standard Workspace")
-        self.assertEquals(data.get("description"), "Standard Workspace - description")
-        self.assertNotEquals(data.get("id"), "")
-        self.assertIsNotNone(data.get("id"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertCountEqual(
-            data.get("ancestry"),
-            [
-                {"name": self.root_workspace.name, "id": str(self.root_workspace.id), "parent_id": None},
-                {
-                    "name": self.default_workspace.name,
-                    "id": str(self.default_workspace.id),
-                    "parent_id": str(self.root_workspace.id),
-                },
-            ],
-        )
-        self.assertEquals(data.get("type"), "standard")
-        self.assertEqual(response.get("content-type"), "application/json")
-
-    def test_get_workspace_not_found(self):
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": "XXXX"})
-        client = APIClient()
-        response = client.get(url, None, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        status_code = response.data.get("status")
-        detail = response.data.get("detail")
-
-        self.assertEqual(detail, "Not found.")
-        self.assertEqual(status_code, 404)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
-
-    def test_get_workspace_unauthorized(self):
-        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-
-        request = request_context["request"]
-        headers = request.META
-
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-        client = APIClient()
-        response = client.get(url, None, format="json", **headers)
-
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        status_code = response.data.get("status")
-        detail = response.data.get("detail")
-
-        self.assertEqual(detail, "You do not have permission to perform this action.")
-        self.assertEqual(status_code, 403)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
-
-    def test_get_workspace_authorized_through_custom_role(self):
-        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-
-        request = request_context["request"]
-        headers = request.META
-        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read")
-
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-        client = APIClient()
-        response = client.get(url, None, format="json", **headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    def test_get_workspace_authorized_through_custom_role_with_resourcedef(self):
-        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-
-        request = request_context["request"]
-        headers = request.META
-        # Assign permission of non target workspace
-        self._setup_access_for_principal(
-            self.user_data["username"], "inventory:groups:read", workspace_id=str(uuid4())
-        )
-
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-        client = APIClient()
-        response = client.get(url, None, format="json", **headers)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-        # Assign permission of target workspace
-        self._setup_access_for_principal(
-            self.user_data["username"], "inventory:groups:read", workspace_id=[str(self.standard_workspace.id)]
-        )
-        response = client.get(url, None, format="json", **headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    def test_get_workspace_authorized_through_platform_default_access(self):
-        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-
-        request = request_context["request"]
-        headers = request.META
-        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read", platform_default=True)
-
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-        client = APIClient()
-        response = client.get(url, None, format="json", **headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -1173,6 +1140,175 @@ class WorkspaceTestsList(WorkspaceViewTests):
 
         # Account for ungrouped and new standard workspace not having access
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 2)
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class WorkspaceTestsDetail(WorkspaceViewTests):
+    """Tests for get workspace detail."""
+
+    def test_get_workspace(self):
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Standard Workspace")
+        self.assertEqual(data.get("description"), "Standard Workspace - description")
+        self.assertNotEqual(data.get("id"), "")
+        self.assertIsNotNone(data.get("id"))
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(data.get("ancestry"), None)
+        self.assertEqual(data.get("type"), "standard")
+        self.assertEqual(response.get("content-type"), "application/json")
+
+    def test_get_workspace_with_ancestry(self):
+        base_url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        url = f"{base_url}?include_ancestry=true"
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Standard Workspace")
+        self.assertEqual(data.get("description"), "Standard Workspace - description")
+        self.assertNotEqual(data.get("id"), "")
+        self.assertIsNotNone(data.get("id"))
+        self.assertNotEqual(data.get("created"), "")
+        self.assertNotEqual(data.get("modified"), "")
+        self.assertCountEqual(
+            data.get("ancestry"),
+            [
+                {"name": self.root_workspace.name, "id": str(self.root_workspace.id), "parent_id": None},
+                {
+                    "name": self.default_workspace.name,
+                    "id": str(self.default_workspace.id),
+                    "parent_id": str(self.root_workspace.id),
+                },
+            ],
+        )
+        self.assertEqual(data.get("type"), "standard")
+        self.assertEqual(response.get("content-type"), "application/json")
+
+    def test_get_workspace_not_found(self):
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": "XXXX"})
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+
+        self.assertEqual(detail, "Not found.")
+        self.assertEqual(status_code, 404)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+
+    def test_get_workspace_unauthorized(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+
+        self.assertEqual(detail, "You do not have permission to perform this action.")
+        self.assertEqual(status_code, 403)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_get_workspace_authorized_through_custom_role(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read")
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Can also get the ancestor
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_get_workspace_authorized_through_custom_role_with_resourcedef(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        # Assign permission of non target workspace
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:read", workspace_id=str(uuid4())
+        )
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Assign permission of target workspace
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:read", workspace_id=[str(self.standard_workspace.id)]
+        )
+        response = client.get(url, None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Can also get the ancestor
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Can't access another workspace within the same ancestor
+        another_ws = Workspace.objects.create(
+            name="Another Standard Workspace",
+            tenant=self.tenant,
+            type="standard",
+            parent_id=self.default_workspace.id,
+        )
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": another_ws.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_get_workspace_authorized_through_platform_default_access(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+        self._setup_access_for_principal(self.user_data["username"], "inventory:groups:read", platform_default=True)
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.root_workspace.id})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):

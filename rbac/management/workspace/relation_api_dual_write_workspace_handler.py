@@ -66,21 +66,21 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
         self.generate_relations_to_add_workspace()
         self._replicate()
 
-    def replicate_updated_workspace(self, previous_parent):
+    def replicate_updated_workspace(self, previous_parent, skip_ws_events: bool = False):
         """Replicate updated principals into group."""
         if not self.replication_enabled():
             return
         self.generate_relations_to_update_workspace(previous_parent)
-        self._replicate()
+        self._replicate(skip_ws_events=skip_ws_events)
 
-    def replicate_deleted_workspace(self):
+    def replicate_deleted_workspace(self, skip_ws_events: bool = False):
         """Replicate deleted principals into group."""
         if not self.replication_enabled():
             return
         self.generate_relations_to_remove_workspace()
-        self._replicate()
+        self._replicate(skip_ws_events=skip_ws_events)
 
-    def _replicate(self):
+    def _replicate(self, skip_ws_events: bool = False):
         # To avoid Circular Dependency
         from management.workspace.serializer import WorkspaceEventSerializer
 
@@ -97,15 +97,16 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
                         add=self.relations_to_add,
                     ),
                 )
-            self._replicator.replicate_workspace(
-                WorkspaceEvent(
-                    account_number=self.workspace.tenant.account_id,
-                    org_id=str(self.workspace.tenant.org_id),
-                    workspace=WorkspaceEventSerializer(self.workspace).data,
-                    event_type=self.event_type,
-                    partition_key=PartitionKey.byEnvironment(),
+            if not skip_ws_events:
+                self._replicator.replicate_workspace(
+                    WorkspaceEvent(
+                        account_number=self.workspace.tenant.account_id,
+                        org_id=str(self.workspace.tenant.org_id),
+                        workspace=WorkspaceEventSerializer(self.workspace).data,
+                        event_type=self.event_type,
+                        partition_key=PartitionKey.byEnvironment(),
+                    )
                 )
-            )
         except Exception as e:
             raise DualWriteException(e)
 

@@ -131,6 +131,10 @@ class RelationReplicator(ABC):
         """Replicate the given event to Kessel Relations."""
         pass
 
+    def replicate_workspace(self, event: WorkspaceEvent):
+        """Replicate the given workspace event to Kessel Relations."""
+        pass
+
 
 class PartitionKey(ABC):
     """

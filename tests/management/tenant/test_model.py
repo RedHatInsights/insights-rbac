@@ -286,7 +286,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         # new or otherwise unbootstrapped tenants get 9
         num_tenant_bootstrapping_tuples = 0 + 9 + 6 + 9
 
-        self.assertEquals(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
+        self.assertEqual(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
 
         # Assert user updated for first user with existing tenant
         self.assertAddedToDefaultGroup("localhost/u1", bootstrapped.mapping, and_admin_group=True)  # 2

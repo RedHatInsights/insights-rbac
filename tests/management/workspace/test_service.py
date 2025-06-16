@@ -14,14 +14,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+from unittest.mock import patch
+
 from django.test import TestCase
 from rest_framework import serializers
 from api.models import Tenant
 from management.models import Workspace
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.service import WorkspaceService
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.test.utils import override_settings
+
+from migration_tool.in_memory_tuples import InMemoryTuples, InMemoryRelationReplicator
 
 
 class WorkspaceServiceTestBase(TestCase):
@@ -45,6 +50,9 @@ class WorkspaceServiceTestBase(TestCase):
         cls.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=cls.tenant, parent=cls.default_workspace
         )
+
+        cls.tuples = InMemoryTuples()
+        cls.in_memory_replicator = InMemoryRelationReplicator(cls.tuples)
 
 
 class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
@@ -86,6 +94,41 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         self.assertEqual(updated_instance.name, validated_data["name"])
         self.assertEqual(updated_instance.description, validated_data["description"])
 
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    def test_update_standard_workspace_event(self, replicate_workspace, replicate):
+        """Test the standard workspace update will create a Workspace Event."""
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        validated_data = {"name": "Bar Name", "description": "Bar Desc"}
+        updated_instance = self.service.update(self.standard_workspace, validated_data)
+        self.assertEqual(updated_instance.name, validated_data["name"])
+        self.assertEqual(updated_instance.description, validated_data["description"])
+
+        workspace_event = replicate_workspace.call_args[0][0]
+        self.assertEqual(workspace_event.workspace["name"], validated_data["name"])
+        self.assertEqual(workspace_event.workspace["type"], Workspace.Types.STANDARD)
+        self.assertEqual(workspace_event.event_type, ReplicationEventType.UPDATE_WORKSPACE)
+
+        self.assertEqual(len(self.tuples), 0)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    def test_update_default_workspace_event(self, replicate_workspace, replicate):
+        """Test the default workspace update does not create a Workspace Event."""
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        validated_data = {"name": "Bar Name", "description": "Bar Desc"}
+        updated_instance = self.service.update(self.default_workspace, validated_data)
+        self.assertEqual(updated_instance.name, validated_data["name"])
+        self.assertEqual(updated_instance.description, validated_data["description"])
+
+        replicate_workspace.assert_not_called()
+
+        self.assertEqual(len(self.tuples), 0)
+
     def test_update_parent_id_same(self):
         """Test the update method when the parent is the same"""
         validated_data = {"parent_id": self.standard_workspace.parent_id}
@@ -119,6 +162,23 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         with self.assertRaises(serializers.ValidationError) as context:
             self.service.update(self.ungrouped_workspace, validated_data)
         self.assertIn("The ungrouped-hosts workspace cannot be updated.", str(context.exception))
+
+    def test_update_name_unique_per_parent(self):
+        """Test we cannot update the workspace name if the same name already exists under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsB = Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        # Try to update the Workspace A with name="Workspace B"
+        validated_data = {"name": wsB.name}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.update(wsA, validated_data)
+        self.assertIn(
+            f"A workspace with the name '{wsB.name}' already exists under same parent.", str(context.exception)
+        )
 
 
 class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):

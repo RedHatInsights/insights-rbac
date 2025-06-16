@@ -93,7 +93,7 @@ lint:
 	tox -elint
 
 format:
-	black -t py39 -l 119 rbac tests
+	black -t py312 -l 119 rbac tests
 
 typecheck:
 	mypy --install-types --non-interactive rbac
