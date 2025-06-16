@@ -493,7 +493,7 @@ UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
 SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
 
-REDHAT_STAGE_SSO = ENVIRONMENT.get_value("REDHAT_STAGE_SSO", default="sso.stage.redhat.com")
+REDHAT_SSO = ENVIRONMENT.get_value("REDHAT_SSO", default="sso.stage.redhat.com")
 OPENID_URL = ENVIRONMENT.get_value("OPENID_URL", default="/auth/realms/redhat-external/protocol/openid-connect/token")
 SCOPE = ENVIRONMENT.get_value("SCOPE", default="openid")
 TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_credentials")
