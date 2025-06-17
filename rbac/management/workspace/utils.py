@@ -122,5 +122,4 @@ def check_total_workspace_count_exceeded(request) -> bool:
     max_limit = settings.WORKSPACE_ORG_CREATION_LIMIT
 
     workspace_count = Workspace.objects.filter(tenant=org, type="standard").count()
-    print(workspace_count)
     return workspace_count >= max_limit
