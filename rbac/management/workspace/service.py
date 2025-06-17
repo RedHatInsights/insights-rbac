@@ -71,10 +71,14 @@ class WorkspaceService:
             setattr(instance, attr, value)
         if parent_id is not None:
             self._enforce_hierarchy_depth(parent_id, instance.tenant)
+
+        # Skip Workspace Events for DEFAULT workspaces
+        skip_ws_events = instance.type == Workspace.Types.DEFAULT
+
         try:
             instance.save()
             dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
-            dual_write_handler.replicate_updated_workspace(instance.parent)
+            dual_write_handler.replicate_updated_workspace(instance.parent, skip_ws_events)
         except ValidationError as e:
             message = e.message_dict
             if hasattr(e, "error_dict") and "__all__" in e.error_dict:

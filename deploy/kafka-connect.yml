@@ -110,7 +110,7 @@ objects:
           - name: quay-cloudservices-pull
           - name: rh-registry-pull
           - name: quay.io
-    image: quay.io/redhat-user-workloads/hcm-eng-prod-tenant/kafka-connect/kafka-connect@sha256:4bfbb3336a523959bf4db6b8af9cdca680c60e7a0fe490aedc2c22e321d4e11a
+    image: quay.io/redhat-user-workloads/hcm-eng-prod-tenant/kafka-connect/kafka-connect:7d45fd8
     version: 3.7.0
     replicas: 1
     bootstrapServers: rbac-kafka-kafka-bootstrap:9092
