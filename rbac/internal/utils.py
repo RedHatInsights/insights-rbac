@@ -128,7 +128,6 @@ def validate_relations_input(request, request_data) -> bool:
     if request_endpoint in valid_endpoints and request_method == "POST":
         match request_endpoint:
             case "/_private/api/relations/lookup_resource/":
-                logger.info("Lookup resource endpoint used")
                 resource_type = request_data["resource_type"]
                 subject = request_data["subject"]["subject"]
                 subject_type = request_data["subject"]["subject"]["type"]
@@ -148,5 +147,5 @@ def validate_relations_input(request, request_data) -> bool:
                     logger.info("Valid request body for lookup_resources")
                     return True
                 except KeyError as error:
-                    logger.info(f"Invalid request body for lookup_resources: {error}")
+                    logger.error(f"Invalid request body for lookup_resources: {error}")
                     return False
