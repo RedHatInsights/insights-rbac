@@ -327,7 +327,7 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_body = json.loads(response.content.decode())
         self.assertEqual(
             resp_body.get("detail"), "The total number of workspaces allowed for this organisation has been exceeded."

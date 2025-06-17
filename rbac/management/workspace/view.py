@@ -15,7 +15,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
-from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
@@ -81,10 +80,13 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 )
 
         if check_total_workspace_count_exceeded(request):
-            # If two transactions to create workspaces happen at the same time both will get the okay to add the workspace
-            # which could lead to the case where there is an extra workspace over the allowed limit in the data
+            # If two transactions to create workspaces happen at the same time
+            # both will get the okay to add the workspace
+            # which could lead to the case where there is an extra workspace over the allowed limit
             # locking will have a scalability impact so better not to catch this condition
-            raise PermissionDenied("The total number of workspaces allowed for this organisation has been exceeded.")
+            raise serializers.ValidationError(
+                "The total number of workspaces allowed for this organisation has been exceeded."
+            )
 
         return super().create(request=request, args=args, kwargs=kwargs)
 
