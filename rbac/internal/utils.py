@@ -117,3 +117,31 @@ def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
             workspace, ReplicationEventType.CREATE_WORKSPACE
         ).replicate_new_workspace()
     return workspace
+
+def validate_relations_input(request, request_data) -> bool:
+    """Check if request body provided to relations tool endpoints are valid"""
+    valid_endpoints = {"/_private/api/relations/lookup_resource/"}
+    request_endpoint = request.path
+    request_method = request.method
+    
+    if request_endpoint in valid_endpoints and request_method == "POST":
+        match request_endpoint:
+            case "/_private/api/relations/lookup_resource/":
+                print("Lookup resource endpoint used")
+                resource_type = request_data["resource_type"]
+                subject = request_data["subject"]["subject"]
+                subject_type = request_data["subject"]["subject"]["type"]
+                # Check keys are valid and are provided in request body
+                try:
+                    resource_type["name"]
+                    resource_type["namespace"]
+                    subject["type"]
+                    subject["id"]
+                    subject_type["name"]
+                    subject_type["namespace"]
+                    logger.info("Valid request body for lookup_resources")
+                    return True
+                except KeyError as error:
+                    logger.info("Invalid request body for lookup_resources")
+                    return False
+
