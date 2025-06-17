@@ -1470,7 +1470,7 @@ def lookup_resource(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
     validate_relations_input(request, req_data)
-    
+
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
     resource_type_namespace = req_data["resource_type"]["namespace"]
