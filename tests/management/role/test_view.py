@@ -452,7 +452,7 @@ class RoleViewsetTests(IdentityRequest):
         ]
         workspace = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "workspace")
 
-        self.assertEquals(
+        self.assertEqual(
             role_binding,
             workspace["subject"]["subject"]["id"],
             "expected binding to workspace (not to excluded resource)",
@@ -460,7 +460,7 @@ class RoleViewsetTests(IdentityRequest):
 
         role = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role")
 
-        self.assertEquals(role["relation"], "app_all_read", "expected workspace permission")
+        self.assertEqual(role["relation"], "app_all_read", "expected workspace permission")
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_create_role_with_display_success(self, mock_method):
