@@ -22,9 +22,11 @@ from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
 from management.workspace.utils import check_total_workspace_count_exceeded
-from rest_framework import serializers
+from rest_framework import serializers, status
+from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
+from rest_framework.response import Response
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
@@ -76,7 +78,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
         if parent_id and tenant:
             if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
                 raise serializers.ValidationError(
-                    {"parent_id": (f"Parent workspace '{parent_id}' doesn't exist in tenant")}
+                    {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
                 )
 
         if check_total_workspace_count_exceeded(request):
@@ -131,3 +133,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
         return super().update(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="move")
+    @transaction.atomic()
+    def move(self, request, **kwargs):
+        """Move a workspace under new parent."""
+        # TODO: This method needs to be implemented
+        return Response(
+            {"id": kwargs.get("pk"), "parent_id": request.data.get("parent_id")}, status=status.HTTP_200_OK
+        )

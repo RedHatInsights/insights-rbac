@@ -25,14 +25,12 @@ from rest_framework.serializers import ValidationError
 
 def is_user_allowed(request, required_operation, target_workspace):
     """Check if the user is allowed to perform the required permission on the target workspace."""
-    default_workspace_id = str(Workspace.objects.default(tenant_id=request.tenant).id)
-    is_list_action = False
+    root_workspace_id = str(Workspace.objects.root(tenant_id=request.tenant).id)
+    is_get_action = request.method == "GET"
     if target_workspace is None:
         # If the target workspace is not provided, check if the user has the required permission
         # on any workspace.
-        target_workspace = default_workspace_id
-        if request.method == "GET":
-            is_list_action = True
+        target_workspace = root_workspace_id
     if required_operation == "read":
         allowed_operations = ["read", "write", "*"]
     else:
@@ -40,31 +38,29 @@ def is_user_allowed(request, required_operation, target_workspace):
     valid_perm_tuples = [
         (f"inventory:groups:{allowed_operation}", target_workspace) for allowed_operation in allowed_operations
     ]
-    tuple_set = workspace_permission_tuple_set(request, default_workspace_id, is_list_action)
-    if is_list_action:
+    tuple_set = workspace_permission_tuple_set(request, root_workspace_id, is_get_action)
+    if is_get_action:
         # Get the set of permission tuples for later filter
         request.permission_tuples = tuple_set
     return any(valid_perm_tuple in tuple_set for valid_perm_tuple in valid_perm_tuples)
 
 
-def get_access_permission_tuples(access, tenant, default_workspace_id, is_list_action):
+def get_access_permission_tuples(access, tenant, root_workspace_id, is_get_action):
     """Get the set of permission tuples for the given access."""
-    group_list = _get_group_list_from_resource_definitions(access.resourceDefinitions.all())
-    if not group_list:
-        group_list = [default_workspace_id]
+    group_list = _get_group_list_from_resource_definitions(access.resourceDefinitions.all()) or [root_workspace_id]
     workspaces = Workspace.objects.filter(tenant=tenant, id__in=group_list)
     tuple_set = set()
     for workspace in workspaces:
         for descendant in Workspace.objects.descendant_ids_with_parents([str(workspace.id)], workspace.tenant_id):
             tuple_set.add((access.permission.permission, descendant))
-        if is_list_action:
-            # Allow listing ancestors for a workspace they have access to
+        if is_get_action:
+            # Allow getting ancestors for a workspace they have access to
             for ancestor in workspace.ancestors():
                 tuple_set.add((access.permission.permission, str(ancestor.id)))
     return tuple_set
 
 
-def workspace_permission_tuple_set(request, default_workspace_id, is_list_action):
+def workspace_permission_tuple_set(request, root_workspace_id, is_get_action):
     """Get the set of permission tuples for the user's roles on the workspace."""
     principal = get_principal_from_request(request)
     roles = roles_for_principal(
@@ -81,7 +77,7 @@ def workspace_permission_tuple_set(request, default_workspace_id, is_list_action
     )
     tuple_set = set()
     for access in accesses:
-        tuple_set |= get_access_permission_tuples(access, request.tenant, default_workspace_id, is_list_action)
+        tuple_set |= get_access_permission_tuples(access, request.tenant, root_workspace_id, is_get_action)
     return tuple_set
 
 

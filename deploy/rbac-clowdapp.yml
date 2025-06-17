@@ -243,6 +243,10 @@ objects:
             value: ${WORKSPACE_HIERARCHY_ENABLED}
           - name: WORKSPACE_ORG_CREATION_LIMIT
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -432,6 +436,27 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
+            #Relations API variables
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
+          - name: SCOPES
+            value: ${SCOPES}
+          - name: TOKEN_GRANT_TYPE
+            value: ${TOKEN_GRANT_TYPE}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
@@ -478,6 +503,10 @@ objects:
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
           - name: WORKSPACE_HIERARCHY_ENABLED
             value: ${WORKSPACE_HIERARCHY_ENABLED}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -755,6 +784,10 @@ objects:
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
             - name: WORKSPACE_HIERARCHY_ENABLED
               value: ${WORKSPACE_HIERARCHY_ENABLED}
+            - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+              value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+            - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+              value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -970,6 +1003,10 @@ objects:
               value: ${WORKSPACE_ATTRIBUTE_FILTER}
             - name: WORKSPACE_HIERARCHY_ENABLED
               value: ${WORKSPACE_HIERARCHY_ENABLED}
+            - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+              value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+            - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+              value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1421,3 +1458,18 @@ parameters:
 - name: REMOVE_NULL_VALUE
   description: Remove null value from the list of workspace id
   value: 'False'
+- name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+  description: The limit of workspace hierarchy depth
+  value: '2'
+- name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+  description: When true, prevents the ability to create peer workspaces against the default workspace
+  value: 'True'
+- name: SCOPES
+  description: The Scope for token generation
+  value: 'openid'
+- name: TOKEN_GRANT_TYPE
+  description: The grant type for token generation
+  value: 'client_credentials'
+- name: REDHAT_SSO
+  description: The SSO url for rbac environment
+  value: 'sso.stage.redhat.com'

@@ -26,8 +26,10 @@ from django.db import transaction
 from django.utils import timezone
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
 from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
 
@@ -64,7 +66,7 @@ def _add_ext_relation_if_it_exists(external_relation, role):
     )
 
 
-def _make_role(data, dual_write_handler, force_create_relationships=False):
+def _make_role(data, force_create_relationships=False):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     name = data.pop("name")
@@ -79,6 +81,7 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=public_tenant)
 
+    dual_write_handler = SeedingRelationApiDualWriteHandler(role)
     if created:
         if role.display_name != display_name:
             role.display_name = display_name
@@ -87,7 +90,7 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
         role_obj_change_notification_handler(role, "created")
     else:
         if role.version != defaults["version"]:
-            dual_write_handler.prepare_for_update(role)
+            dual_write_handler.prepare_for_update()
             Role.objects.public_tenant_only().filter(name=name).update(
                 **defaults, display_name=display_name, modified=timezone.now()
             )
@@ -96,7 +99,7 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
             role_obj_change_notification_handler(role, "updated")
         else:
             if force_create_relationships:
-                dual_write_handler.replicate_new_system_role(role)
+                dual_write_handler.replicate_new_system_role()
                 logger.info("Replicated system role %s", name)
                 return role
             logger.info("No change in system role %s", name)
@@ -114,20 +117,20 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
     _add_ext_relation_if_it_exists(data.get("external"), role)
 
     if created:
-        dual_write_handler.replicate_new_system_role(role)
+        dual_write_handler.replicate_new_system_role()
     else:
         if role.version != defaults["version"]:
-            dual_write_handler.replicate_update_system_role(role)
+            dual_write_handler.replicate_update_system_role()
 
     return role
 
 
-def _update_or_create_roles(roles, dual_write_handler, force_create_relationships=False):
+def _update_or_create_roles(roles, force_create_relationships=False):
     """Update or create roles from list."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(role_json, dual_write_handler, force_create_relationships)
+            role = _make_role(role_json, force_create_relationships)
             current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
@@ -142,7 +145,6 @@ def seed_roles(force_create_relationships=False):
         for f in os.listdir(roles_directory)
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
-    dual_write_handler = SeedingRelationApiDualWriteHandler()
     current_role_ids = set()
     with transaction.atomic():
         for role_file_name in role_files:
@@ -150,7 +152,7 @@ def seed_roles(force_create_relationships=False):
             with open(role_file_path) as json_file:
                 data = json.load(json_file)
                 role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(role_list, dual_write_handler, force_create_relationships)
+                file_role_ids = _update_or_create_roles(role_list, force_create_relationships)
                 current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
@@ -161,7 +163,8 @@ def seed_roles(force_create_relationships=False):
         # Actually remove roles no longer in config
         with transaction.atomic():
             for role in roles_to_delete:
-                dual_write_handler.replicate_deleted_system_role(role)
+                dual_write_handler = SeedingRelationApiDualWriteHandler(role)
+                dual_write_handler.replicate_deleted_system_role()
             roles_to_delete.delete()
 
 
@@ -227,4 +230,27 @@ def seed_permissions():
         logger.info(f"Removing the following permissions(s): {perms_to_delete.values()}")
         # Actually remove perms no longer in DB
         with transaction.atomic():
-            perms_to_delete.delete()
+            for permission in perms_to_delete:
+                delete_permission(permission)
+
+
+def delete_permission(permission: Permission):
+    """Delete a permission and handles relations cleanning."""
+    roles = Role.objects.filter(access__permission=permission).distinct()
+    dual_write_handlers = []
+    for role in roles:
+        role = Role.objects.filter(id=role.id).select_for_update().get()
+        dual_write_handler = (
+            SeedingRelationApiDualWriteHandler(role=role)
+            if role.system
+            else RelationApiDualWriteHandler(role, ReplicationEventType.UPDATE_CUSTOM_ROLE)
+        )
+        dual_write_handler.prepare_for_update()
+        dual_write_handlers.append(dual_write_handler)
+    permission.delete()
+    for dual_write_handler in dual_write_handlers:
+        role = dual_write_handler.role
+        if isinstance(dual_write_handler, SeedingRelationApiDualWriteHandler):
+            dual_write_handler.replicate_update_system_role()
+        else:
+            dual_write_handler.replicate_new_or_updated_role(role)
