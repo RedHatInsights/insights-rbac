@@ -149,3 +149,4 @@ def validate_relations_input(request, request_data) -> bool:
                 except KeyError as error:
                     logger.error(f"Invalid request body for lookup_resources: {error}")
                     return False
+        return False
