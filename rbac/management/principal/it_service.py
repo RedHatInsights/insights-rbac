@@ -17,6 +17,7 @@
 """Class to manage interactions with the IT service accounts service."""
 import logging
 import time
+from typing import Iterable
 import uuid
 from typing import Any, Optional, Tuple, Union
 
@@ -215,23 +216,15 @@ class ITService:
         if settings.IT_BYPASS_IT_CALLS:
             return True
         else:
-            # In theory, we should be able to pass the client ID to the function below to just get the specified
-            # service account and check if it is present or not. However, due to a bug, we need to fetch the whole
-            # collection for now. More details in https://issues.redhat.com/browse/RHCLOUD-31265 .
-            service_accounts: list[dict] = self.request_service_accounts(bearer_token=user.bearer_token)
+            service_accounts: list[dict] = self.request_service_accounts(
+                bearer_token=user.bearer_token,
+                client_ids=[client_id],
+            )
 
-            for sa in service_accounts:
-                if client_id == sa.get("clientId"):
-                    return True
-
-            return False
+            return len(service_accounts) > 0
 
     def get_service_accounts(self, user: User, options: dict[str, Any] = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
-        # We might want to bypass calls to the IT service on ephemeral or test environments.
-        it_service_accounts: list[dict] = []
-        if not settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Get the service accounts from the database. The weird filter is to fetch the service accounts depending on
         # the account number or the organization ID the user gave.
@@ -279,18 +272,24 @@ class ITService:
         else:
             service_account_principals = service_account_principals.order_by("-username")
 
-        # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
-        # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
-        # service account to complement the information.
-        if settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = self._get_mock_service_accounts(
-                service_account_principals=service_account_principals
-            )
-
         # Put the service accounts in a dict by for a quicker search.
-        sap_dict: dict[str, Principal] = {}
-        for sap in service_account_principals:
-            sap_dict[sap.service_account_id] = sap
+        sap_dict: dict[str, Principal] = self._service_accounts_by_id(service_account_principals)
+
+        if not settings.IT_BYPASS_IT_CALLS:
+            # Below, in _merge_principals_it_service_accounts, we take the intersection of the principals in the database
+            # and the principals returned by IT. So, we are only interested in any principals that already exist in the
+            # database, and the keys of sap_dict are thus all of the client_ids we're interested in.
+            it_service_accounts = self.request_service_accounts(
+                bearer_token=user.bearer_token,
+                client_ids=list(sap_dict.keys()),
+            )
+        else:
+            # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
+            # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
+            # service account to complement the information.
+            it_service_accounts = self._get_mock_service_accounts(
+                service_account_principals=service_account_principals,
+            )
 
         # Filter the incoming service accounts. Also, transform them to the payload we will
         # be returning.
@@ -342,12 +341,6 @@ class ITService:
     def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:
         """Get the service accounts for the given group."""
         username_only: str = options.get("username_only", "false")
-        # We might want to bypass calls to the IT service
-        #        - on ephemeral or test environments
-        #        - when query param username_only == 'true'
-        it_service_accounts: list[dict[str, Union[str, int]]] = []
-        if not settings.IT_BYPASS_IT_CALLS and username_only == "false":
-            it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Fetch the service accounts from the group.
         group_service_account_principals = group.principals.filter(type=Principal.Types.SERVICE_ACCOUNT)
@@ -376,24 +369,32 @@ class ITService:
                     service_account_id__contains=principal_username
                 )
 
-        # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
-        # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
-        # service account to complement the information.
-        if settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = self._get_mock_service_accounts(
-                service_account_principals=group_service_account_principals
-            )
-
-        # Put the service accounts in a dict by for a quicker search.
-        sap_dict: dict[str, Principal] = {}
-        for sap in group_service_account_principals:
-            sap_dict[sap.service_account_id] = sap
-
         service_accounts: list[dict] = []
+
+        # We do not need to make a request from IT if only usernames are requested.
         if username_only == "true":
             # Grab the service account usernames
             service_accounts = [{"username": sa.username} for sa in group_service_account_principals]
         else:
+            # Put the service accounts in a dict by for a quicker search.
+            sap_dict: dict[str, Principal] = self._service_accounts_by_id(group_service_account_principals)
+
+            it_service_accounts: list[dict[str, Union[str, int]]] = []
+
+            # We might want to bypass calls to the IT service on ephemeral or test environments.
+            if not settings.IT_BYPASS_IT_CALLS:
+                it_service_accounts = self.request_service_accounts(
+                    bearer_token=user.bearer_token,
+                    client_ids=list(sap_dict.keys()),
+                )
+            else:
+                # If we are in an ephemeral or test environment, we will take all the service accounts of the user that
+                # are stored in the database and generate a mocked response for them, simulating that IT has the
+                # corresponding service account to complement the information.
+                it_service_accounts = self._get_mock_service_accounts(
+                    service_account_principals=group_service_account_principals
+                )
+
             # Filter the incoming service accounts. Also, transform them to the payload we will be returning.
             service_accounts = self._merge_principals_it_service_accounts(
                 service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
@@ -509,6 +510,25 @@ class ITService:
         service_account["type"] = "service-account"
 
         return service_account
+
+    def _service_accounts_by_id(self, principals: Iterable[Principal]) -> dict[str, Principal]:
+        """Transforms an iterable of Principals, each of which must represent a service account, into a dict keyed
+        by service_account_id.
+
+        Raises a ValueError if any Principal does not have a service_account_id."""
+
+        sap_dict: dict[str, Principal] = {}
+
+        for principal in principals:
+            account_id = principal.service_account_id
+
+            if account_id is None or account_id == "":
+                raise ValueError(
+                    f"Expected Principal to have service_account_id set, but it did not. Principal UUID: {principal.uuid}")
+
+            sap_dict[account_id] = principal
+
+        return sap_dict
 
     def _merge_principals_it_service_accounts(
         self, service_account_principals: dict[str, Principal], it_service_accounts: list[dict], options: dict
