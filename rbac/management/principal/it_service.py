@@ -271,30 +271,11 @@ class ITService:
             service_account_principals = service_account_principals.order_by("username")
         else:
             service_account_principals = service_account_principals.order_by("-username")
-
-        # Put the service accounts in a dict by for a quicker search.
-        sap_dict: dict[str, Principal] = self._service_accounts_by_id(service_account_principals)
-
-        if not settings.IT_BYPASS_IT_CALLS:
-            # Below, in _merge_principals_it_service_accounts, we take the intersection of the principals in the database
-            # and the principals returned by IT. So, we are only interested in any principals that already exist in the
-            # database, and the keys of sap_dict are thus all of the client_ids we're interested in.
-            it_service_accounts = self.request_service_accounts(
-                bearer_token=user.bearer_token,
-                client_ids=list(sap_dict.keys()),
-            )
-        else:
-            # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
-            # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
-            # service account to complement the information.
-            it_service_accounts = self._get_mock_service_accounts(
-                service_account_principals=service_account_principals,
-            )
-
-        # Filter the incoming service accounts. Also, transform them to the payload we will
-        # be returning.
-        service_accounts: list[dict] = self._merge_principals_it_service_accounts(
-            service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
+            
+        service_accounts = self._filtered_service_accounts(
+            user=user,
+            service_account_principals=service_account_principals,
+            options=options,
         )
 
         # We always set a default offset and a limit if the user doesn't specify them, so it is safe to simply put the
@@ -369,35 +350,15 @@ class ITService:
                     service_account_id__contains=principal_username
                 )
 
-        service_accounts: list[dict] = []
-
         # We do not need to make a request from IT if only usernames are requested.
         if username_only == "true":
             # Grab the service account usernames
             service_accounts = [{"username": sa.username} for sa in group_service_account_principals]
         else:
-            # Put the service accounts in a dict by for a quicker search.
-            sap_dict: dict[str, Principal] = self._service_accounts_by_id(group_service_account_principals)
-
-            it_service_accounts: list[dict[str, Union[str, int]]] = []
-
-            # We might want to bypass calls to the IT service on ephemeral or test environments.
-            if not settings.IT_BYPASS_IT_CALLS:
-                it_service_accounts = self.request_service_accounts(
-                    bearer_token=user.bearer_token,
-                    client_ids=list(sap_dict.keys()),
-                )
-            else:
-                # If we are in an ephemeral or test environment, we will take all the service accounts of the user that
-                # are stored in the database and generate a mocked response for them, simulating that IT has the
-                # corresponding service account to complement the information.
-                it_service_accounts = self._get_mock_service_accounts(
-                    service_account_principals=group_service_account_principals
-                )
-
-            # Filter the incoming service accounts. Also, transform them to the payload we will be returning.
-            service_accounts = self._merge_principals_it_service_accounts(
-                service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
+            service_accounts = self._filtered_service_accounts(
+                user=user,
+                service_account_principals=group_service_account_principals,
+                options=options,
             )
 
         # If either the description or name filters were specified, we need to only keep the service accounts that
@@ -560,7 +521,7 @@ class ITService:
 
         return service_accounts
 
-    def _get_mock_service_accounts(self, service_account_principals: list[Principal]) -> list[dict]:
+    def _get_mock_service_accounts(self, service_account_principals: Iterable[Principal]) -> list[dict]:
         """Mock an IT service call which returns service accounts. Useful for development or testing."""
         mocked_service_accounts: list[dict] = []
         for sap in service_account_principals:
@@ -580,3 +541,37 @@ class ITService:
             )
 
         return mocked_service_accounts
+    
+    def _filtered_service_accounts(self, user: User, service_account_principals: Iterable[Principal], options: dict) -> list[dict]:
+        """Retrieves the service accounts accessible to the provided user, then filters them so that only those that
+        exist locally (as provided in the service_account_principals argument) remain.
+
+        service_account_principals must consist solely of Principals that represent service accounts (i.e. have a
+        service_account_id). The options argument has the same meaning as in _merge_principals_it_service_accounts."""
+
+        # Put the service accounts in a dict by for a quicker search.
+        sap_dict: dict[str, Principal] = self._service_accounts_by_id(service_account_principals)
+
+        if not settings.IT_BYPASS_IT_CALLS:
+            # Below, in _merge_principals_it_service_accounts, we take the intersection of the principals in the database
+            # and the principals returned by IT. So, we are only interested in any principals that already exist in the
+            # database, and the keys of sap_dict are thus all of the client_ids we're interested in.
+            it_service_accounts = self.request_service_accounts(
+                bearer_token=user.bearer_token,
+                client_ids=list(sap_dict.keys()),
+            )
+        else:
+            # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
+            # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
+            # service account to complement the information.
+            it_service_accounts = self._get_mock_service_accounts(
+                service_account_principals=service_account_principals,
+            )
+
+        # Filter the incoming service accounts. Also, transform them to the payload we will be returning.
+        return self._merge_principals_it_service_accounts(
+            service_account_principals=sap_dict,
+            it_service_accounts=it_service_accounts,
+            options=options,
+        )
+
