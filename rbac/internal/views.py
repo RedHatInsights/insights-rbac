@@ -1557,7 +1557,12 @@ def check_relation(request):
         responses = stub.Check(request_data, metadata=metadata)
 
         if responses:
-            return HttpResponse(responses, status=200)
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"resources": response_data}
+            return JsonResponse(json_response, status=200)
         return JsonResponse("No relation found", status=204)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
