@@ -18,14 +18,17 @@
 import requests
 
 from django.conf import settings
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 from rest_framework import status
 
+from api.models import User
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
 from management.authorization.token_validator import UnableMeetPrerequisitesError
 from tests.identity_request import IdentityRequest
 from unittest import mock
+
+from tests.management.authorization.token_fixtures import InMemoryIssuer
 
 
 # IT path to fetch the service accounts.
@@ -47,6 +50,7 @@ class TokenValidatorTests(IdentityRequest):
         settings.IT_SERVICE_TIMEOUT_SECONDS = 10
 
         self.token_validator = ITSSOTokenValidator()
+        self.token_validator.reset_jwks_source()
 
         # Copy and paste the token validator's way of building the different elements that are required to then
         # properly check the token's claims. The goal is this to be like a double check in case the way of building
@@ -128,8 +132,8 @@ class TokenValidatorTests(IdentityRequest):
                 "no new instances of the token validator class should have been created since it is supposed to be a singleton",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_cache(
         self, import_key_set: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -148,9 +152,9 @@ class TokenValidatorTests(IdentityRequest):
         # JWKS response from cache.
         get.assert_not_called()
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -173,9 +177,9 @@ class TokenValidatorTests(IdentityRequest):
         # And the "import key set" method should also have been called with the same contents.
         import_key_set.assert_called_with(self.jwks_certificates_response_json)
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_network_errors(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -214,14 +218,15 @@ class TokenValidatorTests(IdentityRequest):
                 )
 
                 self.assertEqual(
-                    "unable to fetch the OIDC configuration to validate the token",
+                    "unable to fetch http://localhost:999/auth/realms/redhat-external/.well-known/openid-configuration "
+                    "to validate the token",
                     str(e),
                     "unexpected error message for the exception",
                 )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_not_ok(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -259,14 +264,15 @@ class TokenValidatorTests(IdentityRequest):
             )
 
             self.assertEqual(
-                "unexpected status code received from IT when attempting to fetch the OIDC configuration",
+                "unexpected status code '400' received from http://localhost:999/auth/realms/redhat-external/.well-known/openid-configuration "
+                "when attempting to fetch the OIDC configuration",
                 str(e),
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_not_jwks_url(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -309,9 +315,9 @@ class TokenValidatorTests(IdentityRequest):
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_oidc_empty_jwks_url(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -354,9 +360,9 @@ class TokenValidatorTests(IdentityRequest):
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_jwks_network_error(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -401,14 +407,15 @@ class TokenValidatorTests(IdentityRequest):
                 )
 
                 self.assertEqual(
-                    "unable to fetch the JWKS certificates to validate the token",
+                    "unable to fetch http://localhost/auth/realms/redhat-external/protocol/openid-connect/certs "
+                    "to validate the token",
                     str(e),
                     "unexpected error message for the exception",
                 )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_jwks_not_ok(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -445,14 +452,15 @@ class TokenValidatorTests(IdentityRequest):
             )
 
             self.assertEqual(
-                "unexpected status code received from IT when attempting to fetch the JWKS certificates",
+                "unexpected status code '400' received from http://localhost/auth/realms/redhat-external/protocol/openid-connect/certs "
+                "when attempting to fetch the OIDC configuration",
                 str(e),
                 "unexpected error message for the exception",
             )
 
-    @mock.patch("management.authorization.token_validator.JWKSCache.get_jwks_response")
-    @mock.patch("management.authorization.token_validator.requests.get")
-    @mock.patch("management.authorization.token_validator.JWKSCache.set_jwks_response")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.get_jwks_response")
+    @mock.patch("management.authorization.jwks_source.requests.get")
+    @mock.patch("management.authorization.jwks_source.JWKSCache.set_jwks_response")
     @mock.patch("management.authorization.token_validator.KeySet.import_key_set")
     def test_get_json_web_keyset_import_key_set_error(
         self, import_key_set: mock.Mock, set_jwks_response: mock.Mock, get: mock.Mock, get_jwks_response: mock.Mock
@@ -686,3 +694,97 @@ class TokenValidatorTests(IdentityRequest):
             )
 
             self.assertEqual("The token's claims are invalid", str(e), "unexpected exception message")
+
+    def test_get_user_from_bearer_token_parses_claims(self):
+        """Test that the user is correctly built from the bearer token claims."""
+        # Override jwks source to use the in-memory issuer for testing.
+        issuer = InMemoryIssuer.generate()
+        self.token_validator.set_jwks_source(issuer, issuer.iss)
+
+        for claims, expected_user in [
+            (
+                {
+                    "sub": "u1",
+                    "preferred_username": "user1",
+                    "organization": {
+                        "id": "org1",
+                    },
+                    "client_id": "client1",
+                    "roles": ["org:admin:all"],
+                },
+                User(
+                    user_id="u1",
+                    username="user1",
+                    org_id="org1",
+                    client_id="client1",
+                    admin=True,
+                ),
+            ),
+            (
+                {
+                    "sub": "u2",
+                    "preferred_username": "user2",
+                    "organization": {
+                        "id": "org2",
+                    },
+                    "client_id": "client2",
+                },
+                User(
+                    user_id="u2",
+                    username="user2",
+                    org_id="org2",
+                    client_id="client2",
+                ),
+            ),
+            (
+                {
+                    "sub": "u2",
+                    "preferred_username": "user2",
+                },
+                User(
+                    user_id="u2",
+                    username="user2",
+                ),
+            ),
+        ]:
+            with self.subTest(sub=claims["sub"]):
+                token = issuer.issue_jwt(
+                    {},
+                    claims,
+                )
+                expected_user.bearer_token = token
+
+                request_factory = RequestFactory()
+                request = request_factory.get(
+                    "/",
+                    HTTP_AUTHORIZATION=f"Bearer {token}",
+                )
+
+                user = self.token_validator.get_user_from_bearer_token(request)
+
+                self.assertEqual(expected_user, user)
+
+    def test_does_not_parse_user_from_invalid_token(self):
+        issuer = InMemoryIssuer.generate()
+        self.token_validator.set_jwks_source(issuer, issuer.iss)
+        # Generate from a different issuer to simulate an invalid token
+        token = InMemoryIssuer.generate().issue_jwt(
+            {},
+            {
+                "sub": "u1",
+                "preferred_username": "user1",
+                "organization": {
+                    "id": "org1",
+                },
+                "client_id": "client1",
+            },
+        )
+
+        request_factory = RequestFactory()
+        request = request_factory.get(
+            "/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        with self.assertRaises(InvalidTokenError):
+            self.token_validator.get_user_from_bearer_token(request)

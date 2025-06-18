@@ -43,8 +43,8 @@ class JWTProvider:
 
     def get_conn(self):
         """Get connection to sso stage."""
-        if settings.REDHAT_STAGE_SSO is not None:
-            self.connection = http.client.HTTPSConnection(settings.REDHAT_STAGE_SSO)
+        if settings.REDHAT_SSO is not None:
+            self.connection = http.client.HTTPSConnection(settings.REDHAT_SSO)
         return self.connection
 
     def get_jwt_token(self, client_id, client_secret):

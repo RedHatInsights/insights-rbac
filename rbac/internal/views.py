@@ -54,6 +54,7 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
@@ -714,10 +715,10 @@ def permission_removal(request):
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
-                permission_obj.delete()
+                delete_permission(permission_obj)
                 return HttpResponse(f"Permission '{permission}' deleted.", status=204)
-            except Exception:
-                return HttpResponse("Permission cannot be deleted.", status=400)
+            except Exception as e:
+                return HttpResponse(f"Permission cannot be deleted. {str(e)}", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
 
@@ -1454,6 +1455,10 @@ def retrieve_ungrouped_workspace(request):
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
     org_id = request.user.org_id
+
+    if not org_id:
+        return HttpResponse("No org_id found for the user.", status=400)
+
     try:
         with transaction.atomic():
             tenant = Tenant.objects.get(org_id=org_id)

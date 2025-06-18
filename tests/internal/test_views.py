@@ -40,6 +40,10 @@ from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ResourceDefinition
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    SeedingRelationApiDualWriteHandler,
+)
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -526,6 +530,83 @@ class InternalViewsetTests(BaseInternalViewsetTests):
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_delete_permission_clears_relations(self, replicate):
+        """Test that we can delete selective permission when allowed and no permissions."""
+        replicator = InMemoryRelationReplicator(self._tuples)
+        replicate.side_effect = replicator.replicate
+        permissions = ["app1:hosts:read", "inventory:hosts:write"]
+        fixture = RbacFixture(V2TenantBootstrapService(replicator))
+        fixture.bootstrap_tenant(self.tenant)
+        role_system = fixture.new_system_role(name="system_role", permissions=permissions)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role_system, replicator=replicator)
+        dual_write_handler.replicate_new_system_role()
+
+        role_custom = fixture.new_custom_role(
+            name="custom_role",
+            tenant=self.tenant,
+            resource_access=fixture.workspace_access(
+                permissions,
+                ws_2=["app1:hosts:read", "inventory:hosts:write"],
+            ),
+        )
+        dual_write = RelationApiDualWriteHandler(
+            role_custom, ReplicationEventType.CREATE_CUSTOM_ROLE, replicator=replicator
+        )
+        dual_write.replicate_new_or_updated_role(role_custom)
+
+        # Before removing the permission
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("app1_hosts_read"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+        for binding in role_custom.binding_mappings.all():
+            v2_role_id = binding.mappings["role"]["id"]
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role", v2_role_id),
+                        relation("app1_hosts_read"),
+                        subject("rbac", "principal", "*"),
+                    )
+                ),
+            )
+        response = self.client.delete(
+            "/_private/api/utils/permission/?permission=app1:hosts:read",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(
+            0,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("app1_hosts_read"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+        for binding in role_custom.binding_mappings.all():
+            v2_role_id = binding.mappings["role"]["id"]
+            self.assertEqual(
+                0,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role", v2_role_id),
+                        relation("app1_hosts_read"),
+                        subject("rbac", "principal", "*"),
+                    )
+                ),
+            )
 
     @override_settings(READ_ONLY_API_MODE=True)
     @patch("management.tasks.migrate_data_in_worker.delay")
@@ -3000,7 +3081,7 @@ class InternalS2SViewsetTests(IdentityRequest):
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, SERVICE_PSKS={"hbi": {"secret": "abc123"}})
     def test_create_ungrouped_workspace(self, replicate, replicate_workspace):
         tuples = InMemoryTuples()
         replicator = InMemoryRelationReplicator(tuples)
@@ -3011,8 +3092,6 @@ class InternalS2SViewsetTests(IdentityRequest):
         payload = {"org_ids": [org_id]}
         bootstraped_tenant = fixture.new_tenant(org_id)
         tuples.clear()
-        self.env = EnvironmentVarGuard()
-        self.env.set("SERVICE_PSKS", '{"hbi": {"secret": "abc123"}}')
         self.service_headers = {
             "HTTP_X_RH_RBAC_PSK": "abc123",
             "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
