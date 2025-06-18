@@ -1554,15 +1554,10 @@ def check_relation(request):
             )
         # Pass JWT token in metadata
         metadata = [("authorization", f"Bearer {token}")]
-        responses = stub.Check(request_data, metadata=metadata)
+        response = stub.Check(request_data, metadata=metadata)
 
-        if responses:
-            response_data = []
-            for r in responses:
-                response_to_dict = json_format.MessageToDict(r)
-                response_data.append(response_to_dict)
-            json_response = {"resources": response_data}
-            return JsonResponse(json_response, status=200)
+        if response:
+            return JsonResponse(response, status=200)
         return JsonResponse("No relation found", status=204)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
