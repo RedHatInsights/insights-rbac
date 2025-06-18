@@ -569,19 +569,14 @@ class ITServiceTests(IdentityRequest):
         _is_service_account_valid.assert_called_with(user=user, client_id=str(client_uuid))
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    @override_settings(IT_BYPASS_IT_CALLS=True)
     def test_is_service_account_valid_bypass_it_calls(self, _):
         """Test that the function under test assumes service accounts to always be valid when bypassing IT calls."""
-        original_bypass_it_calls_value = settings.IT_BYPASS_IT_CALLS
-        try:
-            settings.IT_BYPASS_IT_CALLS = True
-
-            self.assertEqual(
-                True,
-                self.it_service._is_service_account_valid(user=User(), client_id="mocked-cid"),
-                "when IT calls are bypassed, a service account should always be validated as if it existed",
-            )
-        finally:
-            settings.IT_BYPASS_IT_CALLS = original_bypass_it_calls_value
+        self.assertEqual(
+            True,
+            self.it_service._is_service_account_valid(user=User(), client_id="mocked-cid"),
+            "when IT calls are bypassed, a service account should always be validated as if it existed",
+        )
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_is_service_account_valid(self, request_service_accounts: mock.Mock):
