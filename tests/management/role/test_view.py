@@ -39,6 +39,14 @@ from management.models import (
     Workspace,
     BindingMapping,
 )
+from migration_tool.in_memory_tuples import (
+    all_of,
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    relation,
+    resource,
+    subject,
+)
 
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
@@ -1640,6 +1648,95 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(expected_sorted, actual_sorted)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_update_role_with_null_value(self, replicate):
+        """Test that updating a role with a null value success."""
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        # Set up
+        Permission.objects.create(permission="inventory:groups:*", tenant=self.public_tenant)
+        Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)
+        standard_ws = Workspace.objects.create(
+            name="Test Workspace", tenant=self.tenant, parent=self.default_workspace
+        )
+        role_name = "test_update_role"
+        access_data = [
+            {
+                "permission": "inventory:groups:*",
+                "resourceDefinitions": [
+                    {
+                        "attributeFilter": {
+                            "key": "group.id",
+                            "operation": "in",
+                            "value": [None],
+                        }
+                    }
+                ],
+            }
+        ]
+
+        new_access_data = [
+            {
+                "permission": "inventory:groups:read",
+                "resourceDefinitions": [
+                    {
+                        "attributeFilter": {
+                            "key": "group.id",
+                            "operation": "in",
+                            "value": [str(standard_ws.id), None],
+                        }
+                    }
+                ],
+            },
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Update the role with new access data
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data["access"] = new_access_data
+        url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        bindingmappings = BindingMapping.objects.filter(role=Role.objects.get(uuid=role_uuid))
+        self.assertEqual(bindingmappings.count(), 1)
+        bindingmapping = bindingmappings.first()
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(standard_ws.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", bindingmapping.mappings["id"]),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", bindingmapping.mappings["id"]),
+                    relation("role"),
+                    subject("rbac", "role", bindingmapping.mappings["role"]["id"]),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", bindingmapping.mappings["role"]["id"]),
+                    relation("inventory_groups_read"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
 
     def test_update_role_invalid_resource_defs_structure(self):
         """Test that updating a role with an invalid resource definitions returns an error."""
