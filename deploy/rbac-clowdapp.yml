@@ -87,6 +87,8 @@ objects:
           name: model-access-permissions
         - mountPath: /opt/rbac/rbac/management/principal/umb_certs
           name: umb-certs
+        - mountPath: /opt/rbac/rbac/management/principal/umb_certificates
+          name: umb-certificates
         volumes:
         - configMap:
             name: ${CONFIG_MAP_NAME}
@@ -94,6 +96,9 @@ objects:
         - configMap:
             name: ${MODEL_ACCESS_PERMISSIONS}
           name: model-access-permissions
+        - name: umb-certificates
+          secret:
+            secretName: it-umb-key-pair
         - name: umb-certs
           secret:
             secretName: service-accounts
@@ -115,6 +120,8 @@ objects:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          - name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
+            value: ${AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_DEBUG
@@ -516,6 +523,12 @@ objects:
                 key: psks.json
                 name: ${RBAC_PSKS}
                 optional: false
+          - name: SYSTEM_USERS
+            valueFrom:
+              secretKeyRef:
+                key: system-users.json
+                name: ${RBAC_SYSTEM_USERS}
+                optional: true
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
@@ -1079,6 +1092,14 @@ objects:
 - apiVersion: v1
   kind: Secret
   metadata:
+    name: rbac-system-users
+  data:
+    system-users.json: >-
+      ewogICAgImluc2VydF9zdWJfaGVyZSI6IHsKICAgICAgICAiYWRtaW4iOiB0cnVlLAogICAgICAgICJpc19zZXJ2aWNlX2FjY291bnQiOiB0cnVlLAogICAgICAgICJhbGxvd19hbnlfb3JnIjogdHJ1ZQogICAgfQp9Cg==
+  type: Opaque
+- apiVersion: v1
+  kind: Secret
+  metadata:
     name: insights-rbac
   data:
     client-id: aW5zaWdodHMtcmJhYw==
@@ -1152,6 +1173,16 @@ parameters:
 - displayName: RBAC PSKs
   name: RBAC_PSKS
   value: rbac-psks
+  description: Name of the secret containing PSK configuration.
+- displayName: RBAC system users
+  name: RBAC_SYSTEM_USERS
+  value: rbac-system-users
+  description: >
+    Name of the secret containing system user configuration.
+    System user configuration JSON defines which users, when identified via JWT authentication,
+    should be considered system users, and what authority they should have.
+    The keys of the JSON are the sub values of the tokens.
+    The values follow the SystemUserConfig typed dict.
 - displayName: Service Dependency Name
   name: SERVICE_DEPENDENCY_NAME
   value: rbac-pgsql
@@ -1482,3 +1513,6 @@ parameters:
 - name: FEATURE_FLAGS_CACHE_DIR
   description: The cache dir for unleash
   value: '/tmp/unleash_cache'
+- description: Enables grabbing the certificates from the secret that provides certificates that will be automatically renewed.
+  name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
+  value: 'false'

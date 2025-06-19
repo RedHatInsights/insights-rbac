@@ -535,3 +535,11 @@ WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_
 # Manipulation of response to include ungrouped hosts id
 ADD_UNGROUPED_HOSTS_ID = ENVIRONMENT.bool("ADD_UNGROUPED_HOSTS_ID", default=False)
 REMOVE_NULL_VALUE = ENVIRONMENT.bool("REMOVE_NULL_VALUE", default=False)
+
+# Service-to-service (S2S) authentication settings
+SERVICE_PSKS = ENVIRONMENT.json("SERVICE_PSKS", default={})
+SYSTEM_USERS = ENVIRONMENT.json("SYSTEM_USERS", default={})
+
+# Enable reading the certificates that are automatically generated. It is a temporary flag that will allow us to switch
+# back and forth in the case of an error.
+AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED = ENVIRONMENT.bool("AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED", default=False)

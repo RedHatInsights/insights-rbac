@@ -849,6 +849,28 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("type"), Workspace.Types.STANDARD)
 
+    def test_success_move_workspace(self):
+        source_workspace = Workspace.objects.create(
+            name="Workspace Source", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        target_workspace = Workspace.objects.create(
+            name="Workspace Target", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        url = reverse("v2_management:workspace-move", kwargs={"pk": source_workspace.id})
+
+        client = APIClient()
+
+        workspace_data_for_move = {
+            "parent_id": target_workspace.id,
+        }
+
+        response = client.post(url, workspace_data_for_move, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(response.data.get("id"), str(source_workspace.id))
+        self.assertEqual(response.data.get("parent_id"), str(target_workspace.id))
+
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
