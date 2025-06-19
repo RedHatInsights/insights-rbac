@@ -3385,3 +3385,43 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(Workspace.objects.filter(type=Workspace.Types.STANDARD).count(), 2)
         self.assertEqual(replicate.call_count, 5)
         replicate_workspace.assert_not_called()
+
+
+class InternalRelationsViewsetTests(BaseInternalViewsetTests):
+    """Test the /_private/api/relations/ endpoints from internal viewset."""
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("kessel.relations.v1beta1.lookup_pb2_grpc.KesselLookupServiceStub")
+    
+    def test_lookup_resources(self, mock_token, mock_stub):
+        """Test a request to lookup_resource endpoint returns the correct response."""
+        
+        # Create a mock stub instance
+        mock_stub_instance = MagicMock()
+        mock_stub_instance.LookupResources.return_value = {
+            "resources": [
+                {
+                    "resource": {
+                        "type": {"namespace": "rbac", "name": "group"},
+                        "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                    },
+                    "pagination": {"continuationToken": "Cjkahsuihfy12830ckamcheikuashdf978yjhsgdkjasdughvgfjshdbf=="},
+                    "consistencyToken": {"token": "Djdohau239LDIO"},
+                }
+            ]
+        }
+        mock_stub.return_value = mock_stub_instance
+        
+        request_body = {
+            "resource_type": {"name": "group", "namespace": "rbac"},
+            "relation": "member",
+            "subject": {"subject": {"type": {"namespace": "rbac", "name": "principal"}, "id": "123adf3-wads1224-ascwqe31-asasu333-333"}},
+        }
+        
+        response = self.client.post(
+            f"/_private/api/relations/lookup_resource/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        print(json.loads(response.content))
