@@ -32,6 +32,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
+from feature_flags import FEATURE_FLAGS
 from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
@@ -804,6 +805,14 @@ def fetch_replication_data(request):
     """
     if request.method != "GET":
         return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    show_beta_feature = FEATURE_FLAGS.is_enabled("rbac.beta_feature")
+    if show_beta_feature:
+        return HttpResponse("rbac.show_beta_feature works.", status=200)
+
+    show_alpha_feature = FEATURE_FLAGS.is_enabled("rbac.alpha_feature", {"orgId": 1000})
+    if show_alpha_feature:
+        return HttpResponse("rbac.alpha_feature works.", status=200)
 
     wal_lsn_query = """
                     SELECT pg_current_wal_lsn(), confirmed_flush_lsn
