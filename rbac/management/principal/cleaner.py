@@ -43,8 +43,16 @@ from api.models import Tenant, User
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 PROXY = PrincipalProxy()  # pylint: disable=invalid-name
-CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
-KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
+
+CA_LOC = ""
+if settings.AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED:
+    CA_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/ca.crt"
+    CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.crt"
+    KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.key"
+else:
+    CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
+    KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
+
 LOCK_ID = 42  # For Keith, with Love
 
 METRIC_STOMP_MESSAGES_ACK_TOTAL = "stomp_messages_ack_total"
@@ -130,7 +138,11 @@ ssl_context.check_hostname = False
 # Since hot umb host it is within Red Hat network, we can trust the host
 ssl_context.verify_mode = ssl.CERT_NONE
 if os.path.isfile(CERT_LOC):
-    ssl_context.load_cert_chain(CERT_LOC, keyfile=KEY_LOC)
+    ssl_context.load_cert_chain(certfile=CERT_LOC, keyfile=KEY_LOC)
+
+# Load the CA's certificate in the context.
+if os.path.isfile(CA_LOC):
+    ssl_context.load_verify_locations(cafile=CA_LOC)
 
 CONFIG = StompConfig(
     f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context, version=StompSpec.VERSION_1_2
