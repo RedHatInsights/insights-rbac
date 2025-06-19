@@ -60,6 +60,9 @@ from migration_tool.utils import create_relationship
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
+from kessel.relations.v1beta1 import common_pb2
+from kessel.relations.v1beta1 import lookup_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc
 
 
 class BaseInternalViewsetTests(IdentityRequest):
@@ -3391,14 +3394,13 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
     """Test the /_private/api/relations/ endpoints from internal viewset."""
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
-    @patch("kessel.relations.v1beta1.lookup_pb2_grpc.KesselLookupServiceStub")
-    
-    def test_lookup_resources(self, mock_token, mock_stub):
+    @patch("internal.views.lookup_resource")
+    def test_lookup_resources(self, mock_endpoint, mock_token):
         """Test a request to lookup_resource endpoint returns the correct response."""
-        
+
         # Create a mock stub instance
-        mock_stub_instance = MagicMock()
-        mock_stub_instance.LookupResources.return_value = {
+        mock_response = MagicMock()
+        mock_response.LookupResources.return_value = {
             "resources": [
                 {
                     "resource": {
@@ -3410,14 +3412,19 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
                 }
             ]
         }
-        mock_stub.return_value = mock_stub_instance
-        
+        mock_endpoint.return_value = mock_response
+
         request_body = {
             "resource_type": {"name": "group", "namespace": "rbac"},
             "relation": "member",
-            "subject": {"subject": {"type": {"namespace": "rbac", "name": "principal"}, "id": "123adf3-wads1224-ascwqe31-asasu333-333"}},
+            "subject": {
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "principal"},
+                    "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                }
+            },
         }
-        
+
         response = self.client.post(
             f"/_private/api/relations/lookup_resource/",
             request_body,
@@ -3425,3 +3432,6 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             **self.request.META,
         )
         print(json.loads(response.content))
+
+        # Check that response is 200 OK
+        self.assertEqual(response.status_code, 200)
