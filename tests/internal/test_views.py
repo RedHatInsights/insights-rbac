@@ -60,9 +60,6 @@ from migration_tool.utils import create_relationship
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
-from kessel.relations.v1beta1 import common_pb2
-from kessel.relations.v1beta1 import lookup_pb2
-from kessel.relations.v1beta1 import lookup_pb2_grpc
 
 
 class BaseInternalViewsetTests(IdentityRequest):
