@@ -3431,3 +3431,55 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         response_body = json.loads(response.content)
         self.assertEqual(response.status_code, 200)
         self.assertIn("resources", response_body)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    def test_lookup_resources_grpc_error(self, mock_token):
+        """Test a request to lookup_resource endpoint returns the correct response in case of grpc error."""
+
+        request_body = {
+            "resource_type": {"name": "group", "namespace": "rbac"},
+            "relation": "member",
+            "subject": {
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "principal"},
+                    "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                }
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/lookup_resource/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+
+    @patch("internal.views.create_client_channel", side_effect=Exception("Simulated internal error"))
+    def test_lookup_resources_error(self, mock_channel):
+        """Test a request to lookup_resource endpoint returns the correct response in case of an error."""
+
+        request_body = {
+            "resource_type": {"name": "group", "namespace": "rbac"},
+            "relation": "member",
+            "subject": {
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "principal"},
+                    "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                }
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/lookup_resource/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
