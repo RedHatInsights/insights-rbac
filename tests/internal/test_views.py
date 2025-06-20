@@ -3394,13 +3394,13 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
     """Test the /_private/api/relations/ endpoints from internal viewset."""
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
-    @patch("internal.views.lookup_resource")
-    def test_lookup_resources(self, mock_endpoint, mock_token):
+    @patch("internal.views.create_client_channel")
+    def test_lookup_resources(self, mock_channel, mock_token):
         """Test a request to lookup_resource endpoint returns the correct response."""
 
-        # Create a mock stub instance
+        # TO DO figure out how to mock response from lookup_resources to this response
         mock_response = MagicMock()
-        mock_response.LookupResources.return_value = {
+        mock_response.return_value = {
             "resources": [
                 {
                     "resource": {
@@ -3412,7 +3412,6 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
                 }
             ]
         }
-        mock_endpoint.return_value = mock_response
 
         request_body = {
             "resource_type": {"name": "group", "namespace": "rbac"},
@@ -3432,6 +3431,6 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             **self.request.META,
         )
         print(json.loads(response.content))
-
-        # Check that response is 200 OK
+        response_body = json.loads(response.content)
         self.assertEqual(response.status_code, 200)
+        self.assertIn("resources", response_body)
