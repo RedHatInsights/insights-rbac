@@ -348,7 +348,7 @@ class ITService:
                     service_account_id__contains=principal_username
                 )
 
-        # We do not need to make a request from IT if only usernames are requested.
+        # We do not need to make a request to IT if only usernames are requested.
         if username_only == "true":
             # Grab the service account usernames
             service_accounts = [{"username": sa.username} for sa in group_service_account_principals]
