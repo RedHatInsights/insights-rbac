@@ -111,7 +111,7 @@ def v1_role_to_v2_bindings(
                 if not isinstance(attri_filter["value"], list):
                     # Override operation as "equal" if value is not a list
                     attri_filter["operation"] = "equal"
-                elif attri_filter["value"] == [] or attri_filter["value"] == [None]:
+                elif attri_filter["value"] == []:
                     # Skip empty values
                     continue
 
@@ -122,9 +122,14 @@ def v1_role_to_v2_bindings(
             if not is_for_enabled_resource(resource_type):
                 continue
             for resource_id in values_from_attribute_filter(attri_filter):
-                # TODO: Need to bind against "ungrouped hosts" for inventory
                 if resource_id is None:
-                    raise ValueError(f"Resource ID is None for {resource_def}")
+                    if resource_type != ("rbac", "workspace"):
+                        raise ValueError(f"Resource ID is None for {resource_def}")
+                    ungrouped_ws = Workspace.objects.filter(
+                        type=Workspace.Types.UNGROUPED_HOSTS, tenant=v1_role.tenant
+                    ).first()
+                    if not ungrouped_ws:
+                        continue
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
             add_element(
