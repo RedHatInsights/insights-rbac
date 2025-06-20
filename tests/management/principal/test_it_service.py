@@ -1578,8 +1578,8 @@ class ITServiceTests(IdentityRequest):
 
         # Select one principal to remove in order to ensure that the local and IT account lists are merged properly.
         selected_principals = principals_tenant_one[1:]
-        mocked = self.it_service._get_mock_service_accounts(selected_principals)
-        request_service_accounts.return_value = mocked
+
+        request_service_accounts.return_value = self.it_service._get_mock_service_accounts(selected_principals)
 
         filtered = self.it_service._filtered_service_accounts(
             user=user,
@@ -1639,10 +1639,9 @@ class ITServiceTests(IdentityRequest):
 
         # Select one principal to remove in order to ensure that the local and IT account lists are merged properly.
         selected_principals = principals_tenant_one[1:]
-        mocked = self.it_service._get_mock_service_accounts(selected_principals)
-        request_service_accounts.return_value = mocked
-
         expected_usernames = set(principal.username for principal in selected_principals)
+
+        request_service_accounts.return_value = self.it_service._get_mock_service_accounts(selected_principals)
 
         # request_service_accounts being called with the correct arguments is tested above.
 
