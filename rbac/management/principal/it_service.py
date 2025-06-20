@@ -220,7 +220,7 @@ class ITService:
                 client_ids=[client_id],
             )
 
-            return any("clientId" in account and account["clientId"] == client_id for account in service_accounts)
+            return any(client_id == account.get("clientId") for account in service_accounts)
 
     def get_service_accounts(self, user: User, options: dict[str, Any] = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
