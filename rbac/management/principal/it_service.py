@@ -549,7 +549,7 @@ class ITService:
         options: dict,
     ) -> list[dict]:
         """
-        Retrieve the service accounts accessible to use that exist both locally nad in IT.
+        Retrieve the service accounts accessible to use that exist both locally and in IT.
 
         service_account_principals must consist solely of Principals that represent service accounts (i.e. have a
         service_account_id). The options argument has the same meaning as in _merge_principals_it_service_accounts.
