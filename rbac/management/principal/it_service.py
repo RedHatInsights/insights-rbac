@@ -17,9 +17,8 @@
 """Class to manage interactions with the IT service accounts service."""
 import logging
 import time
-from typing import Iterable
 import uuid
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Iterable, Optional, Tuple, Union
 
 import requests
 from django.conf import settings
@@ -225,7 +224,6 @@ class ITService:
 
     def get_service_accounts(self, user: User, options: dict[str, Any] = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
-
         # Get the service accounts from the database. The weird filter is to fetch the service accounts depending on
         # the account number or the organization ID the user gave.
         service_account_principals = Principal.objects.filter(type=Principal.Types.SERVICE_ACCOUNT).filter(
@@ -271,7 +269,7 @@ class ITService:
             service_account_principals = service_account_principals.order_by("username")
         else:
             service_account_principals = service_account_principals.order_by("-username")
-            
+
         service_accounts = self._filtered_service_accounts(
             user=user,
             service_account_principals=service_account_principals,
@@ -473,11 +471,11 @@ class ITService:
         return service_account
 
     def _service_accounts_by_id(self, principals: Iterable[Principal]) -> dict[str, Principal]:
-        """Transforms an iterable of Principals, each of which must represent a service account, into a dict keyed
-        by service_account_id.
+        """
+        Transform an iterable of service account Principals into a dict keyed by service_account_id.
 
-        Raises a ValueError if any Principal does not have a service_account_id."""
-
+        Raises a ValueError if any Principal does not have a service_account_id.
+        """
         sap_dict: dict[str, Principal] = {}
 
         for principal in principals:
@@ -485,7 +483,9 @@ class ITService:
 
             if account_id is None or account_id == "":
                 raise ValueError(
-                    f"Expected Principal to have service_account_id set, but it did not. Principal UUID: {principal.uuid}")
+                    "Expected Principal to have service_account_id set, but it did not."
+                    + f"Principal UUID: {principal.uuid}",
+                )
 
             sap_dict[account_id] = principal
 
@@ -541,21 +541,25 @@ class ITService:
             )
 
         return mocked_service_accounts
-    
-    def _filtered_service_accounts(self, user: User, service_account_principals: Iterable[Principal], options: dict) -> list[dict]:
-        """Retrieves the service accounts accessible to the provided user, then filters them so that only those that
-        exist locally (as provided in the service_account_principals argument) remain.
+
+    def _filtered_service_accounts(
+        self,
+        user: User,
+        service_account_principals: Iterable[Principal],
+        options: dict,
+    ) -> list[dict]:
+        """
+        Retrieve the service accounts accessible to use that exist both locally nad in IT.
 
         service_account_principals must consist solely of Principals that represent service accounts (i.e. have a
-        service_account_id). The options argument has the same meaning as in _merge_principals_it_service_accounts."""
-
-        # Put the service accounts in a dict by for a quicker search.
+        service_account_id). The options argument has the same meaning as in _merge_principals_it_service_accounts.
+        """
         sap_dict: dict[str, Principal] = self._service_accounts_by_id(service_account_principals)
 
         if not settings.IT_BYPASS_IT_CALLS:
-            # Below, in _merge_principals_it_service_accounts, we take the intersection of the principals in the database
-            # and the principals returned by IT. So, we are only interested in any principals that already exist in the
-            # database, and the keys of sap_dict are thus all of the client_ids we're interested in.
+            # Below, in _merge_principals_it_service_accounts, we take the intersection of the principals in the
+            # database and the principals returned by IT. So, we are only interested in any principals that already
+            # exist in the database, and the keys of sap_dict are thus all of the client_ids we're interested in.
             it_service_accounts = self.request_service_accounts(
                 bearer_token=user.bearer_token,
                 client_ids=list(sap_dict.keys()),
