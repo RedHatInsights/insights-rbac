@@ -557,7 +557,7 @@ class GroupViewSet(
             # those clients.
             it_service_accounts = it_service.request_service_accounts(
                 bearer_token=user.bearer_token,
-                client_ids=[specified_sa["clientId"] for specified_sa in service_accounts]
+                client_ids=[specified_sa["clientId"] for specified_sa in service_accounts],
             )
 
             # Organize them by their client ID.
