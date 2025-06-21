@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "bd37c93329f726c159db416fd3b4430058794fa883c69e7f87f2d7505df48736"
+            "sha256": "76d5be2e88ac8820144ea31f4dfbc7c709438adb951475513c8f8a89974f9143"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -58,20 +58,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:3faa2c328a61745f3215a63039606a6fcf55d9afe1cc76e3a5e27b9db58cdbf6",
-                "sha256:b998edac72f6740bd5d9d585cf3880f2dfeb4842e626b34430fd0e9623378011"
+                "sha256:6119e9f272b9f004f052ca78ce94d3fe10198bc159ae808f75c0e1b9c07518bd",
+                "sha256:c6710fc533c8e1f5d1f025c74ffe1222c3659094cd51c076ec50c201a54c8f22"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.38.32"
+            "version": "==1.38.41"
         },
         "botocore": {
             "hashes": [
-                "sha256:4a1ced1a4218bdff0ed5b46abb54570d473154ddefafa5d121a8d96e4b76ebc1",
-                "sha256:b6a50b853f6d23af9edfed89a59800c6bc1687a947cdd3492879f7d64e002d30"
+                "sha256:06069a06f1352accb1f6c9505d6e323753627112be80a9d2e057c6d9c9779ffd",
+                "sha256:98e3fed636ebb519320c4b2d078db6fa6099b052b4bb9b5c66632a5a7fe72507"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.38.36"
+            "version": "==1.38.41"
         },
         "celery": {
             "hashes": [
@@ -1200,11 +1200,11 @@
         },
         "cachetools": {
             "hashes": [
-                "sha256:82e73ba88f7b30228b5507dce1a1f878498fc669d972aef2dde4f3a3c24f103e",
-                "sha256:f225782b84438f828328fc2ad74346522f27e5b1440f4e9fd18b20ebfd1aa2cf"
+                "sha256:1c7bb3cf9193deaf3508b7c5f2a79986c13ea38965c5adcff1f84519cf39163e",
+                "sha256:b4c4f404392848db3ce7aac34950d17be4d864da4b8b66911008e430bc544587"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==6.0.0"
+            "version": "==6.1.0"
         },
         "certifi": {
             "hashes": [
