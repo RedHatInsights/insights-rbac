@@ -36,7 +36,7 @@ from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
-from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
+from internal.utils import delete_bindings, get_or_create_ungrouped_workspace, validate_relations_input
 from kessel.relations.v1beta1 import common_pb2
 from kessel.relations.v1beta1 import lookup_pb2
 from kessel.relations.v1beta1 import lookup_pb2_grpc
@@ -1473,6 +1473,8 @@ def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
+    if not validate_relations_input(request, req_data):
+        raise Exception("Invalid request body provided in request to lookup_resources.")
 
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
