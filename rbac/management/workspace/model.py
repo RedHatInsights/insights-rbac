@@ -110,3 +110,34 @@ class Workspace(TenantAwareModel):
         """,
         )
         return Workspace.objects.filter(id__in=RawSQL(sql, [self.id, self.id]))
+
+    def get_workspace_depth(self):
+        """Get hierarchy depth for a Workspace instance."""
+        depth = 0
+        current = self
+        while current.parent_id is not None:
+            current = current.parent
+            depth += 1
+        return depth
+
+    def get_max_descendant_depth(self, current_depth=0):
+        """Get the maximum depth of any descendant workspace."""
+        if not self.children.exists():
+            return current_depth
+        return max(child.get_max_descendant_depth(current_depth + 1) for child in self.children.all())
+
+    def descendants(self):
+        """Return a Queryset of all descendant workspaces."""
+        sql = """
+            WITH RECURSIVE descendants AS (
+                SELECT id, parent_id
+                FROM management_workspace
+                WHERE parent_id = %s
+                UNION
+                SELECT w.id, w.parent_id
+                FROM management_workspace w
+                JOIN descendants d ON w.parent_id = d.id
+            )
+            SELECT id FROM descendants
+        """
+        return Workspace.objects.filter(id__in=RawSQL(sql, [self.id]))

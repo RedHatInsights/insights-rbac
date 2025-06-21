@@ -22,8 +22,11 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.utils import validate_uuid
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
-from rest_framework import serializers
+from rest_framework import serializers, status
+from rest_framework.request import Request
+from rest_framework.response import Response
 
 from api.models import Tenant
 
@@ -102,6 +105,50 @@ class WorkspaceService:
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
 
+    def move(self, instance: Workspace, request: Request) -> Response:
+        """Move a workspace under new parent."""
+        # Parent id validations
+        new_parent_id = request.data.get("parent_id")
+        if not new_parent_id:
+            raise serializers.ValidationError({"parent_id": "The 'parent_id' field is required."})
+        validate_uuid(new_parent_id)
+
+        # Parent workspace validations
+        tenant = request.tenant
+        new_parent_workspace = Workspace.objects.filter(id=new_parent_id, tenant=tenant).first()
+        if not new_parent_workspace:
+            raise serializers.ValidationError(
+                {"parent_id": f"Parent workspace '{new_parent_id}' doesn't exist in tenant"}
+            )
+
+        # Prevent moving workspace under itself
+        if str(instance.id) == new_parent_id:
+            raise serializers.ValidationError({"parent_id": "Cannot move workspace under itself."})
+
+        # Prevent moving non-standard workspace
+        if instance.type != Workspace.Types.STANDARD:
+            raise serializers.ValidationError({"workspace": "Cannot move non-standard workspace."})
+
+        # Prevent moving workspace under own descendant
+        if instance.descendants().filter(id=new_parent_id):
+            raise serializers.ValidationError({"parent_id": "Cannot move workspace under one of its own descendants."})
+
+        # Prevent duplicate workspace names under the same parent
+        if new_parent_workspace.children.filter(name=instance.name).exists():
+            raise serializers.ValidationError(
+                {"workspace": "A workspace with the same name already exists under the target parent."}
+            )
+
+        # Enforce hierarchy depth limit on workspace
+        # and check the new parent workspace is not the root workspace
+        self._enforce_hierarchy_depth(new_parent_id, tenant)
+
+        # Enforce hierarchy depth limit on workspace descendants
+        self._enforce_hierarchy_depth_for_descendants(new_parent_workspace, instance)
+
+        # TODO: Implement actual move operation
+        return Response({"id": str(instance.id), "parent_id": new_parent_id}, status=status.HTTP_200_OK)
+
     def _enforce_hierarchy_depth(self, target_parent_id: uuid.UUID, tenant: Tenant) -> None:
         """Enforce hierarchy depth limits on workspaces."""
         if self._exceeds_depth_limit(target_parent_id, tenant):
@@ -129,3 +176,16 @@ class WorkspaceService:
         target_parent_workspace = Workspace.objects.get(id=target_parent_id, tenant=tenant)
         max_depth_for_workspace = len(target_parent_workspace.ancestors()) + 1
         return max_depth_for_workspace > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT
+
+    @staticmethod
+    def _enforce_hierarchy_depth_for_descendants(new_parent_workspace: Workspace, instance: Workspace) -> None:
+        new_parent_depth = new_parent_workspace.get_workspace_depth()
+        workspace_tree_depth = instance.get_max_descendant_depth()
+        total_depth = new_parent_depth + 1 + workspace_tree_depth
+
+        if total_depth > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT:
+            message = (
+                f"Cannot move workspace: resulting hierarchy depth ({total_depth}) exceeds limit "
+                f"({settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT})."
+            )
+            raise serializers.ValidationError({"workspace": [message]})
