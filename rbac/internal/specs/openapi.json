@@ -2605,6 +2605,70 @@
           }
         }
       }
+    },
+    "/_private/api/relations/check_relation/": {
+      "post": {
+        "tags": [
+          "Relations"
+        ],
+        "summary": "Get a resource from relations api.",
+        "description": "Returns resource from relations api.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "resource_type": {
+                  "name": "group",
+                  "namespace": "rbac",
+                  "id": "bob_club"
+                },
+                "relation": "member",
+                "subject": {
+                  "subject": {
+                    "type": {
+                      "namespace": "rbac",
+                      "name": "principal"
+                    },
+                    "id": "bob"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resource returned."
+          },
+          "204": {
+            "description": "No resource found."
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error500"
+                },
+                "examples": {
+                  "gRPCError": {
+                    "value": {
+                      "detail": "Error occurred in gRPC call",
+                      "error": "gRPC Error"
+                    }
+                  },
+                  "Error": {
+                    "value": {
+                      "detail": "Error occurred in call to check endpoint",
+                      "error": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

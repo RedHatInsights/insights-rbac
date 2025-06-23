@@ -32,14 +32,15 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
+from feature_flags import FEATURE_FLAGS
 from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
+from kessel.relations.v1beta1 import check_pb2, lookup_pb2
+from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
-from kessel.relations.v1beta1 import lookup_pb2
-from kessel.relations.v1beta1 import lookup_pb2_grpc
 from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
@@ -805,6 +806,14 @@ def fetch_replication_data(request):
     if request.method != "GET":
         return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
+    show_beta_feature = FEATURE_FLAGS.is_enabled("rbac.beta_feature")
+    if show_beta_feature:
+        return HttpResponse("rbac.show_beta_feature works.", status=200)
+
+    show_alpha_feature = FEATURE_FLAGS.is_enabled("rbac.alpha_feature", {"orgId": 1000})
+    if show_alpha_feature:
+        return HttpResponse("rbac.alpha_feature works.", status=200)
+
     wal_lsn_query = """
                     SELECT pg_current_wal_lsn(), confirmed_flush_lsn
                     FROM pg_replication_slots
@@ -1481,6 +1490,7 @@ def lookup_resource(request):
     resource_subject_id = req_data["subject"]["subject"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()
+
     try:
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
@@ -1517,6 +1527,57 @@ def lookup_resource(request):
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
             {"detail": "Error occurred in call to lookup resources endpoint", "error": str(e)}, status=500
+        )
+
+
+def check_relation(request):
+    """POST to check relationship from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    # Request parameters for resource lookup on relations api from post request
+    resource_type_name = req_data["resource_type"]["name"]
+    resource_type_namespace = req_data["resource_type"]["namespace"]
+    resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
+    subject_id = req_data["subject"]["subject"]["id"]
+    resource_id = req_data["resource_type"]["id"]
+    resource_relation = req_data["relation"]
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = check_pb2_grpc.KesselCheckServiceStub(channel)
+
+            request_data = check_pb2.CheckRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_type_name),
+                    id=resource_id,
+                ),
+                relation=resource_relation,
+                subject=common_pb2.SubjectReference(
+                    subject=common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
+                        id=subject_id,
+                    ),
+                ),
+            )
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        response = stub.Check(request_data, metadata=metadata)
+
+        if response:
+            response_to_dict = json_format.MessageToDict(response)
+            response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
+
+            return JsonResponse(response_to_dict, status=200)
+        return JsonResponse("No relation found", status=204)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to check relation endpoint", "error": str(e)}, status=500
         )
 
 
