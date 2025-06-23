@@ -26,6 +26,9 @@ from django.urls import reverse
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
+from kessel.relations.v1beta1 import common_pb2
+from kessel.relations.v1beta1 import lookup_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc
 import pytz
 import json
 import uuid
@@ -3392,45 +3395,44 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
     @patch("internal.views.create_client_channel")
-    def test_lookup_resources(self, mock_channel, mock_token):
+    def test_lookup_resources(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_resource endpoint returns the correct response."""
 
-        # TO DO figure out how to mock response from lookup_resources to this response
-        mock_response = MagicMock()
-        mock_response.return_value = {
-            "resources": [
-                {
-                    "resource": {
-                        "type": {"namespace": "rbac", "name": "group"},
-                        "id": "123adf3-wads1224-ascwqe31-asasu333-333",
-                    },
-                    "pagination": {"continuationToken": "Cjkahsuihfy12830ckamcheikuashdf978yjhsgdkjasdughvgfjshdbf=="},
-                    "consistencyToken": {"token": "Djdohau239LDIO"},
-                }
-            ]
-        }
-
-        request_body = {
-            "resource_type": {"name": "group", "namespace": "rbac"},
-            "relation": "member",
-            "subject": {
-                "subject": {
-                    "type": {"namespace": "rbac", "name": "principal"},
-                    "id": "123adf3-wads1224-ascwqe31-asasu333-333",
-                }
-            },
-        }
-
-        response = self.client.post(
-            f"/_private/api/relations/lookup_resource/",
-            request_body,
-            format="json",
-            **self.request.META,
+        mock_stub = MagicMock()
+        mock_response = lookup_pb2.LookupResourcesResponse(
+            resource=common_pb2.ObjectReference(
+                type=common_pb2.ObjectType(namespace="rbac_test", name="group"), id="12345"
+            )
         )
-        print(json.loads(response.content))
-        response_body = json.loads(response.content)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("resources", response_body)
+
+        mock_stub.LookupResources.return_value = mock_response
+
+        with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
+            mock_create_channel.return_value = MagicMock()
+
+            request_body = {
+                "resource_type": {"name": "group", "namespace": "rbac"},
+                "relation": "member",
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                    }
+                },
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/lookup_resource/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+
+            response_body = json.loads(response.content)
+            print(response_body)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("resources", response_body)
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
     def test_lookup_resources_grpc_error(self, mock_token):
