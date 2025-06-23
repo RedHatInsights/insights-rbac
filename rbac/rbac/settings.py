@@ -37,8 +37,6 @@ from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
-from feature_flags import FEATURE_FLAGS
-
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -275,6 +273,7 @@ LOGGING = {
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "feature_flags": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
     },
 }
 
@@ -332,7 +331,6 @@ else:
     APP_NAME = "rbac"
 
 FEATURE_FLAGS_CACHE_DIR = ENVIRONMENT.get_value("FEATURE_FLAGS_CACHE_DIR", default="/tmp/")
-FEATURE_FLAGS.initialize()
 
 REDIS_SSL = REDIS_PASSWORD is not None
 
