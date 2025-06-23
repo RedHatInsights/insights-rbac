@@ -1558,6 +1558,8 @@ def check_relation(request):
 
         if response:
             response_to_dict = json_format.MessageToDict(response)
+            response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
+
             return JsonResponse(response_to_dict, status=200)
         return JsonResponse("No relation found", status=204)
     except RpcError as e:
