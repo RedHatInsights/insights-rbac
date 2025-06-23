@@ -18,8 +18,10 @@
 """Utilities for Internal RBAC use."""
 import logging
 
+import jsonschema
 from django.db import transaction
 from django.urls import resolve
+from jsonschema import validate
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -128,25 +130,51 @@ def validate_relations_input(request, request_data) -> bool:
     if request_endpoint in valid_endpoints and request_method == "POST":
         match request_endpoint:
             case "/_private/api/relations/lookup_resource/":
-                resource_type = request_data["resource_type"]
-                subject = request_data["subject"]["subject"]
-                subject_type = request_data["subject"]["subject"]["type"]
+                schema = {
+                    "type": "object",
+                    "properties": {
+                        "resource_type": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "namespace": {"type": "string"},
+                            },
+                            "required": ["name", "namespace"],
+                        },
+                        "relation": {"type": "string"},
+                        "subject": {
+                            "type": "object",
+                            "properties": {
+                                "subject": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "object",
+                                            "properties": {
+                                                "namespace": {"type": "string"},
+                                                "name": {"type": "string"},
+                                            },
+                                            "required": ["namespace", "name"],
+                                        },
+                                        "id": {"type": "string"},
+                                    },
+                                    "required": ["type", "id"],
+                                }
+                            },
+                            "required": ["subject"],
+                        },
+                    },
+                    "required": ["resource_type", "relation", "subject"],
+                }
 
-                if not isinstance(resource_type, dict) or not isinstance(subject, dict):
-                    return False
-
-                # Check keys are valid and are provided in request body
                 try:
-                    resource_type["name"]
-                    resource_type["namespace"]
-                    request_data["relation"]
-                    subject["type"]
-                    subject["id"]
-                    subject_type["name"]
-                    subject_type["namespace"]
-                    logger.info("Valid request body for lookup_resources")
+                    validate(instance=request_data, schema=schema)
+                    logger.info("JSON data is valid.")
                     return True
-                except KeyError as error:
-                    logger.error(f"Invalid request body for lookup_resources: {error}")
+                except jsonschema.exceptions.ValidationError as e:
+                    logger.info(f"JSON data is invalid: {e.message}")
+                    return False
+                except Exception as e:
+                    logger.info(f"JSON data is invalid: {e.message}")
                     return False
     return False
