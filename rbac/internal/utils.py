@@ -175,6 +175,6 @@ def validate_relations_input(request, request_data) -> bool:
                     logger.info(f"JSON data is invalid: {e.message}")
                     return False
                 except Exception as e:
-                    logger.info(f"JSON data is invalid: {e.message}")
+                    logger.info(f"Exception occurred when validating JSON body: {e}")
                     return False
     return False
