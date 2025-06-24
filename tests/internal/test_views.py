@@ -32,7 +32,7 @@ from kessel.relations.v1beta1 import lookup_pb2_grpc
 import pytz
 import json
 import uuid
-
+from google.protobuf.json_format import MessageToDict
 from api.cross_access.model import CrossAccountRequest
 from api.models import User, Tenant
 from api.utils import reset_imported_tenants
@@ -3399,16 +3399,17 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         """Test a request to lookup_resource endpoint returns the correct response."""
 
         mock_stub = MagicMock()
-        mock_response = lookup_pb2.LookupResourcesResponse(
-            resource=common_pb2.ObjectReference(
-                type=common_pb2.ObjectType(namespace="rbac_test", name="group"), id="12345"
-            )
+        mock_response_1 = lookup_pb2.LookupResourcesResponse(
+            resource=common_pb2.ObjectReference(type=common_pb2.ObjectType(namespace="rbac", name="group"), id="12345")
         )
 
-        mock_stub.LookupResources.return_value = mock_response
+        mock_response_2 = lookup_pb2.LookupResourcesResponse(
+            resource=common_pb2.ObjectReference(type=common_pb2.ObjectType(namespace="rbac", name="group"), id="67891")
+        )
+
+        mock_stub.LookupResources.return_value = iter([mock_response_1, mock_response_2])
 
         with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
-            mock_create_channel.return_value = MagicMock()
 
             request_body = {
                 "resource_type": {"name": "group", "namespace": "rbac"},
@@ -3429,10 +3430,16 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             )
 
             response_body = json.loads(response.content)
-            print(response_body)
-
+            resource_1 = response_body["resources"][0]["resource"]
+            resource_2 = response_body["resources"][1]["resource"]
             self.assertEqual(response.status_code, 200)
             self.assertIn("resources", response_body)
+            self.assertEqual(resource_1["id"], "12345")
+            self.assertEqual(resource_1["type"]["namespace"], "rbac")
+            self.assertEqual(resource_1["type"]["name"], "group")
+            self.assertEqual(resource_2["id"], "67891")
+            self.assertEqual(resource_2["type"]["namespace"], "rbac")
+            self.assertEqual(resource_2["type"]["name"], "group")
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
     def test_lookup_resources_grpc_error(self, mock_token):
