@@ -1518,7 +1518,7 @@ def lookup_resource(request):
                 response_data.append(response_to_dict)
             json_response = {"resources": response_data}
             return JsonResponse(json_response, status=200)
-        return JsonResponse(status=204, safe=False)
+        return JsonResponse("No resource found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
