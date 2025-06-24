@@ -599,6 +599,9 @@ class ServiceToServiceWithToken(IdentityRequest):
         patch_token_validator.start()
         self.addCleanup(patch_token_validator.stop)
 
+    def tearDown(self):
+        Tenant.objects.all().delete()
+
     def test_no_identity_or_token_returns_401(self):
         url = reverse("v1_management:group-list")
         client = APIClient()
