@@ -32,7 +32,7 @@ from kessel.relations.v1beta1 import lookup_pb2_grpc
 import pytz
 import json
 import uuid
-from google.protobuf.json_format import MessageToDict
+
 from api.cross_access.model import CrossAccountRequest
 from api.models import User, Tenant
 from api.utils import reset_imported_tenants
