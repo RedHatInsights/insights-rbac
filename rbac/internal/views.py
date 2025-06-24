@@ -806,8 +806,11 @@ def fetch_replication_data(request):
     if request.method != "GET":
         return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
+    logger.info("*** CHECKING BETA FEATURE FLAG ***")
     show_beta_feature = FEATURE_FLAGS.is_enabled("rbac.beta_feature")
+    logger.info(f"*** CHECKED BETA FEATURE FLAG WITH {show_beta_feature} ***")
     if show_beta_feature:
+        logger.info("*** RETURNING BETA RESPONSE ***")
         return HttpResponse("rbac.show_beta_feature works.", status=200)
 
     show_alpha_feature = FEATURE_FLAGS.is_enabled("rbac.alpha_feature", {"orgId": 1000})
@@ -836,6 +839,7 @@ def fetch_replication_data(request):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
+    logger.info("*** RETURNING DEFAULT RESPONSE ***")
     return JsonResponse(results, safe=False)
 
 

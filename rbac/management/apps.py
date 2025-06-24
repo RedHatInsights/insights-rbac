@@ -46,6 +46,7 @@ class ManagementConfig(AppConfig):
             if GROUP_SEEDING_ENABLED:
                 group_seeding()
 
+            logger.info("*** CALLING MAIN INIT ***")
             FEATURE_FLAGS.initialize()
         except (OperationalError, ProgrammingError) as op_error:
             if "no such table" in str(op_error) or "does not exist" in str(op_error):

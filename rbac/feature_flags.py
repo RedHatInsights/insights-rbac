@@ -29,13 +29,16 @@ class FeatureFlags:
 
     def __init__(self):
         """Add attributes."""
+        logger.info("*** INITIALIZING WITH NO CLIENT ***")
         self.client = None
 
     def initialize(self):
         """Set the client on an instance."""
         try:
+            logger.info("*** INITIALIZING WITH A CLIENT ***")
             self.client = self._init_unleash_client()
         except Exception:
+            logger.info("*** FAILED TO INITIALIZE ***")
             logger.exception("Error initilizing FeatureFlags client")
 
     def _init_unleash_client(self):
@@ -50,7 +53,7 @@ class FeatureFlags:
 
         if settings.FEATURE_FLAGS_URL and settings.FEATURE_FLAGS_TOKEN:
             client.initialize_client()
-            logger.info(f"FeatureFlags initialized using Unleash on {settings.FEATURE_FLAGS_URL}")
+            logger.info(f"*** FeatureFlags initialized using Unleash on {settings.FEATURE_FLAGS_URL} ***")
         else:
             logger.info(
                 "FEATURE_FLAGS_URL and/or FEATURE_FLAGS_TOKEN were not set, skipping FeatureFlags initialization."
@@ -60,15 +63,20 @@ class FeatureFlags:
 
     def is_enabled(self, feature_name, context=None, fallback_function=None):
         """Override of is_enabled for checking flag values."""
+        logger.info("*** INSIDE is_enabled ***")
         if not self.client:
             if fallback_function:
+                logger.info("*** INSIDE fallback_function ***")
                 logger.warning("FeatureFlags not initialized, using fallback function")
                 return fallback_function(feature_name, context)
             else:
+                logger.info("*** INSIDE False debault ***")
                 logger.warning("FeatureFlags not initialized, defaulting to False")
                 return False
 
-        return self.client.is_enabled(feature_name, context, fallback_function=fallback_function)
+        is_enabled = self.client.is_enabled(feature_name, context, fallback_function=fallback_function)
+        logger.info(f"*** RETURNING FROM is_enabled for {feature_name} with {is_enabled} ***")
+        return is_enabled
 
 
 FEATURE_FLAGS = FeatureFlags()
