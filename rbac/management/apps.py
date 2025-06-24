@@ -20,6 +20,7 @@ import sys
 
 from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
+from feature_flags import FEATURE_FLAGS
 from management.seeds import group_seeding, permission_seeding, role_seeding
 
 from rbac.settings import GROUP_SEEDING_ENABLED, PERMISSION_SEEDING_ENABLED, ROLE_SEEDING_ENABLED
@@ -45,6 +46,7 @@ class ManagementConfig(AppConfig):
             if GROUP_SEEDING_ENABLED:
                 group_seeding()
 
+            FEATURE_FLAGS.initialize()
         except (OperationalError, ProgrammingError) as op_error:
             if "no such table" in str(op_error) or "does not exist" in str(op_error):
                 # skip this if we haven't created tables yet.
