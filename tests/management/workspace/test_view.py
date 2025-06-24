@@ -299,6 +299,37 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], workspace["name"])
 
+    def test_create_workspace_authorized_through_platform_default_access_with_wildcard(self):
+        """Test for creating a workspace."""
+        workspace = {
+            "name": "New Workspace",
+            "description": "Workspace",
+        }
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        self._setup_access_for_principal(self.user_data["username"], "inventory:*:write", platform_default=True)
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], workspace["name"])
+
+        # Make sure "inventory:*:*" also works
+        Group.objects.get(platform_default=True).delete()
+        Workspace.objects.get(id=response.data["id"]).delete()
+        response = client.post(url, workspace, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self._setup_access_for_principal(self.user_data["username"], "inventory:*:*", platform_default=True)
+        response = client.post(url, workspace, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], workspace["name"])
+
     def test_duplicate_create_workspace(self):
         """Test that creating a duplicate workspace within same parent is not allowed."""
         workspace_data = {
@@ -1129,6 +1160,31 @@ class WorkspaceTestsList(WorkspaceViewTests):
 
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_authorization_platform_default_with_wildcard(self):
+        """List workspaces authorization with wildcard permission."""
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+        request = request_context["request"]
+        headers = request.META
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self._setup_access_for_principal(self.user_data["username"], "inventory:*:read", platform_default=True)
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+        # Make sure "inventory:*:*" also works
+        Group.objects.get(platform_default=True).delete()
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self._setup_access_for_principal(self.user_data["username"], "inventory:*:*", platform_default=True)
+        response = client.get(f"{url}?type=all", None, format="json", **headers)
 
     def test_workspace_list_authorization_custom_role(self):
         """List workspaces authorization."""
