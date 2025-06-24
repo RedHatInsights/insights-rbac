@@ -3442,6 +3442,36 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             self.assertEqual(resource_2["type"]["name"], "group")
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_resources_empty(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_resource endpoint returns the correct response when no resources are found."""
+
+        mock_stub = MagicMock()
+
+        mock_stub.LookupResources.return_value = []
+
+        with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource_type": {"name": "group", "namespace": "rbac"},
+                "relation": "member",
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                    }
+                },
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/lookup_resource/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+            self.assertEqual(response.status_code, 204)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
     def test_lookup_resources_grpc_error(self, mock_token):
         """Test a request to lookup_resource endpoint returns the correct response in case of grpc error."""
 
