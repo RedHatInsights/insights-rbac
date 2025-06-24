@@ -24,8 +24,8 @@ class FeatureFlagsTest(TestCase):
 
     def test_feature_flags_client(self):
         """Test that we can initialize feature flags with defaults."""
-        FEATURE_FLAGS.initialize()
         client = FEATURE_FLAGS.client
+        FEATURE_FLAGS.initialize()
         self.assertEqual(client.unleash_url, "http://localhost:4242/api")
         self.assertEqual(client.unleash_app_name, "rbac")
         self.assertEqual(FEATURE_FLAGS.is_enabled("foo"), False)
