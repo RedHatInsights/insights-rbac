@@ -1537,7 +1537,7 @@ def check_relation(request):
 
     # Request parameters for resource lookup on relations api from post request
     resource_name = req_data["resource"]["type"]["name"]
-    resource_type_namespace = req_data["resource"]["type"]["namespace"]
+    resource_namespace = req_data["resource"]["type"]["namespace"]
     subject_name = req_data["subject"]["subject"]["type"]["name"]
     subject_id = req_data["subject"]["subject"]["id"]
     subject_relation = req_data["subject"]["relation"]
@@ -1551,14 +1551,14 @@ def check_relation(request):
 
             request_data = check_pb2.CheckRequest(
                 resource=common_pb2.ObjectReference(
-                    type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_name),
+                    type=common_pb2.ObjectType(namespace=resource_namespace, name=resource_name),
                     id=resource_id,
                 ),
                 relation=resource_relation,
                 subject=common_pb2.SubjectReference(
                     relation=subject_relation,
                     subject=common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=resource_type_namespace, name=subject_name),
+                        type=common_pb2.ObjectType(namespace=resource_namespace, name=subject_name),
                         id=subject_id,
                     ),
                 ),
