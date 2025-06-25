@@ -1694,6 +1694,7 @@ class RoleViewsetTests(IdentityRequest):
         ]
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        first_binding = BindingMapping.objects.filter(role=Role.objects.get(uuid=response.data["uuid"])).first()
 
         # Update the role with new access data
         role_uuid = response.data.get("uuid")
@@ -1704,16 +1705,17 @@ class RoleViewsetTests(IdentityRequest):
 
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        bindingmappings = BindingMapping.objects.filter(role=Role.objects.get(uuid=role_uuid))
-        self.assertEqual(bindingmappings.count(), 1)
-        bindingmapping = bindingmappings.first()
+        second_binding = (
+            BindingMapping.objects.filter(role=Role.objects.get(uuid=role_uuid)).exclude(id=first_binding.id).first()
+        )
+
         self.assertEqual(
             1,
             tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", str(standard_ws.id)),
                     relation("binding"),
-                    subject("rbac", "role_binding", bindingmapping.mappings["id"]),
+                    subject("rbac", "role_binding", second_binding.mappings["id"]),
                 )
             ),
         )
@@ -1721,9 +1723,9 @@ class RoleViewsetTests(IdentityRequest):
             1,
             tuples.count_tuples(
                 all_of(
-                    resource("rbac", "role_binding", bindingmapping.mappings["id"]),
+                    resource("rbac", "role_binding", second_binding.mappings["id"]),
                     relation("role"),
-                    subject("rbac", "role", bindingmapping.mappings["role"]["id"]),
+                    subject("rbac", "role", second_binding.mappings["role"]["id"]),
                 )
             ),
         )
@@ -1731,7 +1733,7 @@ class RoleViewsetTests(IdentityRequest):
             1,
             tuples.count_tuples(
                 all_of(
-                    resource("rbac", "role", bindingmapping.mappings["role"]["id"]),
+                    resource("rbac", "role", second_binding.mappings["role"]["id"]),
                     relation("inventory_groups_read"),
                     subject("rbac", "principal", "*"),
                 )
@@ -2155,6 +2157,73 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
         self.assertEqual(response.data["errors"][0]["detail"], "attributeFilter operation 'in' expects a List value")
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_create_role_with_null_value(self, replicate):
+        """Test that create a role with a null value success."""
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        # Set up
+        Permission.objects.create(permission="inventory:groups:*", tenant=self.public_tenant)
+        Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)
+        standard_ws = Workspace.objects.create(
+            name="Test Workspace", tenant=self.tenant, parent=self.default_workspace
+        )
+        role_name = "test_create_role"
+        access_data = [
+            {
+                "permission": "inventory:groups:*",
+                "resourceDefinitions": [
+                    {
+                        "attributeFilter": {
+                            "key": "group.id",
+                            "operation": "in",
+                            "value": [None],
+                        }
+                    }
+                ],
+            }
+        ]
+
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        bindingmappings = BindingMapping.objects.filter(role=Role.objects.get(uuid=response.data["uuid"]))
+        self.assertEqual(bindingmappings.count(), 1)
+        bindingmapping = bindingmappings.first()
+        ungrouped_ws = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(ungrouped_ws.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", bindingmapping.mappings["id"]),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", bindingmapping.mappings["id"]),
+                    relation("role"),
+                    subject("rbac", "role", bindingmapping.mappings["role"]["id"]),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", bindingmapping.mappings["role"]["id"]),
+                    relation("inventory_groups_all"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
 
     @override_settings(ROLE_CREATE_ALLOW_LIST="inventory")
     def test_retrieving_role_replaces_null_value(self):
