@@ -15,14 +15,18 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper utilities for management module."""
-import json
+import logging
 import os
 import uuid
-from typing import Optional
+from typing import Optional, TypedDict
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
+from management.authorization.invalid_token import InvalidTokenError
+from management.authorization.missing_authorization import MissingAuthorizationError
+from management.authorization.token_validator import TokenValidator
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
@@ -40,9 +44,12 @@ PRINCIPAL_PERMISSION_INSTANCE = PrincipalAccessPermission()
 SERVICE_ACCOUNT_KEY = "service-account"
 
 
+logger = logging.getLogger(__name__)
+
+
 def validate_psk(psk, client_id):
     """Validate the PSK for the client."""
-    psks = json.loads(os.environ.get("SERVICE_PSKS", "{}"))
+    psks = settings.SERVICE_PSKS
     client_config = psks.get(client_id, {})
     primary_key = client_config.get("secret")
     alt_key = client_config.get("alt-secret")
@@ -70,6 +77,53 @@ def build_user_from_psk(request):
         user.admin = True
         user.system = True
     return user
+
+
+class SystemUserConfig(TypedDict, total=False):
+    """Configuration for a system user.
+
+    This TypedDict defines the JSON schema for system users.
+
+    Attributes:
+        admin (bool): Whether the user has administrative privileges.
+        is_service_account (bool): Whether the user is a service account.
+        allow_any_org (bool): Whether the user is allowed to access any organization via system auth headers.
+    """
+
+    admin: bool
+    is_service_account: bool
+    allow_any_org: bool
+
+
+def build_system_user_from_token(request, token_validator: TokenValidator) -> Optional[User]:
+    """Build a system user from the token."""
+    # Token validator class uses a singleton
+    try:
+        user = token_validator.get_user_from_bearer_token(request)
+        system_users: dict[str, SystemUserConfig] = settings.SYSTEM_USERS
+        if user and user.user_id in system_users:
+            system_user = system_users[user.user_id]
+            user.system = True
+            user.admin = system_user.get("admin", False)
+            user.is_service_account = system_user.get("is_service_account", False)
+            if system_user.get("allow_any_org", False):
+                user.account = request.META.get(RH_RBAC_ACCOUNT, user.account)
+                user.org_id = request.META.get(RH_RBAC_ORG_ID, user.org_id)
+            # Could allow authn without org_id, but this breaks some code paths
+            # which assume there is either no user, or a user with an org_id.
+            # An AnonymousUser does not work yet.
+            # Hence, if no org_id, consider authentication invalid.
+            if user.org_id:
+                if user.org_id != request.META.get(RH_RBAC_ORG_ID, user.org_id):
+                    logger.warning(
+                        "Token org_id does not match org_id header. Ignoring token for user_id %s", user.user_id
+                    )
+                    return None
+                return user
+        return None
+    except (MissingAuthorizationError, InvalidTokenError):
+        # If the token is not valid, we return None.
+        return None
 
 
 def get_principal_from_request(request):

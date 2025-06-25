@@ -34,9 +34,10 @@ def is_user_allowed(request, required_operation, target_workspace):
         allowed_operations = ["read", "write", "*"]
     else:
         allowed_operations = ["write", "*"]
-    valid_perm_tuples = [
-        (f"inventory:groups:{allowed_operation}", target_workspace) for allowed_operation in allowed_operations
-    ]
+    valid_perm_tuples = set()
+    for valid_resource in ["groups", "*"]:
+        for valid_operation in allowed_operations:
+            valid_perm_tuples.add((f"inventory:{valid_resource}:{valid_operation}", target_workspace))
     tuple_set = workspace_permission_tuple_set(request, root_workspace_id, is_get_action)
     if is_get_action:
         # Get the set of permission tuples for later filter
@@ -72,7 +73,7 @@ def workspace_permission_tuple_set(request, root_workspace_id, is_get_action):
         },
     )
     accesses = Access.objects.filter(
-        role__in=roles, permission__application="inventory", permission__resource_type="groups"
+        role__in=roles, permission__application="inventory", permission__resource_type__in=["groups", "*"]
     )
     tuple_set = set()
     for access in accesses:

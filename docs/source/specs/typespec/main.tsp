@@ -169,6 +169,18 @@ namespace Workspaces {
         statusCode: 204,
     }
 
+
+    model MoveWorkspaceRequest {
+      @doc("The UUID of the new parent workspace.")
+      parent_id: UUID = "Parent ID of target workspace";
+    }
+
+    model MoveWorkspaceResponse{
+        @statusCode _: 200;
+        @key id: UUID = "Workspace ID of moved workspace";
+        parent_id: UUID = "New parent ID of moved workspace";
+    }
+
     model PaginationMeta {
         @doc("Total count of objects")
         @example(10)
@@ -270,4 +282,16 @@ namespace Workspaces {
         @doc("Unique identification")
         @path id: UUID;
     ): DeleteWorkspaceResponse | Problems.CommonProblems | Problems.Workspace.Problem400WorkspaceNotEmpty;
+
+    @doc("Move a workspace to a new parent.")
+    @summary("Move a workspace to a new parent.")
+    @route("{id}/move/")
+    @post op move(
+        @doc("Unique identification of the workspace to move")
+        @path id: UUID;
+        @body body: MoveWorkspaceRequest
+    ): MoveWorkspaceResponse
+      | Problems.CommonProblems
+      | Problems.Problem400
+      | Problems.Problem404;
 }

@@ -19,10 +19,11 @@ import collections
 from functools import partial
 import json
 import os
+from typing import Tuple
 from unittest import mock
 from unittest.mock import Mock, MagicMock, patch
 from django.conf import settings
-from django.http import QueryDict, HttpResponse
+from django.http import Http404, QueryDict, HttpResponse
 from django.test.utils import override_settings
 from importlib import reload
 
@@ -32,12 +33,17 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.urls import clear_url_caches, get_resolver, resolve
+from joserfc.jwt import Token
 
+from api.common import RH_IDENTITY_HEADER, RH_RBAC_ORG_ID
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
+from management.authorization.invalid_token import InvalidTokenError
+from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
 from management.group.definer import seed_group
 from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
@@ -47,6 +53,7 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
+from rbac.settings import SYSTEM_USERS
 from tests.identity_request import IdentityRequest
 from rbac import urls
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
@@ -244,6 +251,84 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         self.assertTrue(tenant.ready)
 
     @patch("rbac.middleware.resolve")
+    @override_settings(SYSTEM_USERS={"testuser": {}})
+    def test_process_ignores_system_user_jwt_if_identity_header(self, mock_resolve):
+        """Test that the customer, tenant and user are created."""
+        org_id = self.org_id
+
+        class TokenValidatorStub(TokenValidator):
+            def _parse_claims(self, user: User, jwt: Token) -> None:
+                super()._parse_claims(user, jwt)
+                user.org_id = jwt.claims.get("organization", {}).get("id", None)
+
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                return "valid_token", Token(
+                    {}, {"sub": "testuser", "preferred_username": "testuser", "organization": {"id": org_id}}
+                )
+
+        with patch("rbac.middleware.IdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            request = RequestFactory().get(
+                "/api/v1/providers/",
+                HTTP_AUTHORIZATION="Bearer valid_token",
+                **{RH_IDENTITY_HEADER: self.request.META[RH_IDENTITY_HEADER]},
+            )
+            middleware = IdentityHeaderMiddleware(get_response=Mock())
+            middleware(request)
+            self.assertTrue(hasattr(request, "user"))
+            self.assertEqual(request.user.username, self.user_data["username"])
+
+    @patch("rbac.middleware.resolve")
+    def test_process_ignores_non_system_jwt_if_identity_header(self, mock_resolve):
+        """Test that the customer, tenant and user are created."""
+        org_id = self.org_id
+
+        class TokenValidatorStub(TokenValidator):
+            def _parse_claims(self, user: User, jwt: Token) -> None:
+                super()._parse_claims(user, jwt)
+                user.org_id = jwt.claims.get("organization", {}).get("id", None)
+
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                return "valid_token", Token(
+                    {}, {"sub": "testuser", "preferred_username": "testuser", "organization": {"id": org_id}}
+                )
+
+        with patch("rbac.middleware.IdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            request = RequestFactory().get(
+                "/api/v1/providers/",
+                HTTP_AUTHORIZATION="Bearer valid_token",
+                **{RH_IDENTITY_HEADER: self.request.META[RH_IDENTITY_HEADER]},
+            )
+            middleware = IdentityHeaderMiddleware(get_response=Mock())
+            middleware(request)
+            self.assertTrue(hasattr(request, "user"))
+            self.assertEqual(request.user.username, self.user_data["username"])
+
+    @patch("rbac.middleware.resolve")
+    @override_settings(SYSTEM_USERS={"testuser": {}})
+    def test_process_parses_jwt_as_system_user(self, mock_resolve):
+        """Test that the customer, tenant and user are created."""
+        org_id = self.org_id
+
+        class TokenValidatorStub(TokenValidator):
+            def _parse_claims(self, user: User, jwt: Token) -> None:
+                super()._parse_claims(user, jwt)
+                user.org_id = jwt.claims.get("organization", {}).get("id", None)
+
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                return "valid_token", Token(
+                    {}, {"sub": "testuser", "preferred_username": "testuser", "organization": {"id": org_id}}
+                )
+
+        with patch("rbac.middleware.IdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            request = RequestFactory().get(
+                "/api/v1/providers/",
+                HTTP_AUTHORIZATION="Bearer valid_token",
+            )
+            middleware = IdentityHeaderMiddleware(get_response=Mock())
+            with self.assertRaises(Http404):
+                middleware(request)
+
+    @patch("rbac.middleware.resolve")
     def test_process_existing_tenant_unchanged(self, mock_resolve):
         mock_request = self.request
         middleware = IdentityHeaderMiddleware(get_response=Mock())
@@ -397,13 +482,12 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
             self.assertEqual(middleware.should_load_user_permissions(request, user), False)
 
 
-class ServiceToService(IdentityRequest):
+@override_settings(SERVICE_PSKS={"catalog": {"secret": "abc123"}})
+class ServiceToServiceWithPSK(IdentityRequest):
     """Tests requests without an identity header."""
 
     def setUp(self):
         """Setup tests."""
-        self.env = EnvironmentVarGuard()
-        self.env.set("SERVICE_PSKS", '{"catalog": {"secret": "abc123"}}')
         self.account_id = "1234"
         self.org_id = "4321"
         self.service_headers = {
@@ -466,6 +550,163 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
+@override_settings(
+    SYSTEM_USERS={
+        "u1": {"admin": True, "allow_any_org": True, "is_service_account": True},
+        "orguser": {"admin": True, "allow_any_org": False, "is_service_account": True},
+    }
+)
+class ServiceToServiceWithToken(IdentityRequest):
+    """Tests requests without an identity header."""
+
+    class TokenValidatorStub(TokenValidator):
+        """A stub for TokenValidator which only allows one hard coded test bearer token."""
+
+        def _parse_claims(self, user: User, jwt: Token) -> None:
+            super()._parse_claims(user, jwt)
+            user.org_id = jwt.claims.get("organization", {}).get("id", None)
+
+        def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+            authorization = request.headers.get("Authorization", "")
+            if authorization == "Bearer testtoken_u1":
+                return "testtoken_u1", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+            if authorization == "Bearer testtoken_u2":
+                return "testtoken_u2", Token({}, {"sub": "u2", "preferred_username": "u2", "client_id": "c2"})
+            if authorization == "Bearer testtoken_orguser":
+                return "testtoken_orguser", Token(
+                    {},
+                    {
+                        "sub": "orguser",
+                        "preferred_username": "orguser",
+                        "client_id": "orguser",
+                        "organization": {"id": "4321"},
+                    },
+                )
+            raise InvalidTokenError(f"Invalid token: {authorization}")
+
+    def setUp(self):
+        """Setup tests."""
+        self.account_id = "1234"
+        self.org_id = "4321"
+        self.service_headers = {
+            "HTTP_Authorization": "Bearer testtoken_u1",
+            "HTTP_X_RH_RBAC_ACCOUNT": self.account_id,
+            "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+        }
+        patch_token_validator = patch(
+            "rbac.middleware.IdentityHeaderMiddleware.token_validator", self.TokenValidatorStub()
+        )
+        patch_token_validator.start()
+        self.addCleanup(patch_token_validator.stop)
+
+    def tearDown(self):
+        Tenant.objects.all().delete()
+
+    def test_no_identity_or_token_returns_401(self):
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        self.service_headers = {}
+        response = client.get(url, {})
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_invalid_token_returns_401(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer someothertoken")
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_invalid_account_returns_404(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_no_identity_and_non_system_user_token_returns_401(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        self.service_headers["HTTP_Authorization"] = "Bearer testtoken_u2"  # u2 is not a system user
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_valid_token_and_org_returns_200(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @override_settings(SYSTEM_USERS={"u1": {"admin": True, "allow_any_org": False, "is_service_account": True}})
+    def test_valid_token_and_org_but_not_allow_any_org_returns_401(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_valid_token_and_org_via_token_instead_of_header_returns_200(self):
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer testtoken_orguser")
+        self.service_headers = {}
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_valid_token_but_invalid_org_via_token_instead_of_header_returns_404(self):
+        # Different org id
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id="1111")
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer testtoken_orguser")
+        self.service_headers = {}
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_different_org_than_token_when_not_allowed_returns_401(self):
+        # Different org id
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id="1111")
+        t.ready = True
+        t.save()
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer testtoken_orguser")
+        self.service_headers = {
+            # Attempt to use the above org id via header, which is different than whats on the token
+            "HTTP_X_RH_RBAC_ORG_ID": "1111",
+        }
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
 class InternalIdentityHeaderMiddleware(IdentityRequest):
     """Tests against the internal api middleware"""
 
@@ -475,6 +716,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
         self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
+        self.bootstrap_service = V2TenantBootstrapService(replicator=InMemoryRelationReplicator())
 
     def test_internal_user_can_access_private_api(self):
         request = self.internal_request_context["request"]
@@ -492,29 +734,105 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
 
     def test_s2s_can_be_accessed_through_psk(self):
         self.org_id = "4321"
-        tenant = Tenant.objects.create(org_id=self.org_id)
-        root = Workspace.objects.create(name="root", type=Workspace.Types.ROOT, tenant=tenant)
-        default = Workspace.objects.create(name="default", type=Workspace.Types.DEFAULT, tenant=tenant, parent=root)
-        Workspace.objects.create(name="ungrouped", type=Workspace.Types.UNGROUPED_HOSTS, tenant=tenant, parent=default)
+        self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+        self.bootstrap_service.create_ungrouped_workspace(self.org_id)
         request = self.request_context["request"]
         client = APIClient()
-        response = client.post(f"/_private/_s2s/workspaces/ungrouped/", **request.META)
+        response = client.post("/_private/_s2s/workspaces/ungrouped/", **request.META)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
         # Request with psk
-        self.env = EnvironmentVarGuard()
-        self.env.set("SERVICE_PSKS", '{"hbi": {"secret": "abc123"}}')
-        self.service_headers = {
-            "HTTP_X_RH_RBAC_PSK": "abc123",
-            "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
-            "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
-        }
-        response = client.get(f"/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        with override_settings(SERVICE_PSKS={"hbi": {"secret": "abc123"}}):
+            self.service_headers = {
+                "HTTP_X_RH_RBAC_PSK": "abc123",
+                "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
+                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+            }
+            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        # Can not use psk to access apis other than _s2s
-        response = client.get(f"/_private/api/tenant/unmodified/", **self.service_headers)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            # Can not use psk to access apis other than _s2s
+            response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_s2s_can_be_accessed_through_bearer_jwt(self):
+        class TokenValidatorStub(TokenValidator):
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header != "Bearer testtoken":
+                    raise InvalidTokenError("Invalid token")
+                return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            self.org_id = "4321"
+            self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+            self.bootstrap_service.create_ungrouped_workspace(self.org_id)
+            request = self.request_context["request"]
+            client = APIClient()
+            response = client.post("/_private/_s2s/workspaces/ungrouped/", **request.META)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+            # Request with token
+            with override_settings(SYSTEM_USERS={"u1": {"admin": True, "allow_any_org": True}}):
+                client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+                self.service_headers = {
+                    "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+                }
+                response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+                self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+                # Can not use psk to access apis other than _s2s
+                response = client.get("/_private/api/tenant/unmodified/", **self.service_headers)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_s2s_system_user_not_configured_is_not_allowed(self):
+        class TokenValidatorStub(TokenValidator):
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header != "Bearer testtoken":
+                    raise InvalidTokenError("Invalid token")
+                return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            self.org_id = "4321"
+
+            self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+            self.bootstrap_service.create_ungrouped_workspace(self.org_id)
+
+            client = APIClient()
+
+            # Request with token, but not matching configuration
+            self.env = EnvironmentVarGuard()
+            self.env.set("SYSTEM_USERS", r'{"other_user": {"admin": true, "allow_any_org": true}}')
+            client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+            self.service_headers = {
+                "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+            }
+            response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_s2s_system_user_not_configured_for_auth_headers_is_not_allowed(self):
+        class TokenValidatorStub(TokenValidator):
+            def _validate_token(self, request, additional_scopes_to_validate) -> Tuple[str, Token]:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header != "Bearer testtoken":
+                    raise InvalidTokenError("Invalid token")
+                return "testtoken", Token({}, {"sub": "u1", "preferred_username": "u1", "client_id": "c1"})
+
+        with patch("internal.middleware.InternalIdentityHeaderMiddleware.token_validator", TokenValidatorStub()):
+            self.org_id = "4321"
+            self.bootstrap_service.new_bootstrapped_tenant(self.org_id)
+            self.bootstrap_service.create_ungrouped_workspace(self.org_id)
+            client = APIClient()
+
+            # Request with token, but cannot override org id
+            with override_settings(SYSTEM_USERS={"u1": {"admin": True}}):
+                client.credentials(HTTP_AUTHORIZATION="Bearer testtoken")
+                self.service_headers = {
+                    "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
+                }
+                response = client.get("/_private/_s2s/workspaces/ungrouped/", **self.service_headers)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class AccessHandlingTest(TestCase):

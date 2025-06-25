@@ -82,6 +82,9 @@ ENV \
 # copy the src files into the workdir
 COPY . .
 
+# unleash cache dir
+RUN mkdir -p /tmp/unleash_cache && chmod -R 777 /tmp/unleash_cache
+
 # create the rbac user
 RUN \
     adduser rbac -u ${USER_ID} -g 0 && \
