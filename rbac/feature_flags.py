@@ -36,7 +36,7 @@ class FeatureFlags:
         try:
             self.client = self._init_unleash_client()
         except Exception:
-            logger.exception("Error initilizing FeatureFlags client")
+            logger.exception("Error initializing FeatureFlags client")
 
     def _init_unleash_client(self):
         """Initialize the client."""
