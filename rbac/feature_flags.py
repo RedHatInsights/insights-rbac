@@ -40,12 +40,11 @@ class FeatureFlags:
 
     def _init_unleash_client(self):
         """Initialize the client."""
-        cache = FileCache(settings.APP_NAME, directory=settings.FEATURE_FLAGS_CACHE_DIR)
         client = UnleashClient(
             url=settings.FEATURE_FLAGS_URL,
             app_name=settings.APP_NAME,
-            cache=cache,
             custom_headers={"Authorization": settings.FEATURE_FLAGS_TOKEN},
+            cache_directory=settings.FEATURE_FLAGS_CACHE_DIR
         )
 
         if settings.FEATURE_FLAGS_URL and settings.FEATURE_FLAGS_TOKEN:
