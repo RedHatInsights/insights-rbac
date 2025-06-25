@@ -32,7 +32,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
-from feature_flags import FEATURE_FLAGS
+from feature_flags import FEATURE_FLAGS, reinit_feature_flags
 from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
@@ -92,6 +92,7 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
+reinit_feature_flags()
 
 
 @contextmanager

@@ -18,7 +18,6 @@
 import logging
 
 from UnleashClient import UnleashClient
-from UnleashClient.cache import FileCache
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ class FeatureFlags:
             url=settings.FEATURE_FLAGS_URL,
             app_name=settings.APP_NAME,
             custom_headers={"Authorization": settings.FEATURE_FLAGS_TOKEN},
-            cache_directory=settings.FEATURE_FLAGS_CACHE_DIR
+            cache_directory=settings.FEATURE_FLAGS_CACHE_DIR,
         )
 
         if settings.FEATURE_FLAGS_URL and settings.FEATURE_FLAGS_TOKEN:
@@ -71,3 +70,8 @@ class FeatureFlags:
 
 
 FEATURE_FLAGS = FeatureFlags()
+
+
+def reinit_feature_flags():
+    """Reinitialize feature flags client."""
+    FEATURE_FLAGS.initialize()
