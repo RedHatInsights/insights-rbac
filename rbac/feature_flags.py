@@ -70,8 +70,3 @@ class FeatureFlags:
 
 
 FEATURE_FLAGS = FeatureFlags()
-
-
-def reinit_feature_flags():
-    """Reinitialize feature flags client."""
-    FEATURE_FLAGS.initialize()

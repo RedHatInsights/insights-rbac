@@ -22,6 +22,7 @@ https://docs.djangoproject.com/en/2.0/howto/deployment/wsgi/
 """
 
 import os
+import logging
 
 from django.core.wsgi import get_wsgi_application
 
@@ -29,3 +30,14 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
 
 # pylint: disable=invalid-name
 application = get_wsgi_application()
+
+# Initialize feature flags only after Django is fully set up
+# This ensures background threads for periodic cache refresh work properly
+logger = logging.getLogger(__name__)
+
+try:
+    from feature_flags import FEATURE_FLAGS
+
+    FEATURE_FLAGS.initialize()
+except Exception as e:
+    logger.warning(f"Failed to initialize FEATURE_FLAGS in WSGI: {e}")
