@@ -248,6 +248,8 @@ objects:
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
           - name: WORKSPACE_HIERARCHY_ENABLED
             value: ${WORKSPACE_HIERARCHY_ENABLED}
+          - name: WORKSPACE_ORG_CREATION_LIMIT
+            value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
