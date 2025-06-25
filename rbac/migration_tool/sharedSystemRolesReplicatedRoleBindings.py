@@ -31,6 +31,7 @@ from migration_tool.models import (
     cleanNameForV2SchemaCompatibility,
 )
 
+
 logger = logging.getLogger(__name__)
 
 PermissionGroupings = dict[V2boundresource, set[str]]
@@ -90,6 +91,8 @@ def v1_role_to_v2_bindings(
     role_bindings: Iterable[BindingMapping],
 ) -> list[BindingMapping]:
     """Convert a V1 role to a set of V2 role bindings."""
+    from internal.utils import get_or_create_ungrouped_workspace
+
     perm_groupings: PermissionGroupings = {}
 
     # Group V2 permissions by target resource
@@ -125,11 +128,8 @@ def v1_role_to_v2_bindings(
                 if resource_id is None:
                     if resource_type != ("rbac", "workspace"):
                         raise ValueError(f"Resource ID is None for {resource_def}")
-                    ungrouped_ws = Workspace.objects.filter(
-                        type=Workspace.Types.UNGROUPED_HOSTS, tenant=v1_role.tenant
-                    ).first()
-                    if not ungrouped_ws:
-                        continue
+                    ungrouped_ws = get_or_create_ungrouped_workspace(v1_role.tenant)
+                    resource_id = str(ungrouped_ws.id)
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
             add_element(
