@@ -102,16 +102,24 @@ class WorkspaceService:
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
 
-    def move(self, instance: Workspace, new_parent_id: uuid.UUID) -> None:
+    def move(self, workspace: Workspace, new_parent_id: uuid.UUID) -> Workspace:
         """Move a workspace under new parent."""
-        new_parent_workspace = self._parent_workspace_validation(new_parent_id, instance)
-        self._prevent_moving_workspace_under_itself(new_parent_id, instance)
-        self._prevent_moving_non_standard_workspace(instance)
-        self._prevent_moving_workspace_under_own_descendant(new_parent_id, instance)
-        self._prevent_duplicate_names_under_parent(instance, new_parent_workspace)
-        self._enforce_hierarchy_depth(new_parent_id, instance.tenant)
-        self._enforce_hierarchy_depth_for_descendants(new_parent_workspace, instance)
-        # TODO: Implement actual move operation
+        new_parent_workspace = self._parent_workspace_validation(new_parent_id, workspace)
+        self._prevent_moving_workspace_under_itself(new_parent_id, workspace)
+        self._prevent_moving_non_standard_workspace(workspace)
+        self._prevent_moving_workspace_under_own_descendant(new_parent_id, workspace)
+        self._prevent_duplicate_names_under_parent(workspace, new_parent_workspace)
+        self._enforce_hierarchy_depth(new_parent_id, workspace.tenant)
+        self._enforce_hierarchy_depth_for_descendants(new_parent_workspace, workspace)
+
+        workspace.parent_id = new_parent_id
+        workspace.save(update_fields=["parent_id"])
+
+        dual_write_handler = RelationApiDualWriteWorkspaceHandler(
+            workspace, ReplicationEventType.MOVE_WORKSPACE
+        )
+        dual_write_handler.replicate_updated_workspace(workspace.parent, skip_ws_events=True)
+        return workspace
 
     def _enforce_hierarchy_depth(self, target_parent_id: uuid.UUID, tenant: Tenant) -> None:
         """Enforce hierarchy depth limits on workspaces."""
@@ -186,7 +194,7 @@ class WorkspaceService:
     @staticmethod
     def _prevent_duplicate_names_under_parent(instance: Workspace, parent_workspace: Workspace) -> None:
         """Prevent duplicate workspace names under the same parent."""
-        if parent_workspace.children.filter(name=instance.name).exists():
+        if Workspace.objects.filter(parent=parent_workspace, name=instance.name).exists():
             raise serializers.ValidationError(
                 {"workspace": "A workspace with the same name already exists under the target parent."}
             )

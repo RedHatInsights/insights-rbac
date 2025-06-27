@@ -131,7 +131,6 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
         """Generate relations to update workspace."""
         if not self.replication_enabled():
             return
-
         if self.workspace.parent == previous_parent:
             return
         self.relations_to_remove.append(self._get_workspace_relationship(self.workspace, previous_parent))
