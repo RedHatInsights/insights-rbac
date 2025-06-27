@@ -1409,6 +1409,191 @@ class WorkspaceMove(WorkspaceViewTests):
         self.assertEqual(response.data.get("id"), str(test_workspace.id))
         self.assertEqual(response.data.get("parent_id"), str(self.standard_sub_workspace.id))
 
+    def setUp(self):
+        """Set up workspace access check tests."""
+        super().setUp()
+
+        # Create a unique test workspace that won't conflict with existing names
+        self.test_workspace = Workspace.objects.create(
+            name="Test Workspace for Move",
+            description="Test workspace for move operations",
+            tenant=self.tenant,
+            parent=self.standard_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+
+        # Create test users
+        self.user_with_access = {"username": "user_with_access", "email": "user_with_access@example.com"}
+        self.user_without_access = {"username": "user_without_access", "email": "user_without_access@example.com"}
+
+        # Set up access for user_with_access to have write permissions on default_workspace
+        self._setup_access_for_principal(
+            self.user_with_access["username"], "inventory:groups:write", str(self.default_workspace.id)
+        )
+
+    def test_move_with_write_access_allowed(self):
+        """Test that move succeeds when user has write access to target workspace."""
+        # Create request context for user with access
+        request_context = self._create_request_context(self.customer_data, self.user_with_access, is_org_admin=False)
+        headers = request_context["request"].META
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **headers)
+
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_data = response.data
+        self.assertEqual(response_data["id"], str(self.test_workspace.id))
+        self.assertEqual(response_data["parent_id"], str(self.default_workspace.id))
+
+    def test_move_with_write_access_denied(self):
+        """Test that move fails when user lacks write access to target workspace."""
+        # Create request context for user without access
+        request_context = self._create_request_context(
+            self.customer_data, self.user_without_access, is_org_admin=False
+        )
+        headers = request_context["request"].META
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **headers)
+
+        # Verify - Should get 403 from WorkspaceAccessPermission class
+        # before our custom validation can return 400
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("You do not have permission to perform this action", str(response.data))
+
+    def test_move_with_admin_access(self):
+        """Test that move succeeds when user is org admin (bypasses access check)."""
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_data = response.data
+        self.assertEqual(response_data["id"], str(self.test_workspace.id))
+        self.assertEqual(response_data["parent_id"], str(self.default_workspace.id))
+
+    def test_move_missing_parent_id(self):
+        """Test that move fails when parent_id is missing."""
+        request_context = self._create_request_context(self.customer_data, self.user_with_access, is_org_admin=False)
+        headers = request_context["request"].META
+
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {}
+        response = client.post(url, data, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("The 'parent_id' field is required", str(response.data))
+
+    def test_move_invalid_parent_id_uuid(self):
+        """Test that move fails when parent_id is not a valid UUID."""
+        request_context = self._create_request_context(self.customer_data, self.user_with_access, is_org_admin=False)
+        headers = request_context["request"].META
+
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": "invalid-uuid"}
+        response = client.post(url, data, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not a valid UUID", str(response.data))
+
+    def test_move_with_read_only_access(self):
+        """Test that move fails when user only has read access to target workspace."""
+        # Create user with only read access
+        read_only_user = {"username": "read_only_user", "email": "read_only@example.com"}
+        self._setup_access_for_principal(
+            read_only_user["username"],
+            "inventory:groups:read",  # Only read permission, not write
+            str(self.default_workspace.id),
+        )
+
+        request_context = self._create_request_context(self.customer_data, read_only_user, is_org_admin=False)
+        headers = request_context["request"].META
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **headers)
+
+        # Verify - Should get 403 from WorkspaceAccessPermission class
+        # since user only has read access but move requires write
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("You do not have permission to perform this action", str(response.data))
+
+    def test_move_with_wildcard_permission(self):
+        """Test that move succeeds when user has wildcard (*) permission on target workspace."""
+        # Create user with wildcard permission
+        wildcard_user = {"username": "wildcard_user", "email": "wildcard@example.com"}
+        self._setup_access_for_principal(
+            wildcard_user["username"],
+            "inventory:groups:*",  # Wildcard permission includes write
+            str(self.default_workspace.id),
+        )
+
+        request_context = self._create_request_context(self.customer_data, wildcard_user, is_org_admin=False)
+        headers = request_context["request"].META
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **headers)
+
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_data = response.data
+        self.assertEqual(response_data["id"], str(self.test_workspace.id))
+        self.assertEqual(response_data["parent_id"], str(self.default_workspace.id))
+
+    def test_move_with_source_access_but_no_target_access_unique(self):
+        """Test that move fails with PermissionDenied when user has write access to source workspace but not target workspace.
+
+        This specifically tests our inner _check_target_workspace_write_access method.
+        """
+        # Create a user with access to the source workspace but not target
+        source_access_user = {"username": "source_access_user", "email": "source_access_user@example.com"}
+        # Give this user write access to the source workspace's parent (standard_workspace)
+        self._setup_access_for_principal(
+            source_access_user["username"], "inventory:groups:write", str(self.standard_workspace.id)
+        )
+
+        # Create a unique target workspace that the user doesn't have access to
+        unique_suffix = str(uuid4())[:8]
+        target_workspace = Workspace.objects.create(
+            name=f"Target Workspace No Access {unique_suffix}",
+            description="Target workspace user has no access to",
+            tenant=self.tenant,
+            parent=self.default_workspace,  # Put target under default_workspace (no access for source_access_user)
+            type=Workspace.Types.STANDARD,
+        )
+
+        # Use the user who has access to source but not target
+        request_context = self._create_request_context(self.customer_data, source_access_user, is_org_admin=False)
+        headers = request_context["request"].META
+
+        # Execute: try to move test_workspace to target_workspace (user has no access to target)
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(target_workspace.id)}
+        response = client.post(url, data, format="json", **headers)
+
+        # Verify - Should get 403 from our inner _check_target_workspace_write_access method
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        # The error message should come from our PermissionDenied exception
+        self.assertIn("You do not have write access to the target workspace", str(response.data))
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class WorkspaceTestsList(WorkspaceViewTests):
