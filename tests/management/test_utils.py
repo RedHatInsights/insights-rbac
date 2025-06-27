@@ -408,29 +408,72 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(value_to_list(["foo"]), ["foo"])
         self.assertEqual(value_to_list([True]), [True])
 
-    @override_settings(
-        SYSTEM_USERS={"test-system-user": {"admin": True, "is_service_account": True, "allow_any_org": True}}
-    )
+
+@override_settings(
+    SYSTEM_USERS={"test-system-user": {"admin": True, "is_service_account": True, "allow_any_org": True}}
+)
+class SystemUserFromTokenTests(IdentityRequest):
+    """Test the build_system_user_from_token functionality."""
+
+    def setUp(self):
+        """Set up the build_system_user_from_token tests."""
+        super().setUp()
+        self.test_user_id = "test-system-user"
+        self.test_account = "1111111"
+        self.test_org_id = "12345"
+        self.test_request_org_id = "54321"
+
+    def _create_mock_user(self, username=None):
+        """Create a mock user."""
+        mock_user = User()
+        mock_user.user_id = self.test_user_id
+        mock_user.account = self.test_account
+        mock_user.org_id = self.test_org_id
+        if username:
+            mock_user.username = username
+        return mock_user
+
+    def _create_mock_request(self):
+        """Create a mock request."""
+        request = mock.Mock()
+        request.META = {
+            "HTTP_X_RH_RBAC_ORG_ID": self.test_request_org_id,
+            "HTTP_X_RH_RBAC_ACCOUNT": self.test_request_org_id,
+        }
+        return request
+
+    def _assert_system_user_fields(self, result_user, expected_username):
+        """Assert that the system user fields are set correctly."""
+        self.assertIsNotNone(result_user)
+        self.assertEqual(result_user.username, expected_username)
+        self.assertEqual(result_user.user_id, self.test_user_id)
+        self.assertEqual(result_user.org_id, self.test_request_org_id)
+        self.assertEqual(result_user.account, self.test_request_org_id)
+        self.assertTrue(result_user.system)
+        self.assertTrue(result_user.admin)
+        self.assertTrue(result_user.is_service_account)
+
     @mock.patch.object(ITSSOTokenValidator, "get_user_from_bearer_token")
     def test_build_system_user_from_token(self, mock_get_user):
         """Test that fields are set when building a system user from token."""
-        mock_user = User()
-        mock_user.user_id = "test-system-user"
-        mock_user.account = "1111111"
-
+        mock_user = self._create_mock_user()
         mock_get_user.return_value = mock_user
-
-        request = mock.Mock()
-        request.META = {"HTTP_X_RH_RBAC_ORG_ID": "12345", "HTTP_X_RH_RBAC_ACCOUNT": "54321"}
+        request = self._create_mock_request()
 
         token_validator = ITSSOTokenValidator()
         result_user = build_system_user_from_token(request, token_validator)
 
-        self.assertIsNotNone(result_user)
-        self.assertEqual(result_user.username, "test-system-user")
-        self.assertEqual(result_user.user_id, "test-system-user")
-        self.assertEqual(result_user.org_id, "12345")
-        self.assertEqual(result_user.account, "54321")
-        self.assertTrue(result_user.system)
-        self.assertTrue(result_user.admin)
-        self.assertTrue(result_user.is_service_account)
+        self._assert_system_user_fields(result_user, self.test_user_id)
+
+    @mock.patch.object(ITSSOTokenValidator, "get_user_from_bearer_token")
+    def test_build_system_user_from_token_username(self, mock_get_user):
+        """Test that the username is not overwritten when already set."""
+        existing_username = "foo"
+        mock_user = self._create_mock_user(username=existing_username)
+        mock_get_user.return_value = mock_user
+        request = self._create_mock_request()
+
+        token_validator = ITSSOTokenValidator()
+        result_user = build_system_user_from_token(request, token_validator)
+
+        self._assert_system_user_fields(result_user, existing_username)
