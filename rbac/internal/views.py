@@ -32,7 +32,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
-from feature_flags import FEATURE_FLAGS
+from feature_flags import FEATURE_FLAGS, reinit_feature_flags
 from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
@@ -92,6 +92,7 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
+reinit_feature_flags()
 
 
 @contextmanager
@@ -1538,11 +1539,12 @@ def check_relation(request):
     req_data = json.loads(request.body)
 
     # Request parameters for resource lookup on relations api from post request
-    resource_type_name = req_data["resource_type"]["name"]
-    resource_type_namespace = req_data["resource_type"]["namespace"]
-    resource_subject_name = req_data["subject"]["subject"]["type"]["name"]
+    resource_name = req_data["resource"]["type"]["name"]
+    resource_namespace = req_data["resource"]["type"]["namespace"]
+    subject_name = req_data["subject"]["subject"]["type"]["name"]
     subject_id = req_data["subject"]["subject"]["id"]
-    resource_id = req_data["resource_type"]["id"]
+    subject_relation = req_data["subject"]["relation"]
+    resource_id = req_data["resource"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()
 
@@ -1552,13 +1554,14 @@ def check_relation(request):
 
             request_data = check_pb2.CheckRequest(
                 resource=common_pb2.ObjectReference(
-                    type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_type_name),
+                    type=common_pb2.ObjectType(namespace=resource_namespace, name=resource_name),
                     id=resource_id,
                 ),
                 relation=resource_relation,
                 subject=common_pb2.SubjectReference(
+                    relation=subject_relation,
                     subject=common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=resource_type_namespace, name=resource_subject_name),
+                        type=common_pb2.ObjectType(namespace=resource_namespace, name=subject_name),
                         id=subject_id,
                     ),
                 ),

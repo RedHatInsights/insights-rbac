@@ -15,17 +15,20 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+import uuid
+
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
-from rest_framework import serializers, status
+from management.workspace.utils import is_user_allowed
+from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
-from rest_framework.response import Response
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
@@ -125,9 +128,17 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     @action(detail=True, methods=["post"], url_path="move")
     @transaction.atomic()
-    def move(self, request, **kwargs):
+    def move(self, request, *args, **kwargs):
         """Move a workspace under new parent."""
-        # TODO: This method needs to be implemented
-        return Response(
-            {"id": kwargs.get("pk"), "parent_id": request.data.get("parent_id")}, status=status.HTTP_200_OK
-        )
+        new_parent_id = self._service._parent_id_query_param_validation(request)
+        self._check_target_workspace_write_access(request, new_parent_id)
+        return self._service.move(self.get_object(), request)
+
+    def _check_target_workspace_write_access(self, request, target_workspace_id: uuid.UUID) -> None:
+        """Check if user has write access to the target workspace."""
+        # Admin users bypass all access checks
+        if request.user.admin:
+            return
+
+        if not is_user_allowed(request, "write", str(target_workspace_id)):
+            raise PermissionDenied("You do not have write access to the target workspace.")

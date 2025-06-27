@@ -17,7 +17,7 @@
 """Model for workspace management."""
 import uuid_utils.compat as uuid
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import connection, models
 from django.db.models import Q, UniqueConstraint
 from django.db.models.expressions import RawSQL
 from django.db.models.functions import Upper
@@ -110,3 +110,40 @@ class Workspace(TenantAwareModel):
         """,
         )
         return Workspace.objects.filter(id__in=RawSQL(sql, [self.id, self.id]))
+
+    def get_max_descendant_depth(self):
+        """Get the maximum depth of any descendant workspace."""
+        sql = """
+                WITH RECURSIVE descendants AS (
+                    SELECT id, parent_id, 1 AS depth
+                    FROM management_workspace
+                    WHERE parent_id = %s
+
+                    UNION ALL
+
+                    SELECT w.id, w.parent_id, d.depth + 1
+                    FROM management_workspace w
+                    JOIN descendants d ON w.parent_id = d.id
+                )
+                SELECT COALESCE(MAX(depth), 0) FROM descendants
+            """
+        with connection.cursor() as cursor:
+            cursor.execute(sql, [self.id])
+            max_depth = cursor.fetchone()[0]
+        return max_depth
+
+    def descendants(self):
+        """Return a Queryset of all descendant workspaces."""
+        sql = """
+            WITH RECURSIVE descendants AS (
+                SELECT id, parent_id
+                FROM management_workspace
+                WHERE parent_id = %s
+                UNION
+                SELECT w.id, w.parent_id
+                FROM management_workspace w
+                JOIN descendants d ON w.parent_id = d.id
+            )
+            SELECT id FROM descendants
+        """
+        return Workspace.objects.filter(id__in=RawSQL(sql, [self.id]))
