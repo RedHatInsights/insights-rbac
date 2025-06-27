@@ -6,10 +6,7 @@ from django.db import migrations
 def populate_new_uuid_field(apps, schema_editor):
     AuditLog = apps.get_model("management", "auditlog")
     for obj in AuditLog.objects.all():
-        # Generate a unique code for each existing object
-        obj.uuid = str(uuid.uuid4())  # Example: first 8 chars of a UUID
-        # Or if you want a sequential code (be careful with concurrency in production)
-        # obj.new_code = f"CODE-{obj.id}"
+        obj.uuid = uuid.uuid4()
         obj.save(update_fields=["uuid"])
 
 
