@@ -103,6 +103,7 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
         system_users: dict[str, SystemUserConfig] = settings.SYSTEM_USERS
         if user and user.user_id in system_users:
             system_user = system_users[user.user_id]
+            user.username = user.user_id
             user.system = True
             user.admin = system_user.get("admin", False)
             user.is_service_account = system_user.get("is_service_account", False)

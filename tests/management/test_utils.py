@@ -31,13 +31,16 @@ from management.utils import (
     validate_and_get_key,
     is_valid_uuid,
     value_to_list,
+    build_system_user_from_token,
 )
+from management.authorization.token_validator import ITSSOTokenValidator
 from tests.identity_request import IdentityRequest
 
 from unittest import mock
 from unittest.mock import Mock
 
 from rest_framework import serializers
+from django.test import override_settings
 
 SERVICE_ACCOUNT_KEY = "service-account"
 
@@ -404,3 +407,30 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(value_to_list([1]), [1])
         self.assertEqual(value_to_list(["foo"]), ["foo"])
         self.assertEqual(value_to_list([True]), [True])
+
+    @override_settings(
+        SYSTEM_USERS={"test-system-user": {"admin": True, "is_service_account": True, "allow_any_org": True}}
+    )
+    @mock.patch.object(ITSSOTokenValidator, "get_user_from_bearer_token")
+    def test_build_system_user_from_token(self, mock_get_user):
+        """Test that fields are set when building a system user from token."""
+        mock_user = User()
+        mock_user.user_id = "test-system-user"
+        mock_user.account = "1111111"
+
+        mock_get_user.return_value = mock_user
+
+        request = mock.Mock()
+        request.META = {"HTTP_X_RH_RBAC_ORG_ID": "12345", "HTTP_X_RH_RBAC_ACCOUNT": "54321"}
+
+        token_validator = ITSSOTokenValidator()
+        result_user = build_system_user_from_token(request, token_validator)
+
+        self.assertIsNotNone(result_user)
+        self.assertEqual(result_user.username, "test-system-user")
+        self.assertEqual(result_user.user_id, "test-system-user")
+        self.assertEqual(result_user.org_id, "12345")
+        self.assertEqual(result_user.account, "54321")
+        self.assertTrue(result_user.system)
+        self.assertTrue(result_user.admin)
+        self.assertTrue(result_user.is_service_account)
