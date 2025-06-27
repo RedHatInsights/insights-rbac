@@ -25,11 +25,12 @@ from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
 from management.workspace.utils import is_user_allowed
-from rest_framework import serializers
+from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.request import Request
+from rest_framework.response import Response
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
@@ -134,7 +135,9 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Move a workspace under new parent."""
         new_parent_id = self._parent_id_query_param_validation(request)
         self._check_target_workspace_write_access(request, new_parent_id)
-        return self._service.move(self.get_object(), new_parent_id)
+        workspace = self.get_object()
+        self._service.move(self.get_object(), new_parent_id)
+        return Response({"id": str(workspace.id), "parent_id": str(new_parent_id)}, status=status.HTTP_200_OK)
 
     @staticmethod
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
