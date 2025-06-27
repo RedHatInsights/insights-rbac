@@ -16,6 +16,8 @@
 #
 
 """Model for audit logging."""
+from uuid import uuid4
+
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -51,7 +53,7 @@ class AuditLog(TenantAwareModel):
         (CREATE, "Create"),
         (REMOVE, "Remove"),
     )
-
+    uuid = models.UUIDField(default=uuid4, null=False, unique=True)
     created = models.DateTimeField(default=timezone.now)
     principal_username = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
