@@ -136,7 +136,8 @@ class WorkspaceViewSet(BaseV2ViewSet):
         self._check_target_workspace_write_access(request, new_parent_id)
         return self._service.move(self.get_object(), new_parent_id)
 
-    def _check_target_workspace_write_access(self, request, target_workspace_id: uuid.UUID) -> None:
+    @staticmethod
+    def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
         """Check if user has write access to the target workspace."""
         # Admin users bypass all access checks
         if request.user.admin:
