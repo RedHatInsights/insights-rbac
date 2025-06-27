@@ -388,6 +388,15 @@
             "markers": "python_version >= '3.7'",
             "version": "==22.1"
         },
+        "django-pgtransaction": {
+            "hashes": [
+                "sha256:4f666631031fd8aa9b9b25e90df63795aefb1cd4dfe2e097cf0ac95ccec54a5e",
+                "sha256:9af40c897ad8897e01f2da57752405a43a850b2b84e20a2b57715b4592f337d5"
+            ],
+            "index": "pypi",
+            "markers": "python_full_version >= '3.9.0' and python_version < '4'",
+            "version": "==2.0.0"
+        },
         "django-prometheus": {
             "hashes": [
                 "sha256:073628243d2a6de6a8a8c20e5b512872dfb85d66e1b60b28bcf1eca0155dad95",

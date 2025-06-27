@@ -45,10 +45,10 @@ from migration_tool.in_memory_tuples import (
 )
 from migration_tool.utils import create_relationship
 from rbac import urls
-from tests.identity_request import IdentityRequest
+from tests.identity_request import TransactionalIdentityRequest
 
 
-class WorkspaceViewTests(IdentityRequest):
+class WorkspaceViewTests(TransactionalIdentityRequest):
     """Test the Workspace view."""
 
     @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=10)
@@ -1139,14 +1139,33 @@ class WorkspaceMove(WorkspaceViewTests):
 
     def test_move_default_workspace(self):
         """Test you cannot move a default workspace."""
-        url = reverse("v2_management:workspace-move", kwargs={"pk": self.default_workspace.id})
+        standard_workspace_1 = self.service.create(
+            {"name": "W-1", "parent_id": self.default_workspace.id}, self.tenant
+        )
+        standard_workspace_1_1 = self.service.create(
+            {"name": "W-1-1", "parent_id": standard_workspace_1.id}, self.tenant
+        )
+        standard_workspace_1_1_1 = self.service.create(
+            {"name": "W-1-1-1", "parent_id": standard_workspace_1_1.id}, self.tenant
+        )
+        standard_workspace_1_2 = self.service.create(
+            {"name": "W-1-2", "parent_id": standard_workspace_1.id}, self.tenant
+        )
+
+        # move ws 1_1_1 under 1_2
+        url = reverse("v2_management:workspace-move", kwargs={"pk": standard_workspace_1_1_1.id})
         client = APIClient()
-        workspace_data_for_move = {"parent_id": self.standard_workspace.id}
+        workspace_data_for_move = {"parent_id": standard_workspace_1_2.id}
 
         response = client.post(url, workspace_data_for_move, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_body = response.json()
-        self.assertEqual(response_body.get("detail"), "Cannot move non-standard workspace.")
+
+        self.assertEqual(response_body["id"], str(standard_workspace_1_1_1.id))
+        self.assertEqual(response_body["parent_id"], str(standard_workspace_1_2.id))
+        self.assertEqual(
+            response_body["parent_id"], str(Workspace.objects.get(id=standard_workspace_1_1_1.id).parent_id)
+        )
 
     def test_move_ungrouped_workspace(self):
         """Test you cannot move a ungrouped workspace."""

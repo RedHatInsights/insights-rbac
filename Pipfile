@@ -42,6 +42,7 @@ python-dateutil = "==2.9.0.post0"
 redis = "==6.0.0"
 jsonschema = "*"
 unleashclient = "*"
+django-pgtransaction = "*"
 
 
 [dev-packages]

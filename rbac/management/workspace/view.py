@@ -15,8 +15,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+
+import logging
 import uuid
 
+import pgtransaction
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django_filters import rest_framework as filters
@@ -25,6 +28,7 @@ from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
 from management.workspace.utils import is_user_allowed
+from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -38,6 +42,8 @@ from ..utils import validate_uuid
 
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class WorkspaceViewSet(BaseV2ViewSet):
@@ -129,15 +135,30 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Update a workspace."""
         return super().update(request, *args, **kwargs)
 
-    @action(detail=True, methods=["post"], url_path="move")
-    @transaction.atomic()
-    def move(self, request, *args, **kwargs):
-        """Move a workspace under new parent."""
+    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE)
+    def _move_atomic(self, request, *args, **kwargs):
         new_parent_id = self._parent_id_query_param_validation(request)
         self._check_target_workspace_write_access(request, new_parent_id)
         workspace = self.get_object()
-        self._service.move(self.get_object(), new_parent_id)
-        return Response({"id": str(workspace.id), "parent_id": str(new_parent_id)}, status=status.HTTP_200_OK)
+        serializer = self.get_serializer(workspace)
+        validated_data = {"parent_id": new_parent_id}
+        return serializer.move(workspace, validated_data)
+
+    @action(detail=True, methods=["post"], url_path="move")
+    def move(self, request, *args, **kwargs):
+        """Move a workspace."""
+        try:
+            response_data = self._move_atomic(request, *args, **kwargs)
+            return Response(response_data, status=status.HTTP_200_OK)
+        except SerializationFailure:
+            logging.exception("SerializationFailure in workspace movement operation, ws id: %s", kwargs.get("pk"))
+            return Response({"detail": "Too many concurrent updates. Please retry."}, status=status.HTTP_409_CONFLICT)
+        except DeadlockDetected:
+            logging.exception("DeadlockDetected in workspace movement operation, ws id: %s", kwargs.get("pk"))
+            return Response(
+                {"detail": "Internal server error in concurrent updates. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @staticmethod
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
