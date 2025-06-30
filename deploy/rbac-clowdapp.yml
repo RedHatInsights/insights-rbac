@@ -87,6 +87,8 @@ objects:
           name: model-access-permissions
         - mountPath: /opt/rbac/rbac/management/principal/umb_certs
           name: umb-certs
+        - mountPath: /opt/rbac/rbac/management/principal/umb_certificates
+          name: umb-certificates
         volumes:
         - configMap:
             name: ${CONFIG_MAP_NAME}
@@ -94,6 +96,9 @@ objects:
         - configMap:
             name: ${MODEL_ACCESS_PERMISSIONS}
           name: model-access-permissions
+        - name: umb-certificates
+          secret:
+            secretName: it-umb-key-pair
         - name: umb-certs
           secret:
             secretName: service-accounts
@@ -115,6 +120,8 @@ objects:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          - name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
+            value: ${AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_DEBUG
@@ -247,6 +254,8 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: FEATURE_FLAGS_CACHE_DIR
+            value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -507,6 +516,8 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: FEATURE_FLAGS_CACHE_DIR
+            value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -514,6 +525,12 @@ objects:
                 key: psks.json
                 name: ${RBAC_PSKS}
                 optional: false
+          - name: SYSTEM_USERS
+            valueFrom:
+              secretKeyRef:
+                key: system-users.json
+                name: ${RBAC_SYSTEM_USERS}
+                optional: true
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
@@ -788,6 +805,8 @@ objects:
               value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
               value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: FEATURE_FLAGS_CACHE_DIR
+              value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1007,6 +1026,8 @@ objects:
               value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
               value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: FEATURE_FLAGS_CACHE_DIR
+              value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1069,6 +1090,14 @@ objects:
   data:
     psks.json: >-
       ewogICJhZHZpc29yIjogewogICAgImFsdC1zZWNyZXQiOiAiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiCiAgfSwKICAiYXBwcm92YWwiOiB7CiAgICAiYWx0LXNlY3JldCI6ICIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIKICB9LAogICJub3RpZmljYXRpb25zIjogewogICAgImFsdC1zZWNyZXQiOiAiMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMiCiAgfSwKICAiaW52ZW50b3J5IjogewogICAgInNlY3JldCI6ICI0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQiCiAgfQp9
+  type: Opaque
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: rbac-system-users
+  data:
+    system-users.json: >-
+      ewogICAgImluc2VydF9zdWJfaGVyZSI6IHsKICAgICAgICAiYWRtaW4iOiB0cnVlLAogICAgICAgICJpc19zZXJ2aWNlX2FjY291bnQiOiB0cnVlLAogICAgICAgICJhbGxvd19hbnlfb3JnIjogdHJ1ZQogICAgfQp9Cg==
   type: Opaque
 - apiVersion: v1
   kind: Secret
@@ -1146,6 +1175,16 @@ parameters:
 - displayName: RBAC PSKs
   name: RBAC_PSKS
   value: rbac-psks
+  description: Name of the secret containing PSK configuration.
+- displayName: RBAC system users
+  name: RBAC_SYSTEM_USERS
+  value: rbac-system-users
+  description: >
+    Name of the secret containing system user configuration.
+    System user configuration JSON defines which users, when identified via JWT authentication,
+    should be considered system users, and what authority they should have.
+    The keys of the JSON are the sub values of the tokens.
+    The values follow the SystemUserConfig typed dict.
 - displayName: Service Dependency Name
   name: SERVICE_DEPENDENCY_NAME
   value: rbac-pgsql
@@ -1476,3 +1515,9 @@ parameters:
 - name: REDHAT_SSO
   description: The SSO url for rbac environment
   value: 'sso.stage.redhat.com'
+- name: FEATURE_FLAGS_CACHE_DIR
+  description: The cache dir for unleash
+  value: '/tmp/unleash_cache'
+- description: Enables grabbing the certificates from the secret that provides certificates that will be automatically renewed.
+  name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
+  value: 'false'

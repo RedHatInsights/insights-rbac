@@ -37,6 +37,7 @@ from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
+from feature_flags import FEATURE_FLAGS
 
 
 # Database
@@ -274,6 +275,7 @@ LOGGING = {
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "feature_flags": {"handlers": DEBUG_LOG_HANDLERS, "level": "DEBUG"},
     },
 }
 
@@ -316,6 +318,22 @@ else:
     REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
     REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
     REDIS_PASSWORD = ENVIRONMENT.get_value("REDIS_PASSWORD", default=None)
+
+# Feature Flag settings
+FEATURE_FLAGS_CONF = LoadedConfig.featureFlags
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and FEATURE_FLAGS_CONF:
+    FEATURE_FLAGS_TOKEN = FEATURE_FLAGS_CONF.clientAccessToken
+    FEATURE_FLAGS_URL = (
+        f"{FEATURE_FLAGS_CONF.scheme.value}://{FEATURE_FLAGS_CONF.hostname}:{FEATURE_FLAGS_CONF.port}/api"
+    )
+    APP_NAME = LoadedConfig.metadata.name
+else:
+    FEATURE_FLAGS_TOKEN = ENVIRONMENT.get_value("FEATURE_FLAGS_TOKEN", default=None)
+    FEATURE_FLAGS_URL = ENVIRONMENT.get_value("FEATURE_FLAGS_URL", default="http://localhost:4242/api")
+    APP_NAME = "rbac"
+
+FEATURE_FLAGS_CACHE_DIR = ENVIRONMENT.get_value("FEATURE_FLAGS_CACHE_DIR", default="/tmp/")
+FEATURE_FLAGS.initialize()
 
 REDIS_SSL = REDIS_PASSWORD is not None
 
@@ -519,3 +537,11 @@ WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_
 # Manipulation of response to include ungrouped hosts id
 ADD_UNGROUPED_HOSTS_ID = ENVIRONMENT.bool("ADD_UNGROUPED_HOSTS_ID", default=False)
 REMOVE_NULL_VALUE = ENVIRONMENT.bool("REMOVE_NULL_VALUE", default=False)
+
+# Service-to-service (S2S) authentication settings
+SERVICE_PSKS = ENVIRONMENT.json("SERVICE_PSKS", default={})
+SYSTEM_USERS = ENVIRONMENT.json("SYSTEM_USERS", default={})
+
+# Enable reading the certificates that are automatically generated. It is a temporary flag that will allow us to switch
+# back and forth in the case of an error.
+AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED = ENVIRONMENT.bool("AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED", default=False)

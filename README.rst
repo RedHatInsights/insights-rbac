@@ -136,11 +136,13 @@ This will ensure that a mock identity header will be set on all requests for you
 You can modify this header to add new users to your tenant by changing the `username`, create new tenants by changing the `account_number`, and toggling between admin/non-admins by flipping `is_org_admin` from `True` to `False`.
 
 This will allow you to simulate a JWT or basic-auth request from the gateway.
+It does NOT allow providing a JWT directly to RBAC, which requires a JWT issuer to be configured.
+Instead, you use the `x-rh-identity` header to simulate a request from the gateway.
 
 Service to Service Requests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-RBAC also allows for service-to-service requests. These requests require a PSK, and some additional headers in order to authorize the request as an "admin". To test this locally, do the following:
+RBAC also allows for service-to-service requests. These requests require a preshared-key (PSK) or a JSON Web Token (JWT), and some additional headers in order to authorize the request as an "admin". To test PSK auth locally, do the following:
 
 First disable the local setting of the identity header in `dev_middleware.py` by [commenting this line out](https://github.com/RedHatInsights/insights-rbac/blob/b207668440faf8f951dec75ffef8891343b4131b/rbac/rbac/dev_middleware.py#L72)
 
@@ -148,11 +150,11 @@ Next, start the server with: ::
 
   make serve SERVICE_PSKS='{"catalog": {"secret": "abc123"}}'
 
-Verify that you cannot access any endpoints requiring auth: ::
+This configures an acceptable PSK. Verify that you cannot access any endpoints requiring auth: ::
 
   curl http://localhost:8000/api/rbac/v1/roles/ -v
 
-Verify that if you pass in the correct headers/values, you *can* access the endpoint: ::
+Verify that if you pass in the correct PSK headers/values, you *can* access the endpoint: ::
 
   curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-org-id: 10001' -H 'x-rh-rbac-client-id: catalog'
 
@@ -162,8 +164,6 @@ You can also send a request *with* the identity header explicitly in the curl co
 
 Generating v2 openAPI specification
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
 
 OpenAPI v2 specification is located in `docs/source/specs/v2/openapi.yaml`.
 This OpenAPI v2 specification is generated from TypeSpec file which is located in `docs/source/specs/typespec/main.tsp`
@@ -192,6 +192,40 @@ To run unit tests specifically::
 To lint the code base ::
 
     tox -e lint
+
+
+Feature Flags
+---------------
+You can configure Unleash for feature flag support in RBAC. In a Clowder environment,
+this should be initialized automatically if FeatureFlags are enabled in the ClowdApp.
+
+Locally, you can configure Unleash by setting the following:
+
+.. code-block:: bash
+
+  FEATURE_FLAGS_TOKEN # your Unleash API token
+  FEATURE_FLAGS_URL # your Unleash url, defaulting to http://localhost:4242/api
+  FEATURE_FLAGS_CACHE_DIR # filesystem cache location, defaulting to '/tmp/unleash_cache'
+
+Start a `local Unleash server <https://docs.getunleash.io/quickstart>`_.
+
+You can enforce feature flags, including custom constraints to allow gradual rollout
+to orgs by using the following pattern, assuming you've defined a context field `orgId`
+in Unleash, and are using that as a constraint in a flag's strategy to set an allow list:
+
+.. code-block:: python
+
+    from feature_flags import FEATURE_FLAGS
+
+    # org-specific rollout with context fields
+    show_alpha_feature = FEATURE_FLAGS.is_enabled("rbac.alpha_feature", {"orgId": request.user.org_id})
+    if show_alpha_feature:
+        print("Awesome alpha feature!")
+
+    # no context fields
+    show_beta_feature = FEATURE_FLAGS.is_enabled("rbac.beta_feature")
+    if show_beta_feature:
+        print("Awesome beta feature!")
 
 Caveats
 -------
