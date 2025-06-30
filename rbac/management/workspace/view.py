@@ -21,7 +21,6 @@ from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
-from management.workspace.utils import check_total_workspace_count_exceeded
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -80,16 +79,6 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 raise serializers.ValidationError(
                     {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
                 )
-
-        if check_total_workspace_count_exceeded(request):
-            # If two transactions to create workspaces happen at the same time
-            # both will get the okay to add the workspace
-            # which could lead to the case where there is an extra workspace over the allowed limit
-            # locking will have a scalability impact so better not to catch this condition
-            raise serializers.ValidationError(
-                "The total number of workspaces allowed for this organisation has been exceeded."
-            )
-
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):

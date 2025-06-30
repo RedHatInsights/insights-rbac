@@ -23,6 +23,7 @@ from django.db import transaction
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
+from management.workspace.utils import check_total_workspace_count_exceeded
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -41,6 +42,15 @@ class WorkspaceService:
                     parent_id = default.id
                 parent = Workspace.objects.get(id=parent_id)
                 self._enforce_hierarchy_depth(parent_id, request_tenant)
+                if check_total_workspace_count_exceeded(request_tenant):
+                    # If two transactions to create workspaces happen at the same time
+                    # both will get the okay to add the workspace
+                    # which could lead to the case where there is an extra workspace over the allowed limit
+                    # locking will have a scalability impact so better not to catch this condition
+                    raise serializers.ValidationError(
+                        "The total number of workspaces allowed for this organisation has been exceeded."
+                    )
+
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
                 dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE

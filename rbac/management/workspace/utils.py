@@ -109,12 +109,12 @@ def _get_group_list_from_resource_definitions(resource_definitions: dict) -> lis
     return group_list
 
 
-def check_total_workspace_count_exceeded(request) -> bool:
+def check_total_workspace_count_exceeded(tenant) -> bool:
     """Check if the current org has exceeded the allowed amount of workspaces.
 
     Returns True if total number of workspaces is exceeded.
     """
-    org = request.tenant
+    org = tenant
     max_limit = settings.WORKSPACE_ORG_CREATION_LIMIT
 
     workspace_count = Workspace.objects.filter(tenant=org, type="standard").count()
