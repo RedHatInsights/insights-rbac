@@ -21,6 +21,7 @@ import logging
 import jsonschema
 from django.db import transaction
 from django.urls import resolve
+from internal.schemas import RELATIONS_TOOL_INPUT_SCHEMAS
 from jsonschema import validate
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
@@ -121,60 +122,17 @@ def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
     return workspace
 
 
-def validate_relations_input(request, request_data) -> bool:
+def validate_relations_input(action, request_data) -> bool:
     """Check if request body provided to relations tool endpoints are valid."""
-    valid_endpoints = {"/_private/api/relations/lookup_resource/"}
-    request_endpoint = request.path
-    request_method = request.method
-
-    if request_endpoint in valid_endpoints and request_method == "POST":
-        match request_endpoint:
-            case "/_private/api/relations/lookup_resource/":
-                schema = {
-                    "type": "object",
-                    "properties": {
-                        "resource_type": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "namespace": {"type": "string"},
-                            },
-                            "required": ["name", "namespace"],
-                        },
-                        "relation": {"type": "string"},
-                        "subject": {
-                            "type": "object",
-                            "properties": {
-                                "subject": {
-                                    "type": "object",
-                                    "properties": {
-                                        "type": {
-                                            "type": "object",
-                                            "properties": {
-                                                "namespace": {"type": "string"},
-                                                "name": {"type": "string"},
-                                            },
-                                            "required": ["namespace", "name"],
-                                        },
-                                        "id": {"type": "string"},
-                                    },
-                                    "required": ["type", "id"],
-                                }
-                            },
-                            "required": ["subject"],
-                        },
-                    },
-                    "required": ["resource_type", "relation", "subject"],
-                }
-
-                try:
-                    validate(instance=request_data, schema=schema)
-                    logger.info("JSON data is valid.")
-                    return True
-                except jsonschema.exceptions.ValidationError as e:
-                    logger.info(f"JSON data is invalid: {e.message}")
-                    return False
-                except Exception as e:
-                    logger.info(f"Exception occurred when validating JSON body: {e}")
-                    return False
-    return False
+    RELATION_INPUT_SCHEMAS = {"lookup_resources": RELATIONS_TOOL_INPUT_SCHEMAS[0]}
+    validation_schema = RELATION_INPUT_SCHEMAS[action]
+    try:
+        validate(instance=request_data, schema=validation_schema)
+        logger.info("JSON data is valid.")
+        return True
+    except jsonschema.exceptions.ValidationError as e:
+        logger.info(f"JSON data is invalid: {e.message}")
+        return False
+    except Exception as e:
+        logger.info(f"Exception occurred when validating JSON body: {e}")
+        return False
