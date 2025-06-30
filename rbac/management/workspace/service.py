@@ -22,11 +22,8 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.utils import validate_uuid
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
-from rest_framework import serializers, status
-from rest_framework.request import Request
-from rest_framework.response import Response
+from rest_framework import serializers
 
 from api.models import Tenant
 
@@ -105,9 +102,8 @@ class WorkspaceService:
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
 
-    def move(self, instance: Workspace, request: Request) -> Response:
+    def move(self, instance: Workspace, new_parent_id: uuid.UUID) -> None:
         """Move a workspace under new parent."""
-        new_parent_id = self._parent_id_query_param_validation(request)
         new_parent_workspace = self._parent_workspace_validation(new_parent_id, instance)
         self._prevent_moving_workspace_under_itself(new_parent_id, instance)
         self._prevent_moving_non_standard_workspace(instance)
@@ -115,9 +111,7 @@ class WorkspaceService:
         self._prevent_duplicate_names_under_parent(instance, new_parent_workspace)
         self._enforce_hierarchy_depth(new_parent_id, instance.tenant)
         self._enforce_hierarchy_depth_for_descendants(new_parent_workspace, instance)
-
         # TODO: Implement actual move operation
-        return Response({"id": str(instance.id), "parent_id": str(new_parent_id)}, status=status.HTTP_200_OK)
 
     def _enforce_hierarchy_depth(self, target_parent_id: uuid.UUID, tenant: Tenant) -> None:
         """Enforce hierarchy depth limits on workspaces."""
@@ -160,15 +154,6 @@ class WorkspaceService:
                 f"({settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT})."
             )
             raise serializers.ValidationError({"workspace": [message]})
-
-    @staticmethod
-    def _parent_id_query_param_validation(request: Request) -> uuid.UUID:
-        """Validate the parent_id query parameter."""
-        new_parent_id = request.data.get("parent_id")
-        if not new_parent_id:
-            raise serializers.ValidationError({"parent_id": "The 'parent_id' field is required."})
-        validate_uuid(new_parent_id)
-        return uuid.UUID(new_parent_id)
 
     @staticmethod
     def _parent_workspace_validation(new_parent_id: uuid.UUID, instance: Workspace) -> Workspace:
