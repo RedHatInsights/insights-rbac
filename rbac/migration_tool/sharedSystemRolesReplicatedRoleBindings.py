@@ -128,8 +128,11 @@ def v1_role_to_v2_bindings(
                 if resource_id is None:
                     if resource_type != ("rbac", "workspace"):
                         raise ValueError(f"Resource ID is None for {resource_def}")
-                    ungrouped_ws = get_or_create_ungrouped_workspace(v1_role.tenant)
-                    resource_id = str(ungrouped_ws.id)
+                    if settings.REMOVE_NULL_VALUE:
+                        ungrouped_ws = get_or_create_ungrouped_workspace(v1_role.tenant)
+                        resource_id = str(ungrouped_ws.id)
+                    else:
+                        continue
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
             add_element(

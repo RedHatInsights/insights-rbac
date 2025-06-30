@@ -1649,7 +1649,9 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @override_settings(ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(
+        ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True, REMOVE_NULL_VALUE=True
+    )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_update_role_with_null_value(self, replicate):
         """Test that updating a role with a null value success."""
@@ -2158,7 +2160,9 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
         self.assertEqual(response.data["errors"][0]["detail"], "attributeFilter operation 'in' expects a List value")
 
-    @override_settings(ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(
+        ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True, REMOVE_NULL_VALUE=True
+    )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_create_role_with_null_value(self, replicate):
         """Test that create a role with a null value success."""
