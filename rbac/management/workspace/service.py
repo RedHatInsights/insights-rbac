@@ -105,10 +105,8 @@ class WorkspaceService:
     def move(self, instance: Workspace, new_parent_id: uuid.UUID) -> None:
         """Move a workspace under new parent."""
         new_parent_workspace = Workspace.objects.get(id=new_parent_id)
-        self._prevent_moving_workspace_under_itself(new_parent_id, instance)
         self._prevent_moving_non_standard_workspace(instance)
         self._prevent_moving_workspace_under_own_descendant(new_parent_id, instance)
-        self._prevent_duplicate_names_under_parent(instance, new_parent_workspace)
         self._enforce_hierarchy_depth(new_parent_id, instance.tenant)
         self._enforce_hierarchy_depth_for_descendants(new_parent_workspace, instance)
         # TODO: Implement actual move operation
@@ -156,12 +154,6 @@ class WorkspaceService:
             raise serializers.ValidationError({"workspace": [message]})
 
     @staticmethod
-    def _prevent_moving_workspace_under_itself(new_parent_id: uuid.UUID, instance: Workspace) -> None:
-        """Prevent moving workspace under itself."""
-        if instance.id == new_parent_id:
-            raise serializers.ValidationError({"parent_id": "Cannot move workspace under itself."})
-
-    @staticmethod
     def _prevent_moving_non_standard_workspace(instance: Workspace) -> None:
         """Prevent moving non-standard workspace."""
         if instance.type != Workspace.Types.STANDARD:
@@ -172,11 +164,3 @@ class WorkspaceService:
         """Prevent moving workspace under own descendant."""
         if instance.descendants().filter(id=new_parent_id):
             raise serializers.ValidationError({"parent_id": "Cannot move workspace under one of its own descendants."})
-
-    @staticmethod
-    def _prevent_duplicate_names_under_parent(instance: Workspace, parent_workspace: Workspace) -> None:
-        """Prevent duplicate workspace names under the same parent."""
-        if parent_workspace.children.filter(name=instance.name).exists():
-            raise serializers.ValidationError(
-                {"workspace": "A workspace with the same name already exists under the target parent."}
-            )
