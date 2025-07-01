@@ -275,6 +275,7 @@ LOGGING = {
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "feature_flags": {"handlers": DEBUG_LOG_HANDLERS, "level": "DEBUG"},
     },
 }
 
