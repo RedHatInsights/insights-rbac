@@ -104,7 +104,7 @@ class WorkspaceService:
 
     def move(self, instance: Workspace, new_parent_id: uuid.UUID) -> None:
         """Move a workspace under new parent."""
-        new_parent_workspace = self._parent_workspace_validation(new_parent_id, instance)
+        new_parent_workspace = Workspace.objects.get(id=new_parent_id)
         self._prevent_moving_workspace_under_itself(new_parent_id, instance)
         self._prevent_moving_non_standard_workspace(instance)
         self._prevent_moving_workspace_under_own_descendant(new_parent_id, instance)
@@ -154,16 +154,6 @@ class WorkspaceService:
                 f"({settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT})."
             )
             raise serializers.ValidationError({"workspace": [message]})
-
-    @staticmethod
-    def _parent_workspace_validation(new_parent_id: uuid.UUID, instance: Workspace) -> Workspace:
-        """Validate the parent workspace."""
-        workspace = Workspace.objects.filter(id=new_parent_id, tenant=instance.tenant).first()
-        if not workspace:
-            raise serializers.ValidationError(
-                {"parent_id": f"Parent workspace '{new_parent_id}' doesn't exist in tenant"}
-            )
-        return workspace
 
     @staticmethod
     def _prevent_moving_workspace_under_itself(new_parent_id: uuid.UUID, instance: Workspace) -> None:
