@@ -1094,7 +1094,7 @@ objects:
 - apiVersion: v1
   kind: Secret
   metadata:
-    name: rbac-system-users
+    name: system-users
   data:
     system-users.json: >-
       ewogICAgImluc2VydF9zdWJfaGVyZSI6IHsKICAgICAgICAiYWRtaW4iOiB0cnVlLAogICAgICAgICJpc19zZXJ2aWNlX2FjY291bnQiOiB0cnVlLAogICAgICAgICJhbGxvd19hbnlfb3JnIjogdHJ1ZQogICAgfQp9Cg==
@@ -1178,7 +1178,7 @@ parameters:
   description: Name of the secret containing PSK configuration.
 - displayName: RBAC system users
   name: RBAC_SYSTEM_USERS
-  value: rbac-system-users
+  value: system-users
   description: >
     Name of the secret containing system user configuration.
     System user configuration JSON defines which users, when identified via JWT authentication,
