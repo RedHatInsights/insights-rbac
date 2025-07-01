@@ -32,7 +32,7 @@ from kessel.relations.v1beta1 import lookup_pb2_grpc
 import pytz
 import json
 import uuid
-
+from grpc import RpcError
 from api.cross_access.model import CrossAccountRequest
 from api.models import User, Tenant
 from api.utils import reset_imported_tenants
@@ -3472,7 +3472,8 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             self.assertEqual(response.status_code, 204)
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
-    def test_lookup_resources_grpc_error(self, mock_token):
+    @patch("internal.views.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
+    def test_lookup_resources_grpc_error(self, mock_channel, mock_token):
         """Test a request to lookup_resource endpoint returns the correct response in case of grpc error."""
 
         request_body = {
@@ -3496,6 +3497,8 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.status_code, 500)
         self.assertIn("detail", response_body)
         self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
 
     @patch("internal.views.create_client_channel", side_effect=Exception("Simulated internal error"))
     def test_lookup_resources_error(self, mock_channel):
@@ -3522,3 +3525,5 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.status_code, 500)
         self.assertIn("detail", response_body)
         self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in call to lookup resources endpoint")
+        self.assertEqual(response_body["error"], "Simulated internal error")
