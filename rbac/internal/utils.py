@@ -21,7 +21,7 @@ import logging
 import jsonschema
 from django.db import transaction
 from django.urls import resolve
-from internal.schemas import RELATIONS_TOOL_INPUT_SCHEMAS
+from internal.schemas import RELATION_INPUT_SCHEMAS
 from jsonschema import validate
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
@@ -124,7 +124,6 @@ def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
 
 def validate_relations_input(action, request_data) -> bool:
     """Check if request body provided to relations tool endpoints are valid."""
-    RELATION_INPUT_SCHEMAS = {"lookup_resources": RELATIONS_TOOL_INPUT_SCHEMAS[0]}
     validation_schema = RELATION_INPUT_SCHEMAS[action]
     try:
         validate(instance=request_data, schema=validation_schema)
