@@ -18,6 +18,7 @@
 """Serializer for role management."""
 from django.conf import settings
 from django.utils.translation import gettext as _
+from feature_flags import FEATURE_FLAGS
 from internal.utils import get_or_create_ungrouped_workspace
 from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
@@ -75,7 +76,7 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
     def to_representation(self, instance):
         """Convert the ResourceDefinition instance to a dictionary."""
         serialized_data = super().to_representation(instance)
-        if settings.REMOVE_NULL_VALUE and instance.attributeFilter["key"] == "group.id":
+        if FEATURE_FLAGS.is_remove_null_value_enabled() and instance.attributeFilter["key"] == "group.id":
             value = instance.attributeFilter["value"]
             if isinstance(value, list) and None in value:
                 ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)

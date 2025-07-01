@@ -1192,17 +1192,17 @@ class RBACReadOnlyApiMiddlewareV2(RBACReadOnlyApiMiddleware):
         super().setUp()
         self.request = self.factory.get("/api/rbac/v2/workspaces/")
 
-    @override_settings(V2_READ_ONLY_API_MODE=True)
-    def test_get_read_only_v2_true(self):
-        """Test GET and V2_READ_ONLY_API_MODE=True."""
+    @patch("rbac.middleware.FEATURE_FLAGS.is_v2_api_read_only_mode_enabled", return_value=True)
+    def test_get_read_only_v2_true(self, ff_is_v2_api_read_only_mode_enabled: Mock):
+        """Test write methods with the "read only V2 API" feature flag enabled."""
         self.request.method = "GET"
         middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
         resp = middleware(self.request)
         self.assertEqual(resp, "OK")
 
-    @override_settings(V2_READ_ONLY_API_MODE=True)
-    def test_write_methods_read_only_v2_true(self):
-        """Test write methods and V2_READ_ONLY_API_MODE=True."""
+    @patch("rbac.middleware.FEATURE_FLAGS.is_v2_api_read_only_mode_enabled", return_value=True)
+    def test_write_methods_read_only_v2_true(self, feature_flags_is_enabled: Mock):
+        """Test write methods with the "read only V2 API" feature flag enabled."""
         for method in self.write_methods:
             self.request.method = method
             middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
@@ -1210,23 +1210,23 @@ class RBACReadOnlyApiMiddlewareV2(RBACReadOnlyApiMiddleware):
             self.assertReadOnlyFailure(resp)
 
     def test_get_read_only_v2_false(self):
-        """Test GET and V2_READ_ONLY_API_MODE=False."""
+        """Test GET with the "read only V2 API" feature flag disabled."""
         self.request.method = "GET"
         middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
         resp = middleware(self.request)
         self.assertEqual(resp, "OK")
 
     def test_write_methods_read_only_v2_false(self):
-        """Test write methods and V2_READ_ONLY_API_MODE=False."""
+        """Test write methods with the "read only V2 API" feature flag disabled."""
         for method in self.write_methods:
             self.request.method = method
             middleware = ReadOnlyApiMiddleware(get_response=Mock(return_value="OK"))
             resp = middleware(self.request)
             self.assertEqual(resp, "OK")
 
-    @override_settings(V2_READ_ONLY_API_MODE=True)
-    def test_write_methods_read_only_v2_true_v1_path(self):
-        """Test write methods and V2_READ_ONLY_API_MODE=False with a v1 API path succeeds."""
+    @patch("rbac.middleware.FEATURE_FLAGS.is_v2_api_read_only_mode_enabled", return_value=True)
+    def test_write_methods_read_only_v2_true_v1_path(self, feature_flags_is_enabled: Mock):
+        """Test write methods with the "read only V2 API" feature flag enabled and with a v1 API path succeeds."""
         for method in self.write_methods:
             self.request.method = method
             self.request.path = "/api/rbac/v1/roles/"

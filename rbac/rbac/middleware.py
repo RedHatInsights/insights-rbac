@@ -26,6 +26,7 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
+from feature_flags import FEATURE_FLAGS
 from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
 from management.models import Principal
@@ -467,7 +468,11 @@ class ReadOnlyApiMiddleware:
         """Determine whether or not to deny v2 writes."""
         resolver = resolve(request.path)
         api_namespace = resolver.app_name if resolver else ""
-        return settings.V2_READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace == "v2_management"
+        return (
+            FEATURE_FLAGS.is_v2_api_read_only_mode_enabled()
+            and self._is_write_request(request)
+            and api_namespace == "v2_management"
+        )
 
     def _read_only_response(self):
         """Return a read-only API error response."""
