@@ -3527,3 +3527,26 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertIn("error", response_body)
         self.assertEqual(response_body["detail"], "Error occurred in call to lookup resources endpoint")
         self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_resources_invalid_body(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_resource endpoint returns the correct response in case of input validation failure."""
+        request_body = {
+                "resource_type": {"name": "group", "namespace": "rbac"},
+                "relation": "member",
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                    }
+                },
+            }
+
+        response = self.client.post(
+                f"/_private/api/relations/lookup_resource/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+        print(response)
