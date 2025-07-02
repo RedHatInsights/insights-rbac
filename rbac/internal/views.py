@@ -1484,7 +1484,7 @@ def lookup_resource(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
     if not validate_relations_input("lookup_resources", req_data):
-        raise Exception("Invalid request body provided in request to lookup_resources.")
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
