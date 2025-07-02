@@ -6,4 +6,4 @@ security-compliance:
 
 # Add "bot" label to any PR where the head branch name starts with "konflux" or "dependabot"
 bot:
- - head_branch: ['^konflux/', '^dependabot/']
+ - head-branch: ['^konflux/', '^dependabot/']
