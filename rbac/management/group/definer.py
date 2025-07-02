@@ -243,7 +243,6 @@ def _roles_by_query_or_ids(roles_or_role_ids: Union[QuerySet[Role], list[str]]) 
         filtered_roles = Role.objects.filter(uuid__in=roles_or_role_ids)
         if filtered_roles.count() == 0:
             raise Http404("This role is nonexistent/nonvalid and cannot be added to the group")
-
         return filtered_roles
     else:
         # Given a queryset, so because it may not be efficient (e.g. query on non indexed field)
@@ -251,4 +250,8 @@ def _roles_by_query_or_ids(roles_or_role_ids: Union[QuerySet[Role], list[str]]) 
         # for further queries.
         # It MAY be faster to avoid this extra query, but this maintains prior behavior.
         role_names = list(roles_or_role_ids.values_list("name", flat=True))
-        return Role.objects.filter(name__in=role_names)
+        filtered_roles_name = Role.objects.filter(name__in=role_names)
+        if filtered_roles_name.count() == 0:
+            logging.warning("The roles may be nonexistent/nonvalid.")
+
+        return filtered_roles_name
