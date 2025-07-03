@@ -17,6 +17,7 @@
 """View for Workspace management."""
 import uuid
 
+import pgtransaction
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django_filters import rest_framework as filters
@@ -130,14 +131,16 @@ class WorkspaceViewSet(BaseV2ViewSet):
         return super().update(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], url_path="move")
-    @transaction.atomic()
+    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
     def move(self, request, *args, **kwargs):
         """Move a workspace under new parent."""
         new_parent_id = self._parent_id_query_param_validation(request)
         self._check_target_workspace_write_access(request, new_parent_id)
         workspace = self.get_object()
-        self._service.move(self.get_object(), new_parent_id)
-        return Response({"id": str(workspace.id), "parent_id": str(new_parent_id)}, status=status.HTTP_200_OK)
+        serializer = self.get_serializer(workspace)
+        validated_data = {"parent_id": new_parent_id}
+        response_data = serializer.move(workspace, validated_data)
+        return Response(response_data, status=status.HTTP_200_OK)
 
     @staticmethod
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:

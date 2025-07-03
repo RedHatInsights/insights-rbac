@@ -1091,7 +1091,6 @@ class WorkspaceMove(WorkspaceViewTests):
         url = reverse("v2_management:workspace-move", kwargs={"pk": self.default_workspace.id})
         client = APIClient()
         workspace_data_for_move = {"parent_id": self.standard_workspace.id}
-
         response = client.post(url, workspace_data_for_move, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         response_body = response.json()
