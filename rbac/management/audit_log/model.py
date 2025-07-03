@@ -59,6 +59,9 @@ class AuditLog(TenantAwareModel):
     description = models.TextField(max_length=255, null=False)
     resource_type = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
     resource_id = models.IntegerField(null=True)
+
+    resource_uuid = models.UUIDField(default=uuid4, null=True, unique=True)
+
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
     tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True)
 
@@ -73,8 +76,9 @@ class AuditLog(TenantAwareModel):
         if r_type == AuditLog.ROLE:
             role_object = get_object_or_404(Role, name=request.data["name"], tenant=verify_tenant)
             role_object_id = role_object.id
+            role_object_uuid = role_object.uuid
             role_object_name = "role: " + role_object.name
-            return role_object_id, role_object_name
+            return role_object_id, role_object_name, role_object_uuid
 
         elif r_type == AuditLog.GROUP:
             group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
@@ -105,7 +109,7 @@ class AuditLog(TenantAwareModel):
 
         self.resource_type = resource
 
-        self.resource_id, resource_name = self.get_resource_item(resource, request)
+        self.resource_id, resource_name, self.resource_uuid = self.get_resource_item(resource, request)
         self.description = "Created " + resource_name
 
         self.action = AuditLog.CREATE
@@ -118,6 +122,7 @@ class AuditLog(TenantAwareModel):
 
         self.resource_type = resource
         self.resource_id = object.id
+        self.resource_uuid = object.uuid
         resource_name = self.resource_type + ": " + object.name
 
         self.description = "Deleted " + resource_name
@@ -132,6 +137,7 @@ class AuditLog(TenantAwareModel):
 
         self.resource_type = resource
         self.resource_id = object.id
+        self.resource_uuid = object.uuid
         resource_name = resource + " " + object.name
 
         more_information = self.find_edited_field(resource, resource_name, request, object)
@@ -145,6 +151,7 @@ class AuditLog(TenantAwareModel):
         self.principal_username = request.user.username
         self.resource_type = resource_type
         self.resource_id = resource.id
+        self.resource_uuid = resource.uuid
         resource_name = "group: " + resource.name
 
         self.description = f"{assigned_resource_type} {values_for_description} added to {resource_name}"
@@ -158,6 +165,7 @@ class AuditLog(TenantAwareModel):
         self.principal_username = request.user.username
         self.resource_type = resource_type
         self.resource_id = resource.id
+        self.resource_uuid = resource.uuid
         resource_name = "group: " + resource.name
 
         self.description = f"{assigned_resource_type} {values_for_description} removed from {resource_name}"
