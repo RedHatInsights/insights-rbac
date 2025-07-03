@@ -1538,6 +1538,9 @@ def check_relation(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 
+    if not validate_relations_input("check_relation", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
+
     # Request parameters for resource lookup on relations api from post request
     resource_name = req_data["resource"]["type"]["name"]
     resource_namespace = req_data["resource"]["type"]["namespace"]
