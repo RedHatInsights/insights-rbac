@@ -1546,7 +1546,7 @@ def read_tuples(request):
     subject_namespace = req_data["filter"]["subject_filter"]["subject_namespace"]
     subject_type = req_data["filter"]["subject_filter"]["subject_type"]
     subject_id = req_data["filter"]["subject_filter"]["subject_id"]
-    subject_relation = req_data["filter"]["subject_filter"]["relation"]
+    # subject_relation = req_data["filter"]["subject_filter"]["relation"]
     token = jwt_manager.get_jwt_from_redis()
 
     try:
@@ -1563,7 +1563,6 @@ def read_tuples(request):
                         subject_namespace=subject_namespace,
                         subject_type=subject_type,
                         subject_id=subject_id,
-                        relation=subject_relation,
                     ),
                 )
             )
@@ -1586,6 +1585,7 @@ def read_tuples(request):
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in call to read tuples endpoint", "error": str(e)}, status=500)
+
 
 def check_relation(request):
     """POST to check relationship from relations api."""
