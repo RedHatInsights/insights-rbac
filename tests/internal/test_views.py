@@ -26,10 +26,13 @@ from django.urls import reverse
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
+from kessel.relations.v1beta1 import common_pb2
+from kessel.relations.v1beta1 import lookup_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc
 import pytz
 import json
 import uuid
-
+from grpc import RpcError
 from api.cross_access.model import CrossAccountRequest
 from api.models import User, Tenant
 from api.utils import reset_imported_tenants
@@ -3385,3 +3388,167 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(Workspace.objects.filter(type=Workspace.Types.STANDARD).count(), 2)
         self.assertEqual(replicate.call_count, 5)
         replicate_workspace.assert_not_called()
+
+
+class InternalRelationsViewsetTests(BaseInternalViewsetTests):
+    """Test the /_private/api/relations/ endpoints from internal viewset."""
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_resources(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_resource endpoint returns the correct response."""
+
+        mock_stub = MagicMock()
+        mock_response_1 = lookup_pb2.LookupResourcesResponse(
+            resource=common_pb2.ObjectReference(type=common_pb2.ObjectType(namespace="rbac", name="group"), id="12345")
+        )
+
+        mock_response_2 = lookup_pb2.LookupResourcesResponse(
+            resource=common_pb2.ObjectReference(type=common_pb2.ObjectType(namespace="rbac", name="group"), id="67891")
+        )
+
+        mock_stub.LookupResources.return_value = iter([mock_response_1, mock_response_2])
+
+        with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource_type": {"name": "group", "namespace": "rbac"},
+                "relation": "member",
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                    }
+                },
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/lookup_resource/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+
+            response_body = json.loads(response.content)
+            resource_1 = response_body["resources"][0]["resource"]
+            resource_2 = response_body["resources"][1]["resource"]
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("resources", response_body)
+            self.assertEqual(resource_1["id"], "12345")
+            self.assertEqual(resource_1["type"]["namespace"], "rbac")
+            self.assertEqual(resource_1["type"]["name"], "group")
+            self.assertEqual(resource_2["id"], "67891")
+            self.assertEqual(resource_2["type"]["namespace"], "rbac")
+            self.assertEqual(resource_2["type"]["name"], "group")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_resources_empty(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_resource endpoint returns the correct response when no resources are found."""
+
+        mock_stub = MagicMock()
+
+        mock_stub.LookupResources.return_value = []
+
+        with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource_type": {"name": "group", "namespace": "rbac"},
+                "relation": "member",
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                    }
+                },
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/lookup_resource/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+            self.assertEqual(response.status_code, 204)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
+    def test_lookup_resources_grpc_error(self, mock_channel, mock_token):
+        """Test a request to lookup_resource endpoint returns the correct response in case of grpc error."""
+
+        request_body = {
+            "resource_type": {"name": "group", "namespace": "rbac"},
+            "relation": "member",
+            "subject": {
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "principal"},
+                    "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                }
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/lookup_resource/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch("internal.views.create_client_channel", side_effect=Exception("Simulated internal error"))
+    def test_lookup_resources_error(self, mock_channel):
+        """Test a request to lookup_resource endpoint returns the correct response in case of an error."""
+
+        request_body = {
+            "resource_type": {"name": "group", "namespace": "rbac"},
+            "relation": "member",
+            "subject": {
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "principal"},
+                    "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                }
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/lookup_resource/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in call to lookup resources endpoint")
+        self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_resources_invalid_body(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_resource endpoint returns the correct response in case of input validation failure."""
+        request_body = {
+            "invalid field": {"name": "group", "namespace": "rbac"},
+            "relation": "member",
+            "subject": {
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "principal"},
+                    "id": "123adf3-wads1224-ascwqe31-asasu333-333",
+                }
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/lookup_resource/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response_body["detail"], "Invalid request body provided in request to lookup_resources.")

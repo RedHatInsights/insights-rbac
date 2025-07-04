@@ -37,7 +37,7 @@ from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
-from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
+from internal.utils import delete_bindings, get_or_create_ungrouped_workspace, validate_relations_input
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
@@ -1483,6 +1483,8 @@ def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
+    if not validate_relations_input("lookup_resources", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
@@ -1520,7 +1522,7 @@ def lookup_resource(request):
                 response_data.append(response_to_dict)
             json_response = {"resources": response_data}
             return JsonResponse(json_response, status=200)
-        return JsonResponse("No resource found", status=204)
+        return JsonResponse("No resource found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
