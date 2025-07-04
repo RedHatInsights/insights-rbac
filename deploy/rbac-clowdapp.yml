@@ -248,6 +248,8 @@ objects:
             value: ${WORKSPACE_ATTRIBUTE_FILTER}
           - name: WORKSPACE_HIERARCHY_ENABLED
             value: ${WORKSPACE_HIERARCHY_ENABLED}
+          - name: WORKSPACE_ORG_CREATION_LIMIT
+            value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
@@ -1498,6 +1500,9 @@ parameters:
 - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
   description: The limit of workspace hierarchy depth
   value: '2'
+- name: WORKSPACE_ORG_CREATION_LIMIT
+  description: The limit of workspaces for all organisations
+  value: '3000'
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
   description: When true, prevents the ability to create peer workspaces against the default workspace
   value: 'True'
