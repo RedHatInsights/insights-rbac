@@ -1484,7 +1484,7 @@ def lookup_resource(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
     if not validate_relations_input("lookup_resources", req_data):
-        raise Exception("Invalid request body provided in request to lookup_resources.")
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
@@ -1522,7 +1522,7 @@ def lookup_resource(request):
                 response_data.append(response_to_dict)
             json_response = {"resources": response_data}
             return JsonResponse(json_response, status=200)
-        return JsonResponse("No resource found", status=204)
+        return JsonResponse("No resource found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
