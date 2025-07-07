@@ -1163,8 +1163,7 @@
                 "$ref": "#/components/schemas/UUID"
               }
             ],
-            "description": "Parent ID of Workspace A",
-            "default": "Parent ID of Workspace A"
+            "description": "Parent ID of Workspace A"
           }
         },
         "allOf": [
@@ -1210,16 +1209,14 @@
               {
                 "$ref": "#/components/schemas/UUID"
               }
-            ],
-            "default": "Workspace ID of moved workspace"
-          },
+            ]}
+          ,
           "parent_id": {
             "allOf": [
               {
                 "$ref": "#/components/schemas/UUID"
               }
-            ],
-            "default": "New parent ID of moved workspace"
+            ]
           }
         }
       },
