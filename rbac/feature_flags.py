@@ -59,6 +59,9 @@ class FeatureFlags:
     def is_enabled(self, feature_name, context=None, fallback_function=None):
         """Override of is_enabled for checking flag values."""
         if not self.client:
+            self.initialize()
+
+        if not self.client:
             if fallback_function:
                 logger.warning("FeatureFlags not initialized, using fallback function")
                 return fallback_function(feature_name, context)
@@ -70,8 +73,3 @@ class FeatureFlags:
 
 
 FEATURE_FLAGS = FeatureFlags()
-
-
-def reinit_feature_flags():
-    """Reinitialize feature flags client."""
-    FEATURE_FLAGS.initialize()
