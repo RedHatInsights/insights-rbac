@@ -15,19 +15,26 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+import uuid
+
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
-from rest_framework import serializers
+from management.workspace.utils import is_user_allowed
+from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
+from rest_framework.request import Request
+from rest_framework.response import Response
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
+from ..utils import validate_uuid
 
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
@@ -126,4 +133,27 @@ class WorkspaceViewSet(BaseV2ViewSet):
     @transaction.atomic()
     def move(self, request, *args, **kwargs):
         """Move a workspace under new parent."""
-        return self._service.move(self.get_object(), request)
+        new_parent_id = self._parent_id_query_param_validation(request)
+        self._check_target_workspace_write_access(request, new_parent_id)
+        workspace = self.get_object()
+        self._service.move(self.get_object(), new_parent_id)
+        return Response({"id": str(workspace.id), "parent_id": str(new_parent_id)}, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
+        """Check if user has write access to the target workspace."""
+        # Admin users bypass all access checks
+        if request.user.admin:
+            return
+
+        if not is_user_allowed(request, "write", str(target_workspace_id)):
+            raise PermissionDenied("You do not have write access to the target workspace.")
+
+    @staticmethod
+    def _parent_id_query_param_validation(request: Request) -> uuid.UUID:
+        """Validate the parent_id query parameter."""
+        new_parent_id = request.data.get("parent_id")
+        if not new_parent_id:
+            raise serializers.ValidationError({"parent_id": "The 'parent_id' field is required."})
+        validate_uuid(new_parent_id)
+        return uuid.UUID(new_parent_id)
