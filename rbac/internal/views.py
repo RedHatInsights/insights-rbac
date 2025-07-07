@@ -38,8 +38,8 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import delete_bindings, get_or_create_ungrouped_workspace, validate_relations_input
-from kessel.relations.v1beta1 import check_pb2, lookup_pb2
-from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc
+from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
+from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
@@ -1484,7 +1484,7 @@ def lookup_resource(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
     if not validate_relations_input("lookup_resources", req_data):
-        raise Exception("Invalid request body provided in request to lookup_resources.")
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
@@ -1522,7 +1522,7 @@ def lookup_resource(request):
                 response_data.append(response_to_dict)
             json_response = {"resources": response_data}
             return JsonResponse(json_response, status=200)
-        return JsonResponse("No resource found", status=204)
+        return JsonResponse("No resource found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
@@ -1531,6 +1531,61 @@ def lookup_resource(request):
         return JsonResponse(
             {"detail": "Error occurred in call to lookup resources endpoint", "error": str(e)}, status=500
         )
+
+
+def read_tuples(request):
+    """POST read tuples from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    # Request parameters for read tuples on relations api from post request
+    resource_namespace = req_data["filter"]["resource_namespace"]
+    resource_type = req_data["filter"]["resource_type"]
+    resource_id = req_data["filter"]["resource_id"]
+    filter_relation = req_data["filter"]["relation"]
+    subject_namespace = req_data["filter"]["subject_filter"]["subject_namespace"]
+    subject_type = req_data["filter"]["subject_filter"]["subject_type"]
+    subject_id = req_data["filter"]["subject_filter"]["subject_id"]
+    subject_relation = req_data["filter"]["subject_filter"]["relation"]
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
+
+            request_data = relation_tuples_pb2.ReadTuplesRequest(
+                filter=relation_tuples_pb2.RelationTupleFilter(
+                    resource_namespace=resource_namespace,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    relation=filter_relation,
+                    subject_filter=relation_tuples_pb2.SubjectFilter(
+                        subject_namespace=subject_namespace,
+                        subject_type=subject_type,
+                        subject_id=subject_id,
+                        relation=subject_relation,
+                    ),
+                )
+            )
+
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.ReadTuples(request_data, metadata=metadata)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"tuples": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No tuples found", status=204)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in call to read tuples endpoint", "error": str(e)}, status=500)
 
 
 def check_relation(request):
