@@ -156,7 +156,7 @@ spec:
       workspaces:
       - name: basic-auth
         workspace: git-auth
-          # clone the repository for unit tests
+    # clone the repository for unit tests
     - name: clone-repository-oci-ta
       params:
       - name: url
@@ -179,7 +179,7 @@ spec:
       workspaces:
       - name: basic-auth
         workspace: git-auth
-          # run the unit tests
+    # run the unit tests
     - description: Running Insights RBAC unit tests
       name: run-unit-tests
       params:
