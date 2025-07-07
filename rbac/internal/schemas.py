@@ -10,15 +10,6 @@ TYPE_SCHEMA = {
     "required": ["namespace", "name"],
 }
 
-TYPE_SCHEMA_TWO = {
-    "type": "object",
-    "properties": {
-        "type": TYPE_SCHEMA,
-        "id": {"type": "string"},
-    },
-    "required": ["type", "id"],
-}
-
 ENTITY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -47,7 +38,7 @@ RELATIONS_TOOL_INPUT_SCHEMAS = [
     {
         "type": "object",
         "properties": {
-            "resource": TYPE_SCHEMA_TWO,
+            "resource": ENTITY_SCHEMA,
             "relation": {"type": "string"},
             "subject": {
                 "type": "object",
