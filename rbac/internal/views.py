@@ -1538,6 +1538,9 @@ def read_tuples(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 
+    if not validate_relations_input("read_tuples", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to read_tuples."}, status=500)
+
     # Request parameters for read tuples on relations api from post request
     resource_namespace = req_data["filter"]["resource_namespace"]
     resource_type = req_data["filter"]["resource_type"]
@@ -1546,7 +1549,7 @@ def read_tuples(request):
     subject_namespace = req_data["filter"]["subject_filter"]["subject_namespace"]
     subject_type = req_data["filter"]["subject_filter"]["subject_type"]
     subject_id = req_data["filter"]["subject_filter"]["subject_id"]
-    subject_relation = req_data["filter"]["subject_filter"]["relation"]
+    subject_relation = req_data.get("filter", {}).get("subject_filter", {}).get("relation") or None
     token = jwt_manager.get_jwt_from_redis()
 
     try:
