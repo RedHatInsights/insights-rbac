@@ -20,6 +20,7 @@ ENTITY_SCHEMA = {
 }
 
 RELATIONS_TOOL_INPUT_SCHEMAS = [
+    # "api/relations/lookup_resource/"
     {
         "type": "object",
         "properties": {
@@ -32,7 +33,25 @@ RELATIONS_TOOL_INPUT_SCHEMAS = [
             },
         },
         "required": ["resource_type", "relation", "subject"],
-    }
+    },
+    # "api/relations/check_relation/"
+    {
+        "type": "object",
+        "properties": {
+            "resource": ENTITY_SCHEMA,
+            "relation": {"type": "string"},
+            "subject": {
+                "type": "object",
+                "relation": {"type": "string"},
+                "properties": {"subject": ENTITY_SCHEMA},
+                "required": ["subject"],
+            },
+        },
+        "required": ["resource", "relation", "subject"],
+    },
 ]
 
-RELATION_INPUT_SCHEMAS = {"lookup_resources": RELATIONS_TOOL_INPUT_SCHEMAS[0]}
+RELATION_INPUT_SCHEMAS = {
+    "lookup_resources": RELATIONS_TOOL_INPUT_SCHEMAS[0],
+    "check_relation": RELATIONS_TOOL_INPUT_SCHEMAS[1],
+}
