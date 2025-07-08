@@ -1546,7 +1546,7 @@ def check_relation(request):
     resource_namespace = req_data["resource"]["type"]["namespace"]
     subject_name = req_data["subject"]["subject"]["type"]["name"]
     subject_id = req_data["subject"]["subject"]["id"]
-    subject_relation = req_data["subject"]["relation"]
+    subject_relation = req_data.get("subject", {}).get("relation") or None
     resource_id = req_data["resource"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()

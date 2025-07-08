@@ -44,7 +44,7 @@ RELATIONS_TOOL_INPUT_SCHEMAS = [
                 "type": "object",
                 "relation": {"type": "string"},
                 "properties": {"subject": ENTITY_SCHEMA},
-                "required": ["subject", "relation"],
+                "required": ["subject"],
             },
         },
         "required": ["resource", "relation", "subject"],
