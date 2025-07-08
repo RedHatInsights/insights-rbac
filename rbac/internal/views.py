@@ -1593,12 +1593,16 @@ def check_relation(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 
+    if not validate_relations_input("check_relation", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
+
     # Request parameters for resource lookup on relations api from post request
     resource_name = req_data["resource"]["type"]["name"]
     resource_namespace = req_data["resource"]["type"]["namespace"]
     subject_name = req_data["subject"]["subject"]["type"]["name"]
+    subject_namespace = req_data["subject"]["subject"]["type"]["namespace"]
     subject_id = req_data["subject"]["subject"]["id"]
-    subject_relation = req_data["subject"]["relation"]
+    subject_relation = req_data.get("subject", {}).get("relation") or None
     resource_id = req_data["resource"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()
@@ -1616,7 +1620,7 @@ def check_relation(request):
                 subject=common_pb2.SubjectReference(
                     relation=subject_relation,
                     subject=common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=resource_namespace, name=subject_name),
+                        type=common_pb2.ObjectType(namespace=subject_namespace, name=subject_name),
                         id=subject_id,
                     ),
                 ),
