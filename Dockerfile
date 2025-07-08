@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1747111267 AS base
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6-1751286687 AS base
 
 USER root
 
@@ -37,7 +37,7 @@ LABEL summary="$SUMMARY" \
 # glibc-langpack-en is needed to set locale to en_US and disable warning about it
 # gcc to compile some python packages (e.g. ciso8601)
 # shadow-utils to make useradd available
-RUN INSTALL_PKGS="python3.12 python3.12-devel glibc-langpack-en libpq-devel gcc shadow-utils" && \
+RUN INSTALL_PKGS="python3.12 python3.12-devel glibc-langpack-en libpq-devel gcc shadow-utils libffi-devel" && \
     microdnf --nodocs -y upgrade && \
     microdnf -y --setopt=tsflags=nodocs --setopt=install_weak_deps=0 install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
