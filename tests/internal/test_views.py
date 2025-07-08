@@ -3689,3 +3689,34 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertIn("error", response_body)
         self.assertEqual(response_body["detail"], "Error occurred in call to check relation endpoint")
         self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_check_relation_invalid_body(self, mock_create_channel, mock_get_token):
+        """Test a request to check_relation endpoint returns the correct response in case of input validation failure."""
+
+        request_body = {
+            "invalid_resource": {
+                "type": {"name": "role_binding", "namespace": "rbac"},
+                "id": "1234-5677-234235-234560",
+            },
+            "relation": "subject",
+            "invalid_subject": {
+                "relation": "member",
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "group"},
+                    "id": "9479873-2345643-123523-213253",
+                },
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/check_relation/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response_body["detail"], "Invalid request body provided in request to check_relation.")
