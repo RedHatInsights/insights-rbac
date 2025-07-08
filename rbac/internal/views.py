@@ -1634,7 +1634,7 @@ def check_relation(request):
             response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
 
             return JsonResponse(response_to_dict, status=200)
-        return JsonResponse("No relation found", status=204)
+        return JsonResponse("No relation found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
