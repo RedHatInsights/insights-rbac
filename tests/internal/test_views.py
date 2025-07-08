@@ -27,8 +27,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
 from kessel.relations.v1beta1 import common_pb2
-from kessel.relations.v1beta1 import lookup_pb2
-from kessel.relations.v1beta1 import lookup_pb2_grpc
+from kessel.relations.v1beta1 import lookup_pb2, check_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc, check_pb2_grpc
 import pytz
 import json
 import uuid
@@ -3552,3 +3552,171 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         response_body = json.loads(response.content)
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response_body["detail"], "Invalid request body provided in request to lookup_resources.")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_check_relation(self, mock_create_channel, mock_get_token):
+        """Test a request to check_relation endpoint returns the correct response."""
+
+        mock_stub = MagicMock()
+        mock_response_1 = check_pb2.CheckResponse(allowed=True)
+
+        mock_stub.Check.return_value = mock_response_1
+
+        with patch("internal.views.check_pb2_grpc.KesselCheckServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource": {
+                    "type": {"name": "role_binding", "namespace": "rbac"},
+                    "id": "1234-5677-234235-234560",
+                },
+                "relation": "subject",
+                "subject": {
+                    "relation": "member",
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "group"},
+                        "id": "9479873-2345643-123523-213253",
+                    },
+                },
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/check_relation/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+
+            response_body = json.loads(response.content)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response_body["allowed"], True)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_check_relation_empty(self, mock_create_channel, mock_get_token):
+        """Test a request to check_relation endpoint returns the correct response when no relation is found."""
+
+        mock_stub = MagicMock()
+
+        mock_stub.Check.return_value = []
+
+        with patch("internal.views.check_pb2_grpc.KesselCheckServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource": {
+                    "type": {"name": "role_binding", "namespace": "rbac"},
+                    "id": "1234-5677-234235-234560",
+                },
+                "relation": "subject",
+                "subject": {
+                    "relation": "member",
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "group"},
+                        "id": "9479873-2345643-123523-213253",
+                    },
+                },
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/check_relation/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+            self.assertEqual(response.status_code, 204)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
+    def test_check_relation_grpc_error(self, mock_channel, mock_token):
+        """Test a request to check_relation endpoint returns the correct response in case of grpc error."""
+
+        request_body = {
+            "resource": {
+                "type": {"name": "role_binding", "namespace": "rbac"},
+                "id": "1234-5677-234235-234560",
+            },
+            "relation": "subject",
+            "subject": {
+                "relation": "member",
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "group"},
+                    "id": "9479873-2345643-123523-213253",
+                },
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/check_relation/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch("internal.views.create_client_channel", side_effect=Exception("Simulated internal error"))
+    def test_check_relation_error(self, mock_channel):
+        """Test a request to check_relation endpoint returns the correct response in case of an error."""
+
+        request_body = {
+            "resource": {
+                "type": {"name": "role_binding", "namespace": "rbac"},
+                "id": "1234-5677-234235-234560",
+            },
+            "relation": "subject",
+            "subject": {
+                "relation": "member",
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "group"},
+                    "id": "9479873-2345643-123523-213253",
+                },
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/check_relation/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in call to check relation endpoint")
+        self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_check_relation_invalid_body(self, mock_create_channel, mock_get_token):
+        """Test a request to check_relation endpoint returns the correct response in case of input validation failure."""
+
+        request_body = {
+            "invalid_resource": {
+                "type": {"name": "role_binding", "namespace": "rbac"},
+                "id": "1234-5677-234235-234560",
+            },
+            "relation": "subject",
+            "invalid_subject": {
+                "relation": "member",
+                "subject": {
+                    "type": {"namespace": "rbac", "name": "group"},
+                    "id": "9479873-2345643-123523-213253",
+                },
+            },
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/check_relation/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response_body["detail"], "Invalid request body provided in request to check_relation.")
