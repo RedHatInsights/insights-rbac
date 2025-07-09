@@ -54,6 +54,13 @@ class UtilsTests(IdentityRequest):
 
         # setup principal
         self.principal = Principal.objects.create(username="principalA", tenant=self.tenant)
+        service_account_uuid = str(uuid.uuid4())
+        self.service_account = Principal.objects.create(
+            username=f"service-account-{service_account_uuid}",
+            tenant=self.tenant,
+            type=Principal.Types.SERVICE_ACCOUNT,
+            service_account_id=service_account_uuid,
+        )
 
         # setup data for the principal
         self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
@@ -133,6 +140,18 @@ class UtilsTests(IdentityRequest):
         """Test that we get the correct groups for a principal."""
         groups = groups_for_principal(self.principal, self.tenant)
         self.assertCountEqual(groups, [self.groupA, self.default_group])
+
+    def test_groups_for_service_account(self):
+        """Test that we get no default groups for a service account."""
+        groups = groups_for_principal(self.service_account, self.tenant)
+        self.assertCountEqual(groups, [])
+
+    def test_groups_for_service_account_with_custom_group(self):
+        """Test that we get the correct groups for a service account with a custom group."""
+        group = Group.objects.create(name="custom group", tenant=self.tenant)
+        group.principals.add(self.service_account)
+        groups = groups_for_principal(self.service_account, self.tenant)
+        self.assertCountEqual(groups, [group])
 
     def test_policies_for_principal(self):
         """Test that we get the correct groups for a principal."""
@@ -224,6 +243,9 @@ class UtilsTests(IdentityRequest):
         """Test that when a service account principal does not exist in the database, it gets created."""
         client_id = uuid.uuid4()
         service_account_username = f"service-account-{client_id}"
+
+        # Ensure the service account does not exist
+        self.assertFalse(Principal.objects.filter(username=service_account_username, tenant=self.tenant).exists())
 
         request = mock.Mock()
         request.tenant = self.tenant

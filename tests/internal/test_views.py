@@ -27,8 +27,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
 from kessel.relations.v1beta1 import common_pb2
-from kessel.relations.v1beta1 import lookup_pb2, check_pb2
-from kessel.relations.v1beta1 import lookup_pb2_grpc, check_pb2_grpc
+from kessel.relations.v1beta1 import lookup_pb2, check_pb2, relation_tuples_pb2
+from kessel.relations.v1beta1 import lookup_pb2_grpc, check_pb2_grpc, relation_tuples_pb2_grpc
 import pytz
 import json
 import uuid
@@ -3407,7 +3407,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             resource=common_pb2.ObjectReference(type=common_pb2.ObjectType(namespace="rbac", name="group"), id="67891")
         )
 
-        mock_stub.LookupResources.return_value = iter([mock_response_1, mock_response_2])
+        mock_stub.LookupResources.return_value = [mock_response_1, mock_response_2]
 
         with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
 
@@ -3720,3 +3720,191 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         response_body = json.loads(response.content)
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response_body["detail"], "Invalid request body provided in request to check_relation.")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_read_tuples(self, mock_create_channel, mock_get_token):
+        """Test a request to read_tuples endpoint returns the correct response."""
+
+        mock_stub = MagicMock()
+        mock_response_1 = relation_tuples_pb2.ReadTuplesResponse(
+            tuple=common_pb2.Relationship(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace="rbac", name="group"),
+                    id="a5d1234-d3307-4123453-a12314sdf-4asdzxccq82",
+                ),
+                relation="member",
+                subject=common_pb2.SubjectReference(
+                    subject=common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace="rbac", name="principal"), id="test-213213-principal"
+                    )
+                ),
+            ),
+            pagination=common_pb2.ResponsePagination(
+                continuation_token="asfhdsfuygsdufkysagdfiwesudfyd192837102937sdiufgsjkahdfd=="
+            ),
+        )
+
+        mock_stub.ReadTuples.return_value = [mock_response_1]
+
+        with patch("internal.views.relation_tuples_pb2_grpc.KesselTupleServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "filter": {
+                    "resource_id": "bob_club",
+                    "resource_type": "group",
+                    "resource_namespace": "rbac",
+                    "relation": "member",
+                    "subject_filter": {
+                        "subject_type": "principal",
+                        "subject_namespace": "rbac",
+                        "subject_id": "bob",
+                    },
+                }
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/read_tuples/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+
+            response_body = json.loads(response.content)
+            response_tuple = response_body["tuples"][0]["tuple"]
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response_tuple["resource"]["type"]["namespace"], "rbac")
+            self.assertEqual(response_tuple["resource"]["type"]["name"], "group")
+            self.assertEqual(response_tuple["resource"]["id"], "a5d1234-d3307-4123453-a12314sdf-4asdzxccq82")
+            self.assertEqual(response_tuple["relation"], "member")
+            self.assertEqual(response_tuple["subject"]["subject"]["type"]["namespace"], "rbac")
+            self.assertEqual(response_tuple["subject"]["subject"]["type"]["name"], "principal")
+            self.assertEqual(response_tuple["subject"]["subject"]["id"], "test-213213-principal")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_read_tuples_empty(self, mock_create_channel, mock_get_token):
+        """Test a request to read_tuples endpoint returns the correct response when no tuples are found."""
+
+        mock_stub = MagicMock()
+
+        mock_stub.ReadTuples.return_value = []
+
+        with patch("internal.views.relation_tuples_pb2_grpc.KesselTupleServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "filter": {
+                    "resource_id": "bob_club",
+                    "resource_type": "group",
+                    "resource_namespace": "rbac",
+                    "relation": "member",
+                    "subject_filter": {
+                        "subject_type": "principal",
+                        "subject_namespace": "rbac",
+                        "subject_id": "bob",
+                    },
+                }
+            }
+
+            response = self.client.post(
+                f"/_private/api/relations/read_tuples/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+
+            self.assertEqual(response.status_code, 204)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
+    def test_read_tuples_grpc_error(self, mock_channel, mock_token):
+        """Test a request to read_tuples endpoint returns the correct response in case of grpc error."""
+
+        request_body = {
+            "filter": {
+                "resource_id": "bob_club",
+                "resource_type": "group",
+                "resource_namespace": "rbac",
+                "relation": "member",
+                "subject_filter": {
+                    "subject_type": "principal",
+                    "subject_namespace": "rbac",
+                    "subject_id": "bob",
+                },
+            }
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/read_tuples/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch("internal.views.create_client_channel", side_effect=Exception("Simulated internal error"))
+    def test_read_tuples_error(self, mock_channel):
+        """Test a request to read_tuples endpoint returns the correct response in case of an error."""
+
+        request_body = {
+            "filter": {
+                "resource_id": "bob_club",
+                "resource_type": "group",
+                "resource_namespace": "rbac",
+                "relation": "member",
+                "subject_filter": {
+                    "subject_type": "principal",
+                    "subject_namespace": "rbac",
+                    "subject_id": "bob",
+                },
+            }
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/read_tuples/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in call to read tuples endpoint")
+        self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_read_tuples_invalid_body(self, mock_create_channel, mock_get_token):
+        """Test a request to read_tuples endpoint returns the correct response in case of input validation failure."""
+
+        request_body = {
+            "invalid_filter": {
+                "resource_id": "bob_club",
+                "resource_type": "group",
+                "resource_namespace": "rbac",
+                "relation": "member",
+                "invalid_subject_filter": {
+                    "subject_type": "principal",
+                    "subject_namespace": "rbac",
+                    "subject_id": "bob",
+                },
+            }
+        }
+
+        response = self.client.post(
+            f"/_private/api/relations/read_tuples/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response_body["detail"], "Invalid request body provided in request to read_tuples.")

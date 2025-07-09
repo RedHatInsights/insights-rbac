@@ -1582,7 +1582,7 @@ def read_tuples(request):
                 response_data.append(response_to_dict)
             json_response = {"tuples": response_data}
             return JsonResponse(json_response, status=200)
-        return JsonResponse("No tuples found", status=204)
+        return JsonResponse("No tuples found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
