@@ -948,7 +948,7 @@ class GroupViewSet(
                         request,
                         AuditLog.GROUP,
                         group,
-                        service_account_info.username,
+                        service_account_info,
                         Principal.Types.SERVICE_ACCOUNT,
                     )
                 # Create a default and successful response object. If no user principals are to be removed below,
@@ -972,7 +972,7 @@ class GroupViewSet(
                         request,
                         AuditLog.GROUP,
                         group,
-                        users_info.username,
+                        users_info,
                         Principal.Types.USER,
                     )
                 response = Response(status=status.HTTP_204_NO_CONTENT)
