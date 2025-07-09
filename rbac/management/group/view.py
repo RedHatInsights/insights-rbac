@@ -869,7 +869,7 @@ class GroupViewSet(
                         request,
                         AuditLog.GROUP,
                         group,
-                        sa.username,
+                        sa,
                         Principal.Types.SERVICE_ACCOUNT,
                     )
             new_users = []
@@ -881,7 +881,7 @@ class GroupViewSet(
                         request,
                         AuditLog.GROUP,
                         group,
-                        user.username,
+                        user,
                         Principal.Types.USER,
                     )
 
@@ -1302,7 +1302,7 @@ class GroupViewSet(
                         request,
                         AuditLog.GROUP,
                         group,
-                        role["name"],
+                        role,
                         AuditLog.ROLE,
                     )
 
@@ -1337,7 +1337,7 @@ class GroupViewSet(
                         request,
                         AuditLog.GROUP,
                         group,
-                        role_info.name,
+                        role_info,
                         AuditLog.ROLE,
                     )
             response = Response(status=status.HTTP_204_NO_CONTENT)
