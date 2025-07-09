@@ -13,7 +13,6 @@ def populate_resource_uuid_field(apps, schema_editor):
     for obj in AuditLog.objects.all():
         if obj.resource_type == "Role":
             find_role = get_object_or_404(Role, id=obj.resource_id)
-            print(find_role.uuid)
             obj.resource_uuid = find_role.uuid
         if obj.resource_type == "Group":
             find_group = get_object_or_404(Group, id=obj.resource_id)
