@@ -127,6 +127,54 @@ class ResourceDefinition(TenantAwareModel):
             return self.tenant.id
 
 
+class RoleV2(TenantAwareModel):
+    """A role."""
+
+    class Types(models.TextChoices):
+        CUSTOM = "custom"
+        SEEDED = "seeded"
+        PLATFORM_ALL_USERS = "platform-all-users"
+        PLATFORM_ALL_ADMINS = "platform-all-admins"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False, unique=True, null=False)
+    name = models.CharField(max_length=150)
+    display_name = models.CharField(default="", max_length=150)
+    description = models.TextField(null=True)
+    type = models.CharField(choices=Types.choices, default=Types.CUSTOM, null=False, db_index=True, max_length=20)
+    permissions = models.ManyToManyField(Permission, related_name="roles_v2")
+    children = models.ManyToManyField("self", related_name="parents", symmetrical=False)
+    version = models.PositiveIntegerField(default=1)
+    created = models.DateTimeField(default=timezone.now)
+    modified = AutoDateTimeField(default=timezone.now)
+    objects = FilterQuerySet.as_manager()
+
+    @property
+    def role(self):
+        """Get role for self."""
+        return self
+
+    class Meta:
+        ordering = ["name", "modified"]
+        constraints = [
+            models.UniqueConstraint(fields=["name", "tenant"], name="unique role v2 name per tenant"),
+            models.UniqueConstraint(fields=["display_name", "tenant"], name="unique role v2 display name per tenant"),
+        ]
+
+    def save(self, *args, **kwargs):
+        """Ensure that display_name is populated on save."""
+        if not self.display_name:
+            self.display_name = self.name
+        super().save(*args, **kwargs)
+
+    def external_role_id(self):
+        """Return external role id."""
+        return self.ext_relation.ext_id if hasattr(self, "ext_relation") else None
+
+    def external_tenant_name(self):
+        """Return external tenant name."""
+        return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
+
+
 class ExtTenant(models.Model):
     """External tenant."""
 
