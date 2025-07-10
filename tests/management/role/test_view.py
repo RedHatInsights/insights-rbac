@@ -50,7 +50,7 @@ from migration_tool.in_memory_tuples import (
 
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from unittest.mock import ANY, patch, call
+from unittest.mock import ANY, patch, call, Mock
 
 URL = reverse("v1_management:role-list")
 
@@ -2230,7 +2230,8 @@ class RoleViewsetTests(IdentityRequest):
         )
 
     @override_settings(ROLE_CREATE_ALLOW_LIST="inventory")
-    def test_retrieving_role_replaces_null_value(self):
+    @patch("rbac.middleware.FEATURE_FLAGS.is_remove_null_value_enabled", return_value=False)
+    def test_retrieving_role_replaces_null_value(self, ff_is_remove_null_value_enabled: Mock):
         """Test that we can replace the null value in resource definition when retrieving role."""
         role_name = "test-role"
         Permission.objects.create(permission="inventory:*:*", tenant=self.tenant)
@@ -2263,8 +2264,9 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(access_data, response.data.get("access"))
 
         # test that null value will be replaced
-        with self.settings(REMOVE_NULL_VALUE=True):
-            response = client.get(url, **self.headers)
+        ff_is_remove_null_value_enabled.return_value = True
+        response = client.get(url, **self.headers)
+
         ungrouped_hosts_id = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
         access_data[0]["resourceDefinitions"][0]["attributeFilter"]["value"] = [str(ungrouped_hosts_id.id)]
         self.assertEqual(response.data.get("access"), access_data)
