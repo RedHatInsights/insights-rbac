@@ -20,6 +20,7 @@ from unittest.mock import patch
 from api.models import CrossAccountRequest
 from django.urls import reverse
 from django.utils import timezone
+from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -107,12 +108,35 @@ class AccessViewTests(IdentityRequest):
             tenant=self.tenant,
         )
 
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+
+        service_account_data = self._create_service_account_data()
+        self.service_account = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        self.service_account.save()
+
+        request_context_service_account_principal = self._create_request_context(
+            customer_data=customer_data,
+            service_account_data=service_account_data,
+            is_org_admin=False,
+        )
+        self.headers_service_account = request_context_service_account_principal["request"].META
+
     def tearDown(self):
         """Tear down access view tests."""
         Group.objects.all().delete()
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        Access.objects.all().delete()
         Workspace.objects.filter(type=Workspace.Types.UNGROUPED_HOSTS).delete()
         Workspace.objects.filter(type=Workspace.Types.STANDARD).delete()
         Workspace.objects.filter(type=Workspace.Types.DEFAULT).delete()
@@ -187,6 +211,117 @@ class AccessViewTests(IdentityRequest):
         url = "{}?application={}".format(reverse("v1_management:access"), "default")
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
+
+    def test_get_empty_access_with_service_account(self):
+        """Test the service account that not belongs to any custom group returns no permissions."""
+        url = reverse("v1_management:access") + f"?application="
+        client = APIClient()
+        response = client.get(url, **self.headers_service_account)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertEqual(response.data.get("data"), [])
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
+        self.assertEqual(response.data.get("meta").get("offset"), 0)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="my_appA,my_appB")
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_access_with_service_account(self, sa_mock):
+        """Test that we can obtain the expected access without pagination with service account in headers."""
+        # Create service account and headers
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+
+        sa_data = self._create_service_account_data()
+        sa = Principal.objects.create(
+            username=sa_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_data["client_id"],
+        )
+
+        request_context_sa_principal = self._create_request_context(
+            customer_data=customer_data,
+            service_account_data=sa_data,
+            is_org_admin=False,
+        )
+        headers_sa = request_context_sa_principal["request"].META
+
+        # Create a custom role with 2 permissions
+        p1 = Permission.objects.create(permission="my_appA:resource_A:*", tenant=self.tenant)
+        p2 = Permission.objects.create(permission="my_appB:resource_B:*", tenant=self.tenant)
+        access_data = [
+            {"permission": "my_appA:resource_A:*", "resourceDefinitions": []},
+            {"permission": "my_appB:resource_B:*", "resourceDefinitions": []},
+        ]
+        test_data = {"name": "service account test role", "access": access_data}
+        client = APIClient()
+        url = reverse("v1_management:role-list")
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        role = Role.objects.get(uuid=role_uuid)
+
+        # Create a custom group
+        test_data = {"name": "service account test group"}
+        url = reverse("v1_management:group-list")
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        group_uuid = response.data.get("uuid")
+        group = Group.objects.get(uuid=group_uuid)
+
+        # Add the service account into group
+        sa_uuid = str(sa.service_account_id)
+        sa_mock.return_value = [
+            {
+                "clientId": sa_uuid,
+                "name": f"service_account_name_{sa_uuid.split('-')[0]}",
+                "description": f"Service Account description {sa_uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+        url = reverse("v1_management:group-principals", kwargs={"uuid": group.uuid})
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Add the role into group
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
+        test_data = {"roles": [role.uuid]}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check we get all permissions for the service account
+        url = reverse("v1_management:access") + "?application="
+        response = client.get(url, **headers_sa)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data.get("data")
+        self.assertIsNotNone(data)
+        permissions = [p["permission"] for p in data]
+        self.assertIn(p1.permission, permissions)
+        self.assertIn(p2.permission, permissions)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(response.data.get("meta").get("offset"), 0)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+        # Check we get only expected permissions when app name is in the query
+        url = reverse("v1_management:access") + "?application=my_appA"
+        response = client.get(url, **headers_sa)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data.get("data")
+        self.assertIsNotNone(data)
+        permissions = [p["permission"] for p in data]
+        self.assertIn(p1.permission, permissions)
+        self.assertEqual(response.data.get("meta").get("limit"), 1)
+        self.assertEqual(response.data.get("meta").get("offset"), 0)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
 
     def test_get_access_to_return_unique_records(self):
         """Test that we can obtain the expected access without pagination."""
