@@ -112,6 +112,6 @@ class V2ResultsSetPagination(StandardResultsSetPagination):
         request_limit = request.query_params.get(self.limit_query_param)
         if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
             self.max_limit = None
-            self.default_limit = len(queryset)
+            self.default_limit = queryset.count()
 
         return super().paginate_queryset(queryset, request, view)

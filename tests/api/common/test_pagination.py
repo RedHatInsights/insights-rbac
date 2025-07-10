@@ -18,6 +18,7 @@
 from unittest.mock import Mock, patch
 
 from django.test import TestCase
+from django.contrib.auth.models import User
 from rest_framework.test import APIRequestFactory
 from rest_framework.request import Request
 
@@ -113,12 +114,13 @@ class V2ResultsSetPaginationTest(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.paginator = V2ResultsSetPagination()
-        self.mock_queryset = range(100)
+        self.users_list_comp = [User.objects.create(username=f"user_{i}") for i in range(100)]
+        self.queryset = User.objects.all()
 
     def test_default_limit(self):
         """Test the default limit."""
         request = Request(self.factory.get("/foo/"))
-        paginated_queryset = self.paginator.paginate_queryset(self.mock_queryset, request)
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
         self.assertEqual(len(paginated_queryset), StandardResultsSetPagination.default_limit)
         self.assertEqual(self.paginator.limit, StandardResultsSetPagination.default_limit)
         self.assertEqual(self.paginator.max_limit, StandardResultsSetPagination.max_limit)
@@ -126,7 +128,7 @@ class V2ResultsSetPaginationTest(TestCase):
     def test_explicit_limit(self):
         """Test an explicit limit."""
         request = Request(self.factory.get("/foo/?limit=5"))
-        paginated_queryset = self.paginator.paginate_queryset(self.mock_queryset, request)
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
         self.assertEqual(len(paginated_queryset), 5)
         self.assertEqual(self.paginator.limit, 5)
         self.assertEqual(self.paginator.max_limit, StandardResultsSetPagination.max_limit)
@@ -134,16 +136,17 @@ class V2ResultsSetPaginationTest(TestCase):
     def test_no_limit(self):
         """Test no limit."""
         request = Request(self.factory.get("/foo/?limit=-1"))
-        all_records = self.mock_queryset
-        paginated_queryset = self.paginator.paginate_queryset(all_records, request)
-        self.assertEqual(len(paginated_queryset), len(all_records))
-        self.assertEqual(self.paginator.limit, len(all_records))
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        self.assertEqual(len(paginated_queryset), self.queryset.count())
+        self.assertEqual(self.paginator.limit, self.queryset.count())
         self.assertEqual(self.paginator.max_limit, None)
 
     def test_empty_queryset(self):
         """Test empty queryset with no limit."""
         request = Request(self.factory.get("/foo/?limit=-1"))
-        paginated_queryset = self.paginator.paginate_queryset([], request)
+        empty_queryset = User.objects.none()
+
+        paginated_queryset = self.paginator.paginate_queryset(empty_queryset, request)
         self.assertEqual(len(paginated_queryset), 0)
         self.assertEqual(self.paginator.limit, 0)
         self.assertEqual(self.paginator.max_limit, None)
