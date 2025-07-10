@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the feature flags module."""
+import threading
+import time
 from django.test import TestCase
 from feature_flags import FEATURE_FLAGS
 
@@ -32,15 +34,84 @@ class FeatureFlagsTest(TestCase):
 
     def test_feature_flags_client_not_initialized(self):
         """Test that we can still check flags without a client."""
-        client = FEATURE_FLAGS.client = None
-        self.assertEqual(client, None)
+        FEATURE_FLAGS.client = None
+        self.assertEqual(FEATURE_FLAGS.client, None)
         self.assertEqual(FEATURE_FLAGS.is_enabled("foo"), False)
 
     def test_feature_flags_client_not_initialized_custom_fallback(self):
         """Test that we can still check flags without a client but a custom fallback."""
-        client = FEATURE_FLAGS.client = None
-        self.assertEqual(client, None)
+        FEATURE_FLAGS.client = None
+        self.assertEqual(FEATURE_FLAGS.client, None)
         self.assertEqual(FEATURE_FLAGS.is_enabled("foo", fallback_function=self._truthy_fallback), True)
+
+    def test_thread_safe_initialization(self):
+        """Test that initialization is thread-safe."""
+        FEATURE_FLAGS.client = None
+
+        # Track initialization attempts
+        initialization_count = 0
+        original_init = FEATURE_FLAGS._init_unleash_client
+
+        def counting_init():
+            nonlocal initialization_count
+            initialization_count += 1
+            # Add small delay to increase chance of race condition
+            time.sleep(0.01)
+            return original_init()
+
+        FEATURE_FLAGS._init_unleash_client = counting_init
+
+        # Start multiple threads trying to initialize
+        threads = []
+        for i in range(5):
+            thread = threading.Thread(target=FEATURE_FLAGS.initialize)
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        # Should only initialize once despite multiple threads
+        self.assertEqual(initialization_count, 1)
+        self.assertIsNotNone(FEATURE_FLAGS.client)
+
+        # Restore original method
+        FEATURE_FLAGS._init_unleash_client = original_init
+
+    def test_multiple_initialize_calls(self):
+        """Test that multiple calls to initialize are safe."""
+        FEATURE_FLAGS.client = None
+
+        # Call initialize multiple times - should be safe
+        FEATURE_FLAGS.initialize()
+        FEATURE_FLAGS.initialize()
+
+        # Should only be initialized once
+        self.assertIsNotNone(FEATURE_FLAGS.client)
+
+    def test_initialization_retry_on_failure(self):
+        """Test that failed initialization can be retried."""
+        FEATURE_FLAGS.client = None
+
+        # Mock a failing initialization
+        original_init = FEATURE_FLAGS._init_unleash_client
+
+        def failing_init():
+            raise Exception("Initialization failed")
+
+        FEATURE_FLAGS._init_unleash_client = failing_init
+
+        # First call should fail
+        FEATURE_FLAGS.initialize()
+        self.assertIsNone(FEATURE_FLAGS.client)
+
+        # Restore working initialization
+        FEATURE_FLAGS._init_unleash_client = original_init
+
+        # Second call should succeed
+        FEATURE_FLAGS.initialize()
+        self.assertIsNotNone(FEATURE_FLAGS.client)
 
     def _truthy_fallback(self, feature_name, context):
         return True

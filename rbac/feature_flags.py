@@ -16,6 +16,7 @@
 #
 """Feature flag module module."""
 import logging
+import threading
 
 from UnleashClient import UnleashClient
 from django.conf import settings
@@ -29,13 +30,24 @@ class FeatureFlags:
     def __init__(self):
         """Add attributes."""
         self.client = None
+        self._lock = threading.Lock()
 
     def initialize(self):
-        """Set the client on an instance."""
-        try:
-            self.client = self._init_unleash_client()
-        except Exception:
-            logger.exception("Error initializing FeatureFlags client")
+        """Set the client on an instance with thread safety."""
+        if self.client is not None:
+            return
+
+        # Acquire a lock and double-check to avoid race conditions
+        with self._lock:
+            if self.client is not None:
+                return
+
+            try:
+                self.client = self._init_unleash_client()
+                logger.info("Feature flags client initialized successfully.")
+            except Exception:
+                logger.exception("Error initializing FeatureFlags client")
+                self.client = None
 
     def _init_unleash_client(self):
         """Initialize the client."""
@@ -58,10 +70,10 @@ class FeatureFlags:
 
     def is_enabled(self, feature_name, context=None, fallback_function=None):
         """Override of is_enabled for checking flag values."""
-        if not self.client:
+        if self.client is None:
             self.initialize()
 
-        if not self.client:
+        if self.client is None:
             if fallback_function:
                 logger.warning("FeatureFlags not initialized, using fallback function")
                 return fallback_function(feature_name, context)
