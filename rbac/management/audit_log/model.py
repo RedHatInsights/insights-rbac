@@ -192,18 +192,20 @@ class AuditLog(TenantAwareModel):
         if assigned_resource_type == "user":
             self.secondary_resource_uuid = secondary_resource_object.uuid
             self.description = (
-                f"{assigned_resource_type} {secondary_resource_object.username} added to {resource_name}"
+                f"{assigned_resource_type} {secondary_resource_object.username} removed from {resource_name}"
             )
 
         if assigned_resource_type == "service-account":
             self.secondary_resource_uuid = secondary_resource_object.uuid
             self.description = (
-                f"{assigned_resource_type} {secondary_resource_object.username} added to {resource_name}"
+                f"{assigned_resource_type} {secondary_resource_object.username} removed from {resource_name}"
             )
 
         if assigned_resource_type == "role":
             self.secondary_resource_uuid = secondary_resource_object.uuid
-            self.description = f"{assigned_resource_type} {secondary_resource_object.name} added to {resource_name}"
+            self.description = (
+                f"{assigned_resource_type} {secondary_resource_object.name} removed from {resource_name}"
+            )
 
         self.action = AuditLog.REMOVE
         self.tenant_id = self.get_tenant_id(request)
