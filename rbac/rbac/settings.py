@@ -333,7 +333,6 @@ else:
     APP_NAME = "rbac"
 
 FEATURE_FLAGS_CACHE_DIR = ENVIRONMENT.get_value("FEATURE_FLAGS_CACHE_DIR", default="/tmp/")
-FEATURE_FLAGS.initialize()
 
 REDIS_SSL = REDIS_PASSWORD is not None
 

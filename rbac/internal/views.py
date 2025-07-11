@@ -32,14 +32,14 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
-from feature_flags import FEATURE_FLAGS, reinit_feature_flags
+from feature_flags import FEATURE_FLAGS
 from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
-from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
-from kessel.relations.v1beta1 import check_pb2, lookup_pb2
-from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc
+from internal.utils import delete_bindings, get_or_create_ungrouped_workspace, validate_relations_input
+from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
+from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
@@ -92,7 +92,6 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
-reinit_feature_flags()
 
 
 @contextmanager
@@ -1483,6 +1482,8 @@ def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
+    if not validate_relations_input("lookup_resources", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
@@ -1520,7 +1521,7 @@ def lookup_resource(request):
                 response_data.append(response_to_dict)
             json_response = {"resources": response_data}
             return JsonResponse(json_response, status=200)
-        return JsonResponse("No resource found", status=204)
+        return JsonResponse("No resource found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
@@ -1531,17 +1532,79 @@ def lookup_resource(request):
         )
 
 
+def read_tuples(request):
+    """POST read tuples from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    if not validate_relations_input("read_tuples", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to read_tuples."}, status=500)
+
+    # Request parameters for read tuples on relations api from post request
+    resource_namespace = req_data["filter"]["resource_namespace"]
+    resource_type = req_data["filter"]["resource_type"]
+    resource_id = req_data["filter"]["resource_id"]
+    filter_relation = req_data["filter"]["relation"]
+    subject_namespace = req_data["filter"]["subject_filter"]["subject_namespace"]
+    subject_type = req_data["filter"]["subject_filter"]["subject_type"]
+    subject_id = req_data["filter"]["subject_filter"]["subject_id"]
+    subject_relation = req_data.get("filter", {}).get("subject_filter", {}).get("relation") or None
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
+
+            request_data = relation_tuples_pb2.ReadTuplesRequest(
+                filter=relation_tuples_pb2.RelationTupleFilter(
+                    resource_namespace=resource_namespace,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    relation=filter_relation,
+                    subject_filter=relation_tuples_pb2.SubjectFilter(
+                        subject_namespace=subject_namespace,
+                        subject_type=subject_type,
+                        subject_id=subject_id,
+                        relation=subject_relation,
+                    ),
+                )
+            )
+
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.ReadTuples(request_data, metadata=metadata)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"tuples": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No tuples found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in call to read tuples endpoint", "error": str(e)}, status=500)
+
+
 def check_relation(request):
     """POST to check relationship from relations api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 
+    if not validate_relations_input("check_relation", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
+
     # Request parameters for resource lookup on relations api from post request
     resource_name = req_data["resource"]["type"]["name"]
     resource_namespace = req_data["resource"]["type"]["namespace"]
     subject_name = req_data["subject"]["subject"]["type"]["name"]
+    subject_namespace = req_data["subject"]["subject"]["type"]["namespace"]
     subject_id = req_data["subject"]["subject"]["id"]
-    subject_relation = req_data["subject"]["relation"]
+    subject_relation = req_data.get("subject", {}).get("relation") or None
     resource_id = req_data["resource"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()
@@ -1559,7 +1622,7 @@ def check_relation(request):
                 subject=common_pb2.SubjectReference(
                     relation=subject_relation,
                     subject=common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=resource_namespace, name=subject_name),
+                        type=common_pb2.ObjectType(namespace=subject_namespace, name=subject_name),
                         id=subject_id,
                     ),
                 ),
@@ -1573,7 +1636,7 @@ def check_relation(request):
             response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
 
             return JsonResponse(response_to_dict, status=200)
-        return JsonResponse("No relation found", status=204)
+        return JsonResponse("No relation found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
