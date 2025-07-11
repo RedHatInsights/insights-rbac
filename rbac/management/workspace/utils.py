@@ -17,7 +17,6 @@
 """Utils for workspace model."""
 from uuid import UUID
 
-from django.conf import settings
 from management.models import Access, Workspace
 from management.utils import get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
@@ -108,15 +107,3 @@ def _get_group_list_from_resource_definitions(resource_definitions: dict) -> lis
         except (ValueError, TypeError):
             group_list.remove(gid)
     return group_list
-
-
-def check_total_workspace_count_exceeded(tenant) -> bool:
-    """Check if the current org has exceeded the allowed amount of workspaces.
-
-    Returns True if total number of workspaces is exceeded.
-    """
-    org = tenant
-    max_limit = settings.WORKSPACE_ORG_CREATION_LIMIT
-
-    workspace_count = Workspace.objects.filter(tenant=org, type="standard").count()
-    return workspace_count >= max_limit
