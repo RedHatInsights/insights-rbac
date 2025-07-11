@@ -142,8 +142,8 @@ class WorkspaceViewSet(BaseV2ViewSet):
     @staticmethod
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
         """Check if user has write access to the target workspace."""
-        # Admin users bypass all access checks
-        if request.user.admin:
+        # Admin users bypass all access checks within the tenant
+        if request.user.admin and Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
             return
 
         if not is_user_allowed(request, "write", str(target_workspace_id)):
