@@ -361,6 +361,55 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         resp_body = json.loads(response.content.decode())
         self.assertEqual(resp_body.get("detail"), "Can't create workspace with same name within same parent workspace")
 
+    @override_settings(WORKSPACE_ORG_CREATION_LIMIT=4)
+    def test_create_workspaces_exceed_limit(self):
+        """Test that when creating workspaces if the limit exceeds the organisations workspace limit the correct response is returned."""
+        workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
+
+        for name in workspace_names:
+            workspace_data = {
+                "name": name,
+                "description": "New Workspace - description",
+                "tenant_id": self.tenant.id,
+                "parent_id": self.standard_workspace.id,
+            }
+
+            Workspace.objects.create(**workspace_data)
+
+        test_data = {"name": "New Workspace", "parent_id": self.standard_workspace.id}
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_body = json.loads(response.content.decode())
+        self.assertEqual(
+            resp_body.get("detail"), "The total number of workspaces allowed for this organisation has been exceeded."
+        )
+
+    @override_settings(WORKSPACE_ORG_CREATION_LIMIT=9)
+    def test_create_workspaces_not_exceed_limit(self):
+        """Test that when creating workspaces if the limit does not exceed the organisations workspace limit the correct response is returned."""
+        workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
+
+        for name in workspace_names:
+            workspace_data = {
+                "name": name,
+                "description": "New Workspace - description",
+                "tenant_id": self.tenant.id,
+                "parent_id": self.standard_workspace.id,
+            }
+
+            Workspace.objects.create(**workspace_data)
+
+        test_data = {"name": "New Workspace", "parent_id": self.standard_workspace.id}
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], test_data["name"])
+
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")

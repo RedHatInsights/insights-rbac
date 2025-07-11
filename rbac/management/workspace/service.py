@@ -41,6 +41,15 @@ class WorkspaceService:
                     parent_id = default.id
                 parent = Workspace.objects.get(id=parent_id)
                 self._enforce_hierarchy_depth(parent_id, request_tenant)
+                if self._check_total_workspace_count_exceeded(request_tenant):
+                    # If two transactions to create workspaces happen at the same time
+                    # both will get the okay to add the workspace
+                    # which could lead to the case where there is an extra workspace over the allowed limit
+                    # locking will have a scalability impact so better not to catch this condition
+                    raise serializers.ValidationError(
+                        "The total number of workspaces allowed for this organisation has been exceeded."
+                    )
+
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
                 dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE
@@ -137,6 +146,16 @@ class WorkspaceService:
         target_parent_workspace = Workspace.objects.get(id=target_parent_id, tenant=tenant)
         max_depth_for_workspace = len(target_parent_workspace.ancestors()) + 1
         return max_depth_for_workspace > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT
+
+    def _check_total_workspace_count_exceeded(self, tenant: Tenant) -> bool:
+        """Check if the current org has exceeded the allowed amount of workspaces.
+
+        Returns True if total number of workspaces is exceeded.
+        """
+        max_limit = settings.WORKSPACE_ORG_CREATION_LIMIT
+
+        workspace_count = Workspace.objects.filter(tenant=tenant, type="standard").count()
+        return workspace_count >= max_limit
 
     @staticmethod
     def _enforce_hierarchy_depth_for_descendants(new_parent_id: uuid.UUID, instance: Workspace) -> None:
