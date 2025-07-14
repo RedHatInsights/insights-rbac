@@ -17,6 +17,7 @@
 """Feature flag module module."""
 import logging
 import threading
+from typing import Callable, Optional
 
 from UnleashClient import UnleashClient
 from django.conf import settings
@@ -26,6 +27,13 @@ logger = logging.getLogger(__name__)
 
 class FeatureFlags:
     """Feature flag class."""
+
+    # Add ungrouped hosts' IDs to the returning payloads.
+    TOGGLE_ADD_UNGROUPED_HOSTS_ID = "rbac.access-add-ungrouped-hosts-id.enabled"
+    # Removes the null value from the list of workspace IDs.
+    TOGGLE_REMOVE_NULL_VALUE = "rbac.resource-definition-remove-null-value.enabled"
+    # Makes the V2 API to only allow "GET" requests.
+    TOGGLE_V2_API_READONLY = "rbac.v2-api-readonly-mode.enabled"
 
     def __init__(self):
         """Add attributes."""
@@ -68,7 +76,12 @@ class FeatureFlags:
 
         return client
 
-    def is_enabled(self, feature_name, context=None, fallback_function=None):
+    def is_enabled(
+        self,
+        feature_name: str,
+        context: Optional[dict] = None,
+        fallback_function: Optional[Callable[[str, Optional[dict]], None]] = None,
+    ):
         """Override of is_enabled for checking flag values."""
         if self.client is None:
             self.initialize()
@@ -82,6 +95,37 @@ class FeatureFlags:
                 return False
 
         return self.client.is_enabled(feature_name, context, fallback_function=fallback_function)
+
+    def is_add_ungrouped_hosts_id_enabled(self):
+        """
+        Check if "add ungrouped hosts ID" feature is enabled.
+
+        Falls back to reading the environment variable if any error occurs.
+        """
+        return self.is_enabled(
+            feature_name=self.TOGGLE_ADD_UNGROUPED_HOSTS_ID,
+            fallback_function=lambda ignored_toggle_name, ignored_context: settings.ADD_UNGROUPED_HOSTS_ID,
+        )
+
+    def is_remove_null_value_enabled(self):
+        """Check whether the "remove null value" feature is enabled.
+
+        Falls back to reading the environment variable if any error occurs.
+        """
+        return self.is_enabled(
+            feature_name=self.TOGGLE_REMOVE_NULL_VALUE,
+            fallback_function=lambda ignored_toggle_name, ignored_context: settings.REMOVE_NULL_VALUE,
+        )
+
+    def is_v2_api_read_only_mode_enabled(self):
+        """Check whether the "v2 API in readonly mode" feature is enabled.
+
+        Falls back to reading the environment variable if any error occurs.
+        """
+        return self.is_enabled(
+            feature_name=self.TOGGLE_V2_API_READONLY,
+            fallback_function=lambda ignored_toggle_name, ignored_context: settings.V2_READ_ONLY_API_MODE,
+        )
 
 
 FEATURE_FLAGS = FeatureFlags()
