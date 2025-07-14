@@ -16,6 +16,8 @@
 #
 
 """Model for audit logging."""
+from uuid import uuid4
+
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -59,6 +61,9 @@ class AuditLog(TenantAwareModel):
     resource_id = models.IntegerField(null=True)
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
     tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True)
+    uuid = models.UUIDField(null=True, unique=True)
+    resource_uuid = models.UUIDField(null=True)
+    secondary_resource_uuid = models.UUIDField(null=True)
 
     def get_tenant_id(self, request):
         """Retrieve tenant id from request."""
@@ -72,13 +77,15 @@ class AuditLog(TenantAwareModel):
             role_object = get_object_or_404(Role, name=request.data["name"], tenant=verify_tenant)
             role_object_id = role_object.id
             role_object_name = "role: " + role_object.name
-            return role_object_id, role_object_name
+            role_object_uuid = role_object.uuid
+            return role_object_id, role_object_name, role_object_uuid
 
         elif r_type == AuditLog.GROUP:
             group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
             group_object_id = group_object.id
             group_object_name = "group: " + group_object.name
-            return group_object_id, group_object_name
+            group_object_uuid = group_object.uuid
+            return group_object_id, group_object_name, group_object_uuid
 
         else:
             return ValueError("Wrong Resource Type")
@@ -103,11 +110,12 @@ class AuditLog(TenantAwareModel):
 
         self.resource_type = resource
 
-        self.resource_id, resource_name = self.get_resource_item(resource, request)
+        self.resource_id, resource_name, self.resource_uuid = self.get_resource_item(resource, request)
         self.description = "Created " + resource_name
 
         self.action = AuditLog.CREATE
         self.tenant_id = self.get_tenant_id(request)
+        self.uuid = uuid4()
         super(AuditLog, self).save()
 
     def log_delete(self, request, resource, object):
@@ -116,12 +124,14 @@ class AuditLog(TenantAwareModel):
 
         self.resource_type = resource
         self.resource_id = object.id
+        self.resource_uuid = object.uuid
         resource_name = self.resource_type + ": " + object.name
 
         self.description = "Deleted " + resource_name
 
         self.action = AuditLog.DELETE
         self.tenant_id = self.get_tenant_id(request)
+        self.uuid = uuid4()
         super(AuditLog, self).save()
 
     def log_edit(self, request, resource, object):
@@ -130,36 +140,74 @@ class AuditLog(TenantAwareModel):
 
         self.resource_type = resource
         self.resource_id = object.id
+        self.resource_uuid = object.uuid
         resource_name = resource + " " + object.name
 
         more_information = self.find_edited_field(resource, resource_name, request, object)
         self.description = more_information
         self.action = AuditLog.EDIT
         self.tenant_id = self.get_tenant_id(request)
+        self.uuid = uuid4()
         super(AuditLog, self).save()
 
-    def log_group_assignment(self, request, resource_type, resource, values_for_description, assigned_resource_type):
+    def log_group_assignment(
+        self, request, resource_type, resource, secondary_resource_object, assigned_resource_type
+    ):
         """Audit Log when a role, user/principal, or service account is added to a group."""
         self.principal_username = request.user.username
         self.resource_type = resource_type
         self.resource_id = resource.id
+        self.resource_uuid = resource.uuid
         resource_name = "group: " + resource.name
 
-        self.description = f"{assigned_resource_type} {values_for_description} added to {resource_name}"
+        if assigned_resource_type == "user":
+            self.secondary_resource_uuid = secondary_resource_object.uuid
+            self.description = (
+                f"{assigned_resource_type} {secondary_resource_object.username} added to {resource_name}"
+            )
+
+        if assigned_resource_type == "service-account":
+            self.secondary_resource_uuid = secondary_resource_object.uuid
+            self.description = (
+                f"{assigned_resource_type} {secondary_resource_object.username} added to {resource_name}"
+            )
+
+        if assigned_resource_type == "role":
+            self.secondary_resource_uuid = secondary_resource_object["uuid"]
+            self.description = f"{assigned_resource_type} {secondary_resource_object['name']} added to {resource_name}"
 
         self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
+        self.uuid = uuid4()
         super(AuditLog, self).save()
 
-    def log_group_remove(self, request, resource_type, resource, values_for_description, assigned_resource_type):
+    def log_group_remove(self, request, resource_type, resource, secondary_resource_object, assigned_resource_type):
         """Audit Log when a role, user/principal, or service account is removed from a group."""
         self.principal_username = request.user.username
         self.resource_type = resource_type
         self.resource_id = resource.id
+        self.resource_uuid = resource.uuid
         resource_name = "group: " + resource.name
 
-        self.description = f"{assigned_resource_type} {values_for_description} removed from {resource_name}"
+        if assigned_resource_type == "user":
+            self.secondary_resource_uuid = secondary_resource_object.uuid
+            self.description = (
+                f"{assigned_resource_type} {secondary_resource_object.username} removed from {resource_name}"
+            )
+
+        if assigned_resource_type == "service-account":
+            self.secondary_resource_uuid = secondary_resource_object.uuid
+            self.description = (
+                f"{assigned_resource_type} {secondary_resource_object.username} removed from {resource_name}"
+            )
+
+        if assigned_resource_type == "role":
+            self.secondary_resource_uuid = secondary_resource_object.uuid
+            self.description = (
+                f"{assigned_resource_type} {secondary_resource_object.name} removed from {resource_name}"
+            )
 
         self.action = AuditLog.REMOVE
         self.tenant_id = self.get_tenant_id(request)
+        self.uuid = uuid4()
         super(AuditLog, self).save()
