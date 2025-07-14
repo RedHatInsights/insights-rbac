@@ -45,10 +45,47 @@ from migration_tool.in_memory_tuples import (
 )
 from migration_tool.utils import create_relationship
 from rbac import urls
-from tests.identity_request import TransactionalIdentityRequest
+from tests.identity_request import IdentityRequest, TransactionalIdentityRequest
 
 
-class WorkspaceViewTests(TransactionalIdentityRequest):
+class BasicWorkspaceViewTests:
+    def _get_random_name(self, length=10):
+        return "".join(random.choices(string.ascii_letters + string.digits, k=length))
+
+    def _setup_access_for_principal(self, username, permission, workspace_id=None, platform_default=False):
+        group = Group(name=self._get_random_name(), platform_default=platform_default, tenant=self.tenant)
+        group.save()
+        role = Role.objects.create(
+            name="".join(random.choices(string.ascii_letters + string.digits, k=5)),
+            description="A role for a group.",
+            tenant=self.tenant,
+        )
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        permission, _ = Permission.objects.get_or_create(permission=permission, tenant=public_tenant)
+        access = Access.objects.create(permission=permission, role=role, tenant=self.tenant)
+        if workspace_id:
+            operation = "in" if isinstance(workspace_id, list) else "equal"
+            ResourceDefinition.objects.create(
+                attributeFilter={
+                    "key": "group.id",
+                    "operation": operation,
+                    "value": workspace_id,
+                },
+                access=access,
+                tenant=self.tenant,
+            )
+
+        policy = Policy.objects.create(name=self._get_random_name(), group=group, tenant=self.tenant)
+        policy.roles.add(role)
+        policy.save()
+        group.policies.add(policy)
+        group.save()
+        if not platform_default:
+            principal, _ = Principal.objects.get_or_create(username=username, tenant=self.tenant)
+            group.principals.add(principal)
+
+
+class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
     """Test the Workspace view."""
 
     @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=10)
@@ -57,9 +94,9 @@ class WorkspaceViewTests(TransactionalIdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        self.tenant.save()
 
         self.service = WorkspaceService()
-
         self.root_workspace = Workspace.objects.create(
             name="Root Workspace",
             tenant=self.tenant,
@@ -97,40 +134,48 @@ class WorkspaceViewTests(TransactionalIdentityRequest):
         Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
 
-    def _get_random_name(self, length=10):
-        return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
-    def _setup_access_for_principal(self, username, permission, workspace_id=None, platform_default=False):
-        group = Group(name=self._get_random_name(), platform_default=platform_default, tenant=self.tenant)
-        group.save()
-        role = Role.objects.create(
-            name="".join(random.choices(string.ascii_letters + string.digits, k=5)),
-            description="A role for a group.",
+class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspaceViewTests):
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=10)
+    def setUp(self):
+        """Set up the workspace model tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.tenant.save()
+
+        self.service = WorkspaceService()
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
             tenant=self.tenant,
+            type=Workspace.Types.ROOT,
         )
-        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
-        permission, _ = Permission.objects.get_or_create(permission=permission, tenant=public_tenant)
-        access = Access.objects.create(permission=permission, role=role, tenant=self.tenant)
-        if workspace_id:
-            operation = "in" if isinstance(workspace_id, list) else "equal"
-            ResourceDefinition.objects.create(
-                attributeFilter={
-                    "key": "group.id",
-                    "operation": operation,
-                    "value": workspace_id,
-                },
-                access=access,
-                tenant=self.tenant,
-            )
-
-        policy = Policy.objects.create(name=self._get_random_name(), group=group, tenant=self.tenant)
-        policy.roles.add(role)
-        policy.save()
-        group.policies.add(policy)
-        group.save()
-        if not platform_default:
-            principal, _ = Principal.objects.get_or_create(username=username, tenant=self.tenant)
-            group.principals.add(principal)
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.ungrouped_workspace = Workspace.objects.create(
+            name="Ungrouped Hosts Workspace",
+            description="Ungrouped Hosts Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+        )
+        validated_data_standard_ws = {
+            "name": "Standard Workspace",
+            "description": "Standard Workspace - description",
+            "parent_id": self.default_workspace.id,
+        }
+        self.standard_workspace = self.service.create(validated_data_standard_ws, self.tenant)
+        validated_data_standard_sub_ws = {
+            "name": "Standard Sub-workspace",
+            "description": "Standard Workspace with another standard workspace parent.",
+            "parent_id": self.standard_workspace.id,
+        }
+        self.standard_sub_workspace = self.service.create(validated_data_standard_sub_ws, self.tenant)
 
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
@@ -1061,8 +1106,30 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
 
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
-class WorkspaceMove(WorkspaceViewTests):
+class WorkspaceMove(TransactionalWorkspaceViewTests):
     """Tests for move workspace."""
+
+    def setUp(self):
+        """Set up workspace access check tests."""
+        super().setUp()
+
+        # Create a unique test workspace that won't conflict with existing names
+        self.test_workspace = Workspace.objects.create(
+            name="Test Workspace for Move",
+            description="Test workspace for move operations",
+            tenant=self.tenant,
+            parent=self.standard_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+
+        # Create test users
+        self.user_with_access = {"username": "user_with_access", "email": "user_with_access@example.com"}
+        self.user_without_access = {"username": "user_without_access", "email": "user_without_access@example.com"}
+
+        # Set up access for user_with_access to have write permissions on default_workspace
+        self._setup_access_for_principal(
+            self.user_with_access["username"], "inventory:groups:write", str(self.default_workspace.id)
+        )
 
     def test_success_move_workspace(self):
         validated_data_source_ws = {
@@ -1114,7 +1181,6 @@ class WorkspaceMove(WorkspaceViewTests):
         response_body = response.json()
         self.assertEqual(response_body.get("detail"), f"{invalid_uuid} is not a valid UUID.")
 
-    @skip("pending workspace move implementation")
     def test_move_under_itself(self):
         """Test you cannot move a workspace under itself."""
         url = reverse("v2_management:workspace-move", kwargs={"pk": self.standard_workspace.id})
@@ -1124,7 +1190,7 @@ class WorkspaceMove(WorkspaceViewTests):
         response = client.post(url, workspace_data_for_move, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         response_body = response.json()
-        self.assertEqual(response_body.get("detail"), "Cannot move workspace under itself.")
+        self.assertEqual(response_body.get("detail"), "The parent_id and id values must not be the same.")
 
     def test_move_root_workspace(self):
         """Test you cannot move a root workspace."""
@@ -1479,28 +1545,6 @@ class WorkspaceMove(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("id"), str(test_workspace.id))
         self.assertEqual(response.data.get("parent_id"), str(self.standard_sub_workspace.id))
-
-    def setUp(self):
-        """Set up workspace access check tests."""
-        super().setUp()
-
-        # Create a unique test workspace that won't conflict with existing names
-        self.test_workspace = Workspace.objects.create(
-            name="Test Workspace for Move",
-            description="Test workspace for move operations",
-            tenant=self.tenant,
-            parent=self.standard_workspace,
-            type=Workspace.Types.STANDARD,
-        )
-
-        # Create test users
-        self.user_with_access = {"username": "user_with_access", "email": "user_with_access@example.com"}
-        self.user_without_access = {"username": "user_without_access", "email": "user_without_access@example.com"}
-
-        # Set up access for user_with_access to have write permissions on default_workspace
-        self._setup_access_for_principal(
-            self.user_with_access["username"], "inventory:groups:write", str(self.default_workspace.id)
-        )
 
     def test_move_with_write_access_allowed(self):
         """Test that move succeeds when user has write access to target workspace."""
