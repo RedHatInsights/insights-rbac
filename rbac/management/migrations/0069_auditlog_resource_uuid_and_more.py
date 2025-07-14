@@ -20,9 +20,4 @@ class Migration(migrations.Migration):
             name="secondary_resource_uuid",
             field=models.UUIDField(null=True),
         ),
-        migrations.AddField(
-            model_name="auditlog",
-            name="uuid",
-            field=models.UUIDField(null=True, unique=True),
-        ),
     ]

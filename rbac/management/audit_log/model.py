@@ -16,8 +16,6 @@
 #
 
 """Model for audit logging."""
-from uuid import uuid4
-
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -61,7 +59,6 @@ class AuditLog(TenantAwareModel):
     resource_id = models.IntegerField(null=True)
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
     tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True)
-    uuid = models.UUIDField(null=True, unique=True)
     resource_uuid = models.UUIDField(null=True)
     secondary_resource_uuid = models.UUIDField(null=True)
 
@@ -115,7 +112,6 @@ class AuditLog(TenantAwareModel):
 
         self.action = AuditLog.CREATE
         self.tenant_id = self.get_tenant_id(request)
-        self.uuid = uuid4()
         super(AuditLog, self).save()
 
     def log_delete(self, request, resource, object):
@@ -131,7 +127,6 @@ class AuditLog(TenantAwareModel):
 
         self.action = AuditLog.DELETE
         self.tenant_id = self.get_tenant_id(request)
-        self.uuid = uuid4()
         super(AuditLog, self).save()
 
     def log_edit(self, request, resource, object):
@@ -147,7 +142,6 @@ class AuditLog(TenantAwareModel):
         self.description = more_information
         self.action = AuditLog.EDIT
         self.tenant_id = self.get_tenant_id(request)
-        self.uuid = uuid4()
         super(AuditLog, self).save()
 
     def log_group_assignment(
@@ -178,7 +172,6 @@ class AuditLog(TenantAwareModel):
 
         self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
-        self.uuid = uuid4()
         super(AuditLog, self).save()
 
     def log_group_remove(self, request, resource_type, resource, secondary_resource_object, assigned_resource_type):
@@ -209,5 +202,4 @@ class AuditLog(TenantAwareModel):
 
         self.action = AuditLog.REMOVE
         self.tenant_id = self.get_tenant_id(request)
-        self.uuid = uuid4()
         super(AuditLog, self).save()
