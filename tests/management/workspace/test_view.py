@@ -408,7 +408,10 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
 
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=4)
     def test_create_workspaces_exceed_limit(self):
-        """Test that when creating workspaces if the limit exceeds the organisations workspace limit the correct response is returned."""
+        """
+        Test that when creating workspaces if the limit exceeds the organisations workspace limit
+        the correct response is returned.
+        """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
 
         for name in workspace_names:
@@ -434,7 +437,10 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
 
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=9)
     def test_create_workspaces_not_exceed_limit(self):
-        """Test that when creating workspaces if the limit does not exceed the organisations workspace limit the correct response is returned."""
+        """
+        Test that when creating workspaces if the limit does not exceed the organisations workspace limit
+        the correct response is returned.
+        """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
 
         for name in workspace_names:
@@ -454,6 +460,193 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], test_data["name"])
+
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
+    def test_create_workspaces_exceed_hierarchy_depth_limit(self):
+        """
+        Test that creating workspaces succeeds when within the hierarchy depth limit.
+
+        Current hierarchy: root (0) -> default (1) -> standard (2) -> standard_sub (3)
+        Creating at depth 4 should succeed with limit of 5.
+        """
+        workspace_data = {
+            "name": "Level 4 Workspace",
+            "description": "Workspace created at depth 4 within the limit.",
+            "parent_id": self.standard_sub_workspace.id,
+        }
+        client = APIClient()
+        url = reverse("v2_management:workspace-list")
+        response = client.post(url, workspace_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+        self.assertEqual(data.get("name"), "Level 4 Workspace")
+        self.assertEqual(data.get("type"), "standard")
+        self.assertEqual(data.get("parent_id"), str(self.standard_sub_workspace.id))
+
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=3)
+    def test_create_workspace_fails_when_exceeding_hierarchy_depth_limit(self):
+        """
+        Test that creating workspaces fails when the hierarchy depth limit is exceeded.
+
+        Current hierarchy: root (0) -> default (1) -> standard (2) -> standard_sub (3)
+        Attempting to create at depth 4 should fail with limit of 3.
+        """
+        workspace_data = {
+            "name": "Too Deep Workspace",
+            "description": "Workspace that exceeds the hierarchy depth limit.",
+            "parent_id": self.standard_sub_workspace.id,
+        }
+        client = APIClient()
+        url = reverse("v2_management:workspace-list")
+        response = client.post(url, workspace_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_body = json.loads(response.content.decode())
+        self.assertEqual(resp_body.get("detail"), "Workspaces may only nest 3 levels deep.")
+
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=5, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+    def test_create_deep_workspace_chain_under_root(self):
+        """
+        Test creating a deep chain of standard workspaces under root workspace.
+        Expected hierarchy:
+        root (0) -> standard1 (1) -> standard2 (2) -> standard3 (3) -> standard4 (4) -> standard5 (5)
+        """
+        client = APIClient()
+        url = reverse("v2_management:workspace-list")
+
+        # Create the chain of workspaces
+        current_parent_id = self.root_workspace.id
+        workspace_ids = []
+
+        for i in range(1, 6):  # Create 5 standard workspaces (depth 1-5)
+            workspace_data = {
+                "name": f"Standard Workspace Level {i}",
+                "description": f"Standard workspace at depth level {i}",
+                "parent_id": current_parent_id,
+            }
+
+            response = client.post(url, workspace_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            data = response.data
+            self.assertEqual(data.get("name"), f"Standard Workspace Level {i}")
+            self.assertEqual(data.get("type"), "standard")
+            self.assertEqual(data.get("parent_id"), str(current_parent_id))
+            self.assertIsNotNone(data.get("id"))
+
+            # Store workspace ID and set it as parent for next iteration
+            workspace_id = data.get("id")
+            workspace_ids.append(workspace_id)
+            current_parent_id = workspace_id
+
+        # Verify all 5 workspaces were created successfully
+        self.assertEqual(len(workspace_ids), 5)
+
+        # Verify the hierarchy structure by checking each workspace's parent
+        for i, workspace_id in enumerate(workspace_ids):
+            workspace = Workspace.objects.get(id=workspace_id)
+            self.assertEqual(workspace.type, Workspace.Types.STANDARD)
+            self.assertEqual(workspace.name, f"Standard Workspace Level {i + 1}")
+
+            if i == 0:
+                # First workspace should have root as parent
+                self.assertEqual(workspace.parent_id, self.root_workspace.id)
+            else:
+                # Each subsequent workspace should have the previous one as parent
+                self.assertEqual(str(workspace.parent_id), workspace_ids[i - 1])
+
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=5, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+    def test_create_standard_chain_under_default_workspace(self):
+        """
+        Test creating a chain of standard workspaces under existing default workspace.
+        Expected hierarchy:
+        root (0) -> default (1) -> standard1 (2) -> standard2 (3) -> standard3 (4) -> standard4 (5)
+        """
+        client = APIClient()
+        url = reverse("v2_management:workspace-list")
+
+        # Create the chain of workspaces
+        current_parent_id = self.default_workspace.id
+        workspace_ids = []
+
+        for i in range(1, 5):  # Create 4 standard workspaces (depth 2-5)
+            workspace_data = {
+                "name": f"Standard Chain {i}",
+                "description": f"Standard workspace #{i} in chain under default",
+                "parent_id": current_parent_id,
+            }
+
+            response = client.post(url, workspace_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            data = response.data
+            self.assertEqual(data.get("name"), f"Standard Chain {i}")
+            self.assertEqual(data.get("type"), "standard")
+            self.assertEqual(data.get("parent_id"), str(current_parent_id))
+
+            # Store the created workspace ID for next iteration
+            workspace_id = data.get("id")
+            workspace_ids.append(workspace_id)
+            current_parent_id = workspace_id
+
+        # Verify the complete chain exists and has correct hierarchy
+        for i, workspace_id in enumerate(workspace_ids):
+            workspace = Workspace.objects.get(id=workspace_id)
+            self.assertEqual(workspace.name, f"Standard Chain {i + 1}")
+            self.assertEqual(workspace.type, "standard")
+
+            if i == 0:
+                # First workspace should have default as parent
+                self.assertEqual(workspace.parent_id, self.default_workspace.id)
+            else:
+                # Each subsequent workspace should have the previous one as parent
+                self.assertEqual(str(workspace.parent_id), workspace_ids[i - 1])
+
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=5, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+    def test_create_standard_chain_under_ungrouped_workspace(self):
+        """
+        Test creating a chain of standard workspaces under existing ungrouped workspace.
+        Expected hierarchy:
+        root (0) -> default (1) -> ungrouped (2) -> standard1 (3) -> standard2 (4) -> standard3 (5)
+        """
+        client = APIClient()
+        url = reverse("v2_management:workspace-list")
+
+        # Create the chain of workspaces
+        current_parent_id = self.ungrouped_workspace.id
+        workspace_ids = []
+
+        for i in range(1, 4):  # Create 3 standard workspaces (depth 3-5)
+            workspace_data = {
+                "name": f"Standard Under Ungrouped {i}",
+                "description": f"Standard workspace #{i} in chain under ungrouped",
+                "parent_id": current_parent_id,
+            }
+
+            response = client.post(url, workspace_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            data = response.data
+            self.assertEqual(data.get("name"), f"Standard Under Ungrouped {i}")
+            self.assertEqual(data.get("type"), "standard")
+            self.assertEqual(data.get("parent_id"), str(current_parent_id))
+
+            # Store the created workspace ID for next iteration
+            workspace_id = data.get("id")
+            workspace_ids.append(workspace_id)
+            current_parent_id = workspace_id
+
+        # Verify the complete chain exists and has correct hierarchy
+        for i, workspace_id in enumerate(workspace_ids):
+            workspace = Workspace.objects.get(id=workspace_id)
+            self.assertEqual(workspace.name, f"Standard Under Ungrouped {i + 1}")
+            self.assertEqual(workspace.type, "standard")
+
+            if i == 0:
+                # First workspace should have ungrouped as parent
+                self.assertEqual(workspace.parent_id, self.ungrouped_workspace.id)
+            else:
+                # Each subsequent workspace should have the previous one as parent
+                self.assertEqual(str(workspace.parent_id), workspace_ids[i - 1])
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
