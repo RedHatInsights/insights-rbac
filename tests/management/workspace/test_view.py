@@ -1319,8 +1319,9 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         response_body = response.json()
         self.assertEqual(response_body.get("detail"), "The 'parent_id' field is required.")
 
-    def test_move_under_root_workspace(self):
-        """Test you cannot move a workspace under a root workspace."""
+    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
+    def test_move_under_root_workspace_fail(self):
+        """Test you cannot move a workspace under a root workspace with WORKSPACE_RESTRICT_DEFAULT_PEERS=True."""
         url = reverse("v2_management:workspace-move", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
         workspace_data_for_move = {"parent_id": self.root_workspace.id}
@@ -1330,6 +1331,18 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(
             response.json().get("detail"), "Sub-workspaces may only be created under the default workspace."
         )
+
+    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+    def test_move_under_root_workspace_success(self):
+        """Test you can move a workspace under a root workspace with WORKSPACE_RESTRICT_DEFAULT_PEERS=False."""
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.standard_workspace.id})
+        client = APIClient()
+        workspace_data_for_move = {"parent_id": self.root_workspace.id}
+
+        response = client.post(url, workspace_data_for_move, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("id"), str(self.standard_workspace.id))
+        self.assertEqual(response.data.get("parent_id"), str(self.root_workspace.id))
 
     def test_move_under_default_workspace(self):
         """Test you can move a workspace under a default workspace."""
