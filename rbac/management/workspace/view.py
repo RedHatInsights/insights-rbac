@@ -20,7 +20,7 @@ import logging
 import uuid
 
 import pgtransaction
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
@@ -159,6 +159,15 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 {"detail": "Internal server error in concurrent updates. Please try again later."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        except ValidationError as e:
+            if "__all__" in e.message_dict:
+                for msg in e.message_dict["__all__"]:
+                    if "unique_workspace_name_per_parent" in msg:
+                        return Response(
+                            {"detail": "A workspace with the same name already exists under the target parent."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+            return Response({"detail": e.message_dict}, status=status.HTTP_400_BAD_REQUEST)
 
     @staticmethod
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:

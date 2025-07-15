@@ -1537,7 +1537,6 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
             response_body = response.json()
             self.assertEqual(response_body.get("detail"), "Cannot move workspace under one of its own descendants.")
 
-    @skip("pending workspace move implementation")
     def test_move_with_duplicate_name_under_target_parent(self):
         """
         Test that a workspace cannot be moved under a parent
