@@ -30,7 +30,6 @@ from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
-from django.test import Client
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 from feature_flags import FEATURE_FLAGS
@@ -39,10 +38,10 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
+    check_relation_core,
     delete_bindings,
     get_or_create_ungrouped_workspace,
     validate_relations_input,
-    check_relation_core,
 )
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
@@ -1662,7 +1661,16 @@ def group_assignments(request, group_uuid):
     relations_assignments = {"group_uuid": group_uuid, "principal_relations": []}
 
     for id in group_principals_ids:
-        relation_exists = check_relation_core(resource_id=group_uuid, subject_id=f"redhat/{id}")
+        relation_exists = check_relation_core(
+            resource_id=group_uuid,
+            resource_name="group",
+            resource_namespace="rbac",
+            relation="member",
+            subject_id=f"redhat/{id}",
+            subject_name="principal",
+            subject_namespace="rbac",
+            subject_relation=None,
+        )
         relations_assignments["principal_relations"].append({"id": id, "relation_exists": relation_exists})
 
     return JsonResponse(relations_assignments, safe=False)

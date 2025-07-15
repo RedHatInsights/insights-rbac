@@ -160,15 +160,15 @@ def validate_relations_input(action, request_data) -> bool:
 def check_relation_core(
     resource_id: str,
     subject_id: str,
-    resource_name: str = "group",
-    resource_namespace: str = "rbac",
-    relation: str = "member",
-    subject_name: str = "principal",
-    subject_namespace: str = "rbac",
-    subject_relation: str = None,
+    resource_name: str,
+    resource_namespace: str,
+    relation: str,
+    subject_name: str,
+    subject_namespace: str,
+    subject_relation: str,
 ) -> bool:
     """
-    Core function to check relation between a resource and a principal using gRPC.
+    Core function to check relation between a resource and a subject using gRPC.
 
     Returns True if relation exists, False otherwise.
     """
