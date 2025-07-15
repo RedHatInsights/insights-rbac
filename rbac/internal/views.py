@@ -1657,7 +1657,7 @@ def group_assignments(request, group_uuid):
     group = get_object_or_404(Group, uuid=group_uuid)
 
     group_principals_ids = group.principals.all().values_list("user_id", flat=True)
-
+    token = jwt_manager.get_jwt_from_redis()
     relations_assignments = {"group_uuid": group_uuid, "principal_relations": []}
 
     for id in group_principals_ids:
@@ -1670,6 +1670,7 @@ def group_assignments(request, group_uuid):
             subject_name="principal",
             subject_namespace="rbac",
             subject_relation=None,
+            token=token,
         )
         relations_assignments["principal_relations"].append({"id": id, "relation_exists": relation_exists})
 

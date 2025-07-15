@@ -26,13 +26,11 @@ from django.db import transaction
 from django.urls import resolve
 from google.protobuf import json_format
 from grpc import RpcError
-from internal.jwt_utils import JWTManager, JWTProvider
 from internal.schemas import RELATION_INPUT_SCHEMAS
 from jsonschema import validate
 from kessel.relations.v1beta1 import check_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
-from management.cache import JWTCache
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -43,9 +41,6 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
-jwt_cache = JWTCache()
-jwt_provider = JWTProvider()
-jwt_manager = JWTManager(jwt_provider, jwt_cache)
 
 
 @contextmanager
@@ -166,14 +161,13 @@ def check_relation_core(
     subject_name: str,
     subject_namespace: str,
     subject_relation: str,
+    token,
 ) -> bool:
     """
     Core function to check relation between a resource and a subject using gRPC.
 
     Returns True if relation exists, False otherwise.
     """
-    token = jwt_manager.get_jwt_from_redis()
-
     try:
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
             stub = check_pb2_grpc.KesselCheckServiceStub(channel)
