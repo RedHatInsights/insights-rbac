@@ -118,10 +118,9 @@ class WorkspaceService:
         self._enforce_hierarchy_depth(new_parent_id, instance.tenant)
         self._enforce_hierarchy_depth_for_descendants(new_parent_id, instance)
 
-        instance.parent_id = new_parent_id
         previous_parent_workspace = instance.parent
-        instance.save(update_fields=["parent_id"])
-
+        instance.parent = Workspace.objects.get(id=new_parent_id)
+        instance.save(update_fields=["parent"])
         dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.MOVE_WORKSPACE)
         dual_write_handler.replicate_updated_workspace(previous_parent_workspace, skip_ws_events=True)
         return instance

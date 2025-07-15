@@ -1112,6 +1112,8 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
     def setUp(self):
         """Set up workspace access check tests."""
         super().setUp()
+        self.tuples = InMemoryTuples()
+        self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
 
         # Create a unique test workspace that won't conflict with existing names
         self.test_workspace = Workspace.objects.create(
@@ -1131,7 +1133,11 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
             self.user_with_access["username"], "inventory:groups:write", str(self.default_workspace.id)
         )
 
-    def test_success_move_workspace(self):
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_success_move_workspace(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
         validated_data_source_ws = {
             "name": "Workspace Source",
             "parent_id": self.default_workspace.id,
@@ -1143,6 +1149,24 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
             "parent_id": self.default_workspace.id,
         }
         target_workspace = self.service.create(validated_data_target_ws, self.tenant)
+
+        tuples_source_to_default = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", str(source_workspace.id)),
+                relation("parent"),
+                subject("rbac", "workspace", str(self.default_workspace.id)),
+            )
+        )
+        self.assertEqual(len(tuples_source_to_default), 1)
+
+        tuples_target_to_default = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", str(target_workspace.id)),
+                relation("parent"),
+                subject("rbac", "workspace", str(self.default_workspace.id)),
+            )
+        )
+        self.assertEqual(len(tuples_target_to_default), 1)
 
         url = reverse("v2_management:workspace-move", kwargs={"pk": source_workspace.id})
 
@@ -1157,6 +1181,24 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(response.data.get("id"), str(source_workspace.id))
         self.assertEqual(response.data.get("parent_id"), str(target_workspace.id))
+
+        tuples_source_to_target = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", str(source_workspace.id)),
+                relation("parent"),
+                subject("rbac", "workspace", str(target_workspace.id)),
+            )
+        )
+        self.assertEqual(len(tuples_source_to_target), 1)
+
+        tuples_source_to_default = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", str(source_workspace.id)),
+                relation("parent"),
+                subject("rbac", "workspace", str(self.default_workspace.id)),
+            )
+        )
+        self.assertEqual(len(tuples_source_to_default), 0)
 
     def test_move_not_existing_workspace(self):
         """Test you cannot move not existing workspace."""
