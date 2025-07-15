@@ -17,12 +17,22 @@
 
 """Utilities for Internal RBAC use."""
 import logging
+from contextlib import contextmanager
 
+import grpc
 import jsonschema
+from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
+from google.protobuf import json_format
+from grpc import RpcError
+from internal.jwt_utils import JWTManager, JWTProvider
 from internal.schemas import RELATION_INPUT_SCHEMAS
 from jsonschema import validate
+from kessel.relations.v1beta1 import check_pb2
+from kessel.relations.v1beta1 import check_pb2_grpc
+from kessel.relations.v1beta1 import common_pb2
+from management.cache import JWTCache
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -33,6 +43,16 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
+jwt_cache = JWTCache()
+jwt_provider = JWTProvider()
+jwt_manager = JWTManager(jwt_provider, jwt_cache)
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    secure_channel = grpc.insecure_channel(addr)
+    yield secure_channel
 
 
 def build_internal_user(request, json_rh_auth):
@@ -135,3 +155,54 @@ def validate_relations_input(action, request_data) -> bool:
     except Exception as e:
         logger.info(f"Exception occurred when validating JSON body: {e}")
         return False
+
+
+def check_relation_core(
+    resource_id: str,
+    subject_id: str,
+    resource_name: str = "group",
+    resource_namespace: str = "rbac",
+    relation: str = "member",
+    subject_name: str = "principal",
+    subject_namespace: str = "rbac",
+    subject_relation: str = None,
+) -> bool:
+    """
+    Core function to check relation between a resource and a principal using gRPC.
+
+    Returns True if relation exists, False otherwise.
+    """
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = check_pb2_grpc.KesselCheckServiceStub(channel)
+
+            request_data = check_pb2.CheckRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace=resource_namespace, name=resource_name),
+                    id=resource_id,
+                ),
+                relation=relation,
+                subject=common_pb2.SubjectReference(
+                    relation=subject_relation,
+                    subject=common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace=subject_namespace, name=subject_name),
+                        id=subject_id,
+                    ),
+                ),
+            )
+
+            metadata = [("authorization", f"Bearer {token}")]
+            response = stub.Check(request_data, metadata=metadata)
+
+            if response:
+                response_dict = json_format.MessageToDict(response)
+                return response_dict.get("allowed", "") != "ALLOWED_FALSE"
+
+    except RpcError as e:
+        logger.error(f"[gRPC] check_relation failed: {e}")
+    except Exception as e:
+        logger.error(f"[Unexpected] check_relation failed: {e}")
+
+    return False

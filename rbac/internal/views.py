@@ -30,6 +30,7 @@ from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.test import Client
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 from feature_flags import FEATURE_FLAGS
@@ -37,7 +38,12 @@ from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
-from internal.utils import delete_bindings, get_or_create_ungrouped_workspace, validate_relations_input
+from internal.utils import (
+    delete_bindings,
+    get_or_create_ungrouped_workspace,
+    validate_relations_input,
+    check_relation_core,
+)
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
@@ -1645,6 +1651,21 @@ def check_relation(request):
         return JsonResponse(
             {"detail": "Error occurred in call to check relation endpoint", "error": str(e)}, status=500
         )
+
+
+def group_assignments(request, group_uuid):
+    """Find all group assignments and check they exist on relations api."""
+    group = get_object_or_404(Group, uuid=group_uuid)
+
+    group_principals_ids = group.principals.all().values_list("user_id", flat=True)
+
+    relations_assignments = {"group_uuid": group_uuid, "principal_relations": []}
+
+    for id in group_principals_ids:
+        relation_exists = check_relation_core(resource_id=group_uuid, subject_id=f"redhat/{id}")
+        relations_assignments["principal_relations"].append({"id": id, "relation_exists": relation_exists})
+
+    return JsonResponse(relations_assignments, safe=False)
 
 
 @require_http_methods(["GET", "DELETE"])
