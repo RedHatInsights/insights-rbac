@@ -20,7 +20,7 @@ import json
 import logging
 import uuid
 from contextlib import contextmanager
-
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 import grpc
 import requests
 from core.utils import destructive_ok
@@ -1653,28 +1653,17 @@ def check_relation(request):
 
 
 def group_assignments(request, group_uuid):
-    """Find all group assignments and check they exist on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
-
-    group_principals_ids = group.principals.all().values_list("user_id", flat=True)
-    token = jwt_manager.get_jwt_from_redis()
-    relations_assignments = {"group_uuid": group_uuid, "principal_relations": []}
-
-    for id in group_principals_ids:
-        relation_exists = check_relation_core(
-            resource_id=group_uuid,
-            resource_name="group",
-            resource_namespace="rbac",
-            relation="member",
-            subject_id=f"redhat/{id}",
-            subject_name="principal",
-            subject_namespace="rbac",
-            subject_relation=None,
-            token=token,
-        )
-        relations_assignments["principal_relations"].append({"id": id, "relation_exists": relation_exists})
-
-    return JsonResponse(relations_assignments, safe=False)
+    principals = list(group.principals.all())  # Get list of Principal objects
+    print(principals)
+    dual_write_handler = RelationApiDualWriteGroupHandler(
+        group=group, 
+        event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
+    )
+    
+    group_relations = dual_write_handler.generate_relations_to_add_principals(principals)
+    print(group_relations)
+    return JsonResponse(group_relations, safe=False)
 
 
 @require_http_methods(["GET", "DELETE"])

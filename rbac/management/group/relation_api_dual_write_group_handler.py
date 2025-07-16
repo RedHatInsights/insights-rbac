@@ -90,7 +90,8 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
         self.principals = principals
         self.relations_to_add = self._generate_member_relations()
-
+        return self.relations_to_add
+    
     def replicate_new_principals(self, principals: list[Principal]):
         """Replicate new principals into group."""
         if not self.replication_enabled():
