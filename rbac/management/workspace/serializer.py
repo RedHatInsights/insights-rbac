@@ -60,10 +60,9 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         """Update the workspace object in the database."""
         return self._service.update(instance, validated_data)
 
-    def move(self, instance, validated_data):
+    def move(self, instance, target_workspace):
         """Move the workspace object in the database."""
-        new_parent_id = validated_data.get("parent_id")
-        updated_workspace = self._service.move(instance, new_parent_id)
+        updated_workspace = self._service.move(instance, target_workspace)
         return {"id": str(updated_workspace.id), "parent_id": str(updated_workspace.parent_id)}
 
 

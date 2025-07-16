@@ -1294,9 +1294,9 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         workspace_data_for_move = {"parent_id": parent_id}
 
         response = client.post(url, workspace_data_for_move, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         response_body = response.json()
-        self.assertEqual(response_body.get("detail"), "You do not have write access to the target workspace.")
+        self.assertEqual(response_body.get("detail"), "No Workspace matches the given query.")
 
     def test_move_parent_with_empty_parent_id(self):
         """Test you cannot move a workspace when empty string is provided as a parent id."""

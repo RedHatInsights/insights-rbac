@@ -22,6 +22,7 @@ import uuid
 import pgtransaction
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
@@ -138,11 +139,10 @@ class WorkspaceViewSet(BaseV2ViewSet):
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE)
     def _move_atomic(self, request, *args, **kwargs):
         new_parent_id = self._parent_id_query_param_validation(request)
-        self._check_target_workspace_write_access(request, new_parent_id)
+        target_workspace = self._check_target_workspace_write_access(request, new_parent_id)
         workspace = self.get_object()
         serializer = self.get_serializer(workspace)
-        validated_data = {"parent_id": new_parent_id}
-        return serializer.move(workspace, validated_data)
+        return serializer.move(workspace, target_workspace)
 
     @action(detail=True, methods=["post"], url_path="move")
     def move(self, request, *args, **kwargs):
@@ -162,7 +162,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
         except ValidationError as e:
             message = ""
             for field, error_message in flatten_validation_error(e):
-                if "unique_workspace_name_per_parent" in field:
+                if "unique_workspace_name_per_parent" in error_message:
                     message = "A workspace with the same name already exists under the target parent."
                     break
                 if "__all__" in field:
@@ -171,14 +171,17 @@ class WorkspaceViewSet(BaseV2ViewSet):
             raise serializers.ValidationError(message)
 
     @staticmethod
-    def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
+    def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> Workspace:
         """Check if user has write access to the target workspace."""
         # Admin users bypass all access checks within the tenant
-        if request.user.admin and Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
-            return
+        target_workspace = get_object_or_404(Workspace, id=target_workspace_id, tenant=request.tenant)
+        if request.user.admin and target_workspace:
+            return target_workspace
 
         if not is_user_allowed(request, "write", str(target_workspace_id)):
             raise PermissionDenied("You do not have write access to the target workspace.")
+
+        return target_workspace
 
     @staticmethod
     def _parent_id_query_param_validation(request: Request) -> uuid.UUID:
