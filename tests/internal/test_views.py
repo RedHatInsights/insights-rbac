@@ -3494,7 +3494,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             **self.request.META,
         )
         response_body = json.loads(response.content)
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 400)
         self.assertIn("detail", response_body)
         self.assertIn("error", response_body)
         self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
@@ -3652,7 +3652,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             **self.request.META,
         )
         response_body = json.loads(response.content)
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 400)
         self.assertIn("detail", response_body)
         self.assertIn("error", response_body)
         self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
@@ -3842,7 +3842,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         )
 
         response_body = json.loads(response.content)
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 400)
         self.assertIn("detail", response_body)
         self.assertIn("error", response_body)
         self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
