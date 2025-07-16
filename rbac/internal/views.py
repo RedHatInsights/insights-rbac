@@ -1530,7 +1530,7 @@ def lookup_resource(request):
         return JsonResponse("No resource found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
-        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
@@ -1590,7 +1590,7 @@ def read_tuples(request):
         return JsonResponse("No tuples found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
-        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse({"detail": "Error occurred in call to read tuples endpoint", "error": str(e)}, status=500)
@@ -1645,7 +1645,7 @@ def check_relation(request):
         return JsonResponse("No relation found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
-        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
