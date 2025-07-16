@@ -1639,7 +1639,7 @@ def check_relation(request):
         return JsonResponse("No relation found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
-        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
