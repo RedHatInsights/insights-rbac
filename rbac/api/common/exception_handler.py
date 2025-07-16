@@ -90,10 +90,10 @@ def _generate_error_data_payload_response(detail: str, context, http_status_code
 def custom_exception_handler_v2(exc, context):
     """Create custom response for v2 exceptions."""
     response = exception_handler(exc, context)
-    response.content_type = "application/problem+json"
 
     # Now add the HTTP status code to the response.
     if response is not None:
+        response.content_type = "application/problem+json"
         errors = []
         data = copy.deepcopy(response.data)
         if isinstance(data, dict):
