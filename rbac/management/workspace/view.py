@@ -138,8 +138,9 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE)
     def _move_atomic(self, request, *args, **kwargs):
-        new_parent_id = self._parent_id_query_param_validation(request)
-        target_workspace = self._check_target_workspace_write_access(request, new_parent_id)
+        target_workspace_id = self._parent_id_query_param_validation(request)
+        target_workspace = get_object_or_404(Workspace, id=target_workspace_id, tenant=request.tenant)
+        self._check_target_workspace_write_access(request, target_workspace_id)
         workspace = self.get_object()
         serializer = self.get_serializer(workspace)
         return serializer.move(workspace, target_workspace)
@@ -171,17 +172,14 @@ class WorkspaceViewSet(BaseV2ViewSet):
             raise serializers.ValidationError(message)
 
     @staticmethod
-    def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> Workspace:
+    def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
         """Check if user has write access to the target workspace."""
         # Admin users bypass all access checks within the tenant
-        target_workspace = get_object_or_404(Workspace, id=target_workspace_id, tenant=request.tenant)
-        if request.user.admin and target_workspace:
-            return target_workspace
+        if request.user.admin:
+            return
 
         if not is_user_allowed(request, "write", str(target_workspace_id)):
             raise PermissionDenied("You do not have write access to the target workspace.")
-
-        return target_workspace
 
     @staticmethod
     def _parent_id_query_param_validation(request: Request) -> uuid.UUID:
