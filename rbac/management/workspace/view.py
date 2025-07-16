@@ -38,7 +38,7 @@ from rest_framework.response import Response
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
-from ..utils import validate_uuid
+from ..utils import validate_uuid, flatten_validation_error
 
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
@@ -160,14 +160,15 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         except ValidationError as e:
-            if "__all__" in e.message_dict:
-                for msg in e.message_dict["__all__"]:
-                    if "unique_workspace_name_per_parent" in msg:
-                        return Response(
-                            {"detail": "A workspace with the same name already exists under the target parent."},
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-            return Response({"detail": e.message_dict}, status=status.HTTP_400_BAD_REQUEST)
+            message = ""
+            for field, error_message in flatten_validation_error(e):
+                if "unique_workspace_name_per_parent" in field:
+                    message = "A workspace with the same name already exists under the target parent."
+                    break
+                if "__all__" in field:
+                    message = error_message
+                    break
+            raise serializers.ValidationError(message)
 
     @staticmethod
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
