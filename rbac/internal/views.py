@@ -1656,7 +1656,7 @@ def check_relation(request):
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
-    principals = list(group.principals.all())
+    principals = group.principals.all()
     relations_assignments = {"group_uuid": group_uuid, "principal_relations": []}
     dual_write_handler = RelationApiDualWriteGroupHandler(
         group=group, event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
