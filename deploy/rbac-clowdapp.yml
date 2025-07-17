@@ -1497,6 +1497,7 @@ parameters:
   value: 'group.id'
 - description: Flag to enable returning workspace hierarchy in v1 access
   name: WORKSPACE_HIERARCHY_ENABLED
+  value: 'False'
 - name: ADD_UNGROUPED_HOSTS_ID
   description: Add ungrouped hosts workspace id in addition to null
   value: 'False'
