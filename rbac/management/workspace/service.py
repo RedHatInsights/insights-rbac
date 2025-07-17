@@ -111,13 +111,14 @@ class WorkspaceService:
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
 
-    def move(self, instance: Workspace, target_workspace: Workspace) -> Workspace:
+    def move(self, instance: Workspace, target_workspace_id: uuid.UUID) -> Workspace:
         """Move a workspace under new parent."""
         self._prevent_moving_non_standard_workspace(instance)
-        self._prevent_moving_workspace_under_own_descendant(target_workspace.id, instance)
-        self._enforce_hierarchy_depth(target_workspace.id, instance.tenant)
-        self._enforce_hierarchy_depth_for_descendants(target_workspace.id, instance)
+        self._prevent_moving_workspace_under_own_descendant(target_workspace_id, instance)
+        self._enforce_hierarchy_depth(target_workspace_id, instance.tenant)
+        self._enforce_hierarchy_depth_for_descendants(target_workspace_id, instance)
 
+        target_workspace = Workspace.objects.get(id=target_workspace_id, tenant=instance.tenant)
         previous_parent_workspace = instance.parent
         instance.parent = target_workspace
         instance.save(update_fields=["parent"])

@@ -22,7 +22,6 @@ import uuid
 import pgtransaction
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.shortcuts import get_object_or_404
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
@@ -137,19 +136,18 @@ class WorkspaceViewSet(BaseV2ViewSet):
         return super().update(request, *args, **kwargs)
 
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE)
-    def _move_atomic(self, request, *args, **kwargs):
+    def _move_atomic(self, request):
         target_workspace_id = self._parent_id_query_param_validation(request)
-        target_workspace = get_object_or_404(Workspace, id=target_workspace_id, tenant=request.tenant)
         self._check_target_workspace_write_access(request, target_workspace_id)
         workspace = self.get_object()
         serializer = self.get_serializer(workspace)
-        return serializer.move(workspace, target_workspace)
+        return serializer.move(workspace, target_workspace_id)
 
     @action(detail=True, methods=["post"], url_path="move")
     def move(self, request, *args, **kwargs):
         """Move a workspace."""
         try:
-            response_data = self._move_atomic(request, *args, **kwargs)
+            response_data = self._move_atomic(request)
             return Response(response_data, status=status.HTTP_200_OK)
         except SerializationFailure:
             logging.exception("SerializationFailure in workspace movement operation, ws id: %s", kwargs.get("pk"))
@@ -159,6 +157,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
             return Response(
                 {"detail": "Internal server error in concurrent updates. Please try again later."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Workspace.DoesNotExist:
+            logger.exception("Target Workspace not found during operation, ws id: %s", kwargs.get("pk"))
+            return Response(
+                {"detail": "Workspace not found."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
         except ValidationError as e:
             message = ""
@@ -175,7 +179,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
         """Check if user has write access to the target workspace."""
         # Admin users bypass all access checks within the tenant
-        if request.user.admin:
+        if request.user.admin and Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
             return
 
         if not is_user_allowed(request, "write", str(target_workspace_id)):
