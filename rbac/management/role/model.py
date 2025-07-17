@@ -146,7 +146,6 @@ class RoleV2(TenantAwareModel):
     version = models.PositiveIntegerField(default=1)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
-    objects = FilterQuerySet.as_manager()
 
     @property
     def role(self):
@@ -347,6 +346,10 @@ class BindingMapping(models.Model):
             )
 
         self.mappings = role_binding.as_minimal_dict()
+
+    def get_v2_role_id(self) -> str:
+        """Get the model of the V2 role associated with this role binding."""
+        return self.mappings["role"]["id"]
 
     def get_role_binding(self) -> V2rolebinding:
         """Get role binding."""
