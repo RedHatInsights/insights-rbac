@@ -516,6 +516,8 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: WORKSPACE_ORG_CREATION_LIMIT
+            value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are additional to workers
@@ -805,6 +807,8 @@ objects:
               value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
               value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: WORKSPACE_ORG_CREATION_LIMIT
+              value: ${WORKSPACE_ORG_CREATION_LIMIT}
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
@@ -1026,6 +1030,8 @@ objects:
               value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
             - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
               value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: WORKSPACE_ORG_CREATION_LIMIT
+              value: ${WORKSPACE_ORG_CREATION_LIMIT}
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
