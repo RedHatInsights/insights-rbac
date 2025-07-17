@@ -246,16 +246,13 @@ class MigrateTests(TestCase):
             call(f"role_binding:{rolebinding_a2}#role@role:{v2_role_a2}"),
             call(f"role:{v2_role_a2}#inventory_hosts_write@principal:*"),
             call(f"role_binding:{rolebinding_a2}#subject@group:{self.group_a2.uuid}"),
-            call(f"workspace:{self.workspace_id_1}#parent@workspace:{default_workspace_id}"),
             call(f"workspace:{self.workspace_id_1}#binding@role_binding:{rolebinding_a2}"),
             ## Role binding to role_a3
             call(f"role_binding:{rolebinding_a31}#role@role:{v2_role_a31}"),
             call(f"role:{v2_role_a31}#inventory_hosts_write@principal:*"),
-            call(f"workspace:{workspace_1}#parent@workspace:{default_workspace_id}"),
             call(f"workspace:{workspace_1}#binding@role_binding:{rolebinding_a31}"),
             call(f"role_binding:{rolebinding_a32}#role@role:{v2_role_a32}"),
             call(f"role:{v2_role_a32}#inventory_hosts_write@principal:*"),
-            call(f"workspace:{workspace_2}#parent@workspace:{default_workspace_id}"),
             call(f"workspace:{workspace_2}#binding@role_binding:{rolebinding_a32}"),
             ## System role 1 assigment to custom group
             call(f"workspace:{self.default_workspace.id}#binding@role_binding:{role_binding_system_role_1_uuid}"),
@@ -556,27 +553,4 @@ class MigrateTestTupleStore(TestCase):
             "missing o2_r1 binding",
         )
 
-        # Last two are implicit default parent relations – these can be removed
-        self.assertEqual(
-            1,
-            self.relations.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", "o1_w1"),
-                    relation("parent"),
-                    subject("rbac", "workspace", self.o1.default_workspace.id),
-                )
-            ),
-        )
-
-        self.assertEqual(
-            1,
-            self.relations.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", "o1_w2"),
-                    relation("parent"),
-                    subject("rbac", "workspace", self.o1.default_workspace.id),
-                )
-            ),
-        )
-
-        self.assertEqual(31, len(self.relations))
+        self.assertEqual(29, len(self.relations))
