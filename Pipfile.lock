@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "d9ee4648ac44b552e63c783c722de2bfc95c5f87c089206c8d156ac498f5b942"
+            "sha256": "0a26f3cc78e4c75c4635a8c04157e2e3d09ad2f68177eba0c2a7592c59576182"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -387,6 +387,15 @@
             "index": "pypi",
             "markers": "python_version >= '3.7'",
             "version": "==22.1"
+        },
+        "django-pgtransaction": {
+            "hashes": [
+                "sha256:4f666631031fd8aa9b9b25e90df63795aefb1cd4dfe2e097cf0ac95ccec54a5e",
+                "sha256:9af40c897ad8897e01f2da57752405a43a850b2b84e20a2b57715b4592f337d5"
+            ],
+            "index": "pypi",
+            "markers": "python_full_version >= '3.9.0' and python_version < '4'",
+            "version": "==2.0.0"
         },
         "django-prometheus": {
             "hashes": [
