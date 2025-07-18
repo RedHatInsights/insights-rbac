@@ -15,27 +15,25 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import dataclasses
 import logging
 import uuid
 from typing import Any, Iterable, Optional, Tuple, Union
 
 from django.conf import settings
-from management.models import BindingMapping, Workspace
+from management.models import BindingMapping, Group, Role, RoleBinding, RoleV2, Workspace
 from management.permission.model import Permission
-from management.role.model import Role
 from migration_tool.ingest import add_element
 from migration_tool.models import (
     V2boundresource,
     V2role,
-    V2rolebinding,
     cleanNameForV2SchemaCompatibility,
-    v1_perm_to_v2_perm,
 )
 
 
 logger = logging.getLogger(__name__)
 
-PermissionGroupings = dict[V2boundresource, set[str]]
+PermissionGroupings = dict[V2boundresource, set[Permission]]
 
 
 def add_system_role(system_roles, role: V2role):
@@ -86,11 +84,18 @@ class SystemRole:
         add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
 
 
+@dataclasses.dataclass
+class MigrateRoleModelsResult:
+    binding_mappings: list[BindingMapping]
+    role_bindings: list[RoleBinding]
+    v2_roles: list[RoleV2]
+
+
 def v1_role_to_v2_bindings(
     v1_role: Role,
     default_workspace: Workspace,
     role_bindings: Iterable[BindingMapping],
-) -> list[BindingMapping]:
+) -> MigrateRoleModelsResult:
     """Convert a V1 role to a set of V2 role bindings."""
     from internal.utils import get_or_create_ungrouped_workspace
 
@@ -98,12 +103,10 @@ def v1_role_to_v2_bindings(
 
     # Group V2 permissions by target resource
     for access in v1_role.access.all():
-        v1_perm = access.permission
+        permission = access.permission
 
-        if not is_for_enabled_app(v1_perm):
+        if not is_for_enabled_app(permission):
             continue
-
-        v2_perm = v1_perm_to_v2_perm(v1_perm)
 
         default = True
         for resource_def in access.resourceDefinitions.all():
@@ -134,28 +137,91 @@ def v1_role_to_v2_bindings(
                         resource_id = str(ungrouped_ws.id)
                     else:
                         continue
-                add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
+                add_element(perm_groupings, V2boundresource(resource_type, resource_id), permission, collection=set)
         if default:
             add_element(
                 perm_groupings,
                 V2boundresource(("rbac", "workspace"), str(default_workspace.id)),
-                v2_perm,
+                permission,
                 collection=set,
             )
 
     # Project permission sets to roles per set of resources
-    return permission_groupings_to_v2_role_bindings(perm_groupings, v1_role, role_bindings)
+    return _permission_groupings_to_v2_role_bindings(perm_groupings, v1_role, role_bindings)
 
 
-def permission_groupings_to_v2_role_bindings(
+def _get_or_create_v2_custom_role_from_v1(
+    v2_id: Optional[str], v1_role: Role, permissions: frozenset[Permission]
+) -> RoleV2:
+    if v1_role.system or v1_role.tenant.tenant_name == "public":
+        raise ValueError(f"Expected v1 role not to be system role; got id {v1_role.id}")
+
+    # TODO: Replace this with a more meaningful name. This is a bit tricky because we need to avoid conflicts.
+
+    name = f"{v1_role.uuid}: {uuid.uuid4()}"
+
+    role_args = {
+        "tenant": v1_role.tenant,
+        "name": name,
+        "display_name": name,
+        "description": v1_role.description,
+        "type": RoleV2.Types.CUSTOM,
+    }
+
+    if v2_id is not None:
+        # We need to handle the case where v2_id is specified but the object does not exist. This can occur if this
+        # ID was generated before the RoleV2 model was added.
+        new_role, _ = RoleV2.objects.update_or_create(
+            id=v2_id,
+            defaults=role_args,
+        )
+    else:
+        new_role = RoleV2.objects.create(**role_args)
+
+    new_role.permissions.set(permissions)
+
+    return new_role
+
+
+def _get_or_create_v2_role_binding(
+    v2_id: Optional[str], v2_role: RoleV2, resource: V2boundresource, groups: list[Group]
+) -> RoleBinding:
+    binding_args = {
+        "tenant": v2_role.tenant,
+        "role": v2_role,
+        "resource_type_namespace": resource.resource_type[0],
+        "resource_type_name": resource.resource_type[1],
+        "resource_id": resource.resource_id,
+    }
+
+    if v2_id is not None:
+        # Similarly to above, handle the case where an ID is passed, but the object does not exist.
+        new_binding, _ = RoleBinding.objects.update_or_create(
+            id=v2_id,
+            defaults=binding_args,
+        )
+    else:
+        new_binding = RoleBinding.objects.create(**binding_args)
+
+    new_binding.groups.set(groups)
+
+    return new_binding
+
+
+def _permission_groupings_to_v2_role_bindings(
     perm_groupings: PermissionGroupings, v1_role: Role, role_bindings: Iterable[BindingMapping]
-) -> list[BindingMapping]:
+) -> MigrateRoleModelsResult:
     """Determine updated role bindings based on latest resource-permission state and current role bindings."""
     updated_mappings: list[BindingMapping] = []
-    latest_roles_by_id: dict[str, V2role] = {}
+    updated_role_bindings: list[RoleBinding] = []
+
+    updated_roles: list[RoleV2] = []
+    updated_role_ids: set[str] = set()
+    updated_roles_by_permissions: dict[frozenset[Permission], RoleV2] = {}
+
     # TODO: this is broken for system roles, need to have Tenant or Policies provided
     # so that we don't look up Policies across all Tenants!
-    latest_groups = frozenset([str(policy.group.uuid) for policy in v1_role.policies.all()])
+    latest_groups = [policy.group for policy in v1_role.policies.all()]
 
     role_bindings_by_resource = {binding.get_role_binding().resource: binding for binding in role_bindings}
 
@@ -163,42 +229,57 @@ def permission_groupings_to_v2_role_bindings(
         mapping = role_bindings_by_resource.get(resource)
         current = mapping.get_role_binding() if mapping is not None else None
         perm_set = frozenset(permissions)
-        new_role: Optional[V2role] = None
+
+        if mapping is not None and current is None:
+            raise ValueError(f"Current role binding is None for {mapping}")
 
         # Try to find an updated Role that matches (could be our current Role)
-        for _, role in latest_roles_by_id.items():
-            if role.permissions == perm_set:
-                new_role = role
-                break
+        new_role = updated_roles_by_permissions.get(perm_set)
 
         if new_role is None:
-            # No updated Role matches. We need a new or reconfigured Role.
             # Is there a current role? Should update it? Only if it wasn't already updated.
-            if current is not None and current.role.id not in latest_roles_by_id:
-                new_role = V2role(current.role.id, False, perm_set)
-            else:
-                # Need to create a new role
-                id = str(uuid.uuid4())
-                new_role = V2role(id, False, perm_set)
-            latest_roles_by_id[new_role.id] = new_role
+            reused_role_id = (
+                current.role.id if current is not None and current.role.id not in updated_role_ids else None
+            )
 
-        # Add the role binding, updating or creating as needed.
+            new_role = _get_or_create_v2_custom_role_from_v1(
+                v2_id=reused_role_id,
+                v1_role=v1_role,
+                permissions=perm_set,
+            )
+
+        reused_binding_id = current.id if current is not None else None
+
+        updated_binding = _get_or_create_v2_role_binding(
+            v2_id=reused_binding_id,
+            v2_role=new_role,
+            resource=resource,
+            groups=latest_groups,
+        )
+
+        # Add the role binding, reusing the existing one if possible.
         if mapping is None:
-            # No existing binding for this resource, have to create one
-            id = str(uuid.uuid4())
-            binding = V2rolebinding(id, new_role, resource, latest_groups)
-            updated_mapping = BindingMapping.for_role_binding(binding, v1_role)
+            updated_mapping = BindingMapping.for_role_binding(updated_binding.as_migration_rolebinding(), v1_role)
         else:
-            # Reuse current binding ID and mapping ID
-            if current is None:
-                raise ValueError(f"Current role binding is None for {mapping}")
-            binding = V2rolebinding(current.id, new_role, resource, latest_groups)
             updated_mapping = mapping
-            updated_mapping.update_mappings_from_role_binding(binding)
+            updated_mapping.update_mappings_from_role_binding(updated_binding.as_migration_rolebinding())
+
+        updated_mapping.save()
 
         updated_mappings.append(updated_mapping)
+        updated_role_bindings.append(updated_binding)
 
-    return updated_mappings
+        assert perm_set == frozenset(new_role.permissions.all())
+
+        updated_roles.append(new_role)
+        updated_role_ids.add(str(new_role.id))
+        updated_roles_by_permissions[perm_set] = new_role
+
+    return MigrateRoleModelsResult(
+        binding_mappings=updated_mappings,
+        role_bindings=updated_role_bindings,
+        v2_roles=updated_roles,
+    )
 
 
 def is_for_enabled_app(perm: Permission):
