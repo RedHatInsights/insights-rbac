@@ -25,6 +25,7 @@ from management.models import Principal
 from management.role.model import RoleV2
 
 from api.models import TenantAwareModel
+from migration_tool.models import V2boundresource, V2rolebinding
 
 
 class RoleBinding(TenantAwareModel):
@@ -47,3 +48,25 @@ class RoleBinding(TenantAwareModel):
                 name="unique role binding per role resource pair",
             ),
         ]
+
+    @property
+    def resource(self) -> V2boundresource:
+        return V2boundresource(
+            resource_type=(self.resource_type_namespace, self.resource_type_name),
+            resource_id=self.resource_id,
+        )
+
+    @resource.setter
+    def resource(self, new_resource: V2boundresource):
+        self.resource_type_namespace = new_resource.resource_type[0]
+        self.resource_type_name = new_resource.resource_type[1]
+        self.resource_id = new_resource.resource_id
+
+    def as_migration_rolebinding(self) -> V2rolebinding:
+        return V2rolebinding(
+            id=str(self.id),
+            role=self.role.as_migration_role(),
+            resource=self.resource,
+            groups=[str(group.uuid) for group in self.groups.all()],
+            users=[str(principal.uuid) for principal in self.principals.all()],
+        )
