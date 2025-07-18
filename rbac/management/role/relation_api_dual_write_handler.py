@@ -16,6 +16,7 @@
 #
 
 """Class to handle Dual Write API related operations."""
+import dataclasses
 import logging
 from abc import ABC
 from typing import Optional
@@ -30,9 +31,11 @@ from management.relation_replicator.relation_replicator import DualWriteExceptio
 from management.relation_replicator.relation_replicator import RelationReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import BindingMapping, Role
-from migration_tool.migrate_role import get_kessel_relation_tuples, migrate_role
+from management.role.model import BindingMapping, Role, RoleV2
+from management.role_binding.model import RoleBinding
+from migration_tool.migrate_role import get_kessel_relation_tuples
 from migration_tool.models import v1_perm_to_v2_perm
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
 from migration_tool.utils import create_relationship
 
 
@@ -197,8 +200,58 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             return None
 
 
+@dataclasses.dataclass
+class _DualWriteRoleState:
+    binding_mappings: list[BindingMapping]
+    role_bindings: list[RoleBinding]
+    v2_roles: list[RoleV2]
+    role_relations: list[common_pb2.Relationship]
+
+    @classmethod
+    def empty(cls):
+        return cls(
+            binding_mappings=[],
+            role_bindings=[],
+            v2_roles=[],
+            role_relations=[],
+        )
+
+    def binding_mappings_by_id(self) -> dict[int, BindingMapping]:
+        out = {m.id: m for m in self.binding_mappings}
+
+        if None in out:
+            raise ValueError("Expected no BindingMapping to have id of None.")
+
+        return out
+
+
+def _remove_outdated_models(old_state: _DualWriteRoleState, new_state: _DualWriteRoleState):
+    new_binding_mapping_ids = {mapping.id for mapping in new_state.binding_mappings}
+
+    for old_mapping in old_state.binding_mappings:
+        if old_mapping.id not in new_binding_mapping_ids:
+            old_mapping.delete()
+
+    new_role_binding_ids = {binding.id for binding in new_state.role_bindings}
+
+    for old_binding in old_state.role_bindings:
+        if old_binding.id not in new_role_binding_ids:
+            old_binding.delete()
+
+    new_role_ids = {role.id for role in new_state.v2_roles}
+
+    for old_role in old_state.v2_roles:
+        if old_role.id not in new_role_ids:
+            if old_role.bindings.count() > 0:
+                raise ValueError("Expected removed V2 role to have no remaining RoleBindings.")
+
+            old_role.delete()
+
+
 class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations."""
+
+    state: Optional[_DualWriteRoleState]
 
     @classmethod
     def for_system_role_event(
@@ -226,10 +279,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             return
         try:
             self.event_type = event_type
-            self.role_relations: list[common_pb2.Relationship] = []
-            self.current_role_relations: list[common_pb2.Relationship] = []
             self.role = role
-            self.binding_mappings: dict[str, BindingMapping] = {}
 
             binding_tenant = tenant if tenant is not None else role.tenant
 
@@ -243,6 +293,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
             self.tenant_id = binding_tenant.id
             self.default_workspace = Workspace.objects.default(tenant=binding_tenant)
+            self.state = None
         except Exception as e:
             logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)
@@ -256,9 +307,9 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 "[Dual Write] Generate relations from current state of role(%s): '%s'", self.role.uuid, self.role.name
             )
 
-            self.binding_mappings = {m.id: m for m in self.role.binding_mappings.select_for_update().all()}
+            binding_mappings = list(self.role.binding_mappings.select_for_update().all())
 
-            if not self.binding_mappings:
+            if not binding_mappings:
                 logger.warning(
                     "[Dual Write] Binding mappings not found for role(%s): '%s'. "
                     "Assuming no current relations exist. "
@@ -268,12 +319,15 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 )
                 return
 
-            relations = get_kessel_relation_tuples(
-                [m.get_role_binding() for m in self.binding_mappings.values()],
-                default_workspace=self.default_workspace,
-            )
+            v2_roles = list(RoleV2.objects.filter(v1_source=self.role))
+            v2_role_bindings = list(RoleBinding.objects.filter(role__in=v2_roles))
 
-            self.current_role_relations = relations
+            self.state = _DualWriteRoleState(
+                binding_mappings=binding_mappings,
+                v2_roles=v2_roles,
+                role_bindings=v2_role_bindings,
+                role_relations=self._relations_for(binding_mappings),
+            )
         except Exception as e:
             logger.error(f"Failed to generated relations for v2 role & role bindings: {e}")
             raise DualWriteException(e)
@@ -282,20 +336,54 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         """Generate replication event to outbox table."""
         if not self.replication_enabled():
             return
+
         self.role = role
-        self._generate_relations_and_mappings_for_role()
-        self._replicate()
+
+        # When called for a new role, prepare_for_update is not called, so state can be empty.
+        old_state = self.state if self.state is not None else _DualWriteRoleState.empty()
+        new_state = self._update_role_models(old_state=old_state)
+
+        _remove_outdated_models(old_state=old_state, new_state=new_state)
+        self._replicate_relations(old_state=old_state, new_state=new_state)
+
+        self.state = new_state
 
     def replicate_deleted_role(self):
         """Replicate removal of current role state."""
         if not self.replication_enabled():
             return
 
-        self._replicate()
+        if self._expected_empty_relation_reason:
+            if self.state is not None:
+                raise DualWriteException(
+                    "Did not expect an empty reason to be set if a state is present (e.g. from prepare_for_update)."
+                )
 
-    def _replicate(self):
+            old_state = _DualWriteRoleState.empty()
+        else:
+            if self.state is None:
+                raise DualWriteException(
+                    "Expected either the empty reason to be set or for prepare_for_update to have been called."
+                )
+
+            old_state = self.state
+
+        new_state = _DualWriteRoleState.empty()
+
+        _remove_outdated_models(old_state=old_state, new_state=new_state)
+        self._replicate_relations(old_state=old_state, new_state=new_state)
+
+        self.state = new_state
+
+    def _relations_for(self, binding_mappings: list[BindingMapping]) -> list[common_pb2.Relationship]:
+        return get_kessel_relation_tuples(
+            [m.get_role_binding() for m in binding_mappings],
+            default_workspace=self.default_workspace,
+        )
+
+    def _replicate_relations(self, old_state: _DualWriteRoleState, new_state: _DualWriteRoleState):
         if not self.replication_enabled():
-            return
+            raise ValueError("_replicate_relations called with replication disabled")
 
         if self._expected_empty_relation_reason:
             logger.info(f"[Dual Write] Skipping empty replication event. {self._expected_empty_relation_reason}")
@@ -306,48 +394,39 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={
-                        "binding_mappings": (self.binding_mappings if self.binding_mappings is not None else None),
+                        "binding_mappings": new_state.binding_mappings_by_id(),
                         "v1_role_uuid": str(self.role.uuid),
                         "org_id": str(self.role.tenant.org_id),
                     },
                     partition_key=PartitionKey.byEnvironment(),
-                    remove=self.current_role_relations,
-                    add=self.role_relations,
+                    remove=old_state.role_relations,
+                    add=new_state.role_relations,
                 ),
             )
         except Exception as e:
             logger.error(f"Failed to replicate event for role {self.role.name}, UUID :{self.role.uuid}: {e}")
             raise DualWriteException(e)
 
-    def _generate_relations_and_mappings_for_role(self):
+    def _update_role_models(self, old_state: _DualWriteRoleState) -> _DualWriteRoleState:
         """Generate relations and mappings for a role with new UUIDs for v2 role and role bindings."""
         if not self.replication_enabled():
-            return []
+            raise ValueError("_update_role_models called with replication disabled")
+
         try:
             logger.info("[Dual Write] Generate new relations from role(%s): '%s'", self.role.uuid, self.role.name)
 
-            relations, mappings = migrate_role(
-                self.role,
+            migrate_result = v1_role_to_v2_bindings(
+                v1_role=self.role,
                 default_workspace=self.default_workspace,
-                current_bindings=self.binding_mappings.values(),
+                role_bindings=old_state.binding_mappings,
             )
 
-            prior_mappings = self.binding_mappings
-
-            self.role_relations = relations
-            self.binding_mappings = {m.id: m for m in mappings}
-
-            # Create or update mappings as needed
-            for mapping in mappings:
-                if mapping.id is not None:
-                    prior_mappings.pop(mapping.id)
-                mapping.save()
-
-            # Delete any mappings to resources this role no longer gives access to
-            for mapping in prior_mappings.values():
-                mapping.delete()
-
-            return relations
+            return _DualWriteRoleState(
+                binding_mappings=migrate_result.binding_mappings,
+                role_bindings=migrate_result.role_bindings,
+                v2_roles=migrate_result.v2_roles,
+                role_relations=self._relations_for(migrate_result.binding_mappings),
+            )
         except Exception as e:
             logger.error(
                 f"Failed to generate relations and mappings for role {self.role.name}, UUID :{self.role.uuid}: {e}"
