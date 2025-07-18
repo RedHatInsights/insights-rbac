@@ -32,7 +32,7 @@ from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import BindingMapping, Role
 from migration_tool.migrate_role import get_kessel_relation_tuples, migrate_role
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
+from migration_tool.models import v1_perm_to_v2_perm
 from migration_tool.utils import create_relationship
 
 
