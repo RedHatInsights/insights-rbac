@@ -29,6 +29,7 @@ from migration_tool.models import (
     V2role,
     V2rolebinding,
     cleanNameForV2SchemaCompatibility,
+    v1_perm_to_v2_perm,
 )
 
 
@@ -228,13 +229,6 @@ def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:
         return resource_id
 
     return resource_id.split(",") if op == "in" else [resource_id]
-
-
-def v1_perm_to_v2_perm(v1_permission: Permission):
-    """Convert a V1 permission to a V2 permission."""
-    return cleanNameForV2SchemaCompatibility(
-        v1_permission.application + "_" + v1_permission.resource_type + "_" + v1_permission.verb
-    )
 
 
 V2_RESOURCE_BY_ATTRIBUTE = {"group.id": ("rbac", "workspace")}
