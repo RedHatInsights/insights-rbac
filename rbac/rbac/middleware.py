@@ -24,7 +24,7 @@ from json.decoder import JSONDecodeError
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
-from django.http import Http404, HttpResponse, QueryDict
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, QueryDict
 from django.urls import resolve
 from feature_flags import FEATURE_FLAGS
 from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
@@ -481,3 +481,26 @@ class ReadOnlyApiMiddleware:
             content_type="application/json",
             status=405,
         )
+
+
+class NullByteRejectMiddleware:
+    """
+    Middleware that rejects any request containing a null byte (%00) in the URL.
+
+    This is a security and stability measure to prevent malformed requests
+    that may cause downstream components (such as Django views or serializers)
+    to crash or behave unexpectedly.
+
+    If a null byte is detected anywhere in the full request path, the request
+    will be aborted with a 400 Bad Request response.
+    """
+
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
+
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
+        if "%00" in request.get_full_path():
+            return HttpResponseBadRequest("Null byte (%00) is not allowed in request URL.")
+        return self.get_response(request)
