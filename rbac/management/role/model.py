@@ -144,6 +144,7 @@ class RoleV2(TenantAwareModel):
     type = models.CharField(choices=Types.choices, default=Types.CUSTOM, null=False, db_index=True, max_length=20)
     permissions = models.ManyToManyField(Permission, related_name="roles_v2")
     children = models.ManyToManyField("self", related_name="parents", symmetrical=False)
+    v1_source = models.ForeignKey(Role, null=True, related_name="v2_roles", on_delete=models.SET_NULL)
     version = models.PositiveIntegerField(default=1)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
