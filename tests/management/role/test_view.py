@@ -64,15 +64,18 @@ def normalize_and_sort(json_obj):
     return json_obj
 
 
-def replication_event_for_v1_role(v1_role_uuid, default_workspace_id):
+def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id):
     """Create a replication event for a v1 role."""
     return {
-        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id),
+        "relations_to_add": relation_api_tuples_for_v1_role(
+            v1_role_uuid=v1_role_uuid,
+            bound_workspace_id=bound_workspace_id,
+        ),
         "relations_to_remove": [],
     }
 
 
-def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
+def relation_api_tuples_for_v1_role(v1_role_uuid, bound_workspace_id):
     """Create a relation API tuple for a v1 role."""
     role_id = Role.objects.get(uuid=v1_role_uuid).id
     mappings = BindingMapping.objects.filter(role=role_id).all()
@@ -87,7 +90,7 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
         if "app_all_read" in role_binding.role.permissions:
             relation_tuple = relation_api_tuple(
                 "workspace",
-                default_workspace_id,
+                bound_workspace_id,
                 "binding",
                 "role_binding",
                 role_binding.id,
@@ -259,6 +262,13 @@ class RoleViewsetTests(IdentityRequest):
             tenant=self.tenant,
             parent=self.root_workspace,
             type="default",
+        )
+        self.child_workspace = Workspace.objects.create(
+            name="child",
+            description="Child workspace",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type="standard",
         )
 
     def tearDown(self):
@@ -2034,6 +2044,48 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_delete_role_child_workspace(self, mock_method):
+        """Test that we can delete an existing role bound to a child workspace.
+
+        This is a regression test: a previous version of the dual-write code attempted to remove the parent-child
+        relationship between the workspace a role is bound to (if not the default workspace) and the default
+        workspace."""
+
+        workspace_definition = {
+            "attributeFilter": {
+                "key": "group.id",
+                "operation": "equal",
+                "value": str(self.child_workspace.id),
+            }
+        }
+
+        role_name = "roleA"
+        access_data = [
+            {
+                "permission": "app:*:read",
+                "resourceDefinitions": [workspace_definition],
+            },
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [workspace_definition],
+            },
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+
+        role_uuid = response.data.get("uuid")
+        url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        replication_event = {"relations_to_add": [], "relations_to_remove": []}
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, bound_workspace_id=str(self.child_workspace.id))
+        replication_event["relations_to_remove"] = current_relations
+        response = client.delete(url, **self.headers)
+        actual_call_arg = mock_method.call_args[0][0]
+        expected_sorted = normalize_and_sort(replication_event)
+        actual_sorted = normalize_and_sort(actual_call_arg)
+        self.assertEqual(expected_sorted, actual_sorted)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_system_flag_filter(self):
         """Test that we can filter roles based on system flag."""
