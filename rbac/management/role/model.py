@@ -35,6 +35,7 @@ from migration_tool.models import (
     V2rolebinding,
     role_binding_group_subject_tuple,
     role_binding_user_subject_tuple,
+    v1_perm_to_v2_perm,
 )
 
 from api.models import FilterQuerySet, TenantAwareModel
@@ -172,6 +173,13 @@ class RoleV2(TenantAwareModel):
     def external_tenant_name(self):
         """Return external tenant name."""
         return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
+
+    def as_migration_role(self) -> V2role:
+        return V2role(
+            id=str(self.id),
+            is_system=self.type != RoleV2.Types.CUSTOM,
+            permissions=frozenset(v1_perm_to_v2_perm(permission) for permission in self.permissions.all()),
+        )
 
 
 class ExtTenant(models.Model):
