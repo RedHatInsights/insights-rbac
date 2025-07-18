@@ -30,7 +30,7 @@ from api.models import TenantAwareModel
 class RoleBinding(TenantAwareModel):
     """A role binding."""
 
-    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
+    id = models.UUIDField(default=uuid4, primary_key=True, editable=False, unique=True, null=False)
     role = models.ForeignKey(RoleV2, on_delete=models.CASCADE, related_name="bindings")
 
     resource_type_namespace = models.CharField(max_length=256, null=False)
