@@ -154,7 +154,9 @@ class ITServiceTests(IdentityRequest):
     def _assert_created_sa_and_result_are_same(
         self, created_database_sa_principals: list[Principal], function_result: list[dict]
     ) -> None:
-        """Assert that the "get_service_accounts" function's result is correct
+        """Assert that the returned representation of service accounts matches the Principals found in the database.
+
+        This verifies the output of, e.g., get_service_accounts.
 
         The assertions make sure that the returned results from the function actually match the created service
         account principals in the test.
@@ -569,19 +571,14 @@ class ITServiceTests(IdentityRequest):
         _is_service_account_valid.assert_called_with(user=user, client_id=str(client_uuid))
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    @override_settings(IT_BYPASS_IT_CALLS=True)
     def test_is_service_account_valid_bypass_it_calls(self, _):
         """Test that the function under test assumes service accounts to always be valid when bypassing IT calls."""
-        original_bypass_it_calls_value = settings.IT_BYPASS_IT_CALLS
-        try:
-            settings.IT_BYPASS_IT_CALLS = True
-
-            self.assertEqual(
-                True,
-                self.it_service._is_service_account_valid(user=User(), client_id="mocked-cid"),
-                "when IT calls are bypassed, a service account should always be validated as if it existed",
-            )
-        finally:
-            settings.IT_BYPASS_IT_CALLS = original_bypass_it_calls_value
+        self.assertEqual(
+            True,
+            self.it_service._is_service_account_valid(user=User(), client_id="mocked-cid"),
+            "when IT calls are bypassed, a service account should always be validated as if it existed",
+        )
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_is_service_account_valid(self, request_service_accounts: mock.Mock):
@@ -1570,6 +1567,104 @@ class ITServiceTests(IdentityRequest):
                 f' "{expected_first_username}" or "{expected_second_username}", got the following service account:'
                 f" {filtered_result}",
             )
+
+    @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_filtered_service_accounts(self, request_service_accounts: mock.Mock):
+        """Test that the function properly requests service accounts from IT and merges them with local accounts."""
+        user = User()
+        user.bearer_token = "mocked-bt"
+
+        principals_tenant_one, _ = self._create_database_service_account_principals_two_tenants()
+
+        # Select one principal to remove in order to ensure that the local and IT account lists are merged properly.
+        selected_principals = principals_tenant_one[1:]
+
+        request_service_accounts.return_value = self.it_service._get_mock_service_accounts(selected_principals)
+
+        filtered = self.it_service._filtered_service_accounts(
+            user=user,
+            service_account_principals=principals_tenant_one,
+            options={},
+        )
+
+        self.assertEqual(
+            1,
+            request_service_accounts.call_count,
+            "Expected request_service_accounts to be called once.",
+        )
+
+        self.assertSetEqual(
+            set(principal.service_account_id for principal in principals_tenant_one),
+            set(request_service_accounts.call_args.kwargs["client_ids"]),
+            "Expected request_service_accounts to be called with the service_account_ids passed to _filtered_service_accounts.",
+        )
+
+        self._assert_created_sa_and_result_are_same(
+            created_database_sa_principals=selected_principals,
+            function_result=filtered,
+        )
+
+    @override_settings(IT_BYPASS_IT_CALLS=True)
+    @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_filtered_service_accounts_bypass_it(self, request_service_accounts: mock.Mock):
+        """Test that the function does not use request_service_accounts when IT_BYPASS_IT_CALLS is set."""
+        user = User()
+        user.bearer_token = "mocked-bt"
+
+        principals_tenant_one, _ = self._create_database_service_account_principals_two_tenants()
+
+        # When IT_BYPASS_IT_CALLS is set, _filter_service_accounts should return mocked accounts.
+        request_service_accounts.side_effect = lambda **kwargs: self.fail(
+            "Expected request_service_accounts to not be called when IT_BYPASS_IT_CALLS is set."
+        )
+
+        filtered = self.it_service._filtered_service_accounts(
+            user=user,
+            service_account_principals=principals_tenant_one,
+            options={},
+        )
+
+        self._assert_created_sa_and_result_are_same(
+            created_database_sa_principals=principals_tenant_one,
+            function_result=filtered,
+        )
+
+    @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_filtered_service_accounts_username_only(self, request_service_accounts: mock.Mock):
+        """Test that the function returns only usernames when username_only is true."""
+        user = User()
+        user.bearer_token = "mocked-bt"
+
+        principals_tenant_one, _ = self._create_database_service_account_principals_two_tenants()
+
+        # Select one principal to remove in order to ensure that the local and IT account lists are merged properly.
+        selected_principals = principals_tenant_one[1:]
+        expected_usernames = set(principal.username for principal in selected_principals)
+
+        request_service_accounts.return_value = self.it_service._get_mock_service_accounts(selected_principals)
+
+        # request_service_accounts being called with the correct arguments is tested above.
+
+        filtered = self.it_service._filtered_service_accounts(
+            user=user,
+            service_account_principals=principals_tenant_one,
+            options={"username_only": "true"},
+        )
+
+        self.assertEqual(
+            len(selected_principals),
+            len(filtered),
+            "Expected the same number of accounts to be returned as provided.",
+        )
+
+        for account in filtered:
+            self.assertEqual(
+                1,
+                len(account),
+                f"Expected each account to have a single key when username_only is true; found {list(account.keys())}.",
+            )
+
+            self.assertIn(account["username"], expected_usernames)
 
     @override_settings(IT_BYPASS_IT_CALLS=True)
     def test_principal_filtering_without_username_match_criteria_exact_skipped(self):
