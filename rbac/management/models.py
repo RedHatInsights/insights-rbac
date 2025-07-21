@@ -29,7 +29,7 @@ from management.role.model import (
     RoleV2,
     BindingMapping,
 )
-from management.role_binding.model import RoleBinding
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.policy.model import Policy
 from management.audit_log.model import AuditLog
 from management.workspace.model import Workspace
