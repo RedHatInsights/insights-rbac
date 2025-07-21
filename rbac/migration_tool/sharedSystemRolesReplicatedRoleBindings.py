@@ -91,12 +91,12 @@ class MigrateRoleModelsResult:
     v2_roles: list[RoleV2]
 
 
-def v1_role_to_v2_bindings(
+def migrate_role_models(
     v1_role: Role,
     default_workspace: Workspace,
     role_bindings: Iterable[BindingMapping],
 ) -> MigrateRoleModelsResult:
-    """Convert a V1 role to a set of V2 role bindings."""
+    """Convert a V1 role to a set of V2 roles and role bindings."""
     from internal.utils import get_or_create_ungrouped_workspace
 
     perm_groupings: PermissionGroupings = {}
