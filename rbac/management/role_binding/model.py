@@ -38,9 +38,6 @@ class RoleBinding(TenantAwareModel):
     resource_type_name = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
 
-    groups = models.ManyToManyField(Group)
-    principals = models.ManyToManyField(Principal)
-
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -63,10 +60,39 @@ class RoleBinding(TenantAwareModel):
         self.resource_id = new_resource.resource_id
 
     def as_migration_rolebinding(self) -> V2rolebinding:
+        binding_groups = [str(e.group.uuid) for e in self.group_entries.all()]
+        principal_entries = list(self.principal_entries.all())
+
+        # A dict (from sources to user UUIDs) is the updated representation of a BindingMapping. A list of user UUIDs is
+        # the old form. Use the updated form if and only if we have a source for all principals.
+        binding_users = (
+            {p.source: str(p.user.uuid) for p in principal_entries}
+            if not any(p.source is None for p in principal_entries)
+            else [str(p.user.uuid) for p in principal_entries]
+        )
+
         return V2rolebinding(
             id=str(self.id),
             role=self.role.as_migration_role(),
             resource=self.resource,
-            groups=[str(group.uuid) for group in self.groups.all()],
-            users=[str(principal.uuid) for principal in self.principals.all()],
+            groups=binding_groups,
+            users=binding_users,
         )
+
+
+class RoleBindingPrincipal(models.Model):
+    principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
+    binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
+    source = models.CharField(max_length=128, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["principal", "binding", "source"], name="unique principal binding source triple"
+            )
+        ]
+
+
+class RoleBindingGroup(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="role_binding_entries")
+    binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="group_entries")

@@ -23,6 +23,7 @@ from typing import Any, Iterable, Optional, Tuple, Union
 from django.conf import settings
 from management.models import BindingMapping, Group, Role, RoleBinding, RoleV2, Workspace
 from management.permission.model import Permission
+from management.role_binding.model import RoleBindingGroup
 from migration_tool.ingest import add_element
 from migration_tool.models import (
     V2boundresource,
@@ -203,7 +204,8 @@ def _get_or_create_v2_role_binding(
     else:
         new_binding = RoleBinding.objects.create(**binding_args)
 
-    new_binding.groups.set(groups)
+    RoleBindingGroup.objects.filter(binding=new_binding).delete()
+    RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=new_binding, group=g) for g in groups])
 
     return new_binding
 
