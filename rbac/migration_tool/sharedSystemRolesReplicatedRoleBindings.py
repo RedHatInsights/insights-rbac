@@ -167,6 +167,7 @@ def _get_or_create_v2_custom_role_from_v1(
         "display_name": name,
         "description": v1_role.description,
         "type": RoleV2.Types.CUSTOM,
+        "v1_source": v1_role,
     }
 
     if v2_id is not None:
