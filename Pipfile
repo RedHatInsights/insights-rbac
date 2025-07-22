@@ -44,7 +44,6 @@ jsonschema = "*"
 unleashclient = "*"
 django-pgtransaction = "*"
 
-
 [dev-packages]
 sphinx-rtd-theme = "==1.3.0"
 sphinx = "==4.5.0"
@@ -61,6 +60,7 @@ flake8 = "==7.3.0"
 pre-commit = "==4.2.0"
 mypy = "==1.15.0"
 psycopg2-binary = "==2.9.10"
+tblib = "*"
 
 [requires]
 python_version = "3.12"

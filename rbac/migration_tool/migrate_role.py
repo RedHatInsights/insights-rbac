@@ -22,7 +22,6 @@ from management.role.model import BindingMapping, Role
 from management.workspace.model import Workspace
 from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
-from migration_tool.utils import create_relationship
 
 
 def get_kessel_relation_tuples(
@@ -34,30 +33,6 @@ def get_kessel_relation_tuples(
 
     for v2_role_binding in v2_role_bindings:
         relationships.extend(v2_role_binding.as_tuples())
-
-        bound_resource = v2_role_binding.resource
-
-        # Is this a workspace binding, but not to the root workspace?
-        # If so, ensure this workspace is a child of the root workspace.
-        # All other resource-resource or resource-workspace relations
-        # which may be implied or necessary are intentionally ignored.
-        # These should come from the apps that own the resource.
-        if bound_resource.resource_type == ("rbac", "workspace") and not bound_resource.resource_id == str(
-            default_workspace.id
-        ):
-            # This is not strictly necessary here and the relation may be a duplicate.
-            # Once we have more Workspace API / Inventory Group migration progress,
-            # this block can and probably should be removed.
-            # One of those APIs will add it themselves.
-            relationships.append(
-                create_relationship(
-                    bound_resource.resource_type,
-                    bound_resource.resource_id,
-                    ("rbac", "workspace"),
-                    str(default_workspace.id),
-                    "parent",
-                )
-            )
 
     return relationships
 
