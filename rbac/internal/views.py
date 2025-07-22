@@ -1658,13 +1658,12 @@ def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
     principals = group.principals.all()
-    relations_assignment_check_replicator = RelationsApiAssignmentCheck()
     relations_dual_write_handler = RelationApiDualWriteGroupHandler(
-        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_check_replicator
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_checker
     )
 
     relationships = relations_dual_write_handler.generate_relations_to_add_principals(principals)
-    relation_assignments = relations_assignment_check_replicator.replicate(
+    relation_assignments = relations_assignment_checker.replicate(
         ReplicationEvent(
             event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
             info={
