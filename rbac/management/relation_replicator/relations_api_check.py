@@ -153,7 +153,9 @@ class RelationsApiAssignmentCheck(RelationReplicator):
                 {"id": r.subject.subject.id, "relation_exists": relation_exists}
             )
             if not relation_exists:
-                logger.warning(f"Relation missing: User ID {r.subject.subject.id} is not associated with Group ID {r.resource.id}")
+                logger.warning(
+                    f"Relation missing: User ID {r.subject.subject.id} is not associated with Group ID {r.resource.id}"
+                )
         return relations_assignments
 
 
