@@ -21,16 +21,10 @@ from contextlib import contextmanager
 
 import grpc
 import jsonschema
-from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
-from google.protobuf import json_format
-from grpc import RpcError
 from internal.schemas import RELATION_INPUT_SCHEMAS
 from jsonschema import validate
-from kessel.relations.v1beta1 import check_pb2
-from kessel.relations.v1beta1 import check_pb2_grpc
-from kessel.relations.v1beta1 import common_pb2
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -150,53 +144,3 @@ def validate_relations_input(action, request_data) -> bool:
     except Exception as e:
         logger.info(f"Exception occurred when validating JSON body: {e}")
         return False
-
-
-def check_relation_core(
-    resource_id: str,
-    subject_id: str,
-    resource_name: str,
-    resource_namespace: str,
-    relation: str,
-    subject_name: str,
-    subject_namespace: str,
-    subject_relation: str,
-    token,
-) -> bool:
-    """
-    Core function to check relation between a resource and a subject using gRPC.
-
-    Returns True if relation exists, False otherwise.
-    """
-    try:
-        with create_client_channel(settings.RELATION_API_SERVER) as channel:
-            stub = check_pb2_grpc.KesselCheckServiceStub(channel)
-
-            request_data = check_pb2.CheckRequest(
-                resource=common_pb2.ObjectReference(
-                    type=common_pb2.ObjectType(namespace=resource_namespace, name=resource_name),
-                    id=resource_id,
-                ),
-                relation=relation,
-                subject=common_pb2.SubjectReference(
-                    relation=subject_relation,
-                    subject=common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=subject_namespace, name=subject_name),
-                        id=subject_id,
-                    ),
-                ),
-            )
-
-            metadata = [("authorization", f"Bearer {token}")]
-            response = stub.Check(request_data, metadata=metadata)
-
-            if response:
-                response_dict = json_format.MessageToDict(response)
-                return response_dict.get("allowed", "") != "ALLOWED_FALSE"
-
-    except RpcError as e:
-        logger.error(f"[gRPC] check_relation failed: {e}")
-    except Exception as e:
-        logger.error(f"[Unexpected] check_relation failed: {e}")
-
-    return False

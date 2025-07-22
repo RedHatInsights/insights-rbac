@@ -46,6 +46,7 @@ from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache, TenantCache
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -1657,10 +1658,23 @@ def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
     principals = group.principals.all()
-    token = jwt_manager.get_jwt_from_redis()
+    relations_assignment_check_replicator = RelationsApiAssignmentCheck()
+    relations_dual_write_handler = RelationApiDualWriteGroupHandler(
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_check_replicator
+    )
 
-    relationships = relations_assignment_checker.replicate(group, group_uuid, principals, token)
-    return JsonResponse(relationships, safe=False)
+    relationships = relations_dual_write_handler.generate_relations_to_add_principals(principals)
+    relation_assignments = relations_assignment_check_replicator.replicate(
+        ReplicationEvent(
+            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+            info={
+                "detail": "check group-principal assignments in relations api.",
+            },
+            partition_key=PartitionKey.byEnvironment(),
+            add=relationships,
+        ),
+    )
+    return JsonResponse(relation_assignments, safe=False)
 
 
 @require_http_methods(["GET", "DELETE"])
