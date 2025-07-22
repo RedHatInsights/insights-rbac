@@ -176,9 +176,12 @@ class RoleV2(TenantAwareModel):
         return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
 
     def as_migration_role(self) -> V2role:
+        if self.type != RoleV2.Types.CUSTOM:
+            return V2role.for_system_role(str(self.id))
+
         return V2role(
             id=str(self.id),
-            is_system=self.type != RoleV2.Types.CUSTOM,
+            is_system=False,
             permissions=frozenset(v1_perm_to_v2_perm(permission) for permission in self.permissions.all()),
         )
 
