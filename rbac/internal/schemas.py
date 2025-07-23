@@ -85,3 +85,30 @@ RELATION_INPUT_SCHEMAS = {
     "check_relation": RELATIONS_TOOL_INPUT_SCHEMAS[1],
     "read_tuples": RELATIONS_TOOL_INPUT_SCHEMAS[2],
 }
+
+INVENTORY_RESOURCE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "resource_id": {"type": "string"},
+        "resource_type": {"type": "string"},
+        "reporter": {"type": "object", "properties": {"type": {"type": "string"}}, "required": ["type"]},
+    },
+    "required": ["resource_id", "resource_type", "reporter"],
+}
+
+ENTITY_SCHEMA = {"type": "object", "properties": {"resource": INVENTORY_RESOURCE_SCHEMA}, "required": ["resource"]}
+
+INVENTORY_API_SCHEMAS = [
+    # "api/inventory/check_relation/"
+    {
+        "type": "object",
+        "properties": {
+            "resource": INVENTORY_RESOURCE_SCHEMA,
+            "relation": {"type": "string"},
+            "subject": ENTITY_SCHEMA,
+        },
+        "required": ["resource", "relation", "subject"],
+    },
+]
+
+INVENTORY_INPUT_SCHEMAS = {"check_relation": INVENTORY_API_SCHEMAS[0]}
