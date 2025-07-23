@@ -91,10 +91,31 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             return
         self._current_role_relations = self._generate_relations_for_role()
 
+    def _update_v2_role(self):
+        """Update the RoleV2 model from the role."""
+        # V2 system roles have the same ID as their V1 counterparts.
+        # TODO: need to add parent-child relationships here
+        RoleV2.objects.update_or_create(
+            id=self.role.uuid,
+            defaults={
+                "tenant": self.role.tenant,
+                "name": self.role.name,
+                "display_name": self.role.display_name,
+                "description": self.role.description,
+                "type": RoleV2.Types.SEEDED,
+                "v1_source": self.role,
+                "version": self.role.version,
+                "created": self.role.created,
+                "modified": self.role.modified,
+            },
+        )
+
     def replicate_update_system_role(self):
         """Replicate update of system role."""
         if not self.replication_enabled():
             return
+
+        self._update_v2_role()
 
         self._replicate(
             ReplicationEventType.UPDATE_SYSTEM_ROLE,
@@ -107,6 +128,8 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         """Replicate creation of new system role."""
         if not self.replication_enabled():
             return
+
+        self._update_v2_role()
 
         self._replicate(
             ReplicationEventType.CREATE_SYSTEM_ROLE,
