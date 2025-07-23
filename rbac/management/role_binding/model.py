@@ -16,16 +16,17 @@
 #
 
 """Model for role bindings."""
-
+from kessel.relations.v1beta1.common_pb2 import Relationship
+from typing import Optional
 from uuid import uuid4
 
 from django.db import models
 from management.group.model import Group
 from management.models import Principal
-from management.role.model import RoleV2
+from management.role.model import BindingMapping, RoleV2
 
 from api.models import TenantAwareModel
-from migration_tool.models import V2boundresource, V2rolebinding
+from migration_tool.models import V2boundresource, V2rolebinding, role_binding_group_subject_tuple
 
 
 class RoleBinding(TenantAwareModel):
@@ -78,6 +79,86 @@ class RoleBinding(TenantAwareModel):
             groups=binding_groups,
             users=binding_users,
         )
+
+    def id_matches(self, binding_mapping: BindingMapping) -> bool:
+        """Determine whether this RoleBinding has the same UUID as the passing BindingMapping."""
+
+        if self.id is None:
+            raise ValueError("Cannot call id_matches on an unsaved RoleBinding")
+
+        return str(self.id) == binding_mapping.mappings["id"]
+
+    def pop_group(self, group_uuid: str) -> Optional[Relationship]:
+        """
+        Pop the group from mappings.
+
+        The group may still be bound to the role in other ways, so the group may still be included in the binding
+        more than once after this method returns.
+
+        If the group is no longer assigned at all, the Relationship is returned to be removed.
+
+        This has the same meaning as BindingMapping.pop_group_from_bindings, but note that the effects of this method
+        are applied immediately (*not* when save() is called).
+        """
+
+        entry_ids: list[int] = list(
+            self.group_entries.filter(group__uuid=group_uuid).values_list("id", flat=True).order_by("id")
+        )
+
+        if len(entry_ids) > 0:
+            deleted_count, _ = self.group_entries.filter(id=entry_ids[0]).delete()
+            assert deleted_count == 1
+
+        if len(entry_ids) > 1:
+            return None
+
+        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+
+    def assign_group(self, group_uuid: str) -> Optional[Relationship]:
+        """
+        Assign group to mappings.
+
+        If the group entry already exists, skip it.
+
+        This has the same meaning as BindingMapping.assign_group, but note that the effects of this method are
+        applied immediately (*not* when save() is called).
+        """
+
+        if not self.group_entries.filter(group__uuid=group_uuid).exists():
+            return self.add_group(group_uuid=group_uuid)
+
+        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+
+    def add_group(self, group_uuid: str) -> Optional[Relationship]:
+        """
+        Add group to mappings.
+
+        This adds an additional entry for the group, even if the group is already assigned, to account for multiple
+        possible sources that may have assigned the group for the same role and resource.
+
+        This has the same meaning as BindingMapping.add_group, but note that the effects of this method are
+        applied immediately (*not* when save() is called).
+        """
+
+        self.group_entries.create(group=Group.objects.get(uuid=group_uuid))
+        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+
+    def unassign_group(self, group_uuid: str) -> Optional[Relationship]:
+        """
+        Completely unassign this group from the mapping, even if it is assigned more than once.
+
+        Returns the Relationship for this Group.
+
+        This has the same meaning as BindingMapping.unassign_group, but note that the effects of this method are
+        applied immediately (*not* when save() is called).
+        """
+
+        self.group_entries.filter(group__uuid=group_uuid).delete()
+        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+
+    def is_unassigned(self) -> bool:
+        """Return true if mapping is not assigned to any groups or users."""
+        return (not self.group_entries.exists()) and (not self.principal_entries.exists())
 
 
 class RoleBindingPrincipal(models.Model):
