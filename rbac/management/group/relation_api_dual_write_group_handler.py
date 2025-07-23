@@ -20,6 +20,8 @@ import logging
 from typing import Iterable, Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
+
+from api.models import Tenant
 from management.group.model import Group
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
@@ -32,10 +34,15 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.model import BindingMapping, Role
+from management.role_binding.dual import (
+    dual_binding_pop_group,
+    dual_binding_add_group,
+    dual_binding_assign_group,
+    dual_binding_unassign_group,
+)
+from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import TenantMapping
 from migration_tool.utils import create_relationship
-
-from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -142,8 +149,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         if not self.replication_enabled():
             return
 
-        def add_group_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+        def add_group_to_binding(mapping: BindingMapping, role_binding: RoleBinding):
+            self.relations_to_add.append(
+                dual_binding_add_group(mapping, role_binding, group_uuid=str(self.group.uuid))
+            )
 
         for role in roles:
             self._update_mapping_for_role(
@@ -172,11 +181,13 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         if not self.replication_enabled():
             return
 
-        def reset_mapping(mapping: BindingMapping):
-            to_remove = mapping.unassign_group(str(self.group.uuid))
+        def reset_mapping(mapping: BindingMapping, role_binding: RoleBinding):
+            group_uuid = str(self.group.uuid)
+
+            to_remove = dual_binding_unassign_group(mapping, role_binding, group_uuid=group_uuid)
             if to_remove:
                 self.relations_to_remove.append(to_remove)
-            to_add = mapping.assign_group_to_bindings(str(self.group.uuid))
+            to_add = dual_binding_assign_group(mapping, role_binding, group_uuid=group_uuid)
             if to_add:
                 self.relations_to_add.append(to_add)
 
@@ -215,8 +226,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role_removal(role)
 
     def _update_mapping_for_role_removal(self, role: Role):
-        def remove_group_from_binding(mapping: BindingMapping):
-            removal = mapping.pop_group_from_bindings(str(self.group.uuid))
+
+        def remove_group_from_binding(mapping: BindingMapping, role_binding: RoleBinding):
+            removal = dual_binding_pop_group(mapping, role_binding, group_uuid=str(self.group.uuid))
             if removal is not None:
                 self.relations_to_remove.append(removal)
 

@@ -17,21 +17,27 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from typing import Callable, Iterable, Optional
-from uuid import uuid4
+from typing import Callable, Optional
 
 from django.conf import settings
+
+from management.group.model import Group
 from management.models import Workspace
+from management.principal.model import Principal
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
     RelationReplicator,
     ReplicationEventType,
 )
-from management.role.model import BindingMapping, Role
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
+from management.role.model import BindingMapping, Role, RoleV2
+from management.role_binding.dual import dual_binding_is_unassigned
+from management.role_binding.model import RoleBinding, RoleBindingPrincipal, RoleBindingGroup
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+type UpdateMappingCallback = Callable[[BindingMapping, RoleBinding], None]
+type CreateSystemRoleMappingCallback = Callable[[], tuple[BindingMapping, RoleBinding]]
 
 
 class RelationApiDualWriteSubjectHandler:
@@ -62,25 +68,55 @@ class RelationApiDualWriteSubjectHandler:
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
 
-    def _create_default_mapping_for_system_role(self, system_role: Role, **subject: Iterable[str]) -> BindingMapping:
+    def _create_default_mapping_for_system_role(
+        self, system_role: Role, users: Optional[dict[str, str]] = None, groups: Optional[frozenset[str]] = None
+    ) -> tuple[BindingMapping, RoleBinding]:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
-        binding = V2rolebinding(
-            str(uuid4()),
-            # Assumes same role UUID for V2 system role equivalent.
-            V2role.for_system_role(str(system_role.uuid)),
-            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
-            **subject,
+
+        # We assume that V2 system roles are one-to-one with V1 system roles.
+        v2_role: RoleV2 = RoleV2.objects.filter(v1_source=system_role).get()
+
+        role_binding: RoleBinding = RoleBinding.objects.create(
+            tenant=self.default_workspace.tenant,
+            role=v2_role,
+            resource_type_namespace="rbac",
+            resource_type_name="workspace",
+            resource_id=str(self.default_workspace.id),
         )
-        mapping = BindingMapping.for_role_binding(binding, system_role)
+
+        if users is not None:
+            RoleBindingPrincipal.objects.bulk_create(
+                [
+                    RoleBindingPrincipal(
+                        binding=role_binding,
+                        principal=Principal.objects.filter(user_id=user_id).get(),
+                        source=source,
+                    )
+                    for source, user_id in users.items()
+                ]
+            )
+
+        if groups is not None:
+            RoleBindingGroup.objects.bulk_create(
+                [
+                    RoleBindingGroup(
+                        binding=role_binding,
+                        group=Group.objects.filter(uuid=group_uuid).get(),
+                    )
+                    for group_uuid in groups
+                ]
+            )
+
+        mapping = BindingMapping.for_role_binding(role_binding.as_migration_rolebinding(), system_role)
         self.relations_to_add.extend(mapping.as_tuples())
-        return mapping
+        return mapping, role_binding
 
     def _update_mapping_for_role(
         self,
         role: Role,
-        update_mapping: Callable[[BindingMapping], None],
-        create_default_mapping_for_system_role: Optional[Callable[[], BindingMapping]],
+        update_mapping: UpdateMappingCallback,
+        create_default_mapping_for_system_role: Optional[CreateSystemRoleMappingCallback],
     ):
         """
         Update mapping for role using callbacks based on current state.
@@ -106,8 +142,14 @@ class RelationApiDualWriteSubjectHandler:
             # We must lock something to prevent concurrent updates, so we lock the Role.
             # Because custom roles must be locked already by this point,
             # we don't need to lock the binding here.
-            bindings: Iterable[BindingMapping] = role.binding_mappings.all()
-            if not bindings:
+            binding_mappings: list[BindingMapping] = list(role.binding_mappings.all())
+            role_bindings_by_id: dict[str, RoleBinding] = {
+                str(b.id): b for b in RoleBinding.objects.filter(role__v1_source=role)
+            }
+
+            assert len(binding_mappings) == len(role_bindings_by_id)
+
+            if not binding_mappings:
                 logger.warning(
                     "[Dual Write] Binding mappings not found for role(%s): '%s'. "
                     "Assuming no current relations exist. "
@@ -115,15 +157,19 @@ class RelationApiDualWriteSubjectHandler:
                     role.uuid,
                     role.name,
                 )
-            for mapping in bindings:
-                update_mapping(mapping)
+
+            for mapping in binding_mappings:
+                role_binding = role_bindings_by_id[mapping.mappings["id"]]
+
+                update_mapping(mapping, role_binding)
                 mapping.save(force_update=True)
+                role_binding.save(force_update=True)
 
     def _update_mapping_for_system_role(
         self,
         role: Role,
-        update_mapping: Callable[[BindingMapping], None],
-        create_default_mapping_for_system_role: Optional[Callable[[], BindingMapping]],
+        update_mapping: UpdateMappingCallback,
+        create_default_mapping_for_system_role: Optional[CreateSystemRoleMappingCallback],
         default_workspace_locked: bool = False,
     ):
         if role.system is False:
@@ -134,7 +180,7 @@ class RelationApiDualWriteSubjectHandler:
             # as they are used platform-wide,
             # and their permissions do not refer to specific resources,
             # so they can be changed concurrently safely.
-            mapping = (
+            mapping: BindingMapping = (
                 BindingMapping.objects.select_for_update()
                 .filter(
                     role=role,
@@ -145,13 +191,28 @@ class RelationApiDualWriteSubjectHandler:
                 .get()
             )
 
-            update_mapping(mapping)
+            role_binding: RoleBinding = (
+                RoleBinding.objects.select_for_update()
+                .filter(
+                    role__v1_source=role,
+                    resource_type_namespace="rbac",
+                    resource_type_name="workspace",
+                    resource_id=str(self.default_workspace.id),
+                )
+                .get()
+            )
 
-            if mapping.is_unassigned():
+            assert role_binding.id_matches(mapping)
+            update_mapping(mapping, role_binding)
+
+            if dual_binding_is_unassigned(mapping, role_binding):
+                # We only need to add the tuples once.
                 self.relations_to_remove.extend(mapping.as_tuples())
                 mapping.delete()
+                role_binding.delete()
             else:
                 mapping.save(force_update=True)
+                role_binding.save(force_update=True)
         except BindingMapping.DoesNotExist:
             # create_default_mapping_for_system_role is None if e.g. the role is being removed.
             if create_default_mapping_for_system_role is not None:
@@ -173,5 +234,9 @@ class RelationApiDualWriteSubjectHandler:
                     # Workspace is locked, so it's safe to create the mapping.
                     # This method must only be called here,
                     # otherwise we can end up with extra untracked mapping tuples.
-                    mapping = create_default_mapping_for_system_role()
-                    mapping.save(force_insert=True)
+                    mapping, role_binding = create_default_mapping_for_system_role()
+
+                    mapping.save()
+                    role_binding.save()
+
+                    assert role_binding.id_matches(mapping)
