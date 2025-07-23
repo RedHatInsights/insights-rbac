@@ -17,7 +17,7 @@
 """Test tuple changes for RBAC operations."""
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, Iterable
 from django.test import TestCase, override_settings
 from django.db.models import Q
 from management.group.definer import seed_group, set_system_flag_before_update
@@ -29,11 +29,12 @@ from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
-from management.role.model import Access, BindingMapping, ResourceDefinition, Role, SourceKey
+from management.role.model import Access, BindingMapping, ResourceDefinition, Role, SourceKey, RoleV2
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.role_binding.model import RoleBinding
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -56,6 +57,8 @@ from api.cross_access.util import create_cross_principal
 from api.models import Tenant
 from unittest.mock import patch
 
+from migration_tool.models import v1_perm_to_v2_perm
+
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
 class DualWriteTestCase(TestCase):
@@ -74,6 +77,11 @@ class DualWriteTestCase(TestCase):
         self.fixture = RbacFixture()
         self.tenant = self.fixture.new_tenant(org_id="1234567").tenant
         self.test_tenant = self.tenant
+
+    def tearDown(self):
+        """Tear down the dual write tests."""
+        self.expect_role_binding_invariants()
+        super().tearDown()
 
     def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
         """Switch to a new tenant with the given name and org_id."""
@@ -323,6 +331,55 @@ class DualWriteTestCase(TestCase):
             f"Matched role bindings: {role_bindings}.\n"
             f"Unmatched role bindings: {unmatched}",
         )
+
+    def expect_role_binding_invariants(self):
+        """Assert that the structures of all BindingMappings and RoleBindings are consistent with each other."""
+        binding_mappings_by_id: dict[str, BindingMapping] = {b.mappings["id"]: b for b in BindingMapping.objects.all()}
+        role_binding_by_id: dict[str, RoleBinding] = {str(b.id): b for b in RoleBinding.objects.all()}
+
+        binding_mapping_ids = set(binding_mappings_by_id.keys())
+        role_binding_ids = set(role_binding_by_id.keys())
+
+        self.assertEqual(
+            binding_mapping_ids,
+            role_binding_ids,
+            "Expected IDs from BindingMappings and IDs of RoleBindings to match.\n"
+            f"From BindingMappings: {binding_mapping_ids}\n"
+            f"From RoleBindings: {role_binding_ids}",
+        )
+
+        for mapping_id, mapping in binding_mappings_by_id.items():
+            role_binding = role_binding_by_id[mapping_id]
+
+            self.assertEqual(mapping.resource_type_namespace, role_binding.resource_type_namespace)
+            self.assertEqual(mapping.resource_type_name, role_binding.resource_type_name)
+            self.assertEqual(mapping.resource_id, role_binding.resource_id)
+
+            self.assertEqual(mapping.mappings["role"]["id"], str(role_binding.role.id))
+
+            mapping_role_is_system = mapping.mappings["role"]["is_system"]
+            self.assertEqual(mapping_role_is_system, role_binding.role.type != RoleV2.Types.CUSTOM)
+
+            if not mapping_role_is_system:
+                self.assertEqual(
+                    set(mapping.mappings["role"]["permissions"]),
+                    {v1_perm_to_v2_perm(p) for p in role_binding.role.permissions.all()},
+                )
+
+            mapping_raw_users: Union[dict[str, str], Iterable[str]] = mapping.mappings["users"]
+            mapping_users: list[tuple[str, str]] = (
+                sorted((user_id, source_key) for source_key, user_id in mapping_raw_users.items())
+                if isinstance(mapping_raw_users, dict)
+                else sorted((user_id, None) for user_id in mapping_raw_users)
+            )
+
+            binding_users = sorted((entry.user.uuid, entry.source) for entry in role_binding.principal_entries.all())
+
+            self.assertEqual(mapping_users, binding_users)
+            self.assertEqual(
+                sorted(mapping.mappings["groups"]),
+                sorted(str(entry.group.uuid) for entry in role_binding.group_entries.all()),
+            )
 
 
 class DualWriteGroupTestCase(DualWriteTestCase):
