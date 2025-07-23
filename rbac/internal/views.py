@@ -1659,7 +1659,7 @@ def check_relation(request):
         )
 
 
-def check_relation_inventory(request):
+def check_inventory(request):
     """POST to check relationship from inventory api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
