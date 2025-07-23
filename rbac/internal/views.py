@@ -1705,7 +1705,7 @@ def check_inventory(request):
         # Pass JWT token in metadata
         metadata = [("authorization", f"Bearer {token}")]
         response = stub.Check(request, metadata=metadata)
-        print(response)
+
         if response:
             response_to_dict = json_format.MessageToDict(response)
             response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
