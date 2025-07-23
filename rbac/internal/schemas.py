@@ -99,7 +99,7 @@ INVENTORY_RESOURCE_SCHEMA = {
 ENTITY_SCHEMA = {"type": "object", "properties": {"resource": INVENTORY_RESOURCE_SCHEMA}, "required": ["resource"]}
 
 INVENTORY_API_SCHEMAS = [
-    # "api/inventory/check_relation/"
+    # "api/inventory/check/"
     {
         "type": "object",
         "properties": {
@@ -111,4 +111,4 @@ INVENTORY_API_SCHEMAS = [
     },
 ]
 
-INVENTORY_INPUT_SCHEMAS = {"check_relation": INVENTORY_API_SCHEMAS[0]}
+INVENTORY_INPUT_SCHEMAS = {"check": INVENTORY_API_SCHEMAS[0]}

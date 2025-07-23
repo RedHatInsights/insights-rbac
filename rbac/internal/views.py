@@ -1664,9 +1664,9 @@ def check_inventory(request):
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
 
-    if not validate_inventory_input("check_relation", req_data):
+    if not validate_inventory_input("check", req_data):
         return JsonResponse(
-            {"detail": "Invalid request body provided in request to check_relation inventory."}, status=500
+            {"detail": "Invalid request body provided in request to check inventory."}, status=500
         )
 
     # Request parameters for check relation on inventory api from post request
