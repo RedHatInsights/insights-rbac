@@ -2690,10 +2690,10 @@
           "application/json": {
             "example": {
               "resource": {
-                "resource_id": "group1",
+                "resource_id": "bob_club",
                 "resource_type": "group",
                 "reporter": {
-                  "type": "inventory"
+                  "type": "rbac"
                 }
               },
               "relation": "member",
