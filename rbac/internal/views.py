@@ -1716,7 +1716,7 @@ def check_inventory(request):
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
-            {"detail": "Error occurred in call to check relation inventory endpoint", "error": str(e)}, status=500
+            {"detail": "Error occurred in call to check inventory endpoint", "error": str(e)}, status=500
         )
 
 
