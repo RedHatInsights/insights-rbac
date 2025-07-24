@@ -455,3 +455,13 @@ def raise_validation_error(source, message):
     """Construct a validation error and raise the error."""
     error = {source: [message]}
     raise ValidationError(error)
+
+
+def flatten_validation_error(e: ValidationError):
+    """Flatten a Django ValidationError into a list of (field, message) tuples."""
+    if hasattr(e, "message_dict"):
+        return [(field, str(msg)) for field, messages in e.message_dict.items() for msg in messages]
+    elif hasattr(e, "messages"):
+        return [("__all__", str(msg)) for msg in e.messages]
+    else:
+        return [("__all__", str(e))]

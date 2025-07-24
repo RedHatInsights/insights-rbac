@@ -420,9 +420,19 @@ def obtain_groups_in(obj, request):
 
     public_tenant = Tenant.objects.get(tenant_name="public")
 
-    platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
-        policies__in=policy_ids
-    ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+    # Fix: Check if custom default group exists for tenant first
+    tenant_has_custom_default = Group.platform_default_set().filter(tenant=request.tenant).exists()
+
+    if tenant_has_custom_default:
+        # Use tenant's custom default group only
+        platform_default_groups = (
+            Group.platform_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
+        )
+    else:
+        # Fall back to public tenant's default group
+        platform_default_groups = (
+            Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+        )
 
     if username_param and scope_param != PRINCIPAL_SCOPE:
         is_org_admin = request.user_from_query.admin
@@ -432,9 +442,17 @@ def obtain_groups_in(obj, request):
     qs = assigned_groups | platform_default_groups
 
     if is_org_admin:
-        admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
-            policies__in=policy_ids
-        ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+        # Apply same fix for admin default groups
+        tenant_has_custom_admin_default = Group.admin_default_set().filter(tenant=request.tenant).exists()
+
+        if tenant_has_custom_admin_default:
+            admin_default_groups = (
+                Group.admin_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
+            )
+        else:
+            admin_default_groups = (
+                Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+            )
 
         qs = qs | admin_default_groups
 

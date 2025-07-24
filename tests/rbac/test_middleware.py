@@ -20,9 +20,7 @@ from functools import partial
 import json
 import os
 from typing import Tuple
-from unittest import mock
 from unittest.mock import Mock, MagicMock, patch
-from django.conf import settings
 from django.http import Http404, QueryDict, HttpResponse
 from django.test.utils import override_settings
 from importlib import reload
@@ -53,7 +51,6 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
-from rbac.settings import SYSTEM_USERS
 from tests.identity_request import IdentityRequest
 from rbac import urls
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
@@ -582,6 +579,16 @@ class ServiceToServiceWithToken(IdentityRequest):
                         "organization": {"id": "4321"},
                     },
                 )
+            if authorization == "Bearer testtoken_invalid_user":
+                return "testtoken_invalid_user", Token(
+                    {},
+                    {
+                        "sub": "orguser",
+                        "preferred_username": "orguser",
+                        "client_id": "orguser",
+                        "organization": {"id": "9999"},
+                    },
+                )
             raise InvalidTokenError(f"Invalid token: {authorization}")
 
     def setUp(self):
@@ -684,7 +691,7 @@ class ServiceToServiceWithToken(IdentityRequest):
         t.save()
         url = reverse("v1_management:group-list")
         client = APIClient()
-        client.credentials(HTTP_AUTHORIZATION="Bearer testtoken_orguser")
+        client.credentials(HTTP_AUTHORIZATION="Bearer testtoken_invalid_user")
         self.service_headers = {}
         response = client.get(url, **self.service_headers)
 

@@ -206,6 +206,7 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
 class WorkspaceHierarchyTests(WorkspaceServiceTestBase):
     """Tests for hierarchy enforcement"""
 
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
     def test_enforce_hierarchy_depth_exceeded(self):
         """Test when hierarchy depth is exceeded"""
         with self.assertRaises(serializers.ValidationError) as context:
@@ -214,12 +215,14 @@ class WorkspaceHierarchyTests(WorkspaceServiceTestBase):
             f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep.", str(context.exception)
         )
 
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
     def test_enforce_hierarchy_depth_is_within_range_but_peer_violation(self):
         """Test when hierarchy depth is within range but there are peer restrictions"""
         with self.assertRaises(serializers.ValidationError) as context:
             self.service._enforce_hierarchy_depth(self.root_workspace.id, self.tenant)
         self.assertIn("Sub-workspaces may only be created under the default workspace.", str(context.exception))
 
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
     def test_enforce_hierarchy_depth_is_within_range_and_no_peer_violation(self):
         """Test when hierarchy depth is within range and no peer restrictions"""
         self.assertEqual(self.service._enforce_hierarchy_depth(self.default_workspace.id, self.tenant), None)
