@@ -169,6 +169,7 @@ class RoleBinding(TenantAwareModel):
         This has the same meaning as BindingMapping.assign_user_to_bindings, but note that the effects of this
         method are applied immediately (*not* when save() is called).
         """
+
         principal = Principal.objects.filter(user_id=user_id).get()
 
         # We maintain the invariant that, for a given RoleBinding, either all principals have no source or all
@@ -198,26 +199,29 @@ class RoleBinding(TenantAwareModel):
         if source is not None:
             # It is acceptable to delete an entry with a null source. Source an entry existing means that all sources
             # are none.
-            entries: list["RoleBindingPrincipal"] = list(
+            to_delete: Optional["RoleBindingPrincipal"] = (
                 self.principal_entries.filter(principal__user_id=user_id)
                 .filter(Q(source=None) | Q(source=source))
-                .order_by(F("source").asc(nulls_last=True))[:2]
+                .order_by(F("source").asc(nulls_last=True))
+                .first()
             )
         else:
             # In this case, BindingMapping would delete any entry. We are more conservative: an entry with a source
             # cannot be deleted from a call without a source.
-            entries: list["RoleBindingPrincipal"] = list(
-                self.principal_entries.filter(principal__user_id=user_id).order_by(F("source").asc(nulls_last=True))
-            )[:2]
+            to_delete: Optional["RoleBindingPrincipal"] = (
+                self.principal_entries.filter(principal__user_id=user_id)
+                .order_by(F("source").asc(nulls_last=True))
+                .first()
+            )
 
-        if len(entries) > 0:
-            if (source is None) and (entries[0].source is not None):
+        if to_delete is not None:
+            if (source is None) and (to_delete.source is not None):
                 raise ValueError("Cannot delete an entry with a source unless a source is provided.")
 
-            deleted_count, _ = entries[0].delete()
+            deleted_count, _ = to_delete.delete()
             assert deleted_count == 1
 
-        if len(entries) > 1:
+        if self.principal_entries.filter(principal__user_id=user_id).exists():
             return None
 
         return role_binding_user_subject_tuple(str(self.id), user_id)
@@ -253,6 +257,9 @@ class RoleBindingPrincipal(models.Model):
                 fields=["principal", "binding", "source"], name="unique principal binding source triple"
             )
         ]
+
+    def __str__(self):
+        return f"principal=(user_id={self.principal.user_id}), source={self.source}"
 
 
 class RoleBindingGroup(models.Model):
