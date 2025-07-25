@@ -373,7 +373,9 @@ class DualWriteTestCase(TestCase):
                 else sorted((user_id, None) for user_id in mapping_raw_users)
             )
 
-            binding_users = sorted((entry.user.uuid, entry.source) for entry in role_binding.principal_entries.all())
+            binding_users = sorted(
+                (str(entry.principal.user_id), entry.source) for entry in role_binding.principal_entries.all()
+            )
 
             self.assertEqual(mapping_users, binding_users)
             self.assertEqual(
