@@ -17,21 +17,18 @@
 
 """RelationReplicator which check relations on Relations API."""
 
-import json
+
 import logging
 
-import grpc
 from django.conf import settings
 from google.protobuf import json_format
-from google.rpc import error_details_pb2
 from grpc import RpcError
-from grpc_status import rpc_status
 from kessel.relations.v1beta1 import check_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache
 from management.jwt import JWTManager, JWTProvider
-from management.relation_replicator.relation_replicator import RelationReplicator
+from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
 from management.utils import create_client_channel
 
 jwt_cache = JWTCache()
@@ -43,9 +40,9 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class RelationsApiRelationChecker(RelationReplicator):
     """Checks relations via the Relations API over gRPC."""
 
-    def replicate(self, relationships):
+    def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the gRPC API."""
-        assignments = self._check_relationships(relationships=relationships)
+        assignments = self._check_relationships(event.add)
         return assignments
 
     def _check_relationships(self, relationships):
@@ -61,7 +58,6 @@ class RelationsApiRelationChecker(RelationReplicator):
                     f"Relation missing: User ID {r.subject.subject.id} is not associated with Group ID {r.resource.id}"
                 )
         return relations_assignments
-
 
     def check_relation_core(self, r: common_pb2.Relationship) -> bool:
         """
@@ -103,4 +99,3 @@ class RelationsApiRelationChecker(RelationReplicator):
         except Exception as e:
             logger.error(f"[Unexpected] check_relation failed: {e}")
         return False
-

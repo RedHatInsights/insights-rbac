@@ -1663,7 +1663,16 @@ def group_assignments(request, group_uuid):
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
-    relation_assignments = relations_dual_write_handler._replicator.replicate(relationships)
+    relation_assignments = relations_dual_write_handler._replicator.replicate(
+        ReplicationEvent(
+            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+            info={
+                "detail": "Check user-group relations are correct",
+            },
+            partition_key=PartitionKey.byEnvironment(),
+            add=relationships,
+        ),
+    )
     return JsonResponse(relation_assignments, safe=False)
 
 
