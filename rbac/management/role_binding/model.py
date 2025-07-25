@@ -67,9 +67,9 @@ class RoleBinding(TenantAwareModel):
         # A dict (from sources to user UUIDs) is the updated representation of a BindingMapping. A list of user UUIDs is
         # the old form. Use the updated form if and only if we have a source for all principals.
         binding_users = (
-            {p.source: str(p.user.uuid) for p in principal_entries}
+            {p.source: str(p.principal.user_id) for p in principal_entries}
             if not any(p.source is None for p in principal_entries)
-            else [str(p.user.uuid) for p in principal_entries]
+            else [str(p.principal.user_id) for p in principal_entries]
         )
 
         return V2rolebinding(
