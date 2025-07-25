@@ -19,6 +19,7 @@
 import logging
 from typing import Iterable, Optional
 
+from api.cross_access.model import CrossAccountRequestV2
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import (
@@ -28,9 +29,15 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.model import BindingMapping, Role, SourceKey
+from management.role.model import BindingMapping, Role, SourceKey, RoleV2
 
 from api.models import CrossAccountRequest, Tenant
+from management.role_binding.dual import (
+    dual_binding_assign_user,
+    dual_binding_unassign_user,
+    dual_binding_update_data_format,
+)
+from management.role_binding.model import RoleBinding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -82,6 +89,30 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             logger.error("Error occurred in cross account replicate event", e)
             raise DualWriteException(e)
 
+    def _update_v2_model(self):
+        v2_request, _ = CrossAccountRequestV2.objects.update_or_create(
+            request_id=self.cross_account_request.request_id,
+            defaults={
+                "target_account": self.cross_account_request.target_account,
+                "target_org": self.cross_account_request.target_org,
+                "user_id": self.cross_account_request.user_id,
+                "created": self.cross_account_request.created,
+                "start_date": self.cross_account_request.start_date,
+                "end_date": self.cross_account_request.end_date,
+                "modified": self.cross_account_request.modified,
+                "status": self.cross_account_request.status,
+                "target_resource_type_namespace": "rbac",
+                "target_resource_type_name": "workspace",
+                "target_resource_id": self.default_workspace.id,
+            },
+        )
+
+        # We assume that system roles are one-to-one between V1 and V2.
+        # TODO: this is inefficient, but I want to lazily verify the assertion that the roles are actually one-to-one.
+        v2_request.roles.set(
+            [RoleV2.objects.filter(v1_source=v1_role).get() for v1_role in self.cross_account_request.roles.all()]
+        )
+
     def generate_relations_to_add_roles(self, roles: Iterable[Role]):
         """Generate relations to add roles."""
         if not self.replication_enabled():
@@ -89,8 +120,10 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
         user_id = str(self.cross_account_request.user_id)
 
-        def add_principal_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
+        def add_principal_to_binding(mapping: BindingMapping, role_binding: RoleBinding):
+            self.relations_to_add.append(
+                dual_binding_assign_user(mapping, role_binding, user_id=user_id, source=source_key)
+            )
 
         for role in roles:
             self._update_mapping_for_system_role(
@@ -108,9 +141,11 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
         user_id = str(self.cross_account_request.user_id)
 
-        def add_principal_to_binding(mapping: BindingMapping):
-            mapping.update_data_format_for_user(self.relations_to_remove)
-            self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
+        def add_principal_to_binding(mapping: BindingMapping, role_binding: RoleBinding):
+            dual_binding_update_data_format(mapping, role_binding, self.relations_to_remove)
+            self.relations_to_add.append(
+                dual_binding_assign_user(mapping, role_binding, user_id=user_id, source=source_key)
+            )
 
         for role in roles:
             self._update_mapping_for_system_role(
@@ -126,6 +161,9 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         if not self.replication_enabled():
             return
 
+        # TODO: replicate is not called every time a cross-account request is updated, so this won't actually keep
+        # the models in sync.
+        self._update_v2_model()
         self._replicate()
 
     def generate_relations_to_remove_roles(self, roles: Iterable[Role]):
@@ -135,8 +173,8 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
         user_id = str(self.cross_account_request.user_id)
 
-        def remove_principal_from_binding(mapping: BindingMapping):
-            removal = mapping.unassign_user_from_bindings(user_id, source=source_key)
+        def remove_principal_from_binding(mapping: BindingMapping, role_binding: RoleBinding):
+            removal = dual_binding_unassign_user(mapping, role_binding, user_id=user_id, source=source_key)
             if removal is not None:
                 self.relations_to_remove.append(removal)
 

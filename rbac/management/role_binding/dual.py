@@ -18,7 +18,7 @@
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from typing import Optional
 
-from management.role.model import BindingMapping
+from management.role.model import BindingMapping, SourceKey
 from management.role_binding.model import RoleBinding
 
 
@@ -67,6 +67,38 @@ def dual_binding_unassign_group(
     return _dual_call(mapping.unassign_group, binding.unassign_group, group_uuid=group_uuid)
 
 
+def dual_binding_assign_user(
+    mapping: BindingMapping, binding: RoleBinding, user_id: str, source: Optional[SourceKey]
+) -> Relationship:
+    """Call BindingMapping.assign_user_to_bindings and RoleBinding.assign_user and assert they have the same result."""
+    return _dual_call(mapping.assign_user_to_bindings, binding.assign_user, user_id=user_id, source=source)
+
+
+def dual_binding_unassign_user(
+    mapping: BindingMapping, binding: RoleBinding, user_id: str, source: Optional[SourceKey]
+) -> Relationship:
+    """Call BindingMapping.unassign_user_from_bindings and RoleBinding.unassign_user and assert they have the same
+    result."""
+    return _dual_call(mapping.unassign_user_from_bindings, binding.unassign_user, user_id=user_id, source=source)
+
+
 def dual_binding_is_unassigned(mapping: BindingMapping, binding: RoleBinding) -> bool:
     """Call BindingMapping.is_unassigned and RoleBinding.is_unassigned and assert they have the same result."""
     return _dual_call_pure(mapping.is_unassigned, binding.is_unassigned)
+
+
+def dual_binding_update_data_format(mapping: BindingMapping, binding: RoleBinding, all_relations_to_remove):
+    """Call BindingMapping.update_data_format_for_user and RoleBinding.update_data_format and assert they have the same
+    result."""
+    left_out: list[Relationship] = []
+    right_out: list[Relationship] = []
+
+    mapping.update_data_format_for_user(left_out)
+    binding.update_data_format(right_out)
+
+    assert set((relation.subject.subject.id, relation.resource.id) for relation in left_out) == set(
+        (relation.subject.subject.id, relation.resource.id) for relation in right_out
+    )
+
+    for relation in left_out:
+        all_relations_to_remove.append(relation)
