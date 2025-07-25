@@ -230,6 +230,8 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: INVENTORY_API_SERVER
+            value: ${INVENTORY_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
@@ -460,6 +462,8 @@ objects:
                 optional: true
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: INVENTORY_API_SERVER
+            value: ${INVENTORY_API_SERVER}
           - name: SCOPES
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
@@ -1459,6 +1463,9 @@ parameters:
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
 - name: RELATION_API_SERVER
   description: The gRPC API server to use for the relation
+  value: "localhost:9000"
+- name: INVENTORY_API_SERVER
+  description: The gRPC API server to use for inventory api
   value: "localhost:9000"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
