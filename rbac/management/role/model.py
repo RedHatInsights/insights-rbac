@@ -128,6 +128,16 @@ class ResourceDefinition(TenantAwareModel):
             return self.tenant.id
 
 
+class RoleV2Manager(models.Manager):
+    def platform_all_users(self) -> "RoleV2":
+        """Get the platform default "all users" role."""
+        return self.filter(tenant__name="public", type="platform-all-users").get()
+
+    def platform_all_admins(self) -> "RoleV2":
+        """Get the platform default "all admins" role."""
+        return self.filter(tenant__name="public", type="platform-all-admins").get()
+
+
 class RoleV2(TenantAwareModel):
     """A role."""
 
