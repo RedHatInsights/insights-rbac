@@ -16,6 +16,7 @@
 #
 
 """Model for role bindings."""
+from django.db.models import F, Q
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from typing import Optional
 from uuid import uuid4
@@ -23,10 +24,15 @@ from uuid import uuid4
 from django.db import models
 from management.group.model import Group
 from management.models import Principal
-from management.role.model import BindingMapping, RoleV2
+from management.role.model import BindingMapping, RoleV2, SourceKey
 
 from api.models import TenantAwareModel
-from migration_tool.models import V2boundresource, V2rolebinding, role_binding_group_subject_tuple
+from migration_tool.models import (
+    V2boundresource,
+    V2rolebinding,
+    role_binding_group_subject_tuple,
+    role_binding_user_subject_tuple,
+)
 
 
 class RoleBinding(TenantAwareModel):
@@ -155,6 +161,81 @@ class RoleBinding(TenantAwareModel):
 
         self.group_entries.filter(group__uuid=group_uuid).delete()
         return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+
+    def assign_user(self, user_id: str, source: Optional[SourceKey]) -> Relationship:
+        """
+        Assign user to mappings.
+
+        This has the same meaning as BindingMapping.assign_user_to_bindings, but note that the effects of this
+        method are applied immediately (*not* when save() is called).
+        """
+        principal = Principal.objects.filter(user_id=user_id).get()
+
+        # We maintain the invariant that, for a given RoleBinding, either all principals have no source or all
+        # principals have a source. This mirrors the list/dict representation in BindingMapping.
+
+        if self.principal_entries.filter(source=None).exists():
+            self.principal_entries.create(principal=principal)
+        else:
+            if source is None:
+                raise ValueError(
+                    "Cannot add a principal entry with no source unless such a principal entry already exists."
+                )
+
+            self.principal_entries.get_or_create(principal=principal, source=source)
+
+        return role_binding_user_subject_tuple(str(self.id), user_id)
+
+    def unassign_user(self, user_id: str, source: Optional[SourceKey]) -> Optional[Relationship]:
+        """
+        Unassign user from mappings.
+
+        This has the same meaning as BindingMapping.unassign_user_from_bindings, but note that the effects of this
+        method are applied immediately (*not* when save() is called).
+        """
+        # We maintain the invariant that all sources are null or no sources are null.
+
+        if source is not None:
+            # It is acceptable to delete an entry with a null source. Source an entry existing means that all sources
+            # are none.
+            entries: list["RoleBindingPrincipal"] = list(
+                self.principal_entries.filter(principal__user_id=user_id)
+                .filter(Q(source=None) | Q(source=source))
+                .order_by(F("source").asc(nulls_last=True))[:2]
+            )
+        else:
+            # In this case, BindingMapping would delete any entry. We are more conservative: an entry with a source
+            # cannot be deleted from a call without a source.
+            entries: list["RoleBindingPrincipal"] = list(
+                self.principal_entries.filter(principal__user_id=user_id).order_by(F("source").asc(nulls_last=True))
+            )[:2]
+
+        if len(entries) > 0:
+            if (source is None) and (entries[0].source is not None):
+                raise ValueError("Cannot delete an entry with a source unless a source is provided.")
+
+            deleted_count, _ = entries[0].delete()
+            assert deleted_count == 1
+
+        if len(entries) > 1:
+            return None
+
+        return role_binding_user_subject_tuple(str(self.id), user_id)
+
+    def update_data_format(self, all_relations_to_remove):
+        """
+        Update data format for users in mappings.
+
+        This has the same meaning as BindingMapping.update_data_format_for_user, but note that the effects of this
+        method are applied immediately (*not* when save() is called).
+        """
+        entries_to_remove = self.principal_entries.filter(source=None)
+        removed_user_ids = set(entry.principal.user_id for entry in entries_to_remove)
+
+        entries_to_remove.delete()
+
+        for user_id in removed_user_ids:
+            all_relations_to_remove.append(role_binding_user_subject_tuple(str(self.id), user_id))
 
     def is_unassigned(self) -> bool:
         """Return true if mapping is not assigned to any groups or users."""
