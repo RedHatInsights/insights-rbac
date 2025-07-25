@@ -108,10 +108,12 @@ class CrossAccountRequestTest(IdentityRequest):
         tenant_for_target_account.save()
         self.fixture.bootstrap_tenant(tenant_for_target_account)
 
-        self.role_1 = Role.objects.create(name="role_1", system=True, tenant=public_tenant)
-        self.role_2 = Role.objects.create(name="role_2", system=True, tenant=public_tenant)
-        self.role_9 = Role.objects.create(name="role_9", system=True, tenant=public_tenant)
-        self.role_8 = Role.objects.create(name="role_8", system=True, tenant=public_tenant)
+        self.fixture.new_principals_in_tenant(["1111111", "2222222"], self.fixture.new_tenant("45678").tenant)
+
+        self.role_1 = self.fixture.new_system_role(name="role_1", permissions=[])
+        self.role_2 = self.fixture.new_system_role(name="role_2", permissions=[])
+        self.role_9 = self.fixture.new_system_role(name="role_9", permissions=[])
+        self.role_8 = self.fixture.new_system_role(name="role_8", permissions=[])
 
         self.request_1 = CrossAccountRequest.objects.create(
             target_account=self.account,
