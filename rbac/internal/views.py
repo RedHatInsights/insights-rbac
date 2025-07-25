@@ -60,7 +60,7 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from management.relation_replicator.relations_api_check import RelationsApiAssignmentCheck
+from management.relation_replicator.relations_api_check import RelationsApiRelationChecker
 from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
@@ -98,7 +98,6 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
-relations_assignment_checker = RelationsApiAssignmentCheck()
 
 
 @contextmanager
@@ -1657,22 +1656,14 @@ def check_relation(request):
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
-    principals = group.principals.all()
+    principals = list(group.principals.all())
+    relations_assignment_checker = RelationsApiRelationChecker()
     relations_dual_write_handler = RelationApiDualWriteGroupHandler(
         group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_checker
     )
-
-    relationships = relations_dual_write_handler.generate_relations_to_add_principals(principals)
-    relation_assignments = relations_assignment_checker.replicate(
-        ReplicationEvent(
-            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
-            info={
-                "detail": "check group-principal assignments in relations api.",
-            },
-            partition_key=PartitionKey.byEnvironment(),
-            add=relationships,
-        ),
-    )
+    relations_dual_write_handler.generate_relations_to_add_principals(principals)
+    relationships = relations_dual_write_handler.relations_to_add
+    relation_assignments = relations_dual_write_handler._replicator.replicate(relationships)
     return JsonResponse(relation_assignments, safe=False)
 
 
