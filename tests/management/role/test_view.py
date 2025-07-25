@@ -64,15 +64,18 @@ def normalize_and_sort(json_obj):
     return json_obj
 
 
-def replication_event_for_v1_role(v1_role_uuid, default_workspace_id):
+def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id):
     """Create a replication event for a v1 role."""
     return {
-        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id),
+        "relations_to_add": relation_api_tuples_for_v1_role(
+            v1_role_uuid=v1_role_uuid,
+            bound_workspace_id=bound_workspace_id,
+        ),
         "relations_to_remove": [],
     }
 
 
-def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
+def relation_api_tuples_for_v1_role(v1_role_uuid, bound_workspace_id):
     """Create a relation API tuple for a v1 role."""
     role_id = Role.objects.get(uuid=v1_role_uuid).id
     mappings = BindingMapping.objects.filter(role=role_id).all()
@@ -87,7 +90,7 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
         if "app_all_read" in role_binding.role.permissions:
             relation_tuple = relation_api_tuple(
                 "workspace",
-                default_workspace_id,
+                bound_workspace_id,
                 "binding",
                 "role_binding",
                 role_binding.id,
@@ -259,6 +262,13 @@ class RoleViewsetTests(IdentityRequest):
             tenant=self.tenant,
             parent=self.root_workspace,
             type="default",
+        )
+        self.child_workspace = Workspace.objects.create(
+            name="child",
+            description="Child workspace",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type="standard",
         )
 
     def tearDown(self):
@@ -2035,6 +2045,48 @@ class RoleViewsetTests(IdentityRequest):
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_delete_role_child_workspace(self, mock_method):
+        """Test that we can delete an existing role bound to a child workspace.
+
+        This is a regression test: a previous version of the dual-write code attempted to remove the parent-child
+        relationship between the workspace a role is bound to (if not the default workspace) and the default
+        workspace."""
+
+        workspace_definition = {
+            "attributeFilter": {
+                "key": "group.id",
+                "operation": "equal",
+                "value": str(self.child_workspace.id),
+            }
+        }
+
+        role_name = "roleA"
+        access_data = [
+            {
+                "permission": "app:*:read",
+                "resourceDefinitions": [workspace_definition],
+            },
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [workspace_definition],
+            },
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+
+        role_uuid = response.data.get("uuid")
+        url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        replication_event = {"relations_to_add": [], "relations_to_remove": []}
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, bound_workspace_id=str(self.child_workspace.id))
+        replication_event["relations_to_remove"] = current_relations
+        response = client.delete(url, **self.headers)
+        actual_call_arg = mock_method.call_args[0][0]
+        expected_sorted = normalize_and_sort(replication_event)
+        actual_sorted = normalize_and_sort(actual_call_arg)
+        self.assertEqual(expected_sorted, actual_sorted)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
     def test_system_flag_filter(self):
         """Test that we can filter roles based on system flag."""
         client = APIClient()
@@ -2270,6 +2322,90 @@ class RoleViewsetTests(IdentityRequest):
         ungrouped_hosts_id = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
         access_data[0]["resourceDefinitions"][0]["attributeFilter"]["value"] = [str(ungrouped_hosts_id.id)]
         self.assertEqual(response.data.get("access"), access_data)
+
+    def test_groups_in_only_from_custom_default_group(self):
+        """
+        Test roles being in default groups won't show up
+        when organization has custom default group that doesn't include the role.
+        """
+        # Create a role that will be in public default group but NOT in custom default group
+        test_role_name = "test_role_not_in_custom_default"
+        test_role = Role.objects.create(
+            name=test_role_name,
+            platform_default=True,  # This makes it part of public default group
+            system=True,
+            tenant=self.public_tenant,
+        )
+
+        # Create permission and access for the test role
+        test_permission = Permission.objects.create(permission="test:*:*", tenant=self.public_tenant)
+        Access.objects.create(permission=test_permission, role=test_role, tenant=self.public_tenant)
+
+        # Ensure public default group exists, or create it
+        public_default_group, created = Group.objects.get_or_create(
+            platform_default=True,
+            tenant=self.public_tenant,
+            defaults={"name": "Default access", "description": "Default access group", "system": True},
+        )
+
+        # Create a policy for the public default group if it doesn't have one
+        public_default_policy, policy_created = Policy.objects.get_or_create(
+            group=public_default_group,
+            defaults={
+                "name": f"System Policy for Group {public_default_group.uuid}",
+                "system": True,
+                "tenant": self.public_tenant,
+            },
+        )
+
+        # Add our test role to the public default group
+        public_default_policy.roles.add(test_role)
+
+        # Create a CUSTOM default group for our tenant that explicitly EXCLUDES the test role
+        custom_default_group = Group.objects.create(
+            name="Custom default access",
+            platform_default=True,
+            system=False,  # Custom groups are not system groups
+            tenant=self.tenant,
+        )
+
+        # Create a policy for the custom default group that does NOT include our test role
+        custom_default_policy = Policy.objects.create(
+            name="Custom default policy", system=True, tenant=self.tenant, group=custom_default_group
+        )
+        # Intentionally NOT adding test_role to this policy
+        # Only add existing roles that should be in custom default
+        custom_default_policy.roles.add(self.defRole)  # Add a different role
+
+        # Now test the groups_in API
+        url = f"{URL}?add_fields=groups_in,groups_in_count"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_data = response.data.get("data")
+
+        # Find our test role in the response
+        test_role_response = next(
+            (role for role in response_data if role["name"] == test_role_name),
+            None,
+        )
+
+        # Assert that our test role is in the response
+        self.assertIsNotNone(test_role_response, f"Test role '{test_role_name}' not found in API response")
+
+        groups_in = test_role_response.get("groups_in", [])
+        group_names = [group["name"] for group in groups_in]
+
+        # CORRECT BEHAVIOR: groups_in should be empty since:
+        # - Role is NOT in the custom default group for this tenant
+        # - Should not fall back to public default group when custom exists
+        self.assertEqual(
+            len(groups_in),
+            0,
+            f"Role '{test_role_name}' incorrectly shows as being in groups: {group_names}. "
+            f"Expected empty list since role is not in custom default group and should not fall back to public default.",
+        )
 
 
 class RoleViewNonAdminTests(IdentityRequest):
