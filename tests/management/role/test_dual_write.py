@@ -156,6 +156,13 @@ class DualWriteTestCase(TestCase):
         return group, principals
 
     def given_car(self, user_id: str, roles: list[Role], old_format=True):
+        source_tenant = Tenant.objects.filter(org_id="9876543").first()
+
+        if source_tenant is None:
+            source_tenant = self.fixture.new_tenant("9876543").tenant
+
+        self.fixture.new_principals_in_tenant([user_id], tenant=source_tenant)
+
         create_cross_principal(user_id, target_org=self.tenant.org_id)
         car = self.fixture.new_car(self.tenant, user_id)
         car.roles.add(*roles)
@@ -172,6 +179,13 @@ class DualWriteTestCase(TestCase):
                 if "users" in mapping.mappings and isinstance(mapping.mappings["users"], dict):
                     mapping.mappings["users"] = list(mapping.mappings["users"].values())
                     mapping.save()
+
+            car_v2 = CrossAccountRequestV2.objects.filter(request_id=car.request_id).get()
+
+            for role in car_v2.roles.all():
+                for binding in role.bindings.all():
+                    binding.principal_entries.all().update(source=None)
+
         return car
 
     def given_additional_group_members(
