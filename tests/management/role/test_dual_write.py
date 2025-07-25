@@ -1349,16 +1349,38 @@ class RbacFixture:
             tenant=self.public_tenant,
         )
 
-        access_list = [
-            Access(
-                permission=Permission.objects.get_or_create(permission=permission, tenant=self.public_tenant)[0],
-                role=role,
-                tenant=self.public_tenant,
-            )
+        created_permissions = [
+            Permission.objects.get_or_create(permission=permission, tenant=self.public_tenant)[0]
             for permission in permissions
         ]
 
+        access_list = [
+            Access(
+                permission=permission,
+                role=role,
+                tenant=self.public_tenant,
+            )
+            for permission in created_permissions
+        ]
+
         Access.objects.bulk_create(access_list)
+
+        role_v2 = RoleV2.objects.create(
+            id=str(role.uuid),
+            name=name,
+            display_name=name,
+            type=RoleV2.Types.SEEDED,
+            tenant=self.public_tenant,
+            v1_source=role,
+        )
+
+        role_v2.permissions.set(created_permissions)
+
+        if platform_default:
+            role_v2.parents.add(RoleV2.objects.platform_all_users())
+
+        if admin_default:
+            role_v2.parents.add(RoleV2.objects.platform_all_admins())
 
         return role
 
