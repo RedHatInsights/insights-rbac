@@ -58,7 +58,7 @@ from api.models import Tenant
 from unittest.mock import patch
 
 from migration_tool.models import v1_perm_to_v2_perm
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_role_models
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_custom_role_models
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -1437,7 +1437,11 @@ class RbacFixture:
                     )
 
         if include_v2:
-            migrate_role_models(role, Workspace.objects.default(tenant=role.tenant), role.binding_mappings.all())
+            migrate_custom_role_models(
+                v1_role=role,
+                default_workspace=Workspace.objects.default(tenant=role.tenant),
+                role_bindings=role.binding_mappings.all(),
+            )
 
         return role
 

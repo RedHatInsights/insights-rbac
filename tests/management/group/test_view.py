@@ -58,7 +58,7 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_system_role
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_system_role_models
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
@@ -275,7 +275,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def _create_system_role(self, *args, **kwargs) -> Role:
         role = Role.objects.create(*args, **kwargs, system=True)
-        migrate_system_role(role)
+        migrate_system_role_models(role)
 
         return role
 
@@ -4388,7 +4388,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role.version = 3
         user_access_admin_role.save()
 
-        migrate_system_role(user_access_admin_role)
+        migrate_system_role_models(user_access_admin_role)
 
         # Associate the role and the permission.
         access = Access()

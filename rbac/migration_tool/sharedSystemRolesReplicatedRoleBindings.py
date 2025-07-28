@@ -92,7 +92,7 @@ class MigrateRoleModelsResult:
     v2_roles: list[RoleV2]
 
 
-def migrate_system_role(role: Role) -> RoleV2:
+def migrate_system_role_models(role: Role) -> RoleV2:
     if not role.system:
         raise ValueError(f"Expected role {role.id} ({role.name}) to be system seeded role")
 
@@ -128,7 +128,7 @@ def migrate_system_role(role: Role) -> RoleV2:
     return result
 
 
-def migrate_role_models(
+def migrate_custom_role_models(
     v1_role: Role,
     default_workspace: Workspace,
     role_bindings: Iterable[BindingMapping],

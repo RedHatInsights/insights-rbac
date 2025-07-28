@@ -35,7 +35,10 @@ from management.role.model import BindingMapping, Role, RoleV2
 from management.role_binding.model import RoleBinding
 from migration_tool.migrate_role import get_kessel_relation_tuples
 from migration_tool.models import v1_perm_to_v2_perm
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_role_models, migrate_system_role
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import (
+    migrate_custom_role_models,
+    migrate_system_role_models,
+)
 from migration_tool.utils import create_relationship
 
 
@@ -93,7 +96,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
     def _update_v2_role(self):
         """Update the RoleV2 model from the role."""
-        migrate_system_role(self.role)
+        migrate_system_role_models(self.role)
 
     def replicate_update_system_role(self):
         """Replicate update of system role."""
@@ -423,7 +426,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         try:
             logger.info("[Dual Write] Generate new relations from role(%s): '%s'", self.role.uuid, self.role.name)
 
-            migrate_result = migrate_role_models(
+            migrate_result = migrate_custom_role_models(
                 v1_role=self.role,
                 default_workspace=self.default_workspace,
                 role_bindings=old_state.binding_mappings,
