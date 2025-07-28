@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def migrate_all_system_roles(replicator: RelationReplicator):
-    """Ge"""
+    """Generate relationships for all system roles."""
     with transaction.atomic():
         system_roles = Role.objects.select_for_update().filter(system=True)
 
