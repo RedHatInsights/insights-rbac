@@ -911,10 +911,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         replicate.side_effect = self.replicator.replicate
 
         # Modify pending request such that it includes roles
-        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
-        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
+        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"], include_v2=True)
+        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"], include_v2=True)
         # Should not include this one
-        self.fixture.new_system_role("NotGranted", ["app1:resource1:action1"])
+        self.fixture.new_system_role("NotGranted", ["app1:resource1:action1"], include_v2=True)
 
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
@@ -973,10 +973,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         replicate.side_effect = self.replicator.replicate
 
         # Modify pending request such that it includes roles
-        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
-        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
+        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"], include_v2=True)
+        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"], include_v2=True)
         # Should not include this one
-        self.fixture.new_system_role("NotGranted", ["app1:resource1:action1"])
+        self.fixture.new_system_role("NotGranted", ["app1:resource1:action1"], include_v2=True)
 
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
