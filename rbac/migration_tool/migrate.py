@@ -29,13 +29,32 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
-from management.role.model import Role
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.model import Role, RoleV2
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    SeedingRelationApiDualWriteHandler,
+)
 
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import CrossAccountRequest, Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+def migrate_all_system_roles(replicator: RelationReplicator):
+    """Ge"""
+    with transaction.atomic():
+        system_roles = Role.objects.select_for_update().filter(system=True)
+
+        for system_role in system_roles:
+            logger.info(f"Migrating system role {system_role.name}")
+
+            handler = SeedingRelationApiDualWriteHandler(role=system_role, replicator=replicator)
+
+            if RoleV2.objects.filter(v1_source=system_role).exists():
+                handler.replicate_update_system_role()
+            else:
+                handler.replicate_new_system_role()
 
 
 def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
@@ -151,9 +170,14 @@ def migrate_data(
     skip_roles: bool = False,
 ):
     """Migrate all data for all tenants."""
+    replicator = _get_replicator(write_relationships)
+
+    logger.info("Migrating system roles")
+    migrate_all_system_roles(replicator=replicator)
+    logger.info("Finished migrating system roles")
+
     count = 0
     tenants = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
-    replicator = _get_replicator(write_relationships)
     if orgs:
         tenants = tenants.filter(org_id__in=orgs)
     total = tenants.count()

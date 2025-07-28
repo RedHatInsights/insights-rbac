@@ -387,6 +387,41 @@ class MigrateTestTupleStore(TestCase):
 
         migrate_data(write_relationships=InMemoryRelationReplicator(self.relations))
 
+        # Check system roles are migrated
+
+        # 2
+        self.assertCountEqual(
+            ["app1_res1_verb1", "app2_res2_verb2"],
+            [
+                t.relation
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "role", self.sr1.uuid), subject("rbac", "principal", "*"))
+                )
+            ],
+        )
+
+        # 2
+        self.assertCountEqual(
+            ["app3_res3_verb3", "app4_res4_verb4"],
+            [
+                t.relation
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "role", self.sr2.uuid), subject("rbac", "principal", "*"))
+                )
+            ],
+        )
+
+        # 2
+        self.assertCountEqual(
+            ["app5_res5_verb5", "app6_res6_verb6"],
+            [
+                t.relation
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "role", self.sr3.uuid), subject("rbac", "principal", "*"))
+                )
+            ],
+        )
+
         # Check tenanted objects for o1 are migrated
 
         # Group members...
@@ -553,4 +588,4 @@ class MigrateTestTupleStore(TestCase):
             "missing o2_r1 binding",
         )
 
-        self.assertEqual(29, len(self.relations))
+        self.assertEqual(37, len(self.relations))
