@@ -58,6 +58,7 @@ from api.models import Tenant
 from unittest.mock import patch
 
 from migration_tool.models import v1_perm_to_v2_perm
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_role_models
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -1339,7 +1340,15 @@ class RbacFixture:
             # Nothing to do if not using V2 bootstrapping
             return None
 
-    def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
+    def new_system_role(
+        self,
+        name: str,
+        permissions: list[str],
+        platform_default=False,
+        admin_default=False,
+        include_v2=False,
+        **kwargs,
+    ) -> Role:
         """Create a new system role with the given name and permissions."""
         role = Role.objects.create(
             name=name,
@@ -1347,6 +1356,7 @@ class RbacFixture:
             platform_default=platform_default,
             admin_default=admin_default,
             tenant=self.public_tenant,
+            **kwargs,
         )
 
         created_permissions = [
@@ -1365,35 +1375,41 @@ class RbacFixture:
 
         Access.objects.bulk_create(access_list)
 
-        role_v2 = RoleV2.objects.create(
-            id=str(role.uuid),
-            name=name,
-            display_name=name,
-            type=RoleV2.Types.SEEDED,
-            tenant=self.public_tenant,
-            v1_source=role,
-        )
+        if include_v2:
+            role_v2 = RoleV2.objects.create(
+                id=str(role.uuid),
+                name=name,
+                display_name=name,
+                type=RoleV2.Types.SEEDED,
+                tenant=self.public_tenant,
+                v1_source=role,
+                **kwargs,
+            )
 
-        role_v2.permissions.set(created_permissions)
+            role_v2.permissions.set(created_permissions)
 
-        if platform_default:
-            role_v2.parents.add(RoleV2.objects.platform_all_users())
+            if platform_default:
+                role_v2.parents.add(RoleV2.objects.platform_all_users())
 
-        if admin_default:
-            role_v2.parents.add(RoleV2.objects.platform_all_admins())
+            if admin_default:
+                role_v2.parents.add(RoleV2.objects.platform_all_admins())
 
         return role
 
-    def new_custom_role(self, name: str, resource_access: list[tuple[list[str], dict]], tenant: Tenant) -> Role:
+    def new_custom_role(
+        self, name: str, resource_access: list[tuple[list[str], dict]], tenant: Tenant, include_v2: bool = False
+    ) -> Role:
         """
         Create a new custom role.
 
         [resource_access] is a list of tuples of the form (permissions, attribute_filter).
         """
         role = Role.objects.create(name=name, system=False, tenant=tenant)
-        return self.update_custom_role(role, resource_access)
+        return self.update_custom_role(role, resource_access, include_v2=include_v2)
 
-    def update_custom_role(self, role: Role, resource_access: list[tuple[list[str], dict]]) -> Role:
+    def update_custom_role(
+        self, role: Role, resource_access: list[tuple[list[str], dict]], include_v2: bool = False
+    ) -> Role:
         """
         Update a custom role.
 
@@ -1418,6 +1434,9 @@ class RbacFixture:
                     ResourceDefinition.objects.create(
                         attributeFilter=attribute_filter, access=access, tenant=role.tenant
                     )
+
+        if include_v2:
+            migrate_role_models(role, Workspace.objects.default(tenant=role.tenant), role.binding_mappings.all())
 
         return role
 
