@@ -153,6 +153,13 @@ class MigrateTests(TestCase):
         # create custom default group
         self.custom_default_group = clone_default_group_in_public_schema(default_group, self.tenant)
 
+        # Principal must exist in order for cross-account request to be created.
+        Principal.objects.create(
+            tenant=self.tenant,
+            username="1111111",
+            user_id="1111111",
+        )
+
         # Setup cross account request to migrate
         self.ref_time = timezone.now()
         self.cross_account_request = CrossAccountRequest.objects.create(

@@ -6997,6 +6997,11 @@ class GroupReplicationTests(IdentityRequest):
 
         self.fixture.bootstrap_tenant(self.tenant)
 
+        # We use this user_id for creating cross-account requests below, and a Principal with that user ID must
+        # actually exist in order to create the request.
+        self.car_tenant = self.fixture.new_tenant(org_id="car-source")
+        self.fixture.new_principals_in_tenant(["2222222"], self.car_tenant.tenant)
+
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_remove_role_does_not_remove_binding_if_cross_account_granted(self, replicate):
         replicate.side_effect = self.in_memory_replicator.replicate
