@@ -92,6 +92,42 @@ class MigrateRoleModelsResult:
     v2_roles: list[RoleV2]
 
 
+def migrate_system_role(role: Role) -> RoleV2:
+    if not role.system:
+        raise ValueError(f"Expected role {role.id} ({role.name}) to be system seeded role")
+
+    # V2 system roles have the same ID as their V1 counterparts.
+    result, _ = RoleV2.objects.update_or_create(
+        id=role.uuid,
+        defaults={
+            "tenant": role.tenant,
+            "name": role.name,
+            "display_name": role.display_name,
+            "description": role.description,
+            "type": RoleV2.Types.SEEDED,
+            "v1_source": role,
+            "version": role.version,
+            "created": role.created,
+            "modified": role.modified,
+        },
+    )
+
+    # We assume that system roles are not bound to any particular workspace.
+    result.permissions.set([access.permission for access in role.access.all()])
+
+    parents: list[RoleV2] = []
+
+    if role.platform_default:
+        parents.append(RoleV2.objects.platform_all_users())
+
+    if role.admin_default:
+        parents.append(RoleV2.objects.platform_all_admins())
+
+    result.parents.set(parents)
+
+    return result
+
+
 def migrate_role_models(
     v1_role: Role,
     default_workspace: Workspace,

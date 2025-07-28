@@ -35,7 +35,7 @@ from management.role.model import BindingMapping, Role, RoleV2
 from management.role_binding.model import RoleBinding
 from migration_tool.migrate_role import get_kessel_relation_tuples
 from migration_tool.models import v1_perm_to_v2_perm
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_role_models
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_role_models, migrate_system_role
 from migration_tool.utils import create_relationship
 
 
@@ -93,22 +93,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
     def _update_v2_role(self):
         """Update the RoleV2 model from the role."""
-        # V2 system roles have the same ID as their V1 counterparts.
-        # TODO: need to add parent-child relationships here
-        RoleV2.objects.update_or_create(
-            id=self.role.uuid,
-            defaults={
-                "tenant": self.role.tenant,
-                "name": self.role.name,
-                "display_name": self.role.display_name,
-                "description": self.role.description,
-                "type": RoleV2.Types.SEEDED,
-                "v1_source": self.role,
-                "version": self.role.version,
-                "created": self.role.created,
-                "modified": self.role.modified,
-            },
-        )
+        migrate_system_role(self.role)
 
     def replicate_update_system_role(self):
         """Replicate update of system role."""
