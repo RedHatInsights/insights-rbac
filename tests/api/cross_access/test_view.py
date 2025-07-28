@@ -660,9 +660,6 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
-        binding_mapping = self.role_1.binding_mappings.first()
-        binding_mapping.mappings["groups"] = ["12345f"]  # fake groups to stop it from getting deleted
-        binding_mapping.save()
         # From approved to denied
         update_data = {"status": "denied"}
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
