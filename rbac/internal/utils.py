@@ -17,7 +17,9 @@
 
 """Utilities for Internal RBAC use."""
 import logging
+from contextlib import contextmanager
 
+import grpc
 import jsonschema
 from django.db import transaction
 from django.urls import resolve
@@ -33,6 +35,13 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    secure_channel = grpc.insecure_channel(addr)
+    yield secure_channel
 
 
 def build_internal_user(request, json_rh_auth):
