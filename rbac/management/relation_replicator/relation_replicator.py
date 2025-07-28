@@ -64,6 +64,7 @@ class ReplicationEventType(str, Enum):
     CREATE_WORKSPACE = "create_workspace"
     UPDATE_WORKSPACE = "update_workspace"
     DELETE_WORKSPACE = "delete_workspace"
+    MOVE_WORKSPACE = "move_workspace"
 
 
 class ReplicationEvent:

@@ -27,6 +27,7 @@ from django.utils.translation import gettext as _
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.token_validator import TokenValidator
+from management.cache import PrincipalCache
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
@@ -40,6 +41,7 @@ from api.models import Tenant, User
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
+PRINCIPAL_CACHE = PrincipalCache()
 PRINCIPAL_PERMISSION_INSTANCE = PrincipalAccessPermission()
 SERVICE_ACCOUNT_KEY = "service-account"
 
@@ -180,7 +182,11 @@ def get_principal(
         if from_query and not is_username_service_account:
             verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
 
-        principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+        principal = PRINCIPAL_CACHE.get_principal(tenant.org_id, username)
+        if not principal:
+            principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+            PRINCIPAL_CACHE.cache_principal(org_id=tenant.org_id, principal=principal)
+
     except Principal.DoesNotExist:
         # If the "from query" parameter was specified, the username was validated above, so there is no need to
         # validate it again.
@@ -196,6 +202,7 @@ def get_principal(
         else:
             # Avoid possible race condition if the user was created while checking BOP
             principal, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
+            PRINCIPAL_CACHE.cache_principal(org_id=tenant.org_id, principal=principal)
 
     return principal
 
@@ -455,3 +462,13 @@ def raise_validation_error(source, message):
     """Construct a validation error and raise the error."""
     error = {source: [message]}
     raise ValidationError(error)
+
+
+def flatten_validation_error(e: ValidationError):
+    """Flatten a Django ValidationError into a list of (field, message) tuples."""
+    if hasattr(e, "message_dict"):
+        return [(field, str(msg)) for field, messages in e.message_dict.items() for msg in messages]
+    elif hasattr(e, "messages"):
+        return [("__all__", str(msg)) for msg in e.messages]
+    else:
+        return [("__all__", str(e))]

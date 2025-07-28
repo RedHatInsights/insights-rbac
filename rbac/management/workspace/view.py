@@ -15,9 +15,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
+
+import logging
 import uuid
 
-from django.core.exceptions import PermissionDenied
+import pgtransaction
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
@@ -25,6 +28,7 @@ from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
 from management.workspace.utils import is_user_allowed
+from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -34,10 +38,12 @@ from rest_framework.response import Response
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
-from ..utils import validate_uuid
+from ..utils import flatten_validation_error, validate_uuid
 
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class WorkspaceViewSet(BaseV2ViewSet):
@@ -129,15 +135,45 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Update a workspace."""
         return super().update(request, *args, **kwargs)
 
-    @action(detail=True, methods=["post"], url_path="move")
-    @transaction.atomic()
-    def move(self, request, *args, **kwargs):
-        """Move a workspace under new parent."""
-        new_parent_id = self._parent_id_query_param_validation(request)
-        self._check_target_workspace_write_access(request, new_parent_id)
+    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE)
+    def _move_atomic(self, request):
+        target_workspace_id = self._parent_id_query_param_validation(request)
+        self._check_target_workspace_write_access(request, target_workspace_id)
         workspace = self.get_object()
-        self._service.move(self.get_object(), new_parent_id)
-        return Response({"id": str(workspace.id), "parent_id": str(new_parent_id)}, status=status.HTTP_200_OK)
+        serializer = self.get_serializer(workspace)
+        return serializer.move(workspace, target_workspace_id)
+
+    @action(detail=True, methods=["post"], url_path="move")
+    def move(self, request, *args, **kwargs):
+        """Move a workspace."""
+        try:
+            response_data = self._move_atomic(request)
+            return Response(response_data, status=status.HTTP_200_OK)
+        except SerializationFailure:
+            logging.exception("SerializationFailure in workspace movement operation, ws id: %s", kwargs.get("pk"))
+            return Response({"detail": "Too many concurrent updates. Please retry."}, status=status.HTTP_409_CONFLICT)
+        except DeadlockDetected:
+            logging.exception("DeadlockDetected in workspace movement operation, ws id: %s", kwargs.get("pk"))
+            return Response(
+                {"detail": "Internal server error in concurrent updates. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Workspace.DoesNotExist:
+            logger.exception("Target Workspace not found during operation, ws id: %s", kwargs.get("pk"))
+            return Response(
+                {"detail": "Workspace not found."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValidationError as e:
+            message = ""
+            for field, error_message in flatten_validation_error(e):
+                if "unique_workspace_name_per_parent" in error_message:
+                    message = "A workspace with the same name already exists under the target parent."
+                    break
+                if "__all__" in field:
+                    message = error_message
+                    break
+            raise serializers.ValidationError(message)
 
     @staticmethod
     def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:

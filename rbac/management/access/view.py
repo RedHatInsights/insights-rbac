@@ -16,8 +16,8 @@
 #
 
 """View for principal access."""
-from django.conf import settings
 from django.db.models import Prefetch
+from feature_flags import FEATURE_FLAGS
 from management.cache import AccessCache
 from management.models import Access, ResourceDefinition, Workspace
 from management.querysets import get_access_queryset
@@ -177,8 +177,8 @@ class AccessView(APIView):
 
     def add_ungrouped_hosts_id(self, response, tenant):
         """Add ungrouped hosts id to the data."""
-        if not settings.ADD_UNGROUPED_HOSTS_ID:
-            return
+        if not FEATURE_FLAGS.is_add_ungrouped_hosts_id_enabled():
+            return None
         ungrouped_hosts_id = None
         queried = False
         for access in response.data["data"]:
@@ -196,6 +196,6 @@ class AccessView(APIView):
                         ungrouped_hosts_id = str(ungrouped_workspace.id)
                         if ungrouped_hosts_id not in attribute_filter["value"]:
                             attribute_filter["value"].append(ungrouped_hosts_id)
-                        if settings.REMOVE_NULL_VALUE:
+                        if FEATURE_FLAGS.is_remove_null_value_enabled():
                             attribute_filter["value"].remove(None)
         return response

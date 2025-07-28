@@ -261,6 +261,100 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.type, "service-account")
         self.assertEqual(created_service_account.username, service_account_username)
 
+    @mock.patch("management.utils.PRINCIPAL_CACHE")
+    @mock.patch("management.models.Principal.objects.get")
+    def test_get_principal_cache_hit(self, mock_principal_get, mock_cache):
+        """Test that when there's a cache hit, the principal is fetched from the cache and Principal.objects.get is not called."""
+        username = "cached_user"
+
+        # Create a mock principal that will be returned from the cache.
+        cached_principal = Principal.objects.create(username=username, tenant=self.tenant)
+
+        # Mock the cache to return the principal —cache hit—.
+        mock_cache.get_principal.return_value = cached_principal
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Call the function under test.
+        result = get_principal(username=username, request=request)
+
+        # Verify that the cache was called with the correct parameters.
+        mock_cache.get_principal.assert_called_once_with(self.tenant.org_id, username)
+
+        # Verify that Principal.objects.get was NOT called —since we got a cache hit—.
+        mock_principal_get.assert_not_called()
+
+        # Verify that the returned principal is the one from the cache.
+        self.assertEqual(result, cached_principal)
+        self.assertEqual(result.username, username)
+
+    @mock.patch("management.utils.PRINCIPAL_CACHE")
+    def test_get_principal_cache_miss_and_cache(self, mock_cache):
+        """Test that when there's a cache miss, the principal gets fetched from the database and then cached."""
+        username = "database_user"
+
+        # Create a principal in the database that will be fetched when cache misses.
+        database_principal = Principal.objects.create(username=username, tenant=self.tenant)
+
+        # Mock the cache to return None —cache miss—.
+        mock_cache.get_principal.return_value = None
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Call the function under test.
+        result = get_principal(username=username, request=request)
+
+        # Verify that the cache was called first to check for existing principal
+        mock_cache.get_principal.assert_called_once_with(self.tenant.org_id, username)
+
+        # Verify that the principal was cached after being fetched from the database.
+        mock_cache.cache_principal.assert_called_once_with(org_id=self.tenant.org_id, principal=database_principal)
+
+        # Verify that the returned principal is the one from the database
+        self.assertEqual(result, database_principal)
+        self.assertEqual(result.username, username)
+
+    @mock.patch("management.utils.PRINCIPAL_CACHE")
+    @mock.patch("management.utils.verify_principal_with_proxy")
+    def test_get_principal_cache_miss_principal_created_and_cached(self, mock_verify_principal, mock_cache):
+        """Test that when there's a cache miss and the principal doesn't exist in the database, it gets created and cached."""
+        username = "new_user"
+
+        # Ensure the principal does not exist in the database.
+        self.assertFalse(Principal.objects.filter(username=username, tenant=self.tenant).exists())
+
+        # Mock the cache to return None —cache miss—.
+        mock_cache.get_principal.return_value = None
+
+        # Mock the verify_principal_with_proxy to avoid external service calls.
+        mock_verify_principal.return_value = None
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Call the function under test.
+        result = get_principal(username=username, request=request)
+
+        # Verify that the cache was called first to check for the existing principal.
+        mock_cache.get_principal.assert_called_once_with(self.tenant.org_id, username)
+
+        # Verify that the newly created principal was cached
+        mock_cache.cache_principal.assert_called_once_with(org_id=self.tenant.org_id, principal=result)
+
+        # Verify that the returned principal was created in the database
+        self.assertEqual(result.username, username)
+        self.assertEqual(result.tenant, self.tenant)
+        self.assertEqual(result.type, "user")
+
+        # Verify that the principal actually exists in the database
+        created_principal = Principal.objects.get(username=username, tenant=self.tenant)
+        self.assertEqual(created_principal, result)
+
     def test_get_principal_user_tenant_passed(self):
         """Test that user tenant is honored when it is passed to get principal."""
         username = "test_user"

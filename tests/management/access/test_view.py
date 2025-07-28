@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the access view."""
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from api.models import CrossAccountRequest
 from django.urls import reverse
@@ -26,6 +26,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from datetime import timedelta
+
 from management.cache import TenantCache
 from management.models import Group, Permission, Principal, ResourceDefinition, Policy, Role, Access, Workspace
 from tests.identity_request import IdentityRequest
@@ -364,7 +365,11 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
-    def test_get_access_replace_null_value(self):
+    @patch("rbac.middleware.FEATURE_FLAGS.is_add_ungrouped_hosts_id_enabled", return_value=False)
+    @patch("rbac.middleware.FEATURE_FLAGS.is_remove_null_value_enabled", return_value=False)
+    def test_get_access_replace_null_value(
+        self, ff_is_remove_null_value_enabled: Mock, ff_is_add_ungrouped_hosts_id_enabled: Mock
+    ):
         """Test that we can obtain the expected access without pagination."""
         role_name = "roleA"
         response = self.create_role(role_name, headers=self.headers)
@@ -397,8 +402,8 @@ class AccessViewTests(IdentityRequest):
 
         # Test that we can retrieve the principal access
         # and null value is not replaced if there is no ungrouped workspace
-        with self.settings(ADD_UNGROUPED_HOSTS_ID=True):
-            response = client.get(url, **self.headers)
+        ff_is_add_ungrouped_hosts_id_enabled.return_value = True
+        response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
@@ -414,8 +419,9 @@ class AccessViewTests(IdentityRequest):
             tenant=self.tenant,
             parent=self.default_ws,
         )
-        with self.settings(ADD_UNGROUPED_HOSTS_ID=True):
-            response = client.get(url, **self.headers)
+
+        ff_is_add_ungrouped_hosts_id_enabled.return_value = False
+        response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
@@ -425,8 +431,9 @@ class AccessViewTests(IdentityRequest):
 
         # Test that we can retrieve the principal access
         # and null value is replaced if there is a ungrouped workspace
-        with self.settings(ADD_UNGROUPED_HOSTS_ID=True, REMOVE_NULL_VALUE=True):
-            response = client.get(url, **self.headers)
+        ff_is_add_ungrouped_hosts_id_enabled.return_value = False
+        ff_is_remove_null_value_enabled.return_value = False
+        response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
