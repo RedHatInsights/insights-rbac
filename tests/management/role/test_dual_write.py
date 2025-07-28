@@ -385,19 +385,20 @@ class DualWriteTestCase(TestCase):
 
             mapping_raw_users: Union[dict[str, str], Iterable[str]] = mapping.mappings["users"]
             mapping_users: list[tuple[str, str]] = (
-                sorted((user_id, source_key) for source_key, user_id in mapping_raw_users.items())
+                [(user_id, source_key) for source_key, user_id in mapping_raw_users.items()]
                 if isinstance(mapping_raw_users, dict)
-                else sorted((user_id, None) for user_id in mapping_raw_users)
+                else [(user_id, None) for user_id in mapping_raw_users]
             )
 
-            binding_users = sorted(
+            binding_users = [
                 (str(entry.principal.user_id), entry.source) for entry in role_binding.principal_entries.all()
-            )
+            ]
 
-            self.assertEqual(mapping_users, binding_users)
-            self.assertEqual(
-                sorted(mapping.mappings["groups"]),
-                sorted(str(entry.group.uuid) for entry in role_binding.group_entries.all()),
+            self.assertCountEqual(mapping_users, binding_users)
+
+            self.assertCountEqual(
+                mapping.mappings["groups"],
+                [str(entry.group.uuid) for entry in role_binding.group_entries.all()],
             )
 
 
