@@ -131,11 +131,11 @@ class ResourceDefinition(TenantAwareModel):
 class RoleV2Manager(models.Manager):
     def platform_all_users(self) -> "RoleV2":
         """Get the platform default "all users" role."""
-        return self.filter(tenant__name="public", type="platform-all-users").get()
+        return self.filter(tenant__tenant_name="public", type="platform-all-users").get()
 
     def platform_all_admins(self) -> "RoleV2":
         """Get the platform default "all admins" role."""
-        return self.filter(tenant__name="public", type="platform-all-admins").get()
+        return self.filter(tenant__tenant_name="public", type="platform-all-admins").get()
 
 
 class RoleV2(TenantAwareModel):
@@ -158,6 +158,7 @@ class RoleV2(TenantAwareModel):
     version = models.PositiveIntegerField(default=1)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
+    objects = RoleV2Manager()
 
     @property
     def role(self):
