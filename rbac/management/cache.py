@@ -8,7 +8,7 @@ import pickle
 from django.conf import settings
 from prometheus_client import Counter
 from redis import BlockingConnectionPool, exceptions
-from redis.client import Redis
+from redis.client import Pipeline, Redis
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 _connection_pool = BlockingConnectionPool(**settings.REDIS_CACHE_CONNECTION_PARAMS)  # should match gunicorn.threads
@@ -277,6 +277,53 @@ class JWTCache(BasicCache):
     def set_jwt_response(self, response):
         """Save the JWT token response in Redis."""
         super().save(self.JWT_CACHE_KEY, response, "JWT response")
+
+
+class PrincipalCache(BasicCache):
+    """Redis-based caching for storing the principals."""
+
+    def key_for(self, org_id: str, principal_username: str) -> str:
+        """Generate the cache key for Redis.
+
+        :param org_id: The tenant of the principal.
+        :param principal_username: The username of the principal.
+        :returns: The key used in Redis to store principals.
+        """
+        return f"rbac::principal::{org_id}::{principal_username}"
+
+    def set_cache(self, pipe: Pipeline, key: str, principal):
+        """Set cache to redis."""
+        pipe.set(name=key, value=pickle.dumps(principal))
+        pipe.expire(name=key, time=settings.PRINCIPAL_CACHE_LIFETIME)
+        pipe.execute()
+
+    def get_from_redis(self, key: str):
+        """Get principal from redis based on the tenant and the principal."""
+        principal = self.connection.get(name=key)
+        if principal:
+            return pickle.loads(principal)
+        else:
+            return None
+
+    def get_principal(self, org_id: str, principal_username: str):
+        """Fetch the principal from the cache.
+
+        :param org_id: The tenant of the principal.
+        :param principal_username: The username of the principal to fetch.
+        :returns: The principal itself or None.
+        """
+        return super().get_cached(
+            self.key_for(org_id, principal_username),
+            f'[org_id: "{org_id}"][principal_username: "{principal_username}"] Unable to fetch principal from cache',
+        )
+
+    def cache_principal(self, org_id: str, principal):
+        """Cache the given principal.
+
+        :param org_id: The tenant of the principal.
+        :param principal: The principal object to cache.
+        """
+        super().save(key=self.key_for(org_id, principal.username), item=principal, obj_name="principal")
 
 
 def skip_purging_cache_for_public_tenant(tenant):
