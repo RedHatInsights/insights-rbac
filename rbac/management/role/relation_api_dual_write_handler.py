@@ -131,6 +131,8 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         if not self.replication_enabled():
             return
 
+        RoleV2.objects.filter(v1_source=self.role).delete()
+
         self._replicate(
             ReplicationEventType.DELETE_SYSTEM_ROLE,
             self._create_metadata_from_role(),
