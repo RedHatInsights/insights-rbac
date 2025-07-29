@@ -407,8 +407,6 @@ class DualWriteTestCase(TestCase):
 
     def expect_tuple_invariants(self):
         """Assert that V2 models are consistent with the created tuples."""
-        print(f"Tuples: {self.tuples}")
-
         # Assert role permissions.
         self.assertEqual(
             {
