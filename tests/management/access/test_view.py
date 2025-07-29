@@ -441,6 +441,74 @@ class AccessViewTests(IdentityRequest):
                     self.assertEqual(resourceDef.get("value"), [str(ungrouped_hosts_id), "uuid"])
                     break
 
+    @patch("rbac.middleware.FEATURE_FLAGS.is_add_ungrouped_hosts_id_enabled", return_value=True)
+    @patch("rbac.middleware.FEATURE_FLAGS.is_remove_null_value_enabled", return_value=True)
+    def test_get_access_with_attribute_filter_value_of_none(
+        self, ff_is_remove_null_value_enabled: Mock, ff_is_add_ungrouped_hosts_id_enabled: Mock
+    ):
+        """Test that access view handles attributeFilter values of None correctly."""
+        role_name = "roleB"
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        role = Role.objects.get(uuid=role_uuid)
+        access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+
+        # Create ungrouped workspace for the test
+        ungrouped_hosts = Workspace.objects.create(
+            name="Ungrouped Workspace",
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            tenant=self.tenant,
+            parent=self.default_ws,
+        )
+        ungrouped_hosts_id = str(ungrouped_hosts.id)
+
+        # Test case 1: attributeFilter value is None (not a list)
+        ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "group.id",
+                "operation": "equal",
+                "value": None,
+            },
+            access=access,
+            tenant=self.tenant,
+        )
+
+        # Test case 2: attributeFilter value is a string (not a list)
+        access2 = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": ["some-uuid", None],
+            },
+            access=access2,
+            tenant=self.tenant,
+        )
+
+        policy_name = "policyB"
+        self.create_policy(policy_name, self.group.uuid, [role_uuid], tenant=self.tenant)
+
+        # Test that the view handles non-list values without crashing
+        url = f'{reverse("v1_management:access")}?application='
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify that the response contains data and doesn't crash
+        response_data = response.data.get("data")
+        self.assertIsNotNone(response_data)
+
+        for access_data in response_data:
+            for resourceDef in access_data.get("resourceDefinitions", []):
+                attributeFilter = resourceDef.get("attributeFilter")
+                if attributeFilter.get("key") != "group.id":
+                    continue
+                if attributeFilter.get("operation") == "in":
+                    self.assertEqual(attributeFilter.get("value"), ["some-uuid", ungrouped_hosts_id])
+                else:
+                    self.assertEqual(attributeFilter.get("value"), ungrouped_hosts_id)
+
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_system_role(self):
         self.create_platform_default_resource()
         client = APIClient()
