@@ -542,6 +542,9 @@ REMOVE_NULL_VALUE = ENVIRONMENT.bool("REMOVE_NULL_VALUE", default=False)
 SERVICE_PSKS = ENVIRONMENT.json("SERVICE_PSKS", default={})
 SYSTEM_USERS = ENVIRONMENT.json("SYSTEM_USERS", default={})
 
+# Principal caching settings
+PRINCIPAL_CACHE_LIFETIME = ENVIRONMENT.int("PRINCIPAL_CACHE_LIFETIME", default=3600)
+
 # Enable reading the certificates that are automatically generated. It is a temporary flag that will allow us to switch
 # back and forth in the case of an error.
 AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED = ENVIRONMENT.bool("AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED", default=False)
