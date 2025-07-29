@@ -1494,10 +1494,10 @@ class RbacFixture:
             role_v2.permissions.set(created_permissions)
 
             if platform_default:
-                role_v2.parents.add(RoleV2.objects.platform_all_users())
+                role_v2.parents.add(RoleV2.objects.platform_default_users())
 
             if admin_default:
-                role_v2.parents.add(RoleV2.objects.platform_all_admins())
+                role_v2.parents.add(RoleV2.objects.platform_default_admins())
 
         return role
 

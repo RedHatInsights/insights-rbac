@@ -118,10 +118,10 @@ def migrate_system_role_models(role: Role) -> RoleV2:
     parents: list[RoleV2] = []
 
     if role.platform_default:
-        parents.append(RoleV2.objects.platform_all_users())
+        parents.append(RoleV2.objects.platform_default_users())
 
     if role.admin_default:
-        parents.append(RoleV2.objects.platform_all_admins())
+        parents.append(RoleV2.objects.platform_default_admins())
 
     result.parents.set(parents)
 
