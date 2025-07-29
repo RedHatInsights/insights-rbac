@@ -20,7 +20,6 @@ import logging
 from typing import Callable, Optional
 
 from django.conf import settings
-
 from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
@@ -32,7 +31,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.model import BindingMapping, Role, RoleV2
 from management.role_binding.dual import dual_binding_is_unassigned
-from management.role_binding.model import RoleBinding, RoleBindingPrincipal, RoleBindingGroup
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

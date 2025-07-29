@@ -16,23 +16,23 @@
 #
 
 """Model for role bindings."""
-from django.db.models import F, Q
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from typing import Optional
 from uuid import uuid4
 
 from django.db import models
+from django.db.models import F, Q
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.models import Principal
 from management.role.model import BindingMapping, RoleV2, SourceKey
-
-from api.models import TenantAwareModel
 from migration_tool.models import (
     V2boundresource,
     V2rolebinding,
     role_binding_group_subject_tuple,
     role_binding_user_subject_tuple,
 )
+
+from api.models import TenantAwareModel
 
 
 class RoleBinding(TenantAwareModel):
@@ -55,6 +55,7 @@ class RoleBinding(TenantAwareModel):
 
     @property
     def resource(self) -> V2boundresource:
+        """Return the V2boundresource for the resource referenced by this RoleBinding."""
         return V2boundresource(
             resource_type=(self.resource_type_namespace, self.resource_type_name),
             resource_id=self.resource_id,
@@ -62,11 +63,13 @@ class RoleBinding(TenantAwareModel):
 
     @resource.setter
     def resource(self, new_resource: V2boundresource):
+        """Set the V2boundresource for the resource referenced by this RoleBinding."""
         self.resource_type_namespace = new_resource.resource_type[0]
         self.resource_type_name = new_resource.resource_type[1]
         self.resource_id = new_resource.resource_id
 
     def as_migration_rolebinding(self) -> V2rolebinding:
+        """Get the V2rolebinding equivalent of this RoleBinding."""
         binding_groups = [str(e.group.uuid) for e in self.group_entries.all()]
         principal_entries = list(self.principal_entries.all())
 
@@ -88,7 +91,6 @@ class RoleBinding(TenantAwareModel):
 
     def id_matches(self, binding_mapping: BindingMapping) -> bool:
         """Determine whether this RoleBinding has the same UUID as the passing BindingMapping."""
-
         if self.id is None or self.uuid is None:
             raise ValueError("Cannot call id_matches on an unsaved RoleBinding")
 
@@ -106,7 +108,6 @@ class RoleBinding(TenantAwareModel):
         This has the same meaning as BindingMapping.pop_group_from_bindings, but note that the effects of this method
         are applied immediately (*not* when save() is called).
         """
-
         entry_ids: list[int] = list(
             self.group_entries.filter(group__uuid=group_uuid).values_list("id", flat=True).order_by("id")
         )
@@ -129,7 +130,6 @@ class RoleBinding(TenantAwareModel):
         This has the same meaning as BindingMapping.assign_group, but note that the effects of this method are
         applied immediately (*not* when save() is called).
         """
-
         if not self.group_entries.filter(group__uuid=group_uuid).exists():
             return self.add_group(group_uuid=group_uuid)
 
@@ -145,7 +145,6 @@ class RoleBinding(TenantAwareModel):
         This has the same meaning as BindingMapping.add_group, but note that the effects of this method are
         applied immediately (*not* when save() is called).
         """
-
         self.group_entries.create(group=Group.objects.get(uuid=group_uuid))
         return role_binding_group_subject_tuple(role_binding_id=str(self.uuid), group_uuid=group_uuid)
 
@@ -158,7 +157,6 @@ class RoleBinding(TenantAwareModel):
         This has the same meaning as BindingMapping.unassign_group, but note that the effects of this method are
         applied immediately (*not* when save() is called).
         """
-
         self.group_entries.filter(group__uuid=group_uuid).delete()
         return role_binding_group_subject_tuple(role_binding_id=str(self.uuid), group_uuid=group_uuid)
 
@@ -169,7 +167,6 @@ class RoleBinding(TenantAwareModel):
         This has the same meaning as BindingMapping.assign_user_to_bindings, but note that the effects of this
         method are applied immediately (*not* when save() is called).
         """
-
         principal = Principal.objects.filter(user_id=user_id).get()
 
         # We maintain the invariant that, for a given RoleBinding, either all principals have no source or all
@@ -196,10 +193,12 @@ class RoleBinding(TenantAwareModel):
         """
         # We maintain the invariant that all sources are null or no sources are null.
 
+        to_delete: Optional["RoleBindingPrincipal"]
+
         if source is not None:
             # It is acceptable to delete an entry with a null source. Source an entry existing means that all sources
             # are none.
-            to_delete: Optional["RoleBindingPrincipal"] = (
+            to_delete = (
                 self.principal_entries.filter(principal__user_id=user_id)
                 .filter(Q(source=None) | Q(source=source))
                 .order_by(F("source").asc(nulls_last=True))
@@ -208,7 +207,7 @@ class RoleBinding(TenantAwareModel):
         else:
             # In this case, BindingMapping would delete any entry. We are more conservative: an entry with a source
             # cannot be deleted from a call without a source.
-            to_delete: Optional["RoleBindingPrincipal"] = (
+            to_delete = (
                 self.principal_entries.filter(principal__user_id=user_id)
                 .order_by(F("source").asc(nulls_last=True))
                 .first()
@@ -247,6 +246,8 @@ class RoleBinding(TenantAwareModel):
 
 
 class RoleBindingPrincipal(models.Model):
+    """The relationship between a RoleBinding and one of its principal subjects."""
+
     principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
     binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
     source = models.CharField(max_length=128, null=True)
@@ -258,10 +259,9 @@ class RoleBindingPrincipal(models.Model):
             )
         ]
 
-    def __str__(self):
-        return f"principal=(user_id={self.principal.user_id}), source={self.source}"
-
 
 class RoleBindingGroup(models.Model):
+    """The relationship between a RoleBinding and one of its group subjects."""
+
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="role_binding_entries")
     binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="group_entries")

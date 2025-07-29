@@ -19,7 +19,6 @@
 import logging
 from typing import Iterable, Optional
 
-from api.cross_access.model import CrossAccountRequestV2
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import (
@@ -29,15 +28,16 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.model import BindingMapping, Role, SourceKey, RoleV2
-
-from api.models import CrossAccountRequest, Tenant
+from management.role.model import BindingMapping, Role, RoleV2, SourceKey
 from management.role_binding.dual import (
     dual_binding_assign_user,
     dual_binding_unassign_user,
     dual_binding_update_data_format,
 )
 from management.role_binding.model import RoleBinding
+
+from api.cross_access.model import CrossAccountRequestV2
+from api.models import CrossAccountRequest, Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

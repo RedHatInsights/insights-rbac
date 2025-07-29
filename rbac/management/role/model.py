@@ -188,6 +188,7 @@ class RoleV2(TenantAwareModel):
         return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
 
     def as_migration_role(self) -> V2role:
+        """Return the V2role equivalent of this role."""
         if self.type != RoleV2.Types.CUSTOM:
             return V2role.for_system_role(str(self.uuid))
 

@@ -85,14 +85,8 @@ class SystemRole:
         add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
 
 
-@dataclasses.dataclass
-class MigrateRoleModelsResult:
-    binding_mappings: list[BindingMapping]
-    role_bindings: list[RoleBinding]
-    v2_roles: list[RoleV2]
-
-
 def migrate_system_role_models(role: Role) -> RoleV2:
+    """Create the RoleV2 equivalent of a system role and return it."""
     if not role.system:
         raise ValueError(f"Expected role {role.id} ({role.name}) to be system seeded role")
 
@@ -126,6 +120,15 @@ def migrate_system_role_models(role: Role) -> RoleV2:
     result.parents.set(parents)
 
     return result
+
+
+@dataclasses.dataclass
+class MigrateRoleModelsResult:
+    """The modles returned by migrate_custom_role_models."""
+
+    binding_mappings: list[BindingMapping]
+    role_bindings: list[RoleBinding]
+    v2_roles: list[RoleV2]
 
 
 def migrate_custom_role_models(

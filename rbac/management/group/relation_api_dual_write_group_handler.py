@@ -20,8 +20,6 @@ import logging
 from typing import Iterable, Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
-
-from api.models import Tenant
 from management.group.model import Group
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
@@ -35,14 +33,16 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.model import BindingMapping, Role
 from management.role_binding.dual import (
-    dual_binding_pop_group,
     dual_binding_add_group,
     dual_binding_assign_group,
+    dual_binding_pop_group,
     dual_binding_unassign_group,
 )
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import TenantMapping
 from migration_tool.utils import create_relationship
+
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

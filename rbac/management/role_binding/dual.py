@@ -15,9 +15,9 @@
 #
 
 """Helpers for performing operations on BindingMappings and RoleBindings simultaneously."""
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from typing import Optional
 
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.role.model import BindingMapping, SourceKey
 from management.role_binding.model import RoleBinding
 
@@ -55,8 +55,10 @@ def dual_binding_pop_group(mapping: BindingMapping, binding: RoleBinding, group_
 def dual_binding_assign_group(
     mapping: BindingMapping, binding: RoleBinding, group_uuid: str
 ) -> Optional[Relationship]:
-    """Call BindingMapping.assign_group_to_bindings and RoleBinding.assign_group and assert they have the same
-    result."""
+    """
+    Call BindingMapping.assign_group_to_bindings and RoleBinding.assign_group and assert they have the same
+    result.
+    """  # noqa: D205, D400
     return _dual_call(mapping.assign_group_to_bindings, binding.assign_group, group_uuid=group_uuid)
 
 
@@ -77,8 +79,10 @@ def dual_binding_assign_user(
 def dual_binding_unassign_user(
     mapping: BindingMapping, binding: RoleBinding, user_id: str, source: Optional[SourceKey]
 ) -> Relationship:
-    """Call BindingMapping.unassign_user_from_bindings and RoleBinding.unassign_user and assert they have the same
-    result."""
+    """
+    Call BindingMapping.unassign_user_from_bindings and RoleBinding.unassign_user and assert they have the same
+    result.
+    """  # noqa: D205, D400
     return _dual_call(mapping.unassign_user_from_bindings, binding.unassign_user, user_id=user_id, source=source)
 
 
@@ -88,8 +92,10 @@ def dual_binding_is_unassigned(mapping: BindingMapping, binding: RoleBinding) ->
 
 
 def dual_binding_update_data_format(mapping: BindingMapping, binding: RoleBinding, all_relations_to_remove):
-    """Call BindingMapping.update_data_format_for_user and RoleBinding.update_data_format and assert they have the same
-    result."""
+    """
+    Call BindingMapping.update_data_format_for_user and RoleBinding.update_data_format and assert they have the same
+    result.
+    """  # noqa: D205, D400
     left_out: list[Relationship] = []
     right_out: list[Relationship] = []
 
