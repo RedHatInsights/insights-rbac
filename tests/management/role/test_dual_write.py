@@ -34,7 +34,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role_binding.model import RoleBinding
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -81,7 +81,7 @@ class DualWriteTestCase(TestCase):
 
     def tearDown(self):
         """Tear down the dual write tests."""
-        self.expect_role_binding_invariants()
+        self.expect_representation_invariants()
         super().tearDown()
 
     def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
@@ -349,6 +349,10 @@ class DualWriteTestCase(TestCase):
             f"Unmatched role bindings: {unmatched}",
         )
 
+    def expect_representation_invariants(self):
+        self.expect_role_binding_invariants()
+        self.expect_tuple_invariants()
+
     def expect_role_binding_invariants(self):
         """Assert that the structures of all BindingMappings and RoleBindings are consistent with each other."""
         binding_mappings_by_id: dict[str, BindingMapping] = {b.mappings["id"]: b for b in BindingMapping.objects.all()}
@@ -400,6 +404,106 @@ class DualWriteTestCase(TestCase):
                 mapping.mappings["groups"],
                 [str(entry.group.uuid) for entry in role_binding.group_entries.all()],
             )
+
+    def expect_tuple_invariants(self):
+        """Assert that V2 models are consistent with the created tuples."""
+        print(f"Tuples: {self.tuples}")
+
+        # Assert role permissions.
+        self.assertEqual(
+            {
+                (str(role.uuid), v1_perm_to_v2_perm(permission))
+                for role in RoleV2.objects.all()
+                for permission in role.permissions.all()
+            },
+            {
+                (r.resource_id, r.relation)
+                for r in self.tuples.find_tuples(
+                    all_of(
+                        resource_type("rbac", "role"),
+                        subject("rbac", "principal", "*"),
+                    )
+                )
+            },
+        )
+
+        # Assert role parent-child relations.
+        self.assertEqual(
+            {
+                (str(parent.uuid), str(child.uuid))
+                for parent in RoleV2.objects.all()
+                for child in parent.children.all()
+            },
+            {
+                (r.resource_id, r.subject_id)
+                for r in self.tuples.find_tuples(
+                    all_of(
+                        resource_type("rbac", "role"),
+                        relation("child"),
+                        subject_type("rbac", "role"),
+                    )
+                )
+            },
+        )
+
+        # Assert role <-> role binding relations.
+        self.assertEqual(
+            {(str(binding.uuid), str(binding.role.uuid)) for binding in RoleBinding.objects.all()},
+            {
+                (r.resource_id, r.subject_id)
+                for r in self.tuples.find_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("role"),
+                    )
+                )
+            },
+        )
+
+        # Assert role binding <-> resource relations.
+        self.assertEqual(
+            {
+                ((binding.resource_type_namespace, binding.resource_type_name, binding.resource_id), str(binding.uuid))
+                for binding in RoleBinding.objects.all()
+            },
+            {
+                ((r.resource_type_namespace, r.resource_type_name, r.resource_id), r.subject_id)
+                for r in self.tuples.find_tuples(all_of(relation("binding"), subject_type("rbac", "role_binding")))
+            },
+        )
+
+        #  Assert role binding <-> group relations.
+        self.assertEqual(
+            {(str(entry.binding.uuid), str(entry.group.uuid)) for entry in RoleBindingGroup.objects.all()},
+            {
+                (r.resource_id, r.subject_id)
+                for r in self.tuples.find_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject_type("rbac", "group", "member"),
+                    )
+                )
+            },
+        )
+
+        # Assert role binding <-> principal relations.
+        self.assertEqual(
+            {
+                (str(entry.binding.uuid), str(entry.principal.principal_resource_id()))
+                for entry in RoleBindingPrincipal.objects.all()
+            },
+            {
+                (r.resource_id, r.subject_id)
+                for r in self.tuples.find_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject_type("rbac", "principal"),
+                    )
+                )
+            },
+        )
 
 
 class DualWriteGroupTestCase(DualWriteTestCase):
