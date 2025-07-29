@@ -131,11 +131,11 @@ class ResourceDefinition(TenantAwareModel):
 class RoleV2Manager(models.Manager):
     def platform_all_users(self) -> "RoleV2":
         """Get the platform default "all users" role."""
-        return self.filter(tenant__tenant_name="public", type="platform-all-users").get()
+        return self.filter(tenant__tenant_name="public", type="system", name="platform-default-users").get()
 
     def platform_all_admins(self) -> "RoleV2":
         """Get the platform default "all admins" role."""
-        return self.filter(tenant__tenant_name="public", type="platform-all-admins").get()
+        return self.filter(tenant__tenant_name="public", type="system", name="platform-default-admins").get()
 
 
 class RoleV2(TenantAwareModel):
@@ -144,8 +144,7 @@ class RoleV2(TenantAwareModel):
     class Types(models.TextChoices):
         CUSTOM = "custom"
         SEEDED = "seeded"
-        PLATFORM_ALL_USERS = "platform-all-users"
-        PLATFORM_ALL_ADMINS = "platform-all-admins"
+        SYSTEM = "system"
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     name = models.CharField(max_length=150)
