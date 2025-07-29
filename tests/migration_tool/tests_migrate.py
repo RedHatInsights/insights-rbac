@@ -429,6 +429,22 @@ class MigrateTestTupleStore(TestCase):
             ],
         )
 
+        platform_default_role = RoleV2.objects.platform_default_users()
+
+        # 2
+        self.assertCountEqual(
+            [
+                (str(platform_default_role.uuid), str(self.sr1.uuid)),
+                (str(platform_default_role.uuid), str(self.sr2.uuid)),
+            ],
+            [
+                (t.resource_id, t.subject_id)
+                for t in self.relations.find_tuples(
+                    all_of(resource_type("rbac", "role"), relation("child"), subject_type("rbac", "role"))
+                )
+            ],
+        )
+
         # Check tenanted objects for o1 are migrated
 
         # Group members...

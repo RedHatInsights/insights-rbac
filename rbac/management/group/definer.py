@@ -35,7 +35,7 @@ from management.notifications.notification_handlers import (
 from management.policy.model import Policy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import Role
+from management.role.model import Role, RoleV2
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import clear_pk
 from rest_framework import serializers
@@ -43,6 +43,20 @@ from rest_framework import serializers
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+def _set_platform_group_policy_uuid(public_tenant: Tenant, group: Group, created: bool, policy_uuid: str):
+    if created:
+        system_policy_name = "System Policy for Group {}".format(group.uuid)
+        group.policies.create(
+            tenant=public_tenant,
+            system=True,
+            group=group,
+            name=system_policy_name,
+            uuid=policy_uuid,
+        )
+    else:
+        assert str(group.policies.get().uuid) == str(policy_uuid)
 
 
 def seed_group() -> Tuple[Group, Group]:
@@ -61,6 +75,15 @@ def seed_group() -> Tuple[Group, Group]:
             tenant=public_tenant,
         )
 
+        # We must keep the policy UUID in sync with the platform default role UUID. See migration
+        # 0070_create_public_v2_roles_20250729_1945.py and SeedingRelationApiDualWriteHandler.
+        _set_platform_group_policy_uuid(
+            public_tenant=public_tenant,
+            group=group,
+            created=group_created,
+            policy_uuid=str(RoleV2.objects.platform_default_users().uuid),
+        )
+
         platform_roles = Role.objects.filter(platform_default=True).public_tenant_only()
         update_group_roles(group, platform_roles, public_tenant)
         logger.info("Finished seeding default group %s.", name)
@@ -76,6 +99,15 @@ def seed_group() -> Tuple[Group, Group]:
             defaults={"description": admin_group_description, "name": admin_name, "system": True},
             tenant=public_tenant,
         )
+
+        # Similarly to above, we must keep the policy UUID in sync with the platform admin role UUID.
+        _set_platform_group_policy_uuid(
+            public_tenant=public_tenant,
+            group=admin_group,
+            created=admin_group_created,
+            policy_uuid=str(RoleV2.objects.platform_default_admins().uuid),
+        )
+
         admin_roles = Role.objects.filter(admin_default=True).public_tenant_only()
         update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
