@@ -129,6 +129,8 @@ class ResourceDefinition(TenantAwareModel):
 
 
 class RoleV2Manager(models.Manager):
+    """Custom objects manager for RoleV2."""
+
     def platform_default_users(self) -> "RoleV2":
         """Get the platform default "all users" role."""
         return self.filter(tenant__tenant_name="public", type="system", name="platform-default-users").get()
