@@ -352,27 +352,27 @@ class DualWriteTestCase(TestCase):
     def expect_role_binding_invariants(self):
         """Assert that the structures of all BindingMappings and RoleBindings are consistent with each other."""
         binding_mappings_by_id: dict[str, BindingMapping] = {b.mappings["id"]: b for b in BindingMapping.objects.all()}
-        role_binding_by_id: dict[str, RoleBinding] = {str(b.id): b for b in RoleBinding.objects.all()}
+        role_binding_by_uuid: dict[str, RoleBinding] = {str(b.uuid): b for b in RoleBinding.objects.all()}
 
-        binding_mapping_ids = set(binding_mappings_by_id.keys())
-        role_binding_ids = set(role_binding_by_id.keys())
+        binding_mapping_uuids = set(binding_mappings_by_id.keys())
+        role_binding_uuids = set(role_binding_by_uuid.keys())
 
         self.assertEqual(
-            binding_mapping_ids,
-            role_binding_ids,
+            binding_mapping_uuids,
+            role_binding_uuids,
             "Expected IDs from BindingMappings and IDs of RoleBindings to match.\n"
-            f"From BindingMappings: {binding_mapping_ids}\n"
-            f"From RoleBindings: {role_binding_ids}",
+            f"From BindingMappings: {binding_mapping_uuids}\n"
+            f"From RoleBindings: {role_binding_uuids}",
         )
 
         for mapping_id, mapping in binding_mappings_by_id.items():
-            role_binding = role_binding_by_id[mapping_id]
+            role_binding = role_binding_by_uuid[mapping_id]
 
             self.assertEqual(mapping.resource_type_namespace, role_binding.resource_type_namespace)
             self.assertEqual(mapping.resource_type_name, role_binding.resource_type_name)
             self.assertEqual(mapping.resource_id, role_binding.resource_id)
 
-            self.assertEqual(mapping.mappings["role"]["id"], str(role_binding.role.id))
+            self.assertEqual(mapping.mappings["role"]["id"], str(role_binding.role.uuid))
 
             mapping_role_is_system = mapping.mappings["role"]["is_system"]
             self.assertEqual(mapping_role_is_system, role_binding.role.type != RoleV2.Types.CUSTOM)
@@ -1378,7 +1378,7 @@ class RbacFixture:
 
         if include_v2:
             role_v2 = RoleV2.objects.create(
-                id=str(role.uuid),
+                uuid=str(role.uuid),
                 name=name,
                 display_name=name,
                 type=RoleV2.Types.SEEDED,

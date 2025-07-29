@@ -98,7 +98,7 @@ def migrate_system_role_models(role: Role) -> RoleV2:
 
     # V2 system roles have the same ID as their V1 counterparts.
     result, _ = RoleV2.objects.update_or_create(
-        id=role.uuid,
+        uuid=role.uuid,
         defaults={
             "tenant": role.tenant,
             "name": role.name,
@@ -188,7 +188,7 @@ def migrate_custom_role_models(
 
 
 def _get_or_create_v2_custom_role_from_v1(
-    v2_id: Optional[str], v1_role: Role, permissions: frozenset[Permission]
+    v2_uuid: Optional[str], v1_role: Role, permissions: frozenset[Permission]
 ) -> RoleV2:
     if v1_role.system or v1_role.tenant.tenant_name == "public":
         raise ValueError(f"Expected v1 role not to be system role; got id {v1_role.id}")
@@ -206,11 +206,11 @@ def _get_or_create_v2_custom_role_from_v1(
         "v1_source": v1_role,
     }
 
-    if v2_id is not None:
+    if v2_uuid is not None:
         # We need to handle the case where v2_id is specified but the object does not exist. This can occur if this
         # ID was generated before the RoleV2 model was added.
         new_role, _ = RoleV2.objects.update_or_create(
-            id=v2_id,
+            uuid=v2_uuid,
             defaults=role_args,
         )
     else:
@@ -222,7 +222,7 @@ def _get_or_create_v2_custom_role_from_v1(
 
 
 def _get_or_create_v2_role_binding(
-    v2_id: Optional[str], v2_role: RoleV2, resource: V2boundresource, groups: list[Group]
+    v2_uuid: Optional[str], v2_role: RoleV2, resource: V2boundresource, groups: list[Group]
 ) -> RoleBinding:
     binding_args = {
         "tenant": v2_role.tenant,
@@ -232,10 +232,10 @@ def _get_or_create_v2_role_binding(
         "resource_id": resource.resource_id,
     }
 
-    if v2_id is not None:
+    if v2_uuid is not None:
         # Similarly to above, handle the case where an ID is passed, but the object does not exist.
         new_binding, _ = RoleBinding.objects.update_or_create(
-            id=v2_id,
+            uuid=v2_uuid,
             defaults=binding_args,
         )
     else:
@@ -255,7 +255,7 @@ def _permission_groupings_to_v2_role_bindings(
     updated_role_bindings: list[RoleBinding] = []
 
     updated_roles: list[RoleV2] = []
-    updated_role_ids: set[str] = set()
+    updated_role_uuids: set[str] = set()
     updated_roles_by_permissions: dict[frozenset[Permission], RoleV2] = {}
 
     # TODO: this is broken for system roles, need to have Tenant or Policies provided
@@ -277,12 +277,12 @@ def _permission_groupings_to_v2_role_bindings(
 
         if new_role is None:
             # Is there a current role? Should update it? Only if it wasn't already updated.
-            reused_role_id = (
-                current.role.id if current is not None and current.role.id not in updated_role_ids else None
+            reused_role_uuid = (
+                current.role.id if current is not None and current.role.id not in updated_role_uuids else None
             )
 
             new_role = _get_or_create_v2_custom_role_from_v1(
-                v2_id=reused_role_id,
+                v2_uuid=reused_role_uuid,
                 v1_role=v1_role,
                 permissions=perm_set,
             )
@@ -290,7 +290,7 @@ def _permission_groupings_to_v2_role_bindings(
         reused_binding_id = current.id if current is not None else None
 
         updated_binding = _get_or_create_v2_role_binding(
-            v2_id=reused_binding_id,
+            v2_uuid=reused_binding_id,
             v2_role=new_role,
             resource=resource,
             groups=latest_groups,
@@ -311,7 +311,7 @@ def _permission_groupings_to_v2_role_bindings(
         assert perm_set == frozenset(new_role.permissions.all())
 
         updated_roles.append(new_role)
-        updated_role_ids.add(str(new_role.id))
+        updated_role_uuids.add(str(new_role.uuid))
         updated_roles_by_permissions[perm_set] = new_role
 
     return MigrateRoleModelsResult(

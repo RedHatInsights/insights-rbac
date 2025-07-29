@@ -147,7 +147,7 @@ class RoleV2(TenantAwareModel):
         PLATFORM_ALL_USERS = "platform-all-users"
         PLATFORM_ALL_ADMINS = "platform-all-admins"
 
-    id = models.UUIDField(primary_key=True, default=uuid4, editable=False, unique=True, null=False)
+    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     name = models.CharField(max_length=150)
     display_name = models.CharField(default="", max_length=150)
     description = models.TextField(null=True)
@@ -188,10 +188,10 @@ class RoleV2(TenantAwareModel):
 
     def as_migration_role(self) -> V2role:
         if self.type != RoleV2.Types.CUSTOM:
-            return V2role.for_system_role(str(self.id))
+            return V2role.for_system_role(str(self.uuid))
 
         return V2role(
-            id=str(self.id),
+            id=str(self.uuid),
             is_system=False,
             permissions=frozenset(v1_perm_to_v2_perm(permission) for permission in self.permissions.all()),
         )

@@ -38,7 +38,7 @@ from migration_tool.models import (
 class RoleBinding(TenantAwareModel):
     """A role binding."""
 
-    id = models.UUIDField(default=uuid4, primary_key=True, editable=False, unique=True, null=False)
+    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     role = models.ForeignKey(RoleV2, on_delete=models.CASCADE, related_name="bindings")
 
     resource_type_namespace = models.CharField(max_length=256, null=False)
@@ -79,7 +79,7 @@ class RoleBinding(TenantAwareModel):
         )
 
         return V2rolebinding(
-            id=str(self.id),
+            id=str(self.uuid),
             role=self.role.as_migration_role(),
             resource=self.resource,
             groups=binding_groups,
@@ -89,10 +89,10 @@ class RoleBinding(TenantAwareModel):
     def id_matches(self, binding_mapping: BindingMapping) -> bool:
         """Determine whether this RoleBinding has the same UUID as the passing BindingMapping."""
 
-        if self.id is None:
+        if self.id is None or self.uuid is None:
             raise ValueError("Cannot call id_matches on an unsaved RoleBinding")
 
-        return str(self.id) == binding_mapping.mappings["id"]
+        return str(self.uuid) == binding_mapping.mappings["id"]
 
     def pop_group(self, group_uuid: str) -> Optional[Relationship]:
         """
@@ -118,7 +118,7 @@ class RoleBinding(TenantAwareModel):
         if len(entry_ids) > 1:
             return None
 
-        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+        return role_binding_group_subject_tuple(role_binding_id=str(self.uuid), group_uuid=group_uuid)
 
     def assign_group(self, group_uuid: str) -> Optional[Relationship]:
         """
@@ -133,7 +133,7 @@ class RoleBinding(TenantAwareModel):
         if not self.group_entries.filter(group__uuid=group_uuid).exists():
             return self.add_group(group_uuid=group_uuid)
 
-        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+        return role_binding_group_subject_tuple(role_binding_id=str(self.uuid), group_uuid=group_uuid)
 
     def add_group(self, group_uuid: str) -> Optional[Relationship]:
         """
@@ -147,7 +147,7 @@ class RoleBinding(TenantAwareModel):
         """
 
         self.group_entries.create(group=Group.objects.get(uuid=group_uuid))
-        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+        return role_binding_group_subject_tuple(role_binding_id=str(self.uuid), group_uuid=group_uuid)
 
     def unassign_group(self, group_uuid: str) -> Optional[Relationship]:
         """
@@ -160,7 +160,7 @@ class RoleBinding(TenantAwareModel):
         """
 
         self.group_entries.filter(group__uuid=group_uuid).delete()
-        return role_binding_group_subject_tuple(role_binding_id=str(self.id), group_uuid=group_uuid)
+        return role_binding_group_subject_tuple(role_binding_id=str(self.uuid), group_uuid=group_uuid)
 
     def assign_user(self, user_id: str, source: Optional[SourceKey]) -> Relationship:
         """
@@ -185,7 +185,7 @@ class RoleBinding(TenantAwareModel):
 
             self.principal_entries.get_or_create(principal=principal, source=source)
 
-        return role_binding_user_subject_tuple(str(self.id), user_id)
+        return role_binding_user_subject_tuple(str(self.uuid), user_id)
 
     def unassign_user(self, user_id: str, source: Optional[SourceKey]) -> Optional[Relationship]:
         """
@@ -224,7 +224,7 @@ class RoleBinding(TenantAwareModel):
         if self.principal_entries.filter(principal__user_id=user_id).exists():
             return None
 
-        return role_binding_user_subject_tuple(str(self.id), user_id)
+        return role_binding_user_subject_tuple(str(self.uuid), user_id)
 
     def update_data_format(self, all_relations_to_remove):
         """
@@ -239,7 +239,7 @@ class RoleBinding(TenantAwareModel):
         entries_to_remove.delete()
 
         for user_id in removed_user_ids:
-            all_relations_to_remove.append(role_binding_user_subject_tuple(str(self.id), user_id))
+            all_relations_to_remove.append(role_binding_user_subject_tuple(str(self.uuid), user_id))
 
     def is_unassigned(self) -> bool:
         """Return true if mapping is not assigned to any groups or users."""

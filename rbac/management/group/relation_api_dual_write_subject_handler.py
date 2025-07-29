@@ -143,11 +143,11 @@ class RelationApiDualWriteSubjectHandler:
             # Because custom roles must be locked already by this point,
             # we don't need to lock the binding here.
             binding_mappings: list[BindingMapping] = list(role.binding_mappings.all())
-            role_bindings_by_id: dict[str, RoleBinding] = {
-                str(b.id): b for b in RoleBinding.objects.filter(role__v1_source=role)
+            role_bindings_by_uuid: dict[str, RoleBinding] = {
+                str(b.uuid): b for b in RoleBinding.objects.filter(role__v1_source=role)
             }
 
-            assert len(binding_mappings) == len(role_bindings_by_id)
+            assert len(binding_mappings) == len(role_bindings_by_uuid)
 
             if not binding_mappings:
                 logger.warning(
@@ -159,7 +159,7 @@ class RelationApiDualWriteSubjectHandler:
                 )
 
             for mapping in binding_mappings:
-                role_binding = role_bindings_by_id[mapping.mappings["id"]]
+                role_binding = role_bindings_by_uuid[mapping.mappings["id"]]
 
                 update_mapping(mapping, role_binding)
                 mapping.save(force_update=True)
