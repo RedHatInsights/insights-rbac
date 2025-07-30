@@ -108,15 +108,12 @@ class RoleBinding(TenantAwareModel):
         This has the same meaning as BindingMapping.pop_group_from_bindings, but note that the effects of this method
         are applied immediately (*not* when save() is called).
         """
-        entry_ids: list[int] = list(
-            self.group_entries.filter(group__uuid=group_uuid).values_list("id", flat=True).order_by("id")
-        )
+        to_delete: list[RoleBindingGroup] = list(self.group_entries.filter(group__uuid=group_uuid))
 
-        if len(entry_ids) > 0:
-            deleted_count, _ = self.group_entries.filter(id=entry_ids[0]).delete()
-            assert deleted_count == 1
+        if len(to_delete) > 0:
+            to_delete[0].delete()
 
-        if len(entry_ids) > 1:
+        if len(to_delete) > 1:
             return None
 
         return role_binding_group_subject_tuple(role_binding_id=str(self.uuid), group_uuid=group_uuid)
@@ -217,8 +214,7 @@ class RoleBinding(TenantAwareModel):
             if (source is None) and (to_delete.source is not None):
                 raise ValueError("Cannot delete an entry with a source unless a source is provided.")
 
-            deleted_count, _ = to_delete.delete()
-            assert deleted_count == 1
+            to_delete.delete()
 
         if self.principal_entries.filter(principal__user_id=user_id).exists():
             return None
