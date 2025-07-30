@@ -49,6 +49,7 @@ from migration_tool.migrate import migrate_data, migrate_groups_for_tenant
 
 from management.group.definer import seed_group, clone_default_group_in_public_schema
 from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v2_utils import expect_v2_representation_invariants, expect_role_binding_invariants
 
 
 class MigrateTests(TestCase):
@@ -153,6 +154,13 @@ class MigrateTests(TestCase):
         # create custom default group
         self.custom_default_group = clone_default_group_in_public_schema(default_group, self.tenant)
 
+        # Principal must exist in order for cross-account request to be created.
+        Principal.objects.create(
+            tenant=self.tenant,
+            username="1111111",
+            user_id="1111111",
+        )
+
         # Setup cross account request to migrate
         self.ref_time = timezone.now()
         self.cross_account_request = CrossAccountRequest.objects.create(
@@ -163,6 +171,10 @@ class MigrateTests(TestCase):
             status="approved",
         )
         self.cross_account_request.roles.add(self.system_role_2)
+
+    def tearDown(self):
+        expect_role_binding_invariants(test=self)
+        super().tearDown()
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("migration_tool.migrate.RelationApiDualWriteGroupHandler.replicate")
@@ -378,6 +390,10 @@ class MigrateTestTupleStore(TestCase):
 
         self.maxDiff = None
 
+    def tearDown(self):
+        expect_v2_representation_invariants(test=self, tuples=self.relations)
+        super().tearDown()
+
     def test_migrate_no_exclusions(self):
         self.relations.clear()
         self.o1.tenant.ready = True
@@ -386,6 +402,57 @@ class MigrateTestTupleStore(TestCase):
         self.o2.tenant.save()
 
         migrate_data(write_relationships=InMemoryRelationReplicator(self.relations))
+
+        # Check system roles are migrated
+
+        # 2
+        self.assertCountEqual(
+            ["app1_res1_verb1", "app2_res2_verb2"],
+            [
+                t.relation
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "role", self.sr1.uuid), subject("rbac", "principal", "*"))
+                )
+            ],
+        )
+
+        # 2
+        self.assertCountEqual(
+            ["app3_res3_verb3", "app4_res4_verb4"],
+            [
+                t.relation
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "role", self.sr2.uuid), subject("rbac", "principal", "*"))
+                )
+            ],
+        )
+
+        # 2
+        self.assertCountEqual(
+            ["app5_res5_verb5", "app6_res6_verb6"],
+            [
+                t.relation
+                for t in self.relations.find_tuples(
+                    all_of(resource("rbac", "role", self.sr3.uuid), subject("rbac", "principal", "*"))
+                )
+            ],
+        )
+
+        platform_default_role = RoleV2.objects.platform_default_users()
+
+        # 2
+        self.assertCountEqual(
+            [
+                (str(platform_default_role.uuid), str(self.sr1.uuid)),
+                (str(platform_default_role.uuid), str(self.sr2.uuid)),
+            ],
+            [
+                (t.resource_id, t.subject_id)
+                for t in self.relations.find_tuples(
+                    all_of(resource_type("rbac", "role"), relation("child"), subject_type("rbac", "role"))
+                )
+            ],
+        )
 
         # Check tenanted objects for o1 are migrated
 
@@ -553,4 +620,4 @@ class MigrateTestTupleStore(TestCase):
             "missing o2_r1 binding",
         )
 
-        self.assertEqual(29, len(self.relations))
+        self.assertEqual(37, len(self.relations))

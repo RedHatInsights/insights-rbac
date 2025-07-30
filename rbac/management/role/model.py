@@ -35,6 +35,7 @@ from migration_tool.models import (
     V2rolebinding,
     role_binding_group_subject_tuple,
     role_binding_user_subject_tuple,
+    v1_perm_to_v2_perm,
 )
 
 from api.models import FilterQuerySet, TenantAwareModel
@@ -125,6 +126,77 @@ class ResourceDefinition(TenantAwareModel):
         """Get the tenant_id of the RD."""
         if self.tenant:
             return self.tenant.id
+
+
+class RoleV2Manager(models.Manager):
+    """Custom objects manager for RoleV2."""
+
+    def platform_default_users(self) -> "RoleV2":
+        """Get the platform default "all users" role."""
+        return self.filter(tenant__tenant_name="public", type="system", name="platform-default-users").get()
+
+    def platform_default_admins(self) -> "RoleV2":
+        """Get the platform default "all admins" role."""
+        return self.filter(tenant__tenant_name="public", type="system", name="platform-default-admins").get()
+
+
+class RoleV2(TenantAwareModel):
+    """A role."""
+
+    class Types(models.TextChoices):
+        CUSTOM = "custom"
+        SEEDED = "seeded"
+        SYSTEM = "system"
+
+    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
+    name = models.CharField(max_length=150)
+    display_name = models.CharField(default="", max_length=150)
+    description = models.TextField(null=True)
+    type = models.CharField(choices=Types.choices, default=Types.CUSTOM, null=False, db_index=True, max_length=20)
+    permissions = models.ManyToManyField(Permission, related_name="roles_v2")
+    children = models.ManyToManyField("self", related_name="parents", symmetrical=False)
+    v1_source = models.ForeignKey(Role, null=True, related_name="v2_roles", on_delete=models.SET_NULL)
+    version = models.PositiveIntegerField(default=1)
+    created = models.DateTimeField(default=timezone.now)
+    modified = AutoDateTimeField(default=timezone.now)
+    objects = RoleV2Manager()
+
+    @property
+    def role(self):
+        """Get role for self."""
+        return self
+
+    class Meta:
+        ordering = ["name", "modified"]
+        constraints = [
+            models.UniqueConstraint(fields=["name", "tenant"], name="unique role v2 name per tenant"),
+            models.UniqueConstraint(fields=["display_name", "tenant"], name="unique role v2 display name per tenant"),
+        ]
+
+    def save(self, *args, **kwargs):
+        """Ensure that display_name is populated on save."""
+        if not self.display_name:
+            self.display_name = self.name
+        super().save(*args, **kwargs)
+
+    def external_role_id(self):
+        """Return external role id."""
+        return self.ext_relation.ext_id if hasattr(self, "ext_relation") else None
+
+    def external_tenant_name(self):
+        """Return external tenant name."""
+        return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
+
+    def as_migration_role(self) -> V2role:
+        """Return the V2role equivalent of this role."""
+        if self.type != RoleV2.Types.CUSTOM:
+            return V2role.for_system_role(str(self.uuid))
+
+        return V2role(
+            id=str(self.uuid),
+            is_system=False,
+            permissions=frozenset(v1_perm_to_v2_perm(permission) for permission in self.permissions.all()),
+        )
 
 
 class ExtTenant(models.Model):
@@ -299,6 +371,10 @@ class BindingMapping(models.Model):
             )
 
         self.mappings = role_binding.as_minimal_dict()
+
+    def get_v2_role_id(self) -> str:
+        """Get the model of the V2 role associated with this role binding."""
+        return self.mappings["role"]["id"]
 
     def get_role_binding(self) -> V2rolebinding:
         """Get role binding."""
