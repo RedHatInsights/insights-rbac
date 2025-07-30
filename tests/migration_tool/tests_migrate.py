@@ -49,6 +49,7 @@ from migration_tool.migrate import migrate_data, migrate_groups_for_tenant
 
 from management.group.definer import seed_group, clone_default_group_in_public_schema
 from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v2_utils import expect_v2_representation_invariants, expect_role_binding_invariants
 
 
 class MigrateTests(TestCase):
@@ -170,6 +171,10 @@ class MigrateTests(TestCase):
             status="approved",
         )
         self.cross_account_request.roles.add(self.system_role_2)
+
+    def tearDown(self):
+        expect_role_binding_invariants(test=self)
+        super().tearDown()
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("migration_tool.migrate.RelationApiDualWriteGroupHandler.replicate")
@@ -384,6 +389,10 @@ class MigrateTestTupleStore(TestCase):
         self.fixture.add_role_to_group(self.o2_r1, self.o2_g1)
 
         self.maxDiff = None
+
+    def tearDown(self):
+        expect_v2_representation_invariants(test=self, tuples=self.relations)
+        super().tearDown()
 
     def test_migrate_no_exclusions(self):
         self.relations.clear()
