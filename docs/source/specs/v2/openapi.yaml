@@ -6,7 +6,7 @@ tags:
   - name: Workspaces
   - name: Role Bindings
 paths:
-  /role_bindings/by_subject:
+  /role_bindings/by-subject:
     get:
       operationId: RoleBindings_listBySubject
       summary: List role bindings grouped by subject
@@ -18,7 +18,7 @@ paths:
           schema:
             type: integer
             format: int64
-            default: 10
+            default: 1000
           explode: false
         - name: offset
           in: query
@@ -59,7 +59,7 @@ paths:
         - name: columns
           in: query
           required: false
-          description: Additional columns to include in response (comma-separated)
+          description: 'Specify which columns to include in response. Basic columns (subject.id, subject.type, role.id, resource.type) are included by default when no columns parameter is specified (type fields are always required, other fields are optional). When columns parameter is provided, only the specified columns are exposed. Use parentheses format: subject(field1,field2), resource(field1,field2). Available fields - subject: user_count, name; resource: name; role: name; other: last_modified'
           schema:
             type: string
           explode: false
@@ -69,6 +69,13 @@ paths:
           description: Sort by specified field(s), prefix with '-' for descending order
           schema:
             type: string
+          explode: false
+        - name: parent_role_bindings
+          in: query
+          required: false
+          description: Include role bindings from parent resources
+          schema:
+            type: boolean
           explode: false
       responses:
         '200':
@@ -888,14 +895,8 @@ components:
     RoleBindings.BaseResource:
       type: object
       required:
-        - id
         - type
-        - name
       properties:
-        id:
-          type: string
-          description: Resource identifier
-          example: workspace-a
         type:
           type: string
           description: Type of resource
@@ -904,18 +905,31 @@ components:
           type: string
           description: Name of the resource
           example: Workspace A
+        inherited_from:
+          type: object
+          properties:
+            type:
+              type: string
+              description: Parent resource type
+              example: workspace
+            name:
+              type: string
+              description: Parent resource name
+              example: Workspace Z
+          required:
+            - type
+          description: Information about parent resource when inherited from parent (only when parent_role_bindings=true)
       discriminator:
         propertyName: type
         mapping: {}
     RoleBindings.BaseSubject:
       type: object
       required:
-        - id
         - type
-        - name
       properties:
         id:
-          type: string
+          allOf:
+            - $ref: '#/components/schemas/UUID'
           description: Subject identifier
         type:
           type: string
@@ -923,9 +937,6 @@ components:
         name:
           type: string
           description: Name of the subject
-        description:
-          type: string
-          description: Description of the subject
       discriminator:
         propertyName: type
         mapping:
@@ -944,33 +955,20 @@ components:
           type: integer
           format: int64
           description: Number of users in the group
-        is_system:
-          type: boolean
-          description: Whether the group is a system group
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
     RoleBindings.Role:
       type: object
-      required:
-        - id
-        - name
       properties:
         id:
-          type: string
+          allOf:
+            - $ref: '#/components/schemas/UUID'
           description: Role identifier
         name:
           type: string
           description: Name of the role
-        description:
-          type: string
-          description: Description of the role
     RoleBindings.RoleBindingBySubject:
       type: object
-      required:
-        - last_modified
-        - subject
-        - roles
-        - resources
       properties:
         last_modified:
           type: string
@@ -986,11 +984,10 @@ components:
           items:
             $ref: '#/components/schemas/RoleBindings.Role'
           description: Roles assigned to the subject
-        resources:
-          type: array
-          items:
-            $ref: '#/components/schemas/RoleBindings.WorkspaceResource'
-          description: Resources the roles apply to
+        resource:
+          allOf:
+            - $ref: '#/components/schemas/RoleBindings.WorkspaceResource'
+          description: Resource the roles apply to
     RoleBindings.RoleBindingBySubjectListResponse:
       type: object
       required:
@@ -1021,15 +1018,6 @@ components:
           enum:
             - user
           description: Type of subject
-        email:
-          type: string
-          description: Email of the user
-        first_name:
-          type: string
-          description: First name of the user
-        last_name:
-          type: string
-          description: Last name of the user
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
     RoleBindings.WorkspaceResource:
@@ -1042,15 +1030,6 @@ components:
           enum:
             - workspace
           description: Type of resource
-        parent_id:
-          allOf:
-            - $ref: '#/components/schemas/UUID'
-          description: Parent workspace ID
-          example: parent-workspace-uuid
-        workspace_type:
-          type: string
-          description: Workspace type
-          example: default
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseResource'
     Timestamps:
@@ -1207,8 +1186,8 @@ components:
           type: integer
           format: int64
           description: Limit of returned objects
-          example: 10
-          default: 10
+          example: 1000
+          default: 1000
         offset:
           type: integer
           format: int64

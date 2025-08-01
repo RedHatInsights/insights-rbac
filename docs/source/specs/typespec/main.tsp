@@ -267,8 +267,8 @@ namespace Workspaces {
         count: int64;
 
         @doc("Limit of returned objects")
-        @example(10)
-        limit: int64 = 10;
+        @example(1000)
+        limit: int64 = 1000;
 
         @doc("Offset of returned objects")
         @example(10)
@@ -565,24 +565,16 @@ namespace RoleBindings {
     @discriminator("type")
     model BaseSubject {
         @doc("Subject identifier")
-        id: string;
+        id?: UUID;
         @doc("Type of subject")
         type: string;
         @doc("Name of the subject")
-        name: string;
-        @doc("Description of the subject")
-        description?: string;
+        name?: string;
     }
 
     model UserSubject extends BaseSubject {
         @doc("Type of subject")
         type: "user";
-        @doc("Email of the user")
-        email?: string;
-        @doc("First name of the user")
-        first_name?: string;
-        @doc("Last name of the user")
-        last_name?: string;
     }
 
     model GroupSubject extends BaseSubject {
@@ -590,56 +582,52 @@ namespace RoleBindings {
         type: "group";
         @doc("Number of users in the group")
         user_count?: int64;
-        @doc("Whether the group is a system group")
-        is_system?: boolean;
     }
 
     alias Subject = UserSubject | GroupSubject;
 
     @discriminator("type")
     model BaseResource {
-        @doc("Resource identifier")
-        @example("workspace-a")
-        id: string;
         @doc("Type of resource")
         @example("workspace")
         type: string;
         @doc("Name of the resource")
         @example("Workspace A")
-        name: string;
+        name?: string;
+        @doc("Information about parent resource when inherited from parent (only when parent_role_bindings=true)")
+        inherited_from?: {
+            @doc("Parent resource type")
+            @example("workspace")
+            type: string;
+            @doc("Parent resource name")
+            @example("Workspace Z")
+            name?: string;
+        };
     }
 
     model WorkspaceResource extends BaseResource {
         @doc("Type of resource")
         type: "workspace";
-        @doc("Parent workspace ID")
-        @example("parent-workspace-uuid")
-        parent_id?: UUID;
-        @doc("Workspace type")
-        @example("default")
-        workspace_type?: string;
     }
 
     alias Resource = WorkspaceResource;
 
     model Role {
         @doc("Role identifier")
-        id: string;
+        id?: UUID;
         @doc("Name of the role")
-        name: string;
-        @doc("Description of the role")
-        description?: string;
+        name?: string;
     }
 
     model RoleBindingBySubject {
         @doc("Timestamp of last modification")
-        last_modified: offsetDateTime;
+        last_modified?: offsetDateTime;
         @doc("Subject of the role binding")
-        subject: Subject;
+        subject?: Subject;
         @doc("Roles assigned to the subject")
-        roles: Role[];
-        @doc("Resources the roles apply to")
-        resources: Resource[];
+        roles?: Role[];
+        @doc("Resource the roles apply to")
+        resource?: Resource;
     }
 
     model RoleBindingBySubjectListResponse {
@@ -653,29 +641,31 @@ namespace RoleBindings {
 
     @doc("List role bindings grouped by subject")
     @summary("List role bindings grouped by subject")
-    @route("by_subject")
+    @route("by-subject")
     @get op listBySubject(
-        @query limit?: int64 = 10;
+        @query limit?: int64 = 1000;
         @query offset?: int64 = 0;
 
         @doc("Filter by resource type")
         @example("workspace")
         @query resource_type?: string;
         @doc("Filter by resource ID")
-        @example("workspace-a")
+        @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id?: string;
         @doc("Filter by subject type")
         @example("group")
         @query subject_type?: string;
         @doc("Filter by subject ID")
-        @example("group:golden-girls")
+        @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
-        @doc("Additional columns to include in response (comma-separated)")
-        @example("subject__user_count,subject__description,resource__name,last_modified")
+        @doc("Specify which columns to include in response. Basic columns (subject.id, subject.type, role.id, resource.type) are included by default when no columns parameter is specified (type fields are always required, other fields are optional). When columns parameter is provided, only the specified columns are exposed. Use parentheses format: subject(field1,field2), resource(field1,field2). Available fields - subject: user_count, name; resource: name; role: name; other: last_modified")
+        @example("subject(user_count,name),resource(name,type),last_modified")
         @query columns?: string;
         @doc("Sort by specified field(s), prefix with '-' for descending order")
-        @example("subject__name,-last_modified")
+        @example("subject_name,-subject_type")
         @query sort_by?: string;
+        @doc("Include role bindings from parent resources")
+        @query parent_role_bindings?: boolean;
     ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
 }
