@@ -143,13 +143,18 @@ def v1_role_to_v2_bindings(
             )
 
     # Project permission sets to roles per set of resources
-    return permission_groupings_to_v2_role_bindings(perm_groupings, v1_role, role_bindings)
+    return permission_groupings_to_v2_role_bindings(perm_groupings, v1_role, role_bindings, default_workspace)
 
 
 def permission_groupings_to_v2_role_bindings(
-    perm_groupings: PermissionGroupings, v1_role: Role, role_bindings: Iterable[BindingMapping]
+    perm_groupings: PermissionGroupings,
+    v1_role: Role,
+    role_bindings: Iterable[BindingMapping],
+    default_workspace: Workspace,
 ) -> list[BindingMapping]:
     """Determine updated role bindings based on latest resource-permission state and current role bindings."""
+    from management.permission_scope import highest_scope_for_v2_permissions, Scope
+
     updated_mappings: list[BindingMapping] = []
     latest_roles_by_id: dict[str, V2role] = {}
     # TODO: this is broken for system roles, need to have Tenant or Policies provided
@@ -159,6 +164,26 @@ def permission_groupings_to_v2_role_bindings(
     role_bindings_by_resource = {binding.get_role_binding().resource: binding for binding in role_bindings}
 
     for resource, permissions in perm_groupings.items():
+        # Check if this is a default workspace binding that needs scope adjustment
+        is_default_workspace_binding = resource.resource_type == ("rbac", "workspace") and str(
+            resource.resource_id
+        ) == str(default_workspace.id)
+
+        # If this is a default workspace binding, determine the correct scope
+        if is_default_workspace_binding:
+            # Determine the highest scope from the V2 permissions
+            highest_scope = highest_scope_for_v2_permissions(permissions)
+
+            # Update the resource based on the scope
+            if highest_scope == Scope.TENANT:
+                # Bind to tenant level
+                tenant_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{v1_role.tenant.org_id}"
+                resource = V2boundresource(("rbac", "tenant"), tenant_id)
+            elif highest_scope == Scope.ROOT:
+                # Bind to root workspace
+                root_workspace = Workspace.objects.root(tenant=v1_role.tenant)
+                resource = V2boundresource(("rbac", "workspace"), str(root_workspace.id))
+            # else: keep the default workspace (no change needed)
         mapping = role_bindings_by_resource.get(resource)
         current = mapping.get_role_binding() if mapping is not None else None
         perm_set = frozenset(permissions)
