@@ -296,7 +296,7 @@ namespace Workspaces {
       | Problems.Problem404;
 }
 
-@route("/role_bindings/")
+@route("/role-bindings/")
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
