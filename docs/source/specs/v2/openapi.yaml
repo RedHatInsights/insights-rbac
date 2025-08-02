@@ -6,7 +6,7 @@ tags:
   - name: Workspaces
   - name: Role Bindings
 paths:
-  /role_bindings/by-subject:
+  /role-bindings/by-subject:
     get:
       operationId: RoleBindings_listBySubject
       summary: List role bindings grouped by subject
