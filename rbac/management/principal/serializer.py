@@ -38,9 +38,20 @@ class PrincipalSerializer(SerializerCreateOverrideMixin, serializers.ModelSerial
 class PrincipalInputSerializer(serializers.Serializer):
     """Serializer for the Principal model."""
 
-    username = serializers.CharField(required=False, max_length=150)
+    username = serializers.CharField(required=False, max_length=150, allow_blank=True)
     clientId = serializers.UUIDField(required=False, source="service_account_id")
     type = serializers.CharField(required=False)
+
+    def to_internal_value(self, data):
+        """Clean up data before validation - remove empty username for service accounts."""
+        # Make a copy to avoid modifying the original data
+        cleaned_data = data.copy() if hasattr(data, "copy") else dict(data)
+
+        # If this is a service account with empty username, remove the username field
+        if cleaned_data.get("type") == "service-account":
+            cleaned_data.pop("username", None)
+
+        return super().to_internal_value(cleaned_data)
 
     def validate(self, data: OrderedDict):
         """
@@ -51,7 +62,7 @@ class PrincipalInputSerializer(serializers.Serializer):
         """
         # If the "type" has not been specified, we assume it is a user principal.
         if ("type" not in data) or (data["type"] == "user"):
-            if "username" not in data:
+            if not data.get("username", "").strip():
                 raise ValidationError(code="missing", message="the username is required for user principals")
 
             return data

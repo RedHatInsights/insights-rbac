@@ -3927,6 +3927,64 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_group_principals_service_account_empty_username(self, sa_mock):
+        """Test adding service account with empty username is allowed."""
+        sa_uuid = self.sa_client_ids[0]
+        sa_mock.return_value = [
+            {
+                "clientId": sa_uuid,
+                "name": f"service_account_name_{sa_uuid.split('-')[0]}",
+                "description": f"Service Account description {sa_uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+
+        # Test with empty username - should succeed for service accounts
+        request_body = {"principals": [{"username": "", "clientId": sa_uuid, "type": "service-account"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sa = Group.objects.get(uuid=self.group.uuid).principals.filter(
+            type=Principal.Types.SERVICE_ACCOUNT, service_account_id=sa_uuid
+        )
+        self.assertEqual(sa.count(), 1)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_group_principals_user_empty_username_fails(self, sa_mock):
+        """Test adding user principal with empty username fails validation."""
+        sa_uuid = self.sa_client_ids[0]  # Using for mock, but not in test
+        sa_mock.return_value = []  # No service accounts returned
+
+        client = APIClient()
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+
+        # Test with empty username for user type - should fail
+        request_body = {"principals": [{"username": "", "type": "user"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"), "the username is required for user principals"
+        )
+
+        # Test with whitespace-only username for user type - should also fail
+        request_body = {"principals": [{"username": "   ", "type": "user"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.json().get("errors")[0].get("detail"), "the username is required for user principals"
+        )
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_add_group_principals_service_account_not_found(self, sa_mock):
         """Test adding the service account with not existing uuid returns 404 Bad Request."""
         sa_mock.return_value = []
