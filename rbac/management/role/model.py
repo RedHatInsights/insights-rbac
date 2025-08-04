@@ -17,18 +17,20 @@
 
 """Model for role management."""
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, Set
 from uuid import uuid4
 
 from django.conf import settings
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
+
+from api.models import FilterQuerySet, TenantAwareModel
 from internal.integration import sync_handlers
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
+from management.workspace.model import Workspace
 from migration_tool.models import (
     V2boundresource,
     V2role,
@@ -36,9 +38,8 @@ from migration_tool.models import (
     role_binding_group_subject_tuple,
     role_binding_user_subject_tuple,
 )
-
-from api.models import FilterQuerySet, TenantAwareModel
-
+from migration_tool.in_memory_tuples import Relationship
+import uuid
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -101,6 +102,7 @@ class ResourceDefinition(TenantAwareModel):
 
     attributeFilter = models.JSONField(default=dict)
     access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE, related_name="resourceDefinitions")
+    workspaces = models.ManyToManyField(Workspace, through="ResourceDefinitionsWorkspaces")
 
     @property
     def role(self):
@@ -125,6 +127,112 @@ class ResourceDefinition(TenantAwareModel):
         """Get the tenant_id of the RD."""
         if self.tenant:
             return self.tenant.id
+
+    def save(self, *args, **kwargs):
+        """Save the resource definition and link workspaces."""
+        super().save(*args, **kwargs)
+
+        # Link workspaces based on the ones specified in the "attributeFilter".
+        self._link_workspaces()
+
+    def _link_workspaces(self):
+        """Links the resource definition to workspaces specified in the attribute filters."""
+        # Ignore any resource definitions that do not have the "group.id" key.
+        key: str = self.attributeFilter.get("key", "")
+
+        if key != "group.id":
+            logger.info(
+                f"[resource_definition_id: {self.id}][tenant_id: {self.tenant_id}] Linking "
+                f'resource definition to workspaces skipped because the resource definition\'s key "{key}" does not '
+                f'have the expected "group.id" value'
+            )
+            return
+
+        # Get the resource definition's operation and value.
+        operation: str = self.attributeFilter.get("operation", "")
+        value: Union[str, list[Union[None, int, str]]] = self.attributeFilter.get("value", [])
+
+        # Extract the workspace IDs.
+        str_ids_to_convert: list[str] = []
+        match operation:
+            case "equal":
+                str_ids_to_convert.append(value)
+            case "in":
+                for element in value:
+                    if isinstance(element, str):
+                        str_ids_to_convert.append(element)
+            case _:
+                logger.warning(
+                    f'[resource_definition_id: "{self.id}"] Unable to create relation between the resource '
+                    f'definition and the workspace because the operation "{operation}" is unrecognized'
+                )
+                return
+
+        # Parse the workspace IDs as UUIDs.
+        parsed_workspace_ids: Set[uuid.UUID] = set()
+        for str_id in str_ids_to_convert:
+            try:
+                parsed_workspace_ids.add(uuid.UUID(str_id))
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.error(
+                    f'[resource_definition_id: "{self.id}"] Unable to parse workspace ID "{str_id}" as a '
+                    f"valid UUID: {str(e)}"
+                )
+
+        # Fetch all the "new" workspaces specified in the resource definition.
+        workspaces: set[Workspace] = set(Workspace.objects.filter(id__in=parsed_workspace_ids))
+
+        # Fetch all the existing links for the current resource definition.
+        # This will help us figure out which links need to be removed and
+        # which ones need to be created.
+        existing_rdws: list[ResourceDefinitionsWorkspaces] = ResourceDefinitionsWorkspaces.objects.filter(
+            resource_definition=self
+        )
+        existing_linked_workspaces: set[Workspace] = set()
+        for rdw in existing_rdws:
+            existing_linked_workspaces.add(rdw.workspace)
+
+        # The difference between the "existing linked workspaces" and the
+        # "new workspaces to link" will give us the workspaces that only exist
+        # in the former set, which means that those are the ones we need to
+        # remove from the database.
+        to_remove = existing_linked_workspaces.difference(workspaces)
+
+        if to_remove:
+            ResourceDefinitionsWorkspaces.objects.filter(resource_definition=self, workspace__in=to_remove).delete()
+
+            for workspace in to_remove:
+                logger.info(
+                    f'[resource_definition_id: "{self.id}"][tenant_id: "{self.tenant_id}"]'
+                    f'[workspace_id: "{workspace.id}"] Link removed'
+                )
+
+        # Performing a difference between the "new workspaces" with the
+        # "existing" ones, will, on the other hand, tell us which new links
+        # need to be created.
+        for workspace_to_insert in workspaces.difference(existing_linked_workspaces):
+            ResourceDefinitionsWorkspaces.objects.create(
+                resource_definition=self, workspace=workspace_to_insert, tenant=self.tenant
+            )
+
+            logger.info(
+                f'[resource_definition_id: "{self.id}"][tenant_id: "{self.tenant_id}"]'
+                f"[workspace_id: {workspace_to_insert.id}] Linked resource definition and workspace"
+            )
+
+            # Remove the workspace ID from the parsed ones, to keep track of which
+            # ones have been processed.
+            parsed_workspace_ids.remove(workspace_to_insert.id)
+
+        # When the set contains elements, it means that not all of the set's IDs
+        # were returned from the query, thus signaling that some of the workspace
+        # IDs do not exist in our database.
+        for pwid in parsed_workspace_ids:
+            logger.warning(
+                f'[resource_definition_id: "{self.id}"][tenant_id: "{self.tenant_id}"]'
+                f'[workspace_id: "{pwid}"] RBAC does not have a workspace record for the parsed workspace ID from the '
+                f"resource definition"
+            )
 
 
 class ExtTenant(models.Model):
@@ -326,6 +434,13 @@ class BindingMapping(models.Model):
             self.mappings[field].update({str(source): value})
         else:
             self.mappings[field].append(value)
+
+
+class ResourceDefinitionsWorkspaces(TenantAwareModel):
+    """A model that represents the join table between the resource definitions and the workspaces."""
+
+    resource_definition = models.ForeignKey(on_delete=models.CASCADE, to=ResourceDefinition)
+    workspace = models.ForeignKey(on_delete=models.CASCADE, to=Workspace)
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):

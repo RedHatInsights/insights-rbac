@@ -15,10 +15,16 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group model."""
+from unittest import TestCase
+from unittest.mock import patch
+
 from django.db import IntegrityError, transaction
 
 from api.cross_access.model import CrossAccountRequest
+from api.models import Tenant
 from management.models import BindingMapping, ExtRoleRelation, ExtTenant, Role
+from management.permission.model import Permission
+from management.role.model import ResourceDefinition, Access
 from tests.identity_request import IdentityRequest
 from migration_tool.models import (
     V2role,
@@ -311,3 +317,7 @@ class BindingMappingTests(IdentityRequest):
         role_binding = self.binding_mapping.get_role_binding()
         self.assertIn("group1", role_binding.groups)
         self.assertEqual(len(role_binding.groups), 2)
+
+
+class ResourceDefinitionWorkspacesTests(TestCase):
+    """Tests that the linking between the resource definitions and the workspaces works as intended."""
