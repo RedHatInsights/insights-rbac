@@ -256,6 +256,10 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: ROOT_SCOPE_APPS
+            value: ${ROOT_SCOPE_APPS}
+          - name: TENANT_SCOPE_APPS
+            value: ${TENANT_SCOPE_APPS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
@@ -522,6 +526,10 @@ objects:
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           - name: WORKSPACE_ORG_CREATION_LIMIT
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: ROOT_SCOPE_APPS
+            value: ${ROOT_SCOPE_APPS}
+          - name: TENANT_SCOPE_APPS
+            value: ${TENANT_SCOPE_APPS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are additional to workers
@@ -813,6 +821,10 @@ objects:
               value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
             - name: WORKSPACE_ORG_CREATION_LIMIT
               value: ${WORKSPACE_ORG_CREATION_LIMIT}
+            - name: ROOT_SCOPE_APPS
+              value: ${ROOT_SCOPE_APPS}
+            - name: TENANT_SCOPE_APPS
+              value: ${TENANT_SCOPE_APPS}
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
@@ -1067,6 +1079,7 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: workspace-data
+
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1535,3 +1548,9 @@ parameters:
 - description: Enables grabbing the certificates from the secret that provides certificates that will be automatically renewed.
   name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
   value: 'false'
+- description: Comma-separated list of applications that bind to root workspace scope
+  name: ROOT_SCOPE_APPS
+  value: ''
+- description: Comma-separated list of applications that bind to tenant scope
+  name: TENANT_SCOPE_APPS
+  value: ''
