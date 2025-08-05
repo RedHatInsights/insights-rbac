@@ -103,7 +103,12 @@ VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 ALL_KEY = "all"
 VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER, ALL_KEY]
-VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS = [PRINCIPAL_TYPE_KEY, SERVICE_ACCOUNT_CLIENT_IDS_KEY, "limit", "offset"]
+VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS = [
+    PRINCIPAL_TYPE_KEY,
+    SERVICE_ACCOUNT_CLIENT_IDS_KEY,
+    "limit",
+    "offset",
+]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -1015,18 +1020,18 @@ class GroupViewSet(
                     "errors": [
                         {
                             "detail": f"The parameter {SERVICE_ACCOUNT_CLIENT_IDS_KEY}' is incompatible with the"
-                                      f" parameter value '{principal_type_value}' for the '{PRINCIPAL_TYPE_KEY}' "
-                                      f"parameter. Please use '{Principal.Types.SERVICE_ACCOUNT}' as the "
-                                      f"parameter value instead.",
+                            f" parameter value '{principal_type_value}' for the '{PRINCIPAL_TYPE_KEY}' "
+                            f"parameter. Please use '{Principal.Types.SERVICE_ACCOUNT}' as the "
+                            f"parameter value instead.",
                             "source": "groups",
                             "status": str(status.HTTP_400_BAD_REQUEST),
                         }
                     ]
-                }
+                },
             )
 
         # Check that the specified query parameter is not empty.
-        service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
+        service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY, "").strip()
         if not service_account_client_ids_raw:
             return Response(
                 status=status.HTTP_400_BAD_REQUEST,

@@ -35,8 +35,11 @@ from api.cross_access.util import check_cross_request_expiry
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.serializer import GroupInputSerializer
-from management.group.view import VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS, SERVICE_ACCOUNT_CLIENT_IDS_KEY, \
-    PRINCIPAL_TYPE_KEY
+from management.group.view import (
+    VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS,
+    SERVICE_ACCOUNT_CLIENT_IDS_KEY,
+    PRINCIPAL_TYPE_KEY,
+)
 from management.models import (
     Access,
     BindingMapping,
@@ -3104,7 +3107,7 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
             str(response.data.get("errors")[0].get("detail")),
             f"The parameter {SERVICE_ACCOUNT_CLIENT_IDS_KEY}' is incompatible with the parameter value 'user' "
             f"for the '{PRINCIPAL_TYPE_KEY}' parameter. Please use '{Principal.Types.SERVICE_ACCOUNT}' as the "
-            f"parameter value instead."
+            f"parameter value instead.",
         )
 
         url = (
