@@ -35,6 +35,8 @@ from api.cross_access.util import check_cross_request_expiry
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.serializer import GroupInputSerializer
+from management.group.view import VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS, SERVICE_ACCOUNT_CLIENT_IDS_KEY, \
+    PRINCIPAL_TYPE_KEY
 from management.models import (
     Access,
     BindingMapping,
@@ -3052,7 +3054,6 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
         # this changes in the future.
         query_parameters_to_test: list[str] = [
             "order_by",
-            "principal_type",
             "principal_username",
             "service_account_name",
             "username_only",
@@ -3061,7 +3062,7 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
         for query_parameter in query_parameters_to_test:
             url = (
                 f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
-                f"?service_account_client_ids={uuid4()}&{query_parameter}=abcde"
+                f"?{SERVICE_ACCOUNT_CLIENT_IDS_KEY}={uuid4()}&{query_parameter}=abcde"
             )
             client = APIClient()
             response: Response = client.get(url, **self.headers)
@@ -3076,9 +3077,48 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
             # Assert that the error message is the expected one.
             self.assertEqual(
                 str(response.data.get("errors")[0].get("detail")),
-                "The 'service_account_client_ids' parameter is incompatible with any other query parameter."
-                " Please, use it alone",
+                f"The 'service_account_client_ids' parameter is only compatible with the following query"
+                f" parameters: {VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS}.",
             )
+
+    def test_get_group_principals_check_service_account_ids_incompatible_principal_type_parameter_value(
+        self,
+    ):
+        """Test that when the "service_account_client_ids" query parameter is specified along with the "principal_type" one, the latter needs to have the "service-accounts" value."""
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            f"?{SERVICE_ACCOUNT_CLIENT_IDS_KEY}={uuid4()}&{PRINCIPAL_TYPE_KEY}=user"
+        )
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 400 response.
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that the error message is the expected one.
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            f"The parameter {SERVICE_ACCOUNT_CLIENT_IDS_KEY}' is incompatible with the parameter value 'user' "
+            f"for the '{PRINCIPAL_TYPE_KEY}' parameter. Please use '{Principal.Types.SERVICE_ACCOUNT}' as the "
+            f"parameter value instead."
+        )
+
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
+            f"?{SERVICE_ACCOUNT_CLIENT_IDS_KEY}={uuid4()}&{PRINCIPAL_TYPE_KEY}=user"
+        )
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
 
     def test_get_group_principals_check_service_account_ids_empty_client_ids(self):
         """Test that an empty service account IDs query param returns a bad request response"""

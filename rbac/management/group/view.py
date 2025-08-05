@@ -103,6 +103,7 @@ VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 ALL_KEY = "all"
 VALID_PRINCIPAL_TYPE_VALUE = [Principal.Types.SERVICE_ACCOUNT, Principal.Types.USER, ALL_KEY]
+VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS = [PRINCIPAL_TYPE_KEY, SERVICE_ACCOUNT_CLIENT_IDS_KEY, "limit", "offset"]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -990,24 +991,39 @@ class GroupViewSet(
         """Process the request with the SERVICE_ACCOUNT_CLIENT_IDS_KEY query param."""
         # pagination is ignored in this case
         for query_param in request.query_params:
-            if query_param not in [
-                SERVICE_ACCOUNT_CLIENT_IDS_KEY,
-                "limit",
-                "offset",
-            ]:
+            if query_param not in VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS:
                 return Response(
                     status=status.HTTP_400_BAD_REQUEST,
                     data={
                         "errors": [
                             {
-                                "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' parameter is incompatible with "
-                                f"any other query parameter. Please, use it alone",
+                                "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' parameter is only compatible with "
+                                f"the following query parameters: {VALID_COMPATIBLE_SERVICE_ACCOUNT_IDS_PARAMETERS}.",
                                 "source": "groups",
                                 "status": str(status.HTTP_400_BAD_REQUEST),
                             }
                         ]
                     },
                 )
+
+        # Verify that the correct principal type was specified.
+        principal_type_value = request.query_params.get(PRINCIPAL_TYPE_KEY)
+        if PRINCIPAL_TYPE_KEY in request.query_params and principal_type_value != Principal.Types.SERVICE_ACCOUNT:
+            return Response(
+                status=status.HTTP_400_BAD_REQUEST,
+                data={
+                    "errors": [
+                        {
+                            "detail": f"The parameter {SERVICE_ACCOUNT_CLIENT_IDS_KEY}' is incompatible with the"
+                                      f" parameter value '{principal_type_value}' for the '{PRINCIPAL_TYPE_KEY}' "
+                                      f"parameter. Please use '{Principal.Types.SERVICE_ACCOUNT}' as the "
+                                      f"parameter value instead.",
+                            "source": "groups",
+                            "status": str(status.HTTP_400_BAD_REQUEST),
+                        }
+                    ]
+                }
+            )
 
         # Check that the specified query parameter is not empty.
         service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
