@@ -23,11 +23,11 @@ import logging
 from django.conf import settings
 from google.protobuf import json_format
 from grpc import RpcError
+from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.relations.v1beta1 import check_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache
-from management.jwt import JWTManager, JWTProvider
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
 from management.utils import create_client_channel
 
