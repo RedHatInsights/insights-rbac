@@ -517,6 +517,7 @@ TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_cre
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
 RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
 RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
+INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 
 # Versioned API settings
@@ -540,6 +541,9 @@ REMOVE_NULL_VALUE = ENVIRONMENT.bool("REMOVE_NULL_VALUE", default=False)
 # Service-to-service (S2S) authentication settings
 SERVICE_PSKS = ENVIRONMENT.json("SERVICE_PSKS", default={})
 SYSTEM_USERS = ENVIRONMENT.json("SYSTEM_USERS", default={})
+
+# Principal caching settings
+PRINCIPAL_CACHE_LIFETIME = ENVIRONMENT.int("PRINCIPAL_CACHE_LIFETIME", default=3600)
 
 # Enable reading the certificates that are automatically generated. It is a temporary flag that will allow us to switch
 # back and forth in the case of an error.

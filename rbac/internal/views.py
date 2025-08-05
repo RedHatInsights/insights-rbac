@@ -40,8 +40,16 @@ from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     delete_bindings,
     get_or_create_ungrouped_workspace,
+    validate_inventory_input,
     validate_relations_input,
 )
+from kessel.inventory.v1beta2 import (
+    check_request_pb2,
+    reporter_reference_pb2,
+    resource_reference_pb2,
+    subject_reference_pb2,
+)
+from kessel.inventory.v1beta2 import inventory_service_pb2_grpc
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
@@ -1652,7 +1660,6 @@ def check_relation(request):
             {"detail": "Error occurred in call to check relation endpoint", "error": str(e)}, status=500
         )
 
-
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
@@ -1675,6 +1682,65 @@ def group_assignments(request, group_uuid):
     )
     return JsonResponse(relation_assignments, safe=False)
 
+def check_inventory(request):
+    """POST to check relationship from inventory api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    if not validate_inventory_input("check", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to check inventory."}, status=500)
+
+    # Request parameters for check relation on inventory api from post request
+    resource_id = req_data["resource"]["resource_id"]
+    resource_type = req_data["resource"]["resource_type"]
+    resource_reporter_type = req_data["resource"]["reporter"]["type"]
+    resource_relation = req_data["relation"]
+    subject_resource_id = req_data["subject"]["resource"]["resource_id"]
+    subject_resource_type = req_data["subject"]["resource"]["resource_type"]
+    subject_resource_reporter_type = req_data["subject"]["resource"]["reporter"]["type"]
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
+            stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
+
+            resource_ref = resource_reference_pb2.ResourceReference(
+                resource_id=resource_id,
+                resource_type=resource_type,
+                reporter=reporter_reference_pb2.ReporterReference(type=resource_reporter_type),
+            )
+
+            subject = subject_reference_pb2.SubjectReference(
+                resource=resource_reference_pb2.ResourceReference(
+                    resource_id=subject_resource_id,
+                    resource_type=subject_resource_type,
+                    reporter=reporter_reference_pb2.ReporterReference(type=subject_resource_reporter_type),
+                )
+            )
+
+        request = check_request_pb2.CheckRequest(
+            subject=subject,
+            relation=resource_relation,
+            object=resource_ref,
+        )
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        response = stub.Check(request, metadata=metadata)
+
+        if response:
+            response_to_dict = json_format.MessageToDict(response)
+            response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
+
+            return JsonResponse(response_to_dict, status=200)
+        return JsonResponse("No relation found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to check inventory endpoint", "error": str(e)}, status=500
+        )
 
 @require_http_methods(["GET", "DELETE"])
 def workspace_removal(request):
