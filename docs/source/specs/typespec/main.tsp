@@ -89,6 +89,7 @@ namespace Problems {
 @tag("Workspaces")
 @doc("Operations about workspaces")
 namespace Workspaces {
+    @example(#{ name: "My First Workspace", description: "This is a basic workspace." })
     model BasicWorkspace {
         @doc("Workspace A")
         name: string = "Workspace A";
@@ -107,7 +108,15 @@ namespace Workspaces {
         "all",
         ...WorkspaceTypes
     }
-
+    @example(#{
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: WorkspaceTypes.standard,
+        name: "My first workspace",
+        description: "This is a basic workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model Workspace {
         @key id: UUID;
         parent_id?: UUID;
@@ -122,12 +131,26 @@ namespace Workspaces {
         name: string;
     }
 
+    @example(#{
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        name: "Alpha Workspace",
+        description: "Create a standard workspace."
+    })
     model CreateWorkspaceRequest extends BasicWorkspace{
         //if parent_id is not stated within the request for standard workspaces, it is automatically populated from default workspace.
         @doc("Parent ID of Workspace A")
         parent_id?: UUID = "Parent ID of Workspace A";
     }
-
+    @example(#{
+        _: 201,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: WorkspaceTypes.standard,
+        name: "Alpha Workspace",
+        description: "Create a standard workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model CreateWorkspaceResponse extends Workspace{
         @statusCode _: 201;
     }
@@ -225,6 +248,30 @@ namespace Workspaces {
         links: PaginationLinks;
     }
 
+    @example(#{
+        meta: #{
+            count: 50,
+            limit: 10,
+            offset: 0
+        },
+        links: #{
+            first: "/api/rbac/v2/workspaces?limit=10&offset=0",
+            next: "/api/rbac/v2/workspaces?limit=10&offset=10",
+            previous: null,
+            last: "/api/rbac/v2/workspaces?limit=10&offset=40"
+        },
+        data: #[
+            #{
+                id: "e4277742-b91c-43f1-a185-b827e8574345",
+                parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+                type: WorkspaceTypes.standard,
+                name: "My first workspace",
+                description: "This is a basic workspace.",
+                created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            },
+        ]
+    })
     model WorkspaceListResponse {
         ...Pagination;
 
@@ -234,6 +281,14 @@ namespace Workspaces {
 
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            offset: 0,
+            type: WorkspaceTypesQueryParam.all,
+            name: "My First Workspace"
+        }
+    })
     @get op list(
         @query limit?: int64 = 10;
         @query offset?: int64 = 0;
@@ -251,6 +306,12 @@ namespace Workspaces {
     @doc("Get a workspace in tenant")
     @summary("Get a workspace in tenant")
     @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "43e7b2c1-9f8a-4e3d-8c2b-7a1e6d9c2f43",
+            include_ancestry: true
+        }
+    })
     @get op read(
         @doc("Unique identification")
         @path id: UUID;
@@ -258,6 +319,7 @@ namespace Workspaces {
         @doc("When true, the response will include the ancestry of the workspace.")
         @query include_ancestry?: boolean;
     ): ReadWorkspaceResponse | ReadWorkspaceWithAncestryResponse | Problems.CommonProblems | Problems.Problem404;
+
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
