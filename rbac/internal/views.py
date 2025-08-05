@@ -1660,6 +1660,7 @@ def check_relation(request):
             {"detail": "Error occurred in call to check relation endpoint", "error": str(e)}, status=500
         )
 
+
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
@@ -1681,6 +1682,7 @@ def group_assignments(request, group_uuid):
         ),
     )
     return JsonResponse(relation_assignments, safe=False)
+
 
 def check_inventory(request):
     """POST to check relationship from inventory api."""
@@ -1741,6 +1743,7 @@ def check_inventory(request):
         return JsonResponse(
             {"detail": "Error occurred in call to check inventory endpoint", "error": str(e)}, status=500
         )
+
 
 @require_http_methods(["GET", "DELETE"])
 def workspace_removal(request):
