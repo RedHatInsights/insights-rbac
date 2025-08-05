@@ -49,6 +49,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Workspaces.WorkspaceListResponse'
+              example:
+                meta:
+                  count: 10
+                  limit: 10
+                  offset: 0
+                links:
+                  first: /api/rbac/v2/workspaces/?limit=10&offset=0
+                  next: /api/rbac/v2/workspaces/?limit=10&offset=10
+                  previous: null
+                  last: /api/rbac/v2/workspaces/?limit=10&offset=20
+                data:
+                  - id: e4277742-b91c-43f1-a185-b827e8574345
+                    parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+                    type: standard
+                    name: My first workspace
+                    description: This is a basic workspace.
+                    created: 2024-05-06T12:20-12-0700
+                    modified: 2024-05-06T12:20-12-0700
         '401':
           description: Access is unauthorized.
           content:
@@ -109,6 +127,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Workspaces.CreateWorkspaceResponse'
+              example:
+                _: 201
+                id: e4277742-b91c-43f1-a185-b827e8574345
+                parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+                type: standard
+                name: Alpha Workspace
+                description: Create a standard workspace.
+                created: '2024-08-04T12:00:00Z'
+                modified: '2024-08-04T12:00:00Z'
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -169,6 +196,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Workspaces.CreateWorkspaceRequest'
+            example:
+              name: Alpha Workspace
+              description: Create a standard workspace.
   /workspaces/{id}/:
     get:
       operationId: Workspaces_read
@@ -269,6 +299,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Workspaces.UpdateWorkspaceResponse'
+              example:
+                _: 200
+                id: e4277742-b91c-43f1-a185-b827e8574345
+                parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+                type: standard
+                name: Alpha Workspace
+                description: Changing description of alpha workspace to something new.
+                created: '2024-08-04T12:00:00Z'
+                modified: '2024-08-04T12:00:00Z'
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -343,6 +382,10 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Workspaces.UpdateWorkspaceRequest'
+            example:
+              parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+              name: Alpha Workspace
+              description: Changing description of alpha workspace to something new.
     patch:
       operationId: Workspaces_patch
       parameters:
@@ -359,6 +402,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Workspaces.PatchWorkspaceResponse'
+              example:
+                _: 200
+                id: e4277742-b91c-43f1-a185-b827e8574345
+                parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+                type: standard
+                name: Alpha Workspace - closed
+                description: Create a standard workspace.
+                created: '2024-08-04T12:00:00Z'
+                modified: '2024-08-04T12:00:00Z'
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -433,6 +485,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Workspaces.PatchWorkspaceRequest'
+            example:
+              name: Alpha Workspace - closed
+              description: Create a standard workspace.
     delete:
       operationId: Workspaces_delete
       summary: Delete the workspace
@@ -520,6 +575,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Workspaces.MoveWorkspaceResponse'
+              example:
+                id: e4277742-b91c-43f1-a185-b827e8574345
+                parent_id: f0e1d2c3-b4a5-4678-9a1b-c2d3e4f5a6b7
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -586,6 +644,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Workspaces.MoveWorkspaceRequest'
+            example:
+              parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
 components:
   schemas:
     Problems.Problem400:
@@ -739,6 +799,9 @@ components:
           type: string
           description: Description of Workspace A
           default: Description of Workspace A
+      example:
+        name: My First Workspace
+        description: This is a basic workspace.
     Workspaces.CreateWorkspaceRequest:
       type: object
       properties:
@@ -749,10 +812,23 @@ components:
           default: Parent ID of Workspace A
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+      example:
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        name: Alpha Workspace
+        description: Create a standard workspace.
     Workspaces.CreateWorkspaceResponse:
       type: object
       allOf:
         - $ref: '#/components/schemas/Workspaces.Workspace'
+      example:
+        _: 201
+        id: e4277742-b91c-43f1-a185-b827e8574345
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        type: standard
+        name: Alpha Workspace
+        description: Create a standard workspace.
+        created: '2024-08-04T12:00:00Z'
+        modified: '2024-08-04T12:00:00Z'
     Workspaces.MoveWorkspaceRequest:
       type: object
       required:
@@ -763,6 +839,8 @@ components:
             - $ref: '#/components/schemas/UUID'
           description: The UUID of the new parent workspace.
           default: Parent ID of target workspace
+      example:
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
     Workspaces.MoveWorkspaceResponse:
       type: object
       required:
@@ -777,6 +855,10 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           default: New parent ID of moved workspace
+      example:
+        _: 200
+        id: e4277742-b91c-43f1-a185-b827e8574345
+        parent_id: f0e1d2c3-b4a5-4678-9a1b-c2d3e4f5a6b7
     Workspaces.Pagination:
       type: object
       required:
@@ -855,14 +937,35 @@ components:
           type: string
           description: Description of Workspace A
           default: Description of Workspace A
+      example:
+        name: Alpha Workspace - closed
+        description: Create a standard workspace.
     Workspaces.PatchWorkspaceResponse:
       type: object
       allOf:
         - $ref: '#/components/schemas/Workspaces.Workspace'
+      example:
+        _: 200
+        id: e4277742-b91c-43f1-a185-b827e8574345
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        type: standard
+        name: Alpha Workspace - closed
+        description: Create a standard workspace.
+        created: '2024-08-04T12:00:00Z'
+        modified: '2024-08-04T12:00:00Z'
     Workspaces.ReadWorkspaceResponse:
       type: object
       allOf:
         - $ref: '#/components/schemas/Workspaces.Workspace'
+      example:
+        _: 200
+        id: e4277742-b91c-43f1-a185-b827e8574345
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        type: standard
+        name: Alpha Workspace
+        description: Create a standard workspace.
+        created: '2024-08-04T12:00:00Z'
+        modified: '2024-08-04T12:00:00Z'
     Workspaces.ReadWorkspaceWithAncestryResponse:
       type: object
       required:
@@ -874,6 +977,19 @@ components:
             $ref: '#/components/schemas/Workspaces.WorkspaceAncestor'
       allOf:
         - $ref: '#/components/schemas/Workspaces.ReadWorkspaceResponse'
+      example:
+        ancestry:
+          - id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+            parent_id: a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c6
+            name: Default Workspace
+        _: 200
+        id: e4277742-b91c-43f1-a185-b827e8574345
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        type: standard
+        name: Alpha Workspace
+        description: Create a standard workspace.
+        created: '2024-08-04T12:00:00Z'
+        modified: '2024-08-04T12:00:00Z'
     Workspaces.UpdateWorkspaceRequest:
       type: object
       required:
@@ -894,10 +1010,23 @@ components:
             - $ref: '#/components/schemas/UUID'
           description: Must match current parent_id value. Not updatable directly on the workspace.
           default: Parent ID of Workspace A
+      example:
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        name: Alpha Workspace
+        description: Changing description of alpha workspace to something new.
     Workspaces.UpdateWorkspaceResponse:
       type: object
       allOf:
         - $ref: '#/components/schemas/Workspaces.Workspace'
+      example:
+        _: 200
+        id: e4277742-b91c-43f1-a185-b827e8574345
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        type: standard
+        name: Alpha Workspace
+        description: Changing description of alpha workspace to something new.
+        created: '2024-08-04T12:00:00Z'
+        modified: '2024-08-04T12:00:00Z'
     Workspaces.Workspace:
       type: object
       required:
@@ -929,6 +1058,14 @@ components:
           type: string
           format: date-time
           description: '2019-01-21T17:32:28Z'
+      example:
+        id: e4277742-b91c-43f1-a185-b827e8574345
+        parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+        type: standard
+        name: My first workspace
+        description: This is a basic workspace.
+        created: '2024-08-04T12:00:00Z'
+        modified: '2024-08-04T12:00:00Z'
     Workspaces.WorkspaceAncestor:
       type: object
       required:
@@ -961,6 +1098,24 @@ components:
           items:
             $ref: '#/components/schemas/Workspaces.Workspace'
           description: List of workspaces
+      example:
+        meta:
+          count: 50
+          limit: 10
+          offset: 0
+        links:
+          first: /api/rbac/v2/workspaces?limit=10&offset=0
+          next: /api/rbac/v2/workspaces?limit=10&offset=10
+          previous: null
+          last: /api/rbac/v2/workspaces?limit=10&offset=40
+        data:
+          - id: e4277742-b91c-43f1-a185-b827e8574345
+            parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+            type: standard
+            name: My first workspace
+            description: This is a basic workspace.
+            created: '2024-08-04T12:00:00Z'
+            modified: '2024-08-04T12:00:00Z'
     Workspaces.WorkspaceTypes:
       type: string
       enum:
