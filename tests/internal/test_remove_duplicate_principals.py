@@ -16,6 +16,7 @@
 #
 """Test the remove_duplicate_principals internal API."""
 import json
+import unittest
 from unittest.mock import patch, MagicMock
 
 from django.test import override_settings
@@ -43,6 +44,8 @@ from tests.internal.test_views import valid_destructive_time
         },
     },
 )
+# TODO: remove this endpoint and tests because we restrict the user_id to be unique in db.
+@unittest.skip(reason="Skipping tests because we restrict the user_id to be unique in db.")
 class RemoveDuplicatePrincipalsTests(IdentityRequest):
     """Test the remove_duplicate_principals endpoint."""
 
