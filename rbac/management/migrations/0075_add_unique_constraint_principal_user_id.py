@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0068_alter_workspace_type"),
+        ("management", "0074_alter_rolev2_name"),
     ]
 
     operations = [
