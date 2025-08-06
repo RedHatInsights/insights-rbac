@@ -180,7 +180,9 @@ def batch_import_workspace(records):
             parent = parent_workspace_dict.get(record["org_id"])
             if not parent:
                 logger.warning(f"Missing tenant for org_id: {record['org_id']}")
-                continue
+                bootstrapped_tenant = BOOT_STRAP_SERVICE._get_or_bootstrap_tenant(record["org_id"], ready=True)
+                tenant_dict[record["org_id"]] = bootstrapped_tenant.tenant
+                parent = Workspace.objects.default(tenant=bootstrapped_tenant.tenant)
             if is_ungrouped:
                 ws_name = Workspace.SpecialNames.UNGROUPED_HOSTS
                 workspace_type = Workspace.Types.UNGROUPED_HOSTS

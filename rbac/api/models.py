@@ -15,7 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
-from typing import Optional
+from typing import Any, Optional
 
 from django.db import models
 from django.db.models import Q
@@ -78,6 +78,16 @@ class User:
 
     _username: Optional[str] = None
 
+    def __init__(self, **kwargs: Any):
+        """
+        Initialize User with optional parameters.
+
+        :param kwargs: Optional parameters to set on the User instance.
+        """
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
     @property
     def username(self) -> Optional[str]:
         """Return the username."""
@@ -103,6 +113,37 @@ class User:
     bearer_token: str = ""
     client_id: str = ""
     is_service_account: bool = False
+
+    def __eq__(self, other):
+        """Check equality of User instances."""
+        if not isinstance(other, User):
+            return NotImplemented
+        return (
+            self.username == other.username
+            and self.account == other.account
+            and self.admin == other.admin
+            and self.access == other.access
+            and self.system == other.system
+            and self.is_active == other.is_active
+            and self.org_id == other.org_id
+            and self.user_id == other.user_id
+            and self.bearer_token == other.bearer_token
+            and self.client_id == other.client_id
+            and self.is_service_account == other.is_service_account
+        )
+
+    def __hash__(self):
+        """Hash the User instance."""
+        return hash((self.username, self.user_id, self.client_id))
+
+    def __repr__(self):
+        """Return a string representation of the User instance."""
+        return (
+            f"User(username={self.username!r}, account={self.account!r}, admin={self.admin!r}, "
+            f"system={self.system!r}, is_active={self.is_active!r}, org_id={self.org_id!r}, "
+            f"user_id={self.user_id!r}, bearer_token={'***' if self.bearer_token else ''}, "
+            f"client_id={self.client_id!r}, is_service_account={self.is_service_account!r})"
+        )
 
 
 class FilterQuerySet(models.QuerySet):

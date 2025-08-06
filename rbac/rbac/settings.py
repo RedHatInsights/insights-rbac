@@ -37,6 +37,7 @@ from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
+from feature_flags import FEATURE_FLAGS
 
 
 # Database
@@ -274,6 +275,7 @@ LOGGING = {
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "feature_flags": {"handlers": DEBUG_LOG_HANDLERS, "level": "DEBUG"},
     },
 }
 
@@ -316,6 +318,21 @@ else:
     REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
     REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
     REDIS_PASSWORD = ENVIRONMENT.get_value("REDIS_PASSWORD", default=None)
+
+# Feature Flag settings
+FEATURE_FLAGS_CONF = LoadedConfig.featureFlags
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and FEATURE_FLAGS_CONF:
+    FEATURE_FLAGS_TOKEN = FEATURE_FLAGS_CONF.clientAccessToken
+    FEATURE_FLAGS_URL = (
+        f"{FEATURE_FLAGS_CONF.scheme.value}://{FEATURE_FLAGS_CONF.hostname}:{FEATURE_FLAGS_CONF.port}/api"
+    )
+    APP_NAME = LoadedConfig.metadata.name
+else:
+    FEATURE_FLAGS_TOKEN = ENVIRONMENT.get_value("FEATURE_FLAGS_TOKEN", default=None)
+    FEATURE_FLAGS_URL = ENVIRONMENT.get_value("FEATURE_FLAGS_URL", default="http://localhost:4242/api")
+    APP_NAME = "rbac"
+
+FEATURE_FLAGS_CACHE_DIR = ENVIRONMENT.get_value("FEATURE_FLAGS_CACHE_DIR", default="/tmp/")
 
 REDIS_SSL = REDIS_PASSWORD is not None
 
@@ -493,13 +510,14 @@ UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
 SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
 
-REDHAT_STAGE_SSO = ENVIRONMENT.get_value("REDHAT_STAGE_SSO", default="sso.stage.redhat.com")
+REDHAT_SSO = ENVIRONMENT.get_value("REDHAT_SSO", default="sso.stage.redhat.com")
 OPENID_URL = ENVIRONMENT.get_value("OPENID_URL", default="/auth/realms/redhat-external/protocol/openid-connect/token")
 SCOPE = ENVIRONMENT.get_value("SCOPE", default="openid")
 TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_credentials")
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
 RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
 RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
+INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 
 # Versioned API settings
@@ -512,9 +530,21 @@ WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME",
 WORKSPACE_RESOURCE_TYPE = ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups")
 WORKSPACE_ATTRIBUTE_FILTER = ENVIRONMENT.get_value("WORKSPACE_ATTRIBUTE_FILTER", default="group.id")
 WORKSPACE_HIERARCHY_ENABLED = ENVIRONMENT.bool("WORKSPACE_HIERARCHY_ENABLED", False)
-WORKSPACE_HIERARCHY_DEPTH_LIMIT = ENVIRONMENT.int("WORKSPACE_HIERARCHY_DEPTH_LIMIT", default=2)
-WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_PEERS", default=True)
+WORKSPACE_ORG_CREATION_LIMIT = ENVIRONMENT.get_value("WORKSPACE_ORG_CREATION_LIMIT", default=3000)
+WORKSPACE_HIERARCHY_DEPTH_LIMIT = ENVIRONMENT.int("WORKSPACE_HIERARCHY_DEPTH_LIMIT", default=5)
+WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_PEERS", default=False)
 
 # Manipulation of response to include ungrouped hosts id
 ADD_UNGROUPED_HOSTS_ID = ENVIRONMENT.bool("ADD_UNGROUPED_HOSTS_ID", default=False)
 REMOVE_NULL_VALUE = ENVIRONMENT.bool("REMOVE_NULL_VALUE", default=False)
+
+# Service-to-service (S2S) authentication settings
+SERVICE_PSKS = ENVIRONMENT.json("SERVICE_PSKS", default={})
+SYSTEM_USERS = ENVIRONMENT.json("SYSTEM_USERS", default={})
+
+# Principal caching settings
+PRINCIPAL_CACHE_LIFETIME = ENVIRONMENT.int("PRINCIPAL_CACHE_LIFETIME", default=3600)
+
+# Enable reading the certificates that are automatically generated. It is a temporary flag that will allow us to switch
+# back and forth in the case of an error.
+AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED = ENVIRONMENT.bool("AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED", default=False)

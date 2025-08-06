@@ -26,13 +26,15 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
+from feature_flags import FEATURE_FLAGS
+from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
 from management.models import Principal
 from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
-from management.utils import APPLICATION_KEY, access_for_principal, build_user_from_psk
+from management.utils import APPLICATION_KEY, access_for_principal, build_system_user_from_token, build_user_from_psk
 from prometheus_client import Counter
 from rest_framework import status
 
@@ -109,6 +111,7 @@ class IdentityHeaderMiddleware:
 
     header = RH_IDENTITY_HEADER
     bootstrap_service: TenantBootstrapService
+    token_validator: TokenValidator = ITSSOTokenValidator()
 
     def __init__(self, get_response):
         """One-time configuration and initialization."""
@@ -290,7 +293,9 @@ class IdentityHeaderMiddleware:
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
-            user = build_user_from_psk(request)
+            user = build_user_from_psk(request) or build_system_user_from_token(
+                request, token_validator=self.token_validator
+            )
             if not user:
                 logger.error("Could not obtain identity on request.")
                 return HttpResponseUnauthorizedRequest()
@@ -463,7 +468,11 @@ class ReadOnlyApiMiddleware:
         """Determine whether or not to deny v2 writes."""
         resolver = resolve(request.path)
         api_namespace = resolver.app_name if resolver else ""
-        return settings.V2_READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace == "v2_management"
+        return (
+            FEATURE_FLAGS.is_v2_api_read_only_mode_enabled()
+            and self._is_write_request(request)
+            and api_namespace == "v2_management"
+        )
 
     def _read_only_response(self):
         """Return a read-only API error response."""

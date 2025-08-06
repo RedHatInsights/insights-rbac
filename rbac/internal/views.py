@@ -32,14 +32,27 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
+from feature_flags import FEATURE_FLAGS
 from google.protobuf import json_format
 from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
-from internal.utils import delete_bindings, get_or_create_ungrouped_workspace
+from internal.utils import (
+    delete_bindings,
+    get_or_create_ungrouped_workspace,
+    validate_inventory_input,
+    validate_relations_input,
+)
+from kessel.inventory.v1beta2 import (
+    check_request_pb2,
+    reporter_reference_pb2,
+    resource_reference_pb2,
+    subject_reference_pb2,
+)
+from kessel.inventory.v1beta2 import inventory_service_pb2_grpc
+from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
+from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
-from kessel.relations.v1beta1 import lookup_pb2
-from kessel.relations.v1beta1 import lookup_pb2_grpc
 from management.cache import JWTCache, TenantCache
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
@@ -54,6 +67,7 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
@@ -714,10 +728,10 @@ def permission_removal(request):
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
-                permission_obj.delete()
+                delete_permission(permission_obj)
                 return HttpResponse(f"Permission '{permission}' deleted.", status=204)
-            except Exception:
-                return HttpResponse("Permission cannot be deleted.", status=400)
+            except Exception as e:
+                return HttpResponse(f"Permission cannot be deleted. {str(e)}", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
 
@@ -803,6 +817,14 @@ def fetch_replication_data(request):
     """
     if request.method != "GET":
         return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    show_beta_feature = FEATURE_FLAGS.is_enabled("rbac.beta_feature")
+    if show_beta_feature:
+        return HttpResponse("rbac.show_beta_feature works.", status=200)
+
+    show_alpha_feature = FEATURE_FLAGS.is_enabled("rbac.alpha_feature", {"orgId": 1000})
+    if show_alpha_feature:
+        return HttpResponse("rbac.alpha_feature works.", status=200)
 
     wal_lsn_query = """
                     SELECT pg_current_wal_lsn(), confirmed_flush_lsn
@@ -1454,6 +1476,10 @@ def retrieve_ungrouped_workspace(request):
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
     org_id = request.user.org_id
+
+    if not org_id:
+        return HttpResponse("No org_id found for the user.", status=400)
+
     try:
         with transaction.atomic():
             tenant = Tenant.objects.get(org_id=org_id)
@@ -1468,6 +1494,8 @@ def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
     req_data = json.loads(request.body)
+    if not validate_relations_input("lookup_resources", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
     # Request parameters for resource lookup on relations api from post request
     resource_type_name = req_data["resource_type"]["name"]
@@ -1476,6 +1504,7 @@ def lookup_resource(request):
     resource_subject_id = req_data["subject"]["subject"]["id"]
     resource_relation = req_data["relation"]
     token = jwt_manager.get_jwt_from_redis()
+
     try:
         with create_client_channel(settings.RELATION_API_SERVER) as channel:
             stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
@@ -1504,14 +1533,190 @@ def lookup_resource(request):
                 response_data.append(response_to_dict)
             json_response = {"resources": response_data}
             return JsonResponse(json_response, status=200)
-        return JsonResponse("No resource found", status=204)
+        return JsonResponse("No resource found", status=204, safe=False)
     except RpcError as e:
         logger.error(f"gRPC error: {str(e)}")
-        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=500)
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
             {"detail": "Error occurred in call to lookup resources endpoint", "error": str(e)}, status=500
+        )
+
+
+def read_tuples(request):
+    """POST read tuples from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    if not validate_relations_input("read_tuples", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to read_tuples."}, status=500)
+
+    # Request parameters for read tuples on relations api from post request
+    resource_namespace = req_data["filter"]["resource_namespace"]
+    resource_type = req_data["filter"]["resource_type"]
+    resource_id = req_data["filter"]["resource_id"]
+    filter_relation = req_data["filter"]["relation"]
+    subject_namespace = req_data["filter"]["subject_filter"]["subject_namespace"]
+    subject_type = req_data["filter"]["subject_filter"]["subject_type"]
+    subject_id = req_data["filter"]["subject_filter"]["subject_id"]
+    subject_relation = req_data.get("filter", {}).get("subject_filter", {}).get("relation") or None
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
+
+            request_data = relation_tuples_pb2.ReadTuplesRequest(
+                filter=relation_tuples_pb2.RelationTupleFilter(
+                    resource_namespace=resource_namespace,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    relation=filter_relation,
+                    subject_filter=relation_tuples_pb2.SubjectFilter(
+                        subject_namespace=subject_namespace,
+                        subject_type=subject_type,
+                        subject_id=subject_id,
+                        relation=subject_relation,
+                    ),
+                )
+            )
+
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.ReadTuples(request_data, metadata=metadata)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"tuples": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No tuples found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in call to read tuples endpoint", "error": str(e)}, status=500)
+
+
+def check_relation(request):
+    """POST to check relationship from relations api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    if not validate_relations_input("check_relation", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
+
+    # Request parameters for resource lookup on relations api from post request
+    resource_name = req_data["resource"]["type"]["name"]
+    resource_namespace = req_data["resource"]["type"]["namespace"]
+    subject_name = req_data["subject"]["subject"]["type"]["name"]
+    subject_namespace = req_data["subject"]["subject"]["type"]["namespace"]
+    subject_id = req_data["subject"]["subject"]["id"]
+    subject_relation = req_data.get("subject", {}).get("relation") or None
+    resource_id = req_data["resource"]["id"]
+    resource_relation = req_data["relation"]
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = check_pb2_grpc.KesselCheckServiceStub(channel)
+
+            request_data = check_pb2.CheckRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace=resource_namespace, name=resource_name),
+                    id=resource_id,
+                ),
+                relation=resource_relation,
+                subject=common_pb2.SubjectReference(
+                    relation=subject_relation,
+                    subject=common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace=subject_namespace, name=subject_name),
+                        id=subject_id,
+                    ),
+                ),
+            )
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        response = stub.Check(request_data, metadata=metadata)
+
+        if response:
+            response_to_dict = json_format.MessageToDict(response)
+            response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
+
+            return JsonResponse(response_to_dict, status=200)
+        return JsonResponse("No relation found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to check relation endpoint", "error": str(e)}, status=500
+        )
+
+
+def check_inventory(request):
+    """POST to check relationship from inventory api."""
+    # Parse JSON data from the POST request body
+    req_data = json.loads(request.body)
+
+    if not validate_inventory_input("check", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to check inventory."}, status=500)
+
+    # Request parameters for check relation on inventory api from post request
+    resource_id = req_data["resource"]["resource_id"]
+    resource_type = req_data["resource"]["resource_type"]
+    resource_reporter_type = req_data["resource"]["reporter"]["type"]
+    resource_relation = req_data["relation"]
+    subject_resource_id = req_data["subject"]["resource"]["resource_id"]
+    subject_resource_type = req_data["subject"]["resource"]["resource_type"]
+    subject_resource_reporter_type = req_data["subject"]["resource"]["reporter"]["type"]
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
+            stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
+
+            resource_ref = resource_reference_pb2.ResourceReference(
+                resource_id=resource_id,
+                resource_type=resource_type,
+                reporter=reporter_reference_pb2.ReporterReference(type=resource_reporter_type),
+            )
+
+            subject = subject_reference_pb2.SubjectReference(
+                resource=resource_reference_pb2.ResourceReference(
+                    resource_id=subject_resource_id,
+                    resource_type=subject_resource_type,
+                    reporter=reporter_reference_pb2.ReporterReference(type=subject_resource_reporter_type),
+                )
+            )
+
+        request = check_request_pb2.CheckRequest(
+            subject=subject,
+            relation=resource_relation,
+            object=resource_ref,
+        )
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        response = stub.Check(request, metadata=metadata)
+
+        if response:
+            response_to_dict = json_format.MessageToDict(response)
+            response_to_dict["allowed"] = response_to_dict["allowed"] != "ALLOWED_FALSE"
+
+            return JsonResponse(response_to_dict, status=200)
+        return JsonResponse("No relation found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to check inventory endpoint", "error": str(e)}, status=500
         )
 
 

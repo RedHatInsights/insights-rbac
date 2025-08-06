@@ -31,6 +31,7 @@ from migration_tool.models import (
     cleanNameForV2SchemaCompatibility,
 )
 
+
 logger = logging.getLogger(__name__)
 
 PermissionGroupings = dict[V2boundresource, set[str]]
@@ -90,6 +91,8 @@ def v1_role_to_v2_bindings(
     role_bindings: Iterable[BindingMapping],
 ) -> list[BindingMapping]:
     """Convert a V1 role to a set of V2 role bindings."""
+    from internal.utils import get_or_create_ungrouped_workspace
+
     perm_groupings: PermissionGroupings = {}
 
     # Group V2 permissions by target resource
@@ -111,7 +114,7 @@ def v1_role_to_v2_bindings(
                 if not isinstance(attri_filter["value"], list):
                     # Override operation as "equal" if value is not a list
                     attri_filter["operation"] = "equal"
-                elif attri_filter["value"] == [] or attri_filter["value"] == [None]:
+                elif attri_filter["value"] == []:
                     # Skip empty values
                     continue
 
@@ -122,9 +125,14 @@ def v1_role_to_v2_bindings(
             if not is_for_enabled_resource(resource_type):
                 continue
             for resource_id in values_from_attribute_filter(attri_filter):
-                # TODO: Need to bind against "ungrouped hosts" for inventory
                 if resource_id is None:
-                    raise ValueError(f"Resource ID is None for {resource_def}")
+                    if resource_type != ("rbac", "workspace"):
+                        raise ValueError(f"Resource ID is None for {resource_def}")
+                    if settings.REMOVE_NULL_VALUE:
+                        ungrouped_ws = get_or_create_ungrouped_workspace(v1_role.tenant)
+                        resource_id = str(ungrouped_ws.id)
+                    else:
+                        continue
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
             add_element(

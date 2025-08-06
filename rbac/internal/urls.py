@@ -98,6 +98,9 @@ urlpatterns = [
     path("api/utils/principal/", views.principal_removal),
     path("api/utils/user_lookup/", views.user_lookup),
     path("api/relations/lookup_resource/", views.lookup_resource),
+    path("api/relations/check_relation/", views.check_relation),
+    path("api/relations/read_tuples/", views.read_tuples),
+    path("api/inventory/check/", views.check_inventory),
     path("api/utils/workspace/", views.workspace_removal),
 ]
 

@@ -50,6 +50,14 @@
     {
       "name": "Workspace",
       "description": "Operations about workspaces."
+    },
+    {
+    "name": "Inventory",
+    "description": "Operations related to inventory api."
+    },
+    {
+    "name": "Relations",
+    "description": "Operations related to relations api."
     }
   ],
   "paths": {
@@ -2605,8 +2613,147 @@
           }
         }
       }
+    },
+    "/_private/api/relations/check_relation/": {
+      "post": {
+        "tags": [
+          "Relations"
+        ],
+        "summary": "Get a resource from relations api.",
+        "description": "Returns resource from relations api.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "resource_type": {
+                  "name": "group",
+                  "namespace": "rbac",
+                  "id": "bob_club"
+                },
+                "relation": "member",
+                "subject": {
+                  "subject": {
+                    "type": {
+                      "namespace": "rbac",
+                      "name": "principal"
+                    },
+                    "id": "bob"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resource returned."
+          },
+          "204": {
+            "description": "No resource found."
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error500"
+                },
+                "examples": {
+                  "gRPCError": {
+                    "value": {
+                      "detail": "Error occurred in gRPC call",
+                      "error": "gRPC Error"
+                    }
+                  },
+                  "Error": {
+                    "value": {
+                      "detail": "Error occurred in call to check endpoint",
+                      "error": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_private/api/inventory/check/": {
+    "post": {
+      "tags": [
+        "Inventory"
+      ],
+      "summary": "Check a relationship in the inventory api.",
+      "description": "Returns whether a relationship exists between a subject and a resource on inventory api.",
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "example": {
+              "resource": {
+                "resource_id": "bob_club",
+                "resource_type": "group",
+                "reporter": {
+                  "type": "rbac"
+                }
+              },
+              "relation": "member",
+              "subject": {
+                "resource": {
+                  "resource_id": "bob",
+                  "resource_type": "principal",
+                  "reporter": {
+                    "type": "rbac"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Relation evaluated and returned."
+        },
+        "204": {
+          "description": "No relation found."
+        },
+        "400": {
+          "description": "gRPC Error",
+          "content": {
+            "application/json": {
+              "examples": {
+                "gRPCError": {
+                  "value": {
+                    "detail": "Error occurred in gRPC call",
+                    "error": "gRPC Error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "500": {
+          "description": "Unexpected Error",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error500"
+              },
+              "examples": {
+                "Error": {
+                  "value": {
+                    "detail": "Error occurred in call to check inventory endpoint",
+                    "error": "Error message"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
-  },
+  }
+},
   "servers": [
     {
       "url": "https://mtls.internal.console.stage.redhat.com/api/rbac/v1",

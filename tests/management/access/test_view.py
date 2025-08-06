@@ -15,16 +15,18 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the access view."""
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from api.models import CrossAccountRequest
 from django.urls import reverse
 from django.utils import timezone
+from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from datetime import timedelta
+
 from management.cache import TenantCache
 from management.models import Group, Permission, Principal, ResourceDefinition, Policy, Role, Access, Workspace
 from tests.identity_request import IdentityRequest
@@ -107,12 +109,35 @@ class AccessViewTests(IdentityRequest):
             tenant=self.tenant,
         )
 
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+
+        service_account_data = self._create_service_account_data()
+        self.service_account = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        self.service_account.save()
+
+        request_context_service_account_principal = self._create_request_context(
+            customer_data=customer_data,
+            service_account_data=service_account_data,
+            is_org_admin=False,
+        )
+        self.headers_service_account = request_context_service_account_principal["request"].META
+
     def tearDown(self):
         """Tear down access view tests."""
         Group.objects.all().delete()
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        Access.objects.all().delete()
         Workspace.objects.filter(type=Workspace.Types.UNGROUPED_HOSTS).delete()
         Workspace.objects.filter(type=Workspace.Types.STANDARD).delete()
         Workspace.objects.filter(type=Workspace.Types.DEFAULT).delete()
@@ -188,6 +213,117 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
+    def test_get_empty_access_with_service_account(self):
+        """Test the service account that not belongs to any custom group returns no permissions."""
+        url = reverse("v1_management:access") + f"?application="
+        client = APIClient()
+        response = client.get(url, **self.headers_service_account)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertEqual(response.data.get("data"), [])
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
+        self.assertEqual(response.data.get("meta").get("offset"), 0)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="my_appA,my_appB")
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_access_with_service_account(self, sa_mock):
+        """Test that we can obtain the expected access without pagination with service account in headers."""
+        # Create service account and headers
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+
+        sa_data = self._create_service_account_data()
+        sa = Principal.objects.create(
+            username=sa_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_data["client_id"],
+        )
+
+        request_context_sa_principal = self._create_request_context(
+            customer_data=customer_data,
+            service_account_data=sa_data,
+            is_org_admin=False,
+        )
+        headers_sa = request_context_sa_principal["request"].META
+
+        # Create a custom role with 2 permissions
+        p1 = Permission.objects.create(permission="my_appA:resource_A:*", tenant=self.tenant)
+        p2 = Permission.objects.create(permission="my_appB:resource_B:*", tenant=self.tenant)
+        access_data = [
+            {"permission": "my_appA:resource_A:*", "resourceDefinitions": []},
+            {"permission": "my_appB:resource_B:*", "resourceDefinitions": []},
+        ]
+        test_data = {"name": "service account test role", "access": access_data}
+        client = APIClient()
+        url = reverse("v1_management:role-list")
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        role = Role.objects.get(uuid=role_uuid)
+
+        # Create a custom group
+        test_data = {"name": "service account test group"}
+        url = reverse("v1_management:group-list")
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        group_uuid = response.data.get("uuid")
+        group = Group.objects.get(uuid=group_uuid)
+
+        # Add the service account into group
+        sa_uuid = str(sa.service_account_id)
+        sa_mock.return_value = [
+            {
+                "clientId": sa_uuid,
+                "name": f"service_account_name_{sa_uuid.split('-')[0]}",
+                "description": f"Service Account description {sa_uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+        url = reverse("v1_management:group-principals", kwargs={"uuid": group.uuid})
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
+        response = client.post(url, request_body, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Add the role into group
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
+        test_data = {"roles": [role.uuid]}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check we get all permissions for the service account
+        url = reverse("v1_management:access") + "?application="
+        response = client.get(url, **headers_sa)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data.get("data")
+        self.assertIsNotNone(data)
+        permissions = [p["permission"] for p in data]
+        self.assertIn(p1.permission, permissions)
+        self.assertIn(p2.permission, permissions)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(response.data.get("meta").get("offset"), 0)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+        # Check we get only expected permissions when app name is in the query
+        url = reverse("v1_management:access") + "?application=my_appA"
+        response = client.get(url, **headers_sa)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data.get("data")
+        self.assertIsNotNone(data)
+        permissions = [p["permission"] for p in data]
+        self.assertIn(p1.permission, permissions)
+        self.assertEqual(response.data.get("meta").get("limit"), 1)
+        self.assertEqual(response.data.get("meta").get("offset"), 0)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+
     def test_get_access_to_return_unique_records(self):
         """Test that we can obtain the expected access without pagination."""
         role_name = "roleA"
@@ -229,7 +365,11 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
-    def test_get_access_replace_null_value(self):
+    @patch("rbac.middleware.FEATURE_FLAGS.is_add_ungrouped_hosts_id_enabled", return_value=False)
+    @patch("rbac.middleware.FEATURE_FLAGS.is_remove_null_value_enabled", return_value=False)
+    def test_get_access_replace_null_value(
+        self, ff_is_remove_null_value_enabled: Mock, ff_is_add_ungrouped_hosts_id_enabled: Mock
+    ):
         """Test that we can obtain the expected access without pagination."""
         role_name = "roleA"
         response = self.create_role(role_name, headers=self.headers)
@@ -262,8 +402,8 @@ class AccessViewTests(IdentityRequest):
 
         # Test that we can retrieve the principal access
         # and null value is not replaced if there is no ungrouped workspace
-        with self.settings(ADD_UNGROUPED_HOSTS_ID=True):
-            response = client.get(url, **self.headers)
+        ff_is_add_ungrouped_hosts_id_enabled.return_value = True
+        response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
@@ -279,8 +419,9 @@ class AccessViewTests(IdentityRequest):
             tenant=self.tenant,
             parent=self.default_ws,
         )
-        with self.settings(ADD_UNGROUPED_HOSTS_ID=True):
-            response = client.get(url, **self.headers)
+
+        ff_is_add_ungrouped_hosts_id_enabled.return_value = False
+        response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
@@ -290,14 +431,83 @@ class AccessViewTests(IdentityRequest):
 
         # Test that we can retrieve the principal access
         # and null value is replaced if there is a ungrouped workspace
-        with self.settings(ADD_UNGROUPED_HOSTS_ID=True, REMOVE_NULL_VALUE=True):
-            response = client.get(url, **self.headers)
+        ff_is_add_ungrouped_hosts_id_enabled.return_value = False
+        ff_is_remove_null_value_enabled.return_value = False
+        response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for access_data in response.data.get("data"):
             for resourceDef in access_data.get("resourceDefinitions", []):
                 if resourceDef.get("key", None) == "group.id":
                     self.assertEqual(resourceDef.get("value"), [str(ungrouped_hosts_id), "uuid"])
                     break
+
+    @patch("rbac.middleware.FEATURE_FLAGS.is_add_ungrouped_hosts_id_enabled", return_value=True)
+    @patch("rbac.middleware.FEATURE_FLAGS.is_remove_null_value_enabled", return_value=True)
+    def test_get_access_with_attribute_filter_value_of_none(
+        self, ff_is_remove_null_value_enabled: Mock, ff_is_add_ungrouped_hosts_id_enabled: Mock
+    ):
+        """Test that access view handles attributeFilter values of None correctly."""
+        role_name = "roleB"
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        role = Role.objects.get(uuid=role_uuid)
+        access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+
+        # Create ungrouped workspace for the test
+        ungrouped_hosts = Workspace.objects.create(
+            name="Ungrouped Workspace",
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            tenant=self.tenant,
+            parent=self.default_ws,
+        )
+        ungrouped_hosts_id = str(ungrouped_hosts.id)
+
+        # Test case 1: attributeFilter value is None (not a list)
+        ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "group.id",
+                "operation": "equal",
+                "value": None,
+            },
+            access=access,
+            tenant=self.tenant,
+        )
+
+        # Test case 2: attributeFilter value is a string (not a list)
+        access2 = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": ["some-uuid", None],
+            },
+            access=access2,
+            tenant=self.tenant,
+        )
+
+        policy_name = "policyB"
+        self.create_policy(policy_name, self.group.uuid, [role_uuid], tenant=self.tenant)
+
+        # Test that the view handles non-list values without crashing
+        url = f'{reverse("v1_management:access")}?application='
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify that the response contains data and doesn't crash
+        response_data = response.data.get("data")
+        self.assertIsNotNone(response_data)
+
+        for access_data in response_data:
+            for resourceDef in access_data.get("resourceDefinitions", []):
+                attributeFilter = resourceDef.get("attributeFilter")
+                if attributeFilter.get("key") != "group.id":
+                    continue
+                if attributeFilter.get("operation") == "in":
+                    self.assertEqual(attributeFilter.get("value"), ["some-uuid", ungrouped_hosts_id])
+                else:
+                    self.assertEqual(attributeFilter.get("value"), ungrouped_hosts_id)
 
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_system_role(self):
         self.create_platform_default_resource()
