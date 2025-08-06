@@ -51,7 +51,7 @@ paths:
                 $ref: '#/components/schemas/Workspaces.WorkspaceListResponse'
               example:
                 meta:
-                  count: 10
+                  count: 1
                   limit: 10
                   offset: 0
                 links:

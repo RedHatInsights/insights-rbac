@@ -347,7 +347,7 @@ namespace Workspaces {
         },
         returnType: #{
           meta: #{
-            count: 10,
+            count: 1,
             limit: 10,
             offset: 0
           },
