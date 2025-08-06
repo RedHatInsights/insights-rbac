@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0068_alter_workspace_type"),
+        ("management", "0069_auditlog_resource_uuid_and_more"),
     ]
 
     operations = [
