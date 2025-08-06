@@ -19,14 +19,15 @@ import logging
 import uuid
 from unittest.mock import Mock, patch
 from django.test import TestCase
+from django.db import IntegrityError, transaction
 
 from api.models import Tenant
 from management.role.model import ResourceDefinition, ResourceDefinitionsWorkspaces, Access, Permission
 from management.workspace.model import Workspace
 
 
-class TestResourceDefinitionWorkspaceLinker(TestCase):
-    """Test the resource definition workspace linker functions."""
+class TestResourceDefinitionWorkspaceLinking(TestCase):
+    """Test the resource definition workspace linking features."""
 
     def setUp(self):
         """Set up the test fixtures."""
@@ -618,3 +619,64 @@ class TestResourceDefinitionWorkspaceLinker(TestCase):
         # Verify that the resource definition still exists but has no links.
         resource_definition_still_exists = ResourceDefinition.objects.filter(id=new_resource_definition.id)
         self.assertEqual(resource_definition_still_exists.count(), 1)
+
+    def test_resource_definitions_workspaces_unique_constraint_violation(self):
+        """Test that attempting to create duplicate ResourceDefinitionsWorkspaces entries violates the unique constraint."""
+        # Create a workspace with proper hierarchy and type.
+        root_workspace = Workspace.objects.create(name="Root Workspace", tenant=self.tenant, type=Workspace.Types.ROOT)
+        default_workspace = Workspace.objects.create(
+            name="Default Workspace", tenant=self.tenant, parent=root_workspace, type=Workspace.Types.DEFAULT
+        )
+        test_workspace = Workspace.objects.create(
+            name="Test Workspace", tenant=self.tenant, parent=default_workspace, type=Workspace.Types.STANDARD
+        )
+
+        # Create a resource definition.
+        resource_definition = ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [str(test_workspace.id)],
+            },
+            access=self.access,
+            tenant=self.tenant,
+        )
+
+        # Verify that the initial link was created successfully.
+        initial_links = ResourceDefinitionsWorkspaces.objects.filter(
+            resource_definition=resource_definition, workspace=test_workspace
+        )
+        self.assertEqual(initial_links.count(), 1)
+
+        # Attempt to create a duplicate ResourceDefinitionsWorkspaces entry
+        # with the same resource_definition, workspace, and tenant. Use a
+        # separate transaction to isolate the constraint violation.
+        constraint_violated = False
+        try:
+            with transaction.atomic():
+                ResourceDefinitionsWorkspaces.objects.create(
+                    resource_definition=resource_definition,
+                    workspace=test_workspace,
+                    tenant=self.tenant,
+                )
+        except IntegrityError as e:
+            # Verify that the unique constraint violation occurred.
+            self.assertIn(
+                "unique resource definition and workspace link per tenant",
+                str(e).lower(),
+                f"Expected unique constraint violation, but got: {e}",
+            )
+            constraint_violated = True
+
+        # Ensure that the constraint violation actually occurred.
+        self.assertTrue(constraint_violated, "Expected IntegrityError to be raised")
+
+        # Verify that only one link still exists (no duplicate was created).
+        final_links = ResourceDefinitionsWorkspaces.objects.filter(
+            resource_definition=resource_definition, workspace=test_workspace
+        )
+        self.assertEqual(final_links.count(), 1)
+
+        # Verify that the total number of ResourceDefinitionsWorkspaces entries is still 1.
+        total_links = ResourceDefinitionsWorkspaces.objects.count()
+        self.assertEqual(total_links, 1)

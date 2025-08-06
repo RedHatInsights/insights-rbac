@@ -77,7 +77,7 @@ class Migration(migrations.Migration):
     dependencies = [
         (
             "management",
-            "0068_alter_workspace_type",
+            "0069_auditlog_resource_uuid_and_more",
         ),
     ]
 
