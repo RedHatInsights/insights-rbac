@@ -317,7 +317,3 @@ class BindingMappingTests(IdentityRequest):
         role_binding = self.binding_mapping.get_role_binding()
         self.assertIn("group1", role_binding.groups)
         self.assertEqual(len(role_binding.groups), 2)
-
-
-class ResourceDefinitionWorkspacesTests(TestCase):
-    """Tests that the linking between the resource definitions and the workspaces works as intended."""

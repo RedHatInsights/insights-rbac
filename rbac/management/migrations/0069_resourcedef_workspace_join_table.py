@@ -1,12 +1,10 @@
-import logging
 import uuid
 
 from django.db import migrations, models
 from django.db.backends.postgresql.schema import DatabaseSchemaEditor
 from django.db.migrations.state import StateApps
 
-from management.role.model import ResourceDefinition
-from management.workspace.model import Workspace
+from management.role.model import ResourceDefinitionsWorkspaces
 
 
 def link_resource_definitions_workspaces(apps: StateApps, schema_editor: DatabaseSchemaEditor):
@@ -15,73 +13,63 @@ def link_resource_definitions_workspaces(apps: StateApps, schema_editor: Databas
     resource_definitions_workspaces_model = apps.get_model("management", "ResourceDefinitionsWorkspaces")
     workspace_model = apps.get_model("management", "Workspace")
 
-    # Flag elements for fetching and looping through database results.
-    keep_fetching = True
-    limit = 500
-    offset = 0
+    #  Define a batch size to fetch a bunch of resource definitions each time.
+    batch_size = 500
 
-    # Grab resource definitions in batches to avoid hitting memory limits or
-    # overloading the database with too many queries.
-    while keep_fetching:
-        linked_resources = 0
-        fetched_resource_definitions: list[ResourceDefinition] = resource_definition_model.objects.filter(
-            attributeFilter__key="group.id"
-        )[offset:limit]
+    # Iterate over the database's resource definitions.
+    for resource_definition in resource_definition_model.objects.filter(attributeFilter__key="group.id").iterator(
+        chunk_size=batch_size
+    ):
+        value = resource_definition.attributeFilter.get("value")
 
-        for resourcedef in fetched_resource_definitions:
-            value = resourcedef.attributeFilter.get("value")
+        # Get the workspace IDs defined in the resource definition.
+        raw_workspace_ids: list[str]
+        if isinstance(value, str):
+            raw_workspace_ids = [value]
+        else:
+            raw_workspace_ids = value
 
-            # Extract the workspace IDs from the JSON structure. We have
-            # either a list of values or a value itself, so we need to be
-            # careful with the processing.
-            workspace_ids: list[uuid.UUID] = []
-            if isinstance(value, list):
-                # Some of the values contain non-UUIDs like "null" and "1"
-                # values which we need to ignore.
-                for list_item in value:
-                    try:
-                        workspace_ids.append(uuid.UUID(list_item))
-                    except (AttributeError, TypeError):
-                        print(
-                            f'[resource_definition_id: "{resourcedef.id}"] Invalid or non-UUID value "{list_item}" ignored for resource definition'
-                        )
-                        continue
+        # Convert the raw strings into UUIDs.
+        rdef_workspace_ids: set[uuid.UUID] = set()
+        for rwi in raw_workspace_ids:
+            try:
+                rdef_workspace_ids.add(uuid.UUID(rwi))
+            except (AttributeError, TypeError, ValueError):
+                f'[resource_definition_id: "{resource_definition.id}"] Invalid or non-UUID value "{rwi}" ignored for resource definition'
 
-            if isinstance(value, str):
-                workspace_ids.append(uuid.UUID(value))
+        # Fetch all the workspaces from the database.
+        database_workspaces = workspace_model.objects.filter(id__in=rdef_workspace_ids)
 
-            # Fetch the workspaces by using the IDs we just extracted.
-            fetched_workspaces: list[Workspace] = workspace_model.objects.filter(id__in=workspace_ids)
+        # Grab the database workspaces' IDs to be able to compare them.
+        database_workspace_ids: set[uuid.UUID] = set()
+        for dw in database_workspaces:
+            database_workspace_ids.add(dw.id)
 
-            # Log any discrepancies. We do this instead of using single
-            # workspace fetching queries to reduce the load.
-            fetched_workspaces_ids: list[uuid.UUID] = []
-            for fetched_workspace in fetched_workspaces:
-                fetched_workspaces_ids.append(fetched_workspace.id)
+        # The difference between the resource definition's workspace IDs and
+        # the database's workspace IDs will give us which ones are not present
+        # in the database.
+        for non_existent_wid_db in rdef_workspace_ids.difference(database_workspace_ids):
+            print(
+                f'[resource_definition_id: "{resource_definition.id}"][workspace_id: "{non_existent_wid_db}"] Workspace not found in database'
+            )
 
-            for workspace_id in workspace_ids:
-                if workspace_id not in fetched_workspaces_ids:
-                    print(
-                        f'[resource_definition_id: "{resourcedef.id}"][workspace_id: "{workspace_id}"] Workspace not found in database'
-                    )
-
-            # Create the link in the join table
-            for fetched_workspace in fetched_workspaces:
-                if resourcedef.tenant != fetched_workspace.tenant:
-                    print(
-                        f"[resource_definition_id: {resourcedef.id}][workspace_id: {fetched_workspace.id}] Tenant mismatch detected. Skipping linking..."
-                    )
-                    continue
-
-                resource_definitions_workspaces_model.objects.create(
-                    resource_definition=resourcedef, workspace=fetched_workspace, tenant=resourcedef.tenant
+        # Verify that the tenants are correct before preparing the set of
+        # resources to batch insert them.
+        links_to_create: set[ResourceDefinitionsWorkspaces] = set()
+        for db_workspace in database_workspaces:
+            if db_workspace.tenant != resource_definition.tenant:
+                print(
+                    f"[resource_definition_id: {resource_definition.id}][workspace_id: {resource_definition.id}] Tenant mismatch detected. Skipping linking..."
                 )
-                linked_resources += 1
 
-        print(f'[limit: "{limit}"][offset: "{offset}"] Linked {linked_resources} resource definitions')
+            links_to_create.add(
+                ResourceDefinitionsWorkspaces(
+                    resource_definition=resource_definition, workspace=db_workspace, tenant=resource_definition.tenant
+                )
+            )
 
-        keep_fetching = len(fetched_resource_definitions) != 0
-        offset += len(fetched_resource_definitions)
+        # Bulk create the resources.
+        resource_definitions_workspaces_model.objects.bulk_create(links_to_create)
 
 
 class Migration(migrations.Migration):
@@ -105,6 +93,13 @@ class Migration(migrations.Migration):
                 ("workspace", models.ForeignKey(on_delete=models.CASCADE, to="management.workspace")),
                 ("tenant", models.ForeignKey(on_delete=models.CASCADE, to="api.tenant")),
             ],
+        ),
+        migrations.AddConstraint(
+            model_name="ResourceDefinitionsWorkspaces",
+            constraint=models.UniqueConstraint(
+                name="unique resource definition and workspace link per tenant",
+                fields=["resource_definition", "workspace", "tenant"],
+            ),
         ),
         migrations.RunPython(link_resource_definitions_workspaces),
     ]

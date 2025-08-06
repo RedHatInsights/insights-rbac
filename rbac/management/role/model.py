@@ -17,20 +17,20 @@
 
 """Model for role management."""
 import logging
-from typing import Optional, Union, Set
+import uuid
+from typing import Optional, Set, Union
 from uuid import uuid4
 
 from django.conf import settings
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
-
-from api.models import FilterQuerySet, TenantAwareModel
 from internal.integration import sync_handlers
 from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
 from management.workspace.model import Workspace
+from migration_tool.in_memory_tuples import Relationship
 from migration_tool.models import (
     V2boundresource,
     V2role,
@@ -38,8 +38,9 @@ from migration_tool.models import (
     role_binding_group_subject_tuple,
     role_binding_user_subject_tuple,
 )
-from migration_tool.in_memory_tuples import Relationship
-import uuid
+
+from api.models import FilterQuerySet, TenantAwareModel
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -138,13 +139,11 @@ class ResourceDefinition(TenantAwareModel):
     def _link_workspaces(self):
         """Links the resource definition to workspaces specified in the attribute filters."""
         # Ignore any resource definitions that do not have the "group.id" key.
-        key: str = self.attributeFilter.get("key", "")
-
-        if key != "group.id":
+        if self.attributeFilter.get("key", "") != "group.id":
             logger.info(
                 f"[resource_definition_id: {self.id}][tenant_id: {self.tenant_id}] Linking "
-                f'resource definition to workspaces skipped because the resource definition\'s key "{key}" does not '
-                f'have the expected "group.id" value'
+                f"resource definition to workspaces skipped because the resource definition's key "
+                f'"{self.attributeFilter.get("key", "")}" does not have the expected "group.id" value'
             )
             return
 
@@ -441,6 +440,14 @@ class ResourceDefinitionsWorkspaces(TenantAwareModel):
 
     resource_definition = models.ForeignKey(on_delete=models.CASCADE, to=ResourceDefinition)
     workspace = models.ForeignKey(on_delete=models.CASCADE, to=Workspace)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["resource_definition", "workspace", "tenant"],
+                name="unique resource definition and workspace link per tenant",
+            ),
+        ]
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
