@@ -89,6 +89,7 @@ namespace Problems {
 @tag("Workspaces")
 @doc("Operations about workspaces")
 namespace Workspaces {
+    @example(#{ name: "My First Workspace", description: "This is a basic workspace." })
     model BasicWorkspace {
         @doc("Workspace A")
         name: string = "Workspace A";
@@ -107,7 +108,15 @@ namespace Workspaces {
         "all",
         ...WorkspaceTypes
     }
-
+    @example(#{
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: WorkspaceTypes.standard,
+        name: "My first workspace",
+        description: "This is a basic workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model Workspace {
         @key id: UUID;
         parent_id?: UUID;
@@ -122,24 +131,68 @@ namespace Workspaces {
         name: string;
     }
 
+    @example(#{
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        name: "Alpha Workspace",
+        description: "Create a standard workspace."
+    })
     model CreateWorkspaceRequest extends BasicWorkspace{
         //if parent_id is not stated within the request for standard workspaces, it is automatically populated from default workspace.
         @doc("Parent ID of Workspace A")
         parent_id?: UUID = "Parent ID of Workspace A";
     }
-
+    @example(#{
+        _: 201,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: Workspaces.WorkspaceTypes.standard,
+        name: "Alpha Workspace",
+        description: "Create a standard workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model CreateWorkspaceResponse extends Workspace{
         @statusCode _: 201;
     }
-
+    @example(#{
+        _: 200,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: Workspaces.WorkspaceTypes.standard,
+        name: "Alpha Workspace",
+        description: "Create a standard workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model ReadWorkspaceResponse extends Workspace {
         @statusCode _: 200;
     }
-
+    @example(#{
+        ancestry: #[
+            #{
+                id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+                parent_id: "a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c6",
+                name: "Default Workspace"
+            }
+        ],
+        _: 200,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: Workspaces.WorkspaceTypes.standard,
+        name: "Alpha Workspace",
+        description: "Create a standard workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model ReadWorkspaceWithAncestryResponse extends ReadWorkspaceResponse {
         ancestry: WorkspaceAncestor[];
     }
 
+    @example(#{
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        name: "Alpha Workspace",
+        description: "Changing description of alpha workspace to something new."
+    })
     model UpdateWorkspaceRequest {
         @doc("Workspace A")
         name: string = "Workspace A";
@@ -148,33 +201,60 @@ namespace Workspaces {
         @doc("Must match current parent_id value. Not updatable directly on the workspace.")
         parent_id: UUID = "Parent ID of Workspace A";
     }
-
+    @example(#{
+        name: "Alpha Workspace - closed",
+        description: "Create a standard workspace."
+    })
     model PatchWorkspaceRequest {
         @doc("Workspace A")
         name?: string = "Workspace A";
         @doc("Description of Workspace A")
         description?: string = "Description of Workspace A";
     }
-
+    @example(#{
+        _: 200,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: Workspaces.WorkspaceTypes.standard,
+        name: "Alpha Workspace",
+        description: "Changing description of alpha workspace to something new.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model UpdateWorkspaceResponse extends Workspace{
         @statusCode _: 200;
     }
 
+    @example(#{
+        _: 200,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: Workspaces.WorkspaceTypes.standard,
+        name: "Alpha Workspace - closed",
+        description: "Create a standard workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model PatchWorkspaceResponse extends Workspace{
         @statusCode _: 200;
     }
 
+    @example(#{ statusCode: 204 })
     model DeleteWorkspaceResponse{
         @statusCode
         statusCode: 204,
     }
 
-
+    @example(#{ parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11" })
     model MoveWorkspaceRequest {
       @doc("The UUID of the new parent workspace.")
       parent_id: UUID = "Parent ID of target workspace";
     }
-
+    @example(#{
+        _: 200,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "f0e1d2c3-b4a5-4678-9a1b-c2d3e4f5a6b7"
+    })
     model MoveWorkspaceResponse{
         @statusCode _: 200;
         @key id: UUID = "Workspace ID of moved workspace";
@@ -225,6 +305,30 @@ namespace Workspaces {
         links: PaginationLinks;
     }
 
+    @example(#{
+        meta: #{
+            count: 50,
+            limit: 10,
+            offset: 0
+        },
+        links: #{
+            first: "/api/rbac/v2/workspaces?limit=10&offset=0",
+            next: "/api/rbac/v2/workspaces?limit=10&offset=10",
+            previous: null,
+            last: "/api/rbac/v2/workspaces?limit=10&offset=40"
+        },
+        data: #[
+            #{
+                id: "e4277742-b91c-43f1-a185-b827e8574345",
+                parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+                type: WorkspaceTypes.standard,
+                name: "My first workspace",
+                description: "This is a basic workspace.",
+                created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            },
+        ]
+    })
     model WorkspaceListResponse {
         ...Pagination;
 
@@ -234,6 +338,39 @@ namespace Workspaces {
 
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
+
+    @opExample(
+      #{
+        parameters: #{
+          limit: 10,
+          offset: 0
+        },
+        returnType: #{
+          meta: #{
+            count: 1,
+            limit: 10,
+            offset: 0
+          },
+          links: #{
+            first: "/api/rbac/v2/workspaces/?limit=10&offset=0",
+            next: "/api/rbac/v2/workspaces/?limit=10&offset=10",
+            previous: null,
+            last: "/api/rbac/v2/workspaces/?limit=10&offset=20"
+          },
+          data: #[
+            #{
+              id: "e4277742-b91c-43f1-a185-b827e8574345",
+              parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+              type: WorkspaceTypes.standard,
+              name: "My first workspace",
+              description: "This is a basic workspace.",
+              created: offsetDateTime.fromISO("2024-05-06T12:20-12-0700"),
+              modified: offsetDateTime.fromISO("2024-05-06T12:20-12-0700")
+            }
+          ]
+        }
+      }
+    )
     @get op list(
         @query limit?: int64 = 10;
         @query offset?: int64 = 0;
@@ -246,11 +383,71 @@ namespace Workspaces {
 
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
+    @opExample(#{
+        parameters: #{
+                body: #{
+                    name: "Alpha Workspace",
+                    description: "Create a standard workspace.",
+                }
+        },
+        returnType: #{
+            _: 201,
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+            type: Workspaces.WorkspaceTypes.standard,
+            name: "Alpha Workspace",
+            description: "Create a standard workspace.",
+            created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            }
+      }
+    )
     @post op create(@body body: CreateWorkspaceRequest): CreateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Get a workspace in tenant")
     @summary("Get a workspace in tenant")
     @route("{id}/")
+    // example for when we want to include ancestry
+    @opExample(#{
+        parameters: #{
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            include_ancestry: true
+        },
+        returnType: #{
+            ancestry: #[
+                #{
+                    id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+                    parent_id: "a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c6",
+                    name: "Default Workspace"
+                }
+            ],
+            _: 200,
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+            type: Workspaces.WorkspaceTypes.standard,
+            name: "Alpha Workspace",
+            description: "Create a standard workspace.",
+            created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    //example for when we want to not include ancestry
+    @opExample(#{
+        parameters: #{
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            include_ancestry: true
+        },
+        returnType: #{
+            _: 200,
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+            type: Workspaces.WorkspaceTypes.standard,
+            name: "Alpha Workspace",
+            description: "Create a standard workspace.",
+            created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
     @get op read(
         @doc("Unique identification")
         @path id: UUID;
@@ -259,15 +456,57 @@ namespace Workspaces {
         @query include_ancestry?: boolean;
     ): ReadWorkspaceResponse | ReadWorkspaceWithAncestryResponse | Problems.CommonProblems | Problems.Problem404;
 
+
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
     @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            body: #{
+                parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+                name: "Alpha Workspace",
+                description: "Changing description of alpha workspace to something new."
+            }
+        },
+        returnType: #{
+       _: 200,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: Workspaces.WorkspaceTypes.standard,
+        name: "Alpha Workspace",
+        description: "Changing description of alpha workspace to something new.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            }
+      }
+    )
     @put op update(
         @doc("Unique identification")
         @path id: UUID;
         @body body: UpdateWorkspaceRequest
     ): UpdateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
+    @opExample(#{
+        parameters: #{
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            body: #{
+                name: "Alpha Workspace - closed",
+                description: "Create a standard workspace."
+            }
+        },
+        returnType: #{
+        _: 200,
+        id: "e4277742-b91c-43f1-a185-b827e8574345",
+        parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
+        type: Workspaces.WorkspaceTypes.standard,
+        name: "Alpha Workspace - closed",
+        description: "Create a standard workspace.",
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+      }
+    )
     @route("{id}/")
     @patch op patch(
         @doc("Unique identification")
@@ -278,6 +517,15 @@ namespace Workspaces {
     @doc("Delete a workspace")
     @summary("Delete the workspace")
     @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "e4277742-b91c-43f1-a185-b827e8574345"
+        },
+        returnType: #{
+            statusCode: 204
+        }
+      }
+    )
     @delete op delete(
         @doc("Unique identification")
         @path id: UUID;
@@ -286,6 +534,20 @@ namespace Workspaces {
     @doc("Move a workspace to a new parent.")
     @summary("Move a workspace to a new parent.")
     @route("{id}/move/")
+    @opExample(#{
+        parameters: #{
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            body: #{
+                parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11"
+            }
+        },
+        returnType: #{
+            _: 200,
+            id: "e4277742-b91c-43f1-a185-b827e8574345",
+            parent_id: "f0e1d2c3-b4a5-4678-9a1b-c2d3e4f5a6b7"
+            }
+      }
+    )
     @post op move(
         @doc("Unique identification of the workspace to move")
         @path id: UUID;
