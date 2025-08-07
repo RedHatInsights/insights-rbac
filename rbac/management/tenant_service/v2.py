@@ -328,7 +328,9 @@ class V2TenantBootstrapService:
         # By this point if there is a custom default group,
         # a TenantMapping must have already been created.
         mapping = TenantMapping.objects.create(tenant=tenant)
-        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.id)))
+        relationships.extend(
+            self._bootstrap_default_access(tenant, mapping, str(default_workspace.id), str(root_workspace.id))
+        )
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,
@@ -348,7 +350,7 @@ class V2TenantBootstrapService:
 
         relationships = []
         relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
-        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default.id)))
+        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default.id), str(root.id)))
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -403,6 +405,7 @@ class V2TenantBootstrapService:
         relationships: list[Relationship] = []
         mappings_to_create: list[TenantMapping] = []
         default_workspace_ids: list[UUID] = []
+        root_workspace_ids: list[UUID] = []
         for tenant in tenants:
             kwargs = {"tenant": tenant}
             if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
@@ -414,6 +417,7 @@ class V2TenantBootstrapService:
             root, default, built_in_relationships = self._built_in_workspaces(tenant)
 
             default_workspace_ids.append(default.id)
+            root_workspace_ids.append(root.id)
             workspaces.extend([root, default])
             relationships.extend(built_in_relationships)
 
@@ -423,9 +427,11 @@ class V2TenantBootstrapService:
         tenant_mappings = {mapping.tenant_id: mapping for mapping in mappings}
         bootstrapped_tenants = []
 
-        for tenant, default_workspace_id in zip(tenants, default_workspace_ids):
+        for tenant, default_workspace_id, root_workspace_id in zip(tenants, default_workspace_ids, root_workspace_ids):
             mapping = tenant_mappings[tenant.id]
-            relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace_id)))
+            relationships.extend(
+                self._bootstrap_default_access(tenant, mapping, str(default_workspace_id), str(root_workspace_id))
+            )
             bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
         self._replicator.replicate(
             ReplicationEvent(
@@ -513,12 +519,13 @@ class V2TenantBootstrapService:
         ]
 
     def _bootstrap_default_access(
-        self, tenant: Tenant, mapping: TenantMapping, default_workspace_id: str
+        self, tenant: Tenant, mapping: TenantMapping, default_workspace_id: str, root_workspace_id: str = None
     ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
+        Root workspace ID parameter is available for future additional scope bindings.
         """
         platform_default_role_uuid = self._get_platform_default_policy_uuid()
         admin_default_role_uuid = self._get_admin_default_policy_uuid()
