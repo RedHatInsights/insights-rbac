@@ -40,3 +40,9 @@ class TenantMapping(models.Model):
     default_admin_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+
+    # Additional role binding UUIDs for root workspace and tenant-level permissions
+    root_scope_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    root_scope_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    tenant_scope_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    tenant_scope_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
