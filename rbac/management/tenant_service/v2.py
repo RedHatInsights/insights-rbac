@@ -518,65 +518,114 @@ class V2TenantBootstrapService:
             ),
         ]
 
+    def _tenant_scope_binding_tuples(
+        self, tenant_resource_id, role_binding_uuid, policy_uuid, group_uuid
+    ) -> List[Relationship]:
+        """
+        Create the tuples used to bootstrap tenant-level scope access.
+
+        Creates bindings between tenant resources and role policies for additional scope permissions.
+        """
+        return [
+            create_relationship(
+                ("rbac", "tenant"),
+                tenant_resource_id,
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                "binding",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                ("rbac", "role"),
+                policy_uuid,
+                "role",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                ("rbac", "group"),
+                group_uuid,
+                "subject",
+                "member",
+            ),
+        ]
+
     def _bootstrap_default_access(
-        self, tenant: Tenant, mapping: TenantMapping, default_workspace_id: str, root_workspace_id: str = None
+        self,
+        tenant: Tenant,
+        mapping: TenantMapping,
+        default_workspace_id: str,
+        root_workspace_id: Optional[str] = None,
     ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
-        Root workspace ID parameter is available for future additional scope bindings.
+        Also creates additional scope bindings for root workspace and tenant-level permissions.
         """
-        platform_default_role_uuid = self._get_platform_default_policy_uuid()
-        admin_default_role_uuid = self._get_admin_default_policy_uuid()
+        # gather policies
+        policies = {
+            "user": self._get_platform_default_policy_uuid(),
+            "admin": self._get_admin_default_policy_uuid(),
+            "root_user": self._get_root_scope_policy_uuid(),
+            "root_admin": self._get_root_scope_admin_policy_uuid(),
+            "tenant_user": self._get_tenant_scope_policy_uuid(),
+            "tenant_admin": self._get_tenant_scope_admin_policy_uuid(),
+        }
 
-        if platform_default_role_uuid is None:
-            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
+        # gather binding UUIDs
+        bindings = {
+            "user": str(mapping.default_role_binding_uuid),
+            "admin": str(mapping.default_admin_role_binding_uuid),
+            "root_user": str(mapping.root_scope_role_binding_uuid),
+            "root_admin": str(mapping.root_scope_admin_role_binding_uuid),
+            "tenant_user": str(mapping.tenant_scope_role_binding_uuid),
+            "tenant_admin": str(mapping.tenant_scope_admin_role_binding_uuid),
+        }
 
-        if admin_default_role_uuid is None:
-            logger.warning("No admin default role found for public tenant. Default access will not be set up.")
+        # gather groups
+        groups = {
+            "user": str(mapping.default_group_uuid),
+            "admin": str(mapping.default_admin_group_uuid),
+        }
 
-        default_user_role_binding_uuid = str(mapping.default_role_binding_uuid)
-        default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
+        tenant_resource_id = f"{self._user_domain}/{tenant.org_id}"
 
-        tuples_to_add: List[Relationship] = []
+        # list out all the scopes we want to bind
+        scope_config: list[tuple[str | None, str, str, str, callable]] = [
+            # (resource_id, policy_key, binding_key, group_key, builder)
+            (default_workspace_id, "user", "user", "user", self._default_binding_tuples),
+            (default_workspace_id, "admin", "admin", "admin", self._default_binding_tuples),
+            (root_workspace_id, "root_user", "root_user", "user", self._default_binding_tuples),
+            (root_workspace_id, "root_admin", "root_admin", "admin", self._default_binding_tuples),
+            (tenant_resource_id, "tenant_user", "tenant_user", "user", self._tenant_scope_binding_tuples),
+            (tenant_resource_id, "tenant_admin", "tenant_admin", "admin", self._tenant_scope_binding_tuples),
+        ]
 
-        # Add default role binding IFF there is no custom default access for the tenant
+        tuples_to_add: list[Relationship] = []
+        for resource_id, policy_key, bind_key, group_key, builder in scope_config:
+            policy_uuid = policies[policy_key]
+            if not (resource_id and policy_uuid):
+                continue
 
-        # NOTE: This logic is prone to write skew: the platform group for the tenant may be created concurrently.
-        # Care must be taken to prevent this.
-        # Currently, when this default group is created (in group/definer.py) we:
-        # 1. Check for the existence of a tenant mapping. If exists, use that.
-        #    No race because if it already exists, this process must've already happened.
-        # 2. If tenant mapping does not exist, create it via this same bootstrap process.
-        #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
-        #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role_uuid and not (
-            hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups
-        ):
+            # Preserve: skip default user binding if tenant has a custom default group
+            if policy_key == "user" and getattr(tenant, "platform_default_groups", None):
+                logger.info(
+                    "Not setting up default access for tenant with customized default group. org_id=%s",
+                    tenant.org_id,
+                )
+                continue
+
             tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_user_role_binding_uuid,
-                    platform_default_role_uuid,
-                    str(mapping.default_group_uuid),
+                builder(
+                    resource_id,
+                    bindings[bind_key],
+                    policy_uuid,
+                    groups[group_key],
                 )
             )
-        else:
-            logger.info(
-                f"Not setting up default access for tenant with customized default group. org_id={tenant.org_id}"
-            )
 
-        # Admin role binding is not customizable
-        if admin_default_role_uuid:
-            tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_admin_role_binding_uuid,
-                    admin_default_role_uuid,
-                    str(mapping.default_admin_group_uuid),
-                )
-            )
         return tuples_to_add
 
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
