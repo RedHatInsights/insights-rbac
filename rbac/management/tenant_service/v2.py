@@ -1,6 +1,6 @@
 """V2 implementation of Tenant bootstrapping."""
 
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 from uuid import UUID
 
 from django.conf import settings
@@ -29,6 +29,16 @@ def default_get_user_id(user: User):
     if user.user_id is None:
         raise ValueError(f"Cannot update user without user_id. username={user.username}")
     return user.user_id
+
+
+PARENT_ROLE_KEYS = {
+    "user",
+    "admin",
+    "root_user",
+    "root_admin",
+    "tenant_user",
+    "tenant_admin",
+}
 
 
 class V2TenantBootstrapService:
@@ -484,19 +494,19 @@ class V2TenantBootstrapService:
             create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"),
         ]
 
-    def _default_binding_tuples(
-        self, default_workspace_id, role_binding_uuid, default_role_uuid, default_group_uuid
+    def _binding_tuples(
+        self,
+        resource_type: Tuple[str, str],
+        resource_id: str,
+        role_binding_uuid: str,
+        role_uuid: str,
+        group_uuid: str,
     ) -> List[Relationship]:
-        """
-        Create the tuples used to bootstrap default access for a Workspace.
-
-        Can be used for both default access and admin access as long as the correct arguments are provided.
-        Each of role binding, role, and group must refer to admin or default versions.
-        """
+        """Create tuples to bind a role and group to a resource via a role binding."""
         return [
             create_relationship(
-                ("rbac", "workspace"),
-                default_workspace_id,
+                resource_type,
+                resource_id,
                 ("rbac", "role_binding"),
                 role_binding_uuid,
                 "binding",
@@ -505,43 +515,87 @@ class V2TenantBootstrapService:
                 ("rbac", "role_binding"),
                 role_binding_uuid,
                 ("rbac", "role"),
-                default_role_uuid,
+                role_uuid,
                 "role",
             ),
             create_relationship(
                 ("rbac", "role_binding"),
                 role_binding_uuid,
                 ("rbac", "group"),
-                default_group_uuid,
+                group_uuid,
+                "subject",
+                "member",
+            ),
+        ]
+
+    def _tenant_scope_binding_tuples(
+        self, tenant_resource_id, role_binding_uuid, policy_uuid, group_uuid
+    ) -> List[Relationship]:
+        """
+        Create the tuples used to bootstrap tenant-level scope access.
+
+        Creates bindings between tenant resources and role policies for additional scope permissions.
+        """
+        return [
+            create_relationship(
+                ("rbac", "tenant"),
+                tenant_resource_id,
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                "binding",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                ("rbac", "role"),
+                policy_uuid,
+                "role",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                ("rbac", "group"),
+                group_uuid,
                 "subject",
                 "member",
             ),
         ]
 
     def _bootstrap_default_access(
-        self, tenant: Tenant, mapping: TenantMapping, default_workspace_id: str, root_workspace_id: str = None
+        self,
+        tenant: Tenant,
+        mapping: TenantMapping,
+        default_workspace_id: str,
+        root_workspace_id: str,
     ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
-        Root workspace ID parameter is available for future additional scope bindings.
+        Also creates additional scope bindings for root workspace and tenant-level permissions.
         """
-        platform_default_role_uuid = self._get_platform_default_policy_uuid()
-        admin_default_role_uuid = self._get_admin_default_policy_uuid()
+        # gather parent_role_ids
+        parent_role_ids = {key: self._get_policy_uuid_for_key(key) for key in PARENT_ROLE_KEYS}
 
-        if platform_default_role_uuid is None:
-            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
+        # gather binding UUIDs
+        bindings = {
+            "user": str(mapping.default_role_binding_uuid),
+            "admin": str(mapping.default_admin_role_binding_uuid),
+            "root_user": str(mapping.root_scope_role_binding_uuid),
+            "root_admin": str(mapping.root_scope_admin_role_binding_uuid),
+            "tenant_user": str(mapping.tenant_scope_role_binding_uuid),
+            "tenant_admin": str(mapping.tenant_scope_admin_role_binding_uuid),
+        }
 
-        if admin_default_role_uuid is None:
-            logger.warning("No admin default role found for public tenant. Default access will not be set up.")
+        # gather groups
+        groups = {
+            "user": str(mapping.default_group_uuid),
+            "admin": str(mapping.default_admin_group_uuid),
+        }
 
-        default_user_role_binding_uuid = str(mapping.default_role_binding_uuid)
-        default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
+        tenant_resource_id = f"{self._user_domain}/{tenant.org_id}"
 
-        tuples_to_add: List[Relationship] = []
-
-        # Add default role binding IFF there is no custom default access for the tenant
+        tuples_to_add: list[Relationship] = []
 
         # NOTE: This logic is prone to write skew: the platform group for the tenant may be created concurrently.
         # Care must be taken to prevent this.
@@ -551,32 +605,77 @@ class V2TenantBootstrapService:
         # 2. If tenant mapping does not exist, create it via this same bootstrap process.
         #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
         #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role_uuid and not (
-            hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups
-        ):
-            tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_user_role_binding_uuid,
-                    platform_default_role_uuid,
-                    str(mapping.default_group_uuid),
+
+        # If tenant has a custom default group, skip setting up default access for user
+        if not (hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups):
+            if parent_role_ids["user"]:
+                tuples_to_add.extend(
+                    self._binding_tuples(
+                        ("rbac", "workspace"),
+                        default_workspace_id,
+                        bindings["user"],
+                        parent_role_ids["user"],
+                        groups["user"],
+                    )
                 )
-            )
-        else:
-            logger.info(
-                f"Not setting up default access for tenant with customized default group. org_id={tenant.org_id}"
+
+            if parent_role_ids["root_user"]:
+                tuples_to_add.extend(
+                    self._binding_tuples(
+                        ("rbac", "workspace"),
+                        root_workspace_id,
+                        bindings["root_user"],
+                        parent_role_ids["root_user"],
+                        groups["user"],
+                    )
+                )
+            # Tenant scope bindings
+            if parent_role_ids["tenant_user"]:
+                tuples_to_add.extend(
+                    self._binding_tuples(
+                        ("rbac", "tenant"),
+                        tenant_resource_id,
+                        bindings["tenant_user"],
+                        parent_role_ids["tenant_user"],
+                        groups["user"],
+                    )
+                )
+
+        # There won't be custom admin default group, so always to do these
+        if parent_role_ids["admin"]:
+            tuples_to_add.extend(
+                self._binding_tuples(
+                    ("rbac", "workspace"),
+                    default_workspace_id,
+                    bindings["admin"],
+                    parent_role_ids["admin"],
+                    groups["admin"],
+                )
             )
 
-        # Admin role binding is not customizable
-        if admin_default_role_uuid:
+        # Root workspace scope bindings (if provided)
+        if parent_role_ids["root_admin"]:
             tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_admin_role_binding_uuid,
-                    admin_default_role_uuid,
-                    str(mapping.default_admin_group_uuid),
+                self._binding_tuples(
+                    ("rbac", "workspace"),
+                    root_workspace_id,
+                    bindings["root_admin"],
+                    parent_role_ids["root_admin"],
+                    groups["admin"],
                 )
             )
+
+        if parent_role_ids["tenant_admin"]:
+            tuples_to_add.extend(
+                self._binding_tuples(
+                    ("rbac", "tenant"),
+                    tenant_resource_id,
+                    bindings["tenant_admin"],
+                    parent_role_ids["tenant_admin"],
+                    groups["admin"],
+                )
+            )
+
         return tuples_to_add
 
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
@@ -614,6 +713,50 @@ class V2TenantBootstrapService:
             return self._admin_default_policy_uuid
         except Group.DoesNotExist:
             return None
+
+    def _get_policy_uuid_for_key(self, key: str) -> Optional[str]:
+        """Return the policy UUID for a given binding key.
+
+        Keys:
+        - user -> platform default policy uuid
+        - admin -> admin default policy uuid
+        - root_user -> settings.ROOT_SCOPE_POLICY_UUID
+        - root_admin -> settings.ROOT_SCOPE_ADMIN_POLICY_UUID
+        - tenant_user -> settings.TENANT_SCOPE_POLICY_UUID
+        - tenant_admin -> settings.TENANT_SCOPE_ADMIN_POLICY_UUID
+        """
+        uuid: Optional[str]
+        missing_msg: Optional[str]
+
+        if key == "user":
+            uuid = self._get_platform_default_policy_uuid()
+            missing_msg = "No platform default role found for public tenant. Default access will not be set up."
+        elif key == "admin":
+            uuid = self._get_admin_default_policy_uuid()
+            missing_msg = "No admin default role found for public tenant. Default access will not be set up."
+        elif key == "root_user":
+            uuid = getattr(settings, "ROOT_SCOPE_POLICY_UUID", None)
+            missing_msg = "ROOT_SCOPE_POLICY_UUID not configured. Root scope default access will not be set up."
+        elif key == "root_admin":
+            uuid = getattr(settings, "ROOT_SCOPE_ADMIN_POLICY_UUID", None)
+            missing_msg = (
+                "ROOT_SCOPE_ADMIN_POLICY_UUID not configured. Root scope admin default access will not be set up."
+            )
+        elif key == "tenant_user":
+            uuid = getattr(settings, "TENANT_SCOPE_POLICY_UUID", None)
+            missing_msg = "TENANT_SCOPE_POLICY_UUID not configured. Tenant scope default access will not be set up."
+        elif key == "tenant_admin":
+            uuid = getattr(settings, "TENANT_SCOPE_ADMIN_POLICY_UUID", None)
+            missing_msg = (
+                "TENANT_SCOPE_ADMIN_POLICY_UUID not configured. "
+                "Tenant scope admin default access will not be set up."
+            )
+        else:
+            raise ValueError(f"Invalid key: {key}")
+
+        if uuid is None:
+            logger.warning(missing_msg)
+        return uuid
 
     def create_workspace_relationships(self, pairs):
         """

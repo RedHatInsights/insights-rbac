@@ -928,9 +928,16 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertIsNotNone(Workspace.objects.root(tenant=tenant))
         self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
         self.assertTrue(getattr(tenant, "tenant_mapping"))
-        self.assertEqual(len(tuples), 9)
+        # 21 tuples total: 3 workspace hierarchy + 6 user bindings (3 default + 3 tenant scope) + 12 admin bindings (3 default + 3 tenant scope + 3 tenant admin + 3 additional scope)
+        self.assertEqual(len(tuples), 21)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @override_settings(
+        TENANT_SCOPE_POLICY_UUID=None,
+        TENANT_SCOPE_ADMIN_POLICY_UUID=None,
+        ROOT_SCOPE_POLICY_UUID=None,
+        ROOT_SCOPE_ADMIN_POLICY_UUID=None,
+    )
     def test_bootstrapping_multiple_tenants(self, replicate):
         """Test that we can bootstrap a tenant."""
         org_ids = ["12345", "123456", "6789"]
@@ -1022,7 +1029,8 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(tuples), 9)
+        # 21 tuples total: 3 workspace hierarchy + 6 user bindings (3 default + 3 tenant scope) + 12 admin bindings (3 default + 3 tenant scope + 3 tenant admin + 3 additional scope)
+        self.assertEqual(len(tuples), 21)
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):

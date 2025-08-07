@@ -293,9 +293,9 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Admins get 2, otherwise 1
         num_group_membership_tuples = 2 + 1 + 2 + 1 + 1 + 1
         # o1 is already bootstrapped, should get 0
-        # existing unbootstrapped custom group tenants get 6
-        # new or otherwise unbootstrapped tenants get 9
-        num_tenant_bootstrapping_tuples = 0 + 9 + 6 + 9
+        # existing unbootstrapped custom group tenants get 12 (6 admin default + 6 admin scope bindings)
+        # new or otherwise unbootstrapped tenants get 21 (3 workspace + 6 user bindings + 12 admin bindings)
+        num_tenant_bootstrapping_tuples = 0 + 21 + 12 + 21
 
         self.assertEqual(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
 
