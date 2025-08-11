@@ -564,7 +564,6 @@ class V2TenantBootstrapService:
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         Also creates additional scope bindings for root workspace and tenant-level permissions.
         """
-        # gather policies
         policies = {
             "user": self._get_platform_default_policy_uuid(),
             "admin": self._get_admin_default_policy_uuid(),
@@ -574,7 +573,6 @@ class V2TenantBootstrapService:
             "tenant_admin": self._get_tenant_scope_admin_policy_uuid(),
         }
 
-        # gather binding UUIDs
         bindings = {
             "user": str(mapping.default_role_binding_uuid),
             "admin": str(mapping.default_admin_role_binding_uuid),
@@ -584,7 +582,6 @@ class V2TenantBootstrapService:
             "tenant_admin": str(mapping.tenant_scope_admin_role_binding_uuid),
         }
 
-        # gather groups
         groups = {
             "user": str(mapping.default_group_uuid),
             "admin": str(mapping.default_admin_group_uuid),
@@ -592,9 +589,7 @@ class V2TenantBootstrapService:
 
         tenant_resource_id = f"{self._user_domain}/{tenant.org_id}"
 
-        # list out all the scopes we want to bind
         scope_config: list[tuple[str | None, str, str, str, callable]] = [
-            # (resource_id, policy_key, binding_key, group_key, builder)
             (default_workspace_id, "user", "user", "user", self._default_binding_tuples),
             (default_workspace_id, "admin", "admin", "admin", self._default_binding_tuples),
             (root_workspace_id, "root_user", "root_user", "user", self._default_binding_tuples),
@@ -609,7 +604,6 @@ class V2TenantBootstrapService:
             if not (resource_id and policy_uuid):
                 continue
 
-            # Preserve: skip default user binding if tenant has a custom default group
             if policy_key == "user" and getattr(tenant, "platform_default_groups", None):
                 logger.info(
                     "Not setting up default access for tenant with customized default group. org_id=%s",
