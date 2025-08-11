@@ -25,6 +25,7 @@ from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Workspace
 from management.permission.model import Permission
+from management.permission_scope import _implicit_resource_service as permission_service
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -92,6 +93,19 @@ class DualWriteTestCase(TestCase):
         tenant = tenant if tenant is not None else self.tenant
         default = Workspace.objects.default(tenant=tenant)
         return str(default.id)
+
+    def root_workspace(self, tenant: Optional[Tenant] = None) -> str:
+        """Return the root workspace ID."""
+        tenant = tenant if tenant is not None else self.tenant
+        root = Workspace.objects.root(tenant=tenant)
+        return str(root.id)
+
+    def tenant_resource_id(self, tenant: Optional[Tenant] = None) -> str:
+        """Return the tenant resource ID for TENANT scope bindings."""
+        from django.conf import settings
+
+        tenant = tenant if tenant is not None else self.tenant
+        return f"{settings.PRINCIPAL_USER_DOMAIN}/{tenant.org_id}"
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -277,6 +291,55 @@ class DualWriteTestCase(TestCase):
     def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
         """Assert there is a role binding with the given roles and groups."""
         self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
+
+    def expect_1_role_binding_to_tenant(self, tenant_resource_id: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding to tenant with the given roles and groups."""
+        self.expect_role_bindings_to_tenant(1, tenant_resource_id, for_v2_roles, for_groups)
+
+    def expect_role_bindings_to_tenant(
+        self, num: int, tenant_resource_id: str, for_v2_roles: list[str], for_groups: list[str]
+    ):
+        """Assert there is [num] role bindings to tenant with the given roles and groups."""
+        # Find all bindings for the given tenant
+        resources = self.tuples.find_tuples_grouped(
+            all_of(resource("rbac", "tenant", tenant_resource_id), relation("binding")),
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+        )
+
+        # Now of those bound to the tenant, find bindings that bind the given roles and groups
+        role_bindings, unmatched = self.tuples.find_group_with_tuples(
+            [
+                all_of(
+                    resource_type("rbac", "role_binding"),
+                    one_of(*[resource_id(t.subject_id) for _, tuples in resources.items() for t in tuples]),
+                    relation("role"),
+                    subject("rbac", "role", role_id),
+                )
+                for role_id in for_v2_roles
+            ]
+            + [
+                all_of(
+                    resource_type("rbac", "role_binding"),
+                    relation("subject"),
+                    subject("rbac", "group", group_id, "member"),
+                )
+                for group_id in for_groups
+            ],
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
+            require_full_match=True,
+        )
+
+        num_role_bindings = len(role_bindings)
+        self.assertEqual(
+            num_role_bindings,
+            num,
+            f"Expected exactly {num} role binding against tenant {tenant_resource_id} "
+            f"with roles {for_v2_roles} and groups {for_groups}, "
+            f"but got {len(role_bindings)}.\n"
+            f"Matched role bindings: {role_bindings}.\n"
+            f"Unmatched role bindings: {unmatched}",
+        )
 
     def expect_role_bindings_to_workspace(
         self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
@@ -669,6 +732,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 
     def test_system_role_grants_access_to_default_workspace(self):
         """Create role binding only when system role is bound to group."""
+        # Reset service to default settings (empty scope configurations)
+        permission_service.refresh_from_settings()
+
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
         group, _ = self.given_group("g1", ["u1", "u2"])
 
@@ -677,6 +743,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(group, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        # Role has DEFAULT scope (no permissions in TENANT/ROOT scope settings), so binds to default workspace
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(), for_v2_roles=[id], for_groups=[str(group.uuid)]
         )
@@ -684,12 +751,16 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 
     def test_unassign_system_role_removes_role_binding_if_unassigned(self):
         """Remove role binding when system role is unbound from group."""
+        # Reset service to default settings (empty scope configurations)
+        permission_service.refresh_from_settings()
+
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
         group, _ = self.given_group("g1", ["u1", "u2"])
 
         self.given_roles_assigned_to_group(group, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        # Role has DEFAULT scope (no permissions in TENANT/ROOT scope settings), so binds to default workspace
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(), for_v2_roles=[id], for_groups=[str(group.uuid)]
         )
@@ -699,6 +770,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 
     def test_unassign_system_role_keeps_role_binding_if_still_assigned(self):
         """Keep the role binding if it still has other groups assigned to it."""
+        # Reset service to default settings (empty scope configurations)
+        permission_service.refresh_from_settings()
+
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
         g1, _ = self.given_group("g1", ["u1", "u2"])
         g2, _ = self.given_group("g2", ["u1", "u2"])
@@ -709,6 +783,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(g2, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        # Role has DEFAULT scope (no permissions in TENANT/ROOT scope settings), so binds to default workspace
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(), for_v2_roles=[id], for_groups=[str(g1.uuid), str(g2.uuid)]
         )
@@ -757,21 +832,38 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
             self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
         )
 
+    @override_settings(
+        ROOT_SCOPE_APPS="inventory",
+        TENANT_SCOPE_APPS="app1",
+        ROOT_SCOPE_POLICY_UUID="root-policy-uuid",
+        TENANT_SCOPE_POLICY_UUID="tenant-policy-uuid",
+        ROOT_SCOPE_ADMIN_POLICY_UUID="root-admin-policy-uuid",
+        TENANT_SCOPE_ADMIN_POLICY_UUID="tenant-admin-policy-uuid",
+    )
     def test_updating_system_role(self):
+        # Ensure default groups and their policy UUIDs
         platform_default_group, admin_default_group = seed_group()
         platform_default = str(platform_default_group.policies.get().uuid)
         admin_default = str(admin_default_group.policies.get().uuid)
 
+        # Rebuild app scope mapping for this test's settings
+        # Reset service to default settings (empty scope configurations)
+        permission_service.refresh_from_settings()
+
+        # DEFAULT scope role (apps not listed in settings → default)
         role = self.given_v1_system_role(
-            "r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+            "r1_default",
+            ["foo:bar:read", "bar:baz:write"],
+            platform_default=True,
+            admin_default=True,
         )
 
-        # check if relations exist in replicator.
+        # check if only r1_default relations exist in replicator at this point
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 4)
 
         parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
-        self.assertSetEqual(set([admin_default, platform_default]), set(parents))
+        self.assertSetEqual({admin_default, platform_default}, set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(
             role=role, replicator=InMemoryRelationReplicator(self.tuples)
@@ -780,17 +872,17 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         role.admin_default = False
         role = self.fixture.update_custom_role(
             role,
-            resource_access=self.fixture.workspace_access(default=["inventory:hosts:write"]),
+            resource_access=self.fixture.workspace_access(default=["bar:baz:write"]),
         )
         dual_write_handler.replicate_update_system_role()
 
-        # check if only 2 relations exists in replicator.
+        # check if only 2 relations exists in replicator (r1_default now only platform_default parent + 1 perm)
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 2)
         parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
-        self.assertSetEqual(set([platform_default]), set(parents))
+        self.assertSetEqual({platform_default}, set(parents))
 
-        # ensure no relations exist in replicator.
+        # ensure no relations exist in replicator after removing platform_default
         dual_write_handler = SeedingRelationApiDualWriteHandler(
             role=role, replicator=InMemoryRelationReplicator(self.tuples)
         )
@@ -805,65 +897,145 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 0)
 
+        # Note: The following roles would use TENANT/ROOT scope settings if configured,
+        # but since we reset to default empty settings, they also use DEFAULT scope
+
+        # TENANT scope role (would be app1 if configured as TENANT, but defaults to DEFAULT)
+        tenant_role = self.given_v1_system_role(
+            "r1_tenant",
+            ["app1:hosts:read"],
+            platform_default=True,
+            admin_default=True,
+        )
+        tenant_parents = [
+            rel.resource_id
+            for rel in self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+            if rel.relation == "child" and rel.subject_id == str(tenant_role.uuid)
+        ]
+        # With default settings, app1 permissions also have DEFAULT scope
+        self.assertSetEqual({admin_default, platform_default}, set(tenant_parents))
+
+        # ROOT scope role (would be inventory if configured as ROOT, but defaults to DEFAULT)
+        root_role = self.given_v1_system_role(
+            "r1_root",
+            ["inventory:hosts:write"],
+            platform_default=True,
+            admin_default=True,
+        )
+        root_parents = [
+            rel.resource_id
+            for rel in self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+            if rel.relation == "child" and rel.subject_id == str(root_role.uuid)
+        ]
+        # With default settings, inventory permissions also have DEFAULT scope
+        self.assertSetEqual({admin_default, platform_default}, set(root_parents))
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        TENANT_SCOPE_PERMISSIONS="app1:*:*",
+        ROOT_SCOPE_POLICY_UUID="root-policy-uuid",
+        TENANT_SCOPE_POLICY_UUID="tenant-policy-uuid",
+        ROOT_SCOPE_ADMIN_POLICY_UUID="root-admin-policy-uuid",
+        TENANT_SCOPE_ADMIN_POLICY_UUID="tenant-admin-policy-uuid",
+    )
     def test_delete_system_role(self):
         platform_default_group, admin_default_group = seed_group()
         platform_default = str(platform_default_group.policies.get().uuid)
         admin_default = str(admin_default_group.policies.get().uuid)
 
+        # Configure the service to use the override settings
+        permission_service.refresh_from_settings()
+
+        # DEFAULT scope role
         role = self.given_v1_system_role(
-            "d_r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+            "d_r1_default", ["foo:bar:read", "bar:baz:write"], platform_default=True, admin_default=True
         )
 
-        # check if relations exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 4)
         parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
-        self.assertSetEqual(set([admin_default, platform_default]), set(parents))
+        self.assertSetEqual({admin_default, platform_default}, set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(
             role, replicator=InMemoryRelationReplicator(self.tuples)
         )
         dual_write_handler.replicate_deleted_system_role()
-
-        # check if relations do not exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 0)
 
+        # Platform-default only
         role = self.given_v1_system_role("d_r2", [], platform_default=True)
-
-        # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 1)
         parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
-        self.assertSetEqual(set([platform_default]), set(parents))
-
-        # Delete system role
-        dual_write_handler = SeedingRelationApiDualWriteHandler(
+        self.assertSetEqual({platform_default}, set(parents))
+        SeedingRelationApiDualWriteHandler(
             role, replicator=InMemoryRelationReplicator(self.tuples)
-        )
-        dual_write_handler.replicate_deleted_system_role()
-
-        # Check if relations do not exist in replicator.
+        ).replicate_deleted_system_role()
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 0)
 
+        # Admin-default only
         role = self.given_v1_system_role("d_r3", [], admin_default=True)
-
-        # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 1)
         parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
-        self.assertSetEqual(set([admin_default]), set(parents))
-
-        # Delete system role
-        dual_write_handler = SeedingRelationApiDualWriteHandler(
+        self.assertSetEqual({admin_default}, set(parents))
+        SeedingRelationApiDualWriteHandler(
             role, replicator=InMemoryRelationReplicator(self.tuples)
-        )
-        dual_write_handler.replicate_deleted_system_role()
-
-        # Check if relations do not exist in replicator.
+        ).replicate_deleted_system_role()
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 0)
+
+        # TENANT scope role
+        t_role = self.given_v1_system_role(
+            "d_r_tenant", ["app1:hosts:read"], platform_default=True, admin_default=True
+        )
+        parents = [
+            rel.resource_id
+            for rel in self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+            if rel.relation == "child" and rel.subject_id == str(t_role.uuid)
+        ]
+        # The service correctly determines TENANT scope and uses configured TENANT policy UUIDs
+        self.assertSetEqual({"tenant-admin-policy-uuid", "tenant-policy-uuid"}, set(parents))
+        SeedingRelationApiDualWriteHandler(
+            t_role, replicator=InMemoryRelationReplicator(self.tuples)
+        ).replicate_deleted_system_role()
+        self.assertEqual(
+            0,
+            len(
+                [
+                    rel
+                    for rel in self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+                    if rel.subject_id == str(t_role.uuid)
+                ]
+            ),
+        )
+
+        # ROOT scope role
+        r_role = self.given_v1_system_role(
+            "d_r_root", ["inventory:hosts:write"], platform_default=True, admin_default=True
+        )
+        parents = [
+            rel.resource_id
+            for rel in self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+            if rel.relation == "child" and rel.subject_id == str(r_role.uuid)
+        ]
+        # The service correctly determines ROOT scope and uses configured ROOT policy UUIDs
+        self.assertSetEqual({"root-admin-policy-uuid", "root-policy-uuid"}, set(parents))
+        SeedingRelationApiDualWriteHandler(
+            r_role, replicator=InMemoryRelationReplicator(self.tuples)
+        ).replicate_deleted_system_role()
+        self.assertEqual(
+            0,
+            len(
+                [
+                    rel
+                    for rel in self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+                    if rel.subject_id == str(r_role.uuid)
+                ]
+            ),
+        )
 
         # create role with no relations
         role = self.given_v1_system_role("d_r4", [])

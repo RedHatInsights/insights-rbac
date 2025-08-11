@@ -577,7 +577,6 @@ class V2TenantBootstrapService:
         # gather parent_role_ids
         parent_role_ids = {key: self._get_policy_uuid_for_key(key) for key in PARENT_ROLE_KEYS}
 
-        # gather binding UUIDs
         bindings = {
             "user": str(mapping.default_role_binding_uuid),
             "admin": str(mapping.default_admin_role_binding_uuid),
@@ -587,7 +586,6 @@ class V2TenantBootstrapService:
             "tenant_admin": str(mapping.tenant_scope_admin_role_binding_uuid),
         }
 
-        # gather groups
         groups = {
             "user": str(mapping.default_group_uuid),
             "admin": str(mapping.default_admin_group_uuid),
