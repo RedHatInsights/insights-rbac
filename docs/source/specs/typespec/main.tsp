@@ -7,7 +7,7 @@ using TypeSpec.Http;
 using TypeSpec.Rest;
 using TypeSpec.Versioning;
 
-@service({title:"Role Based Access Control for Kessel Project"})
+@service(#{title:"Role Based Access Control for Kessel Project"})
 
 @server("https://localhost:{port}/{basePath}", "Development Server", { basePath: string="api/rbac/v2", port: string="8000" })
 @server("https://console.stage.redhat.com/{basePath}", "Stage Server", { basePath: string="api/rbac/v2" })
@@ -267,8 +267,8 @@ namespace Workspaces {
         count: int64;
 
         @doc("Limit of returned objects")
-        @example(10)
-        limit: int64 = 10;
+        @example(1000)
+        limit: int64 = 1000;
 
         @doc("Offset of returned objects")
         @example(10)
@@ -556,4 +556,116 @@ namespace Workspaces {
       | Problems.CommonProblems
       | Problems.Problem400
       | Problems.Problem404;
+}
+
+@route("/role-bindings/")
+@tag("Role Bindings")
+@doc("Operations about role bindings")
+namespace RoleBindings {
+    @discriminator("type")
+    model BaseSubject {
+        @doc("Subject identifier")
+        id?: UUID;
+        @doc("Type of subject")
+        type: string;
+        @doc("Name of the subject")
+        name?: string;
+    }
+
+    model UserSubject extends BaseSubject {
+        @doc("Type of subject")
+        type: "user";
+    }
+
+    model GroupSubject extends BaseSubject {
+        @doc("Type of subject")
+        type: "group";
+        @doc("Number of users in the group")
+        user_count?: int64;
+    }
+
+    alias Subject = UserSubject | GroupSubject;
+
+    @discriminator("type")
+    model BaseResource {
+        @doc("Type of resource")
+        @example("workspace")
+        type: string;
+        @doc("Name of the resource")
+        @example("Workspace A")
+        name?: string;
+        @doc("Information about parent resource when inherited from parent (only when parent_role_bindings=true)")
+        inherited_from?: {
+            @doc("Parent resource type")
+            @example("workspace")
+            type: string;
+            @doc("Parent resource name")
+            @example("Workspace Z")
+            name?: string;
+        };
+    }
+
+    model WorkspaceResource extends BaseResource {
+        @doc("Type of resource")
+        type: "workspace";
+    }
+
+    alias Resource = WorkspaceResource;
+
+    model Role {
+        @doc("Role identifier")
+        id?: UUID;
+        @doc("Name of the role")
+        name?: string;
+    }
+
+    model RoleBindingBySubject {
+        @doc("Timestamp of last modification")
+        last_modified?: offsetDateTime;
+        @doc("Subject of the role binding")
+        subject?: Subject;
+        @doc("Roles assigned to the subject")
+        roles?: Role[];
+        @doc("Resource the roles apply to")
+        resource?: Resource;
+    }
+
+    model RoleBindingBySubjectListResponse {
+        @doc("Pagination metadata")
+        meta: Workspaces.PaginationMeta;
+        @doc("Pagination links")
+        links: Workspaces.PaginationLinks;
+        @doc("List of role bindings grouped by subject")
+        data: RoleBindingBySubject[];
+    }
+
+    @doc("List role bindings grouped by subject")
+    @summary("List role bindings grouped by subject")
+    @route("by-subject")
+    @get op listBySubject(
+        @query limit?: int64 = 1000;
+        @query offset?: int64 = 0;
+
+        @doc("Filter by resource type")
+        @example("workspace")
+        @query resource_type?: string;
+        @doc("Filter by resource ID")
+        @example("550e8400-e29b-41d4-a716-446655440001")
+        @query resource_id?: string;
+        @doc("Filter by subject type")
+        @example("group")
+        @query subject_type?: string;
+        @doc("Filter by subject ID")
+        @example("550e8400-e29b-41d4-a716-446655440004")
+        @query subject_id?: string;
+
+        @doc("Specify which columns to include in response. Basic columns (subject.id, subject.type, role.id, resource.type) are included by default when no columns parameter is specified (type fields are always required, other fields are optional). When columns parameter is provided, only the specified columns are exposed. Use parentheses format: subject(field1,field2), resource(field1,field2). Available fields - subject: user_count, name; resource: name; role: name; other: last_modified")
+        @example("subject(user_count,name),resource(name,type),last_modified")
+        @query columns?: string;
+        @doc("Sort by specified field(s), prefix with '-' for descending order")
+        @example("subject_name,-subject_type")
+        @query sort_by?: string;
+        @doc("Include role bindings from parent resources")
+        @query parent_role_bindings?: boolean;
+    ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
 }
