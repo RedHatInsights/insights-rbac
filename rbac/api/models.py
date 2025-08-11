@@ -45,6 +45,7 @@ class Tenant(models.Model):
     tenant_name = models.CharField(max_length=63)
     account_id = models.CharField(max_length=36, default=None, null=True)
     org_id = models.CharField(max_length=36, unique=True, default=None, db_index=True, null=True)
+    relations_consistency_token = models.CharField(max_length=1024, default=None, null=True)
     objects = TenantModifiedQuerySet.as_manager()
 
     def __str__(self):
