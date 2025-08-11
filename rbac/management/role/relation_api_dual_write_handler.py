@@ -24,6 +24,10 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
+from management.permission_scope import (
+    Scope,
+    _implicit_resource_service as permission_service,
+)
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
@@ -125,30 +129,64 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         )
 
     def _generate_relations_for_role(self) -> list[common_pb2.Relationship]:
-        """Generate system role permissions."""
-        relations = []
-        admin_default = self._get_admin_default_policy_uuid()
-        platform_default = self._get_platform_default_policy_uuid()
+        """Generate relationships for a system role, organizing it under policy roles by permission scope."""
+        relations: list[common_pb2.Relationship] = []
 
-        # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
-        if self.role.admin_default and admin_default:
-            relations.append(
-                create_relationship(("rbac", "role"), admin_default, ("rbac", "role"), str(self.role.uuid), "child")
-            )
-        if self.role.platform_default and platform_default:
-            relations.append(
-                create_relationship(("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child")
-            )
-
-        permissions = list()
+        # Gather v1 and v2 permissions for the role
+        v1_permissions: list[str] = []
+        v2_permissions: list[str] = []
         for access in self.role.access.all():
             v1_perm = access.permission
             # Convert V1 permission to string and then to V2 format
             v1_perm_string = v1_perm.permission  # This is already "app:resource_type:verb"
             v2_perm = cleanNameForV2SchemaCompatibility(v1_perm_string)
-            permissions.append(v2_perm)
+            v1_permissions.append(v1_perm_string)
+            v2_permissions.append(v2_perm)
 
-        for permission in permissions:
+        # Determine highest scope for the role's permissions using V1 permissions
+        # (scope settings are configured to match V1 permission format)
+        highest_scope: Scope = permission_service.highest_scope_for_permissions(v1_permissions)
+
+        # Resolve policy UUIDs for parent roles by scope
+        platform_default_policy_uuid = self._get_platform_default_policy_uuid()
+        admin_default_policy_uuid = self._get_admin_default_policy_uuid()
+        root_scope_policy_uuid = getattr(settings, "ROOT_SCOPE_POLICY_UUID", None) or None
+        tenant_scope_policy_uuid = getattr(settings, "TENANT_SCOPE_POLICY_UUID", None) or None
+        root_scope_admin_policy_uuid = getattr(settings, "ROOT_SCOPE_ADMIN_POLICY_UUID", None) or None
+        tenant_scope_admin_policy_uuid = getattr(settings, "TENANT_SCOPE_ADMIN_POLICY_UUID", None) or None
+
+        # Map scope to policy parents
+        def platform_parent_for_scope(scope: Scope) -> Optional[str]:
+            if scope == Scope.TENANT:
+                return tenant_scope_policy_uuid
+            if scope == Scope.ROOT:
+                return root_scope_policy_uuid
+            return platform_default_policy_uuid
+
+        def admin_parent_for_scope(scope: Scope) -> Optional[str]:
+            if scope == Scope.TENANT:
+                return tenant_scope_admin_policy_uuid
+            if scope == Scope.ROOT:
+                return root_scope_admin_policy_uuid
+            return admin_default_policy_uuid
+
+        # Attach role under appropriate policy role(s) based on flags and highest scope
+        if self.role.platform_default:
+            parent_uuid = platform_parent_for_scope(highest_scope)
+            if parent_uuid:
+                relations.append(
+                    create_relationship(("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child")
+                )
+
+        if self.role.admin_default:
+            parent_uuid = admin_parent_for_scope(highest_scope)
+            if parent_uuid:
+                relations.append(
+                    create_relationship(("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child")
+                )
+
+        # Seed permission relationships for the role
+        for permission in v2_permissions:
             relations.append(
                 create_relationship(("rbac", "role"), str(self.role.uuid), ("rbac", "principal"), str("*"), permission)
             )
