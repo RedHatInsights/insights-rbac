@@ -44,14 +44,11 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 PROXY = PrincipalProxy()  # pylint: disable=invalid-name
 
-CA_LOC = ""
-if settings.AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED:
-    CA_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/ca.crt"
-    CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.crt"
-    KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.key"
-else:
-    CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
-    KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
+# Location of the CA, certificate and key files as defined in the
+# "it-umb-key-pair" secret and the "umb-certificates" volume mount.
+CA_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/ca.crt"
+CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.crt"
+KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.key"
 
 LOCK_ID = 42  # For Keith, with Love
 
