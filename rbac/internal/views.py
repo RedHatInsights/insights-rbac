@@ -1743,7 +1743,7 @@ def check_bootstrapped_tenants(request):
                 },
             }
         )
-        print(mappings)
+
         relations_api_tenant_checker = RelationsApiTenantChecker()
         bootstrap_tenants = relations_api_tenant_checker.replicate(mappings)
         relations_bootstrapped_tenants.append({"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants})
