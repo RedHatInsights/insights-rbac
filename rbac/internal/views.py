@@ -65,6 +65,7 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
+from management.relation_replicator.bootstrapped_tenant_check import RelationsApiTenantChecker
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
@@ -1718,6 +1719,35 @@ def check_inventory(request):
         return JsonResponse(
             {"detail": "Error occurred in call to check inventory endpoint", "error": str(e)}, status=500
         )
+
+
+def check_bootstrapped_tenants(request):
+    """POST to check if bootstrapped tenant is correct on relations api."""
+    mappings = []
+    relations_bootstrapped_tenants = []
+    # Get all tenants with mappings i.e are bootstrapped
+    bootstrapped_tenants = Tenant.objects.filter(tenant_mapping__isnull=False)
+    for tenant in bootstrapped_tenants:
+        default_workspace = Workspace.objects.default(tenant=tenant)
+        root_workspace = Workspace.objects.root(tenant=tenant)
+        mappings.append(
+            {
+                "org_id": str(tenant.org_id),
+                "root_workspace": str(root_workspace.id),
+                "default_workspace": str(default_workspace.id),
+                "tenant_mapping": {
+                    "default_group_uuid": str(tenant.tenant_mapping.default_group_uuid),
+                    "default_admin_group_uuid": str(tenant.tenant_mapping.default_admin_group_uuid),
+                    "default_role_binding_uuid": str(tenant.tenant_mapping.default_role_binding_uuid),
+                    "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
+                },
+            }
+        )
+        print(mappings)
+        relations_api_tenant_checker = RelationsApiTenantChecker()
+        bootstrap_tenants = relations_api_tenant_checker.replicate(mappings)
+        relations_bootstrapped_tenants.append({"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants})
+    return JsonResponse(relations_bootstrapped_tenants, safe=False)
 
 
 @require_http_methods(["GET", "DELETE"])

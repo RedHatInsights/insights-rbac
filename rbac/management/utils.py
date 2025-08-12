@@ -18,9 +18,11 @@
 import logging
 import os
 import uuid
+from contextlib import contextmanager
 from typing import Optional, TypedDict
 from uuid import UUID
 
+import grpc
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
@@ -47,6 +49,13 @@ SERVICE_ACCOUNT_KEY = "service-account"
 
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    secure_channel = grpc.insecure_channel(addr)
+    yield secure_channel
 
 
 def validate_psk(psk, client_id):

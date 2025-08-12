@@ -101,6 +101,7 @@ urlpatterns = [
     path("api/relations/check_relation/", views.check_relation),
     path("api/relations/read_tuples/", views.read_tuples),
     path("api/inventory/check/", views.check_inventory),
+    path("api/bootstrap_tenants/", views.check_bootstrapped_tenants),
     path("api/utils/workspace/", views.workspace_removal),
 ]
 
