@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "23fb5dcc3286573bde0f973a1229635d768491af3f7f43d969de2d685ec831ee"
+            "sha256": "9adbd4c9855d3727f719a13df2f52f98f3fcf63244a22f6bfa772f3c2d76df0a"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -75,11 +75,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:33793696680cf3a0c4b5ace4f9070c67c4d4fcb19c999fd85cfee55de3dcf913",
-                "sha256:a06956f3d7222e80ef6ae193608f358c3b7898e1a2b88553479d8f9737fbb03e"
+                "sha256:7f0327e08d7c061aaa03e32459e56bcf6daa29cd946e95b1c06be14d61a9a94d",
+                "sha256:954fa6e36020ebf58898de80a8f864ba13b74dc26994cf20ccfff2966724b0b9"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.7"
+            "version": "==1.40.8"
         },
         "celery": {
             "hashes": [
@@ -517,12 +517,12 @@
         },
         "grpcio-status": {
             "hashes": [
-                "sha256:538595c32a6c819c32b46a621a51e9ae4ffcd7e7e1bce35f728ef3447e9809b6",
-                "sha256:928f49ccf9688db5f20cd9e45c4578a1d01ccca29aeaabf066f2ac76aa886668"
+                "sha256:52cdbd759a6760fc8f668098a03f208f493dd5c76bf8e02598bbbaf1f6fc2876",
+                "sha256:c58c1b24aa454e30f1fc6a7e0dbbc194c54a408143971a94b5f4e40bb5831432"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.73.1"
+            "version": "==1.74.0"
         },
         "grpcio-tools": {
             "hashes": [
