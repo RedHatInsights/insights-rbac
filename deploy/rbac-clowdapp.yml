@@ -85,8 +85,6 @@ objects:
           name: default-role-config
         - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
-        - mountPath: /opt/rbac/rbac/management/principal/umb_certs
-          name: umb-certs
         - mountPath: /opt/rbac/rbac/management/principal/umb_certificates
           name: umb-certificates
         volumes:
@@ -99,15 +97,6 @@ objects:
         - name: umb-certificates
           secret:
             secretName: it-umb-key-pair
-        - name: umb-certs
-          secret:
-            secretName: service-accounts
-            optional: true
-            items:
-            - key: umb-cert
-              path: cert.pem
-            - key: umb-key
-              path: key.pem
         resources:
           limits:
             cpu: ${CELERY_WORKER_CPU_LIMIT}
@@ -120,8 +109,6 @@ objects:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
-          - name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
-            value: ${AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_DEBUG
@@ -1532,6 +1519,3 @@ parameters:
 - name: FEATURE_FLAGS_CACHE_DIR
   description: The cache dir for unleash
   value: '/tmp/unleash_cache'
-- description: Enables grabbing the certificates from the secret that provides certificates that will be automatically renewed.
-  name: AUTOMATIC_CERTIFICATE_RENEWAL_ENABLED
-  value: 'false'
