@@ -1026,18 +1026,6 @@ objects:
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
-            - name: S3_AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: ${RBAC_HBI_S3_AWS_SECRET}
-                  key: aws_access_key_id
-            - name: S3_AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ${RBAC_HBI_S3_AWS_SECRET}
-                  key: aws_secret_access_key
-            - name: S3_AWS_BUCKET
-              value: ${RBAC_HBI_S3_AWS_BUCKET}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
           resources:
@@ -1474,12 +1462,6 @@ parameters:
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
   value: '90'
-- name: RBAC_HBI_S3_AWS_SECRET
-  description: The AWS secret for accessing HBI S3
-  value: 'rbac-hbi-s3-readonly'
-- name: RBAC_HBI_S3_AWS_BUCKET
-  description: The bucket name for accessing HBI S3
-  value: 'hbi-kessel-s3-stage'
 - description: The application name used in workspace permissions
   name: WORKSPACE_APPLICATION_NAME
   value: 'inventory'
