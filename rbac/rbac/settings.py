@@ -419,6 +419,10 @@ NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
 EXTERNAL_SYNC_TOPIC = ENVIRONMENT.get_value("EXTERNAL_SYNC_TOPIC", default=None)
 EXTERNAL_CHROME_TOPIC = ENVIRONMENT.get_value("EXTERNAL_CHROME_TOPIC", default=None)
 
+RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC = ENVIRONMENT.get_value(
+    "RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC", default=None
+)
+
 # if we don't enable KAFKA we can't use the notifications
 if not KAFKA_ENABLED:
     NOTIFICATIONS_ENABLED = False
@@ -479,6 +483,10 @@ if KAFKA_ENABLED:
     clowder_chrome_topic = KafkaTopics.get(EXTERNAL_CHROME_TOPIC)
     if clowder_chrome_topic:
         EXTERNAL_CHROME_TOPIC = clowder_chrome_topic.name
+
+    clowder_rbac_read_after_write_topic = KafkaTopics.get(RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC)
+    if clowder_rbac_read_after_write_topic:
+        RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC = clowder_rbac_read_after_write_topic.name
 
 # BOP TLS settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):
