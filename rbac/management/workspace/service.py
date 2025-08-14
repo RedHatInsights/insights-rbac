@@ -15,14 +15,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Service for workspace management."""
+import logging
+import select
+import time
 import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import connection, transaction
+from feature_flags import FEATURE_FLAGS
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
+from psycopg2 import sql
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -50,11 +55,70 @@ class WorkspaceService:
                         "The total number of workspaces allowed for this organisation has been exceeded."
                     )
 
+                # Correlate NOTIFY with this request
+                request_id = str(uuid.uuid4())
+
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
                 dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE
                 )
                 dual_write_handler.replicate_new_workspace()
+
+                # After the outbox message is created & committed, LISTEN for a NOTIFY
+
+                def _wait_for_notify_post_commit():
+                    logger = logging.getLogger(__name__)
+                    try:
+                        connection.ensure_connection()
+                        conn = connection.connection
+                        timeout_seconds = int(getattr(settings, "READ_YOUR_WRITES_TIMEOUT_SECONDS", 2))
+                        channel = getattr(settings, "READ_YOUR_WRITES_CHANNEL", "test")
+
+                        with connection.cursor() as cursor:
+                            cursor.execute(sql.SQL("LISTEN {};").format(sql.Identifier(channel)))
+
+                        logger.info(
+                            "[Service] RYW waiting for NOTIFY channel='%s' request_id='%s' timeout=%ss",
+                            channel,
+                            request_id,
+                            timeout_seconds,
+                        )
+
+                        start_time = time.time()
+                        while time.time() - start_time < timeout_seconds:
+                            if select.select([conn], [], [], 1) == ([], [], []):
+                                continue
+                            conn.poll()
+                            while conn.notifies:
+                                notify = conn.notifies.pop(0)
+                                if notify.channel == channel and getattr(notify, "payload", None) == request_id:
+                                    logger.info(
+                                        "[Service] RYW received NOTIFY channel='%s' request_id='%s'",
+                                        notify.channel,
+                                        request_id,
+                                    )
+                                    return
+                        logger.warning(
+                            "[Service] RYW timed out waiting for NOTIFY channel='%s' request_id='%s' after %ss",
+                            channel,
+                            request_id,
+                            timeout_seconds,
+                        )
+                    except Exception:
+                        logger = logging.getLogger(__name__)
+                        logger.exception("Error while waiting for NOTIFY after workspace create")
+                    finally:
+                        try:
+                            with connection.cursor() as cursor:
+                                cursor.execute(sql.SQL("UNLISTEN {};").format(sql.Identifier(channel)))
+                        except Exception:
+                            # Best-effort cleanup
+                            pass
+
+                if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and getattr(
+                    settings, "REPLICATION_TO_RELATION_ENABLED", False
+                ):
+                    transaction.on_commit(_wait_for_notify_post_commit)
 
                 return workspace
             except ValidationError as e:
