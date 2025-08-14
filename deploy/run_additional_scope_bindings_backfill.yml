@@ -1,0 +1,19 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: additional-scope-bindings-backfill
+objects:
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdJobInvocation
+  metadata:
+    labels:
+      app: rbac
+    name: additional-scope-bindings-backfill-${RUN_NUMBER}
+  spec:
+    appName: rbac
+    jobs:
+      - additional-scope-bindings-backfill
+parameters:
+- name: RUN_NUMBER
+  description: Used to track and re-run the job
+  value: '1'
