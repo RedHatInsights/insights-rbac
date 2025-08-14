@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Class to manage interactions with the IT service accounts service."""
+import itertools
 import logging
 import time
 import uuid
@@ -38,6 +39,9 @@ KEY_SERVICE_ACCOUNT = "service-account-"
 
 # IT path to fetch the service accounts.
 IT_PATH_GET_SERVICE_ACCOUNTS = "/service_accounts/v1"
+
+# Maximum number of service accounts to request from IT at once.
+IT_SERVICE_ACCOUNT_BATCH_SIZE = 100
 
 # Set up the metrics for the IT calls.
 it_request_all_service_accounts_time_tracking = Histogram(
@@ -94,8 +98,29 @@ class ITService:
         self.it_url = f"{self.protocol}://{self.host}:{self.port}{self.base_path}{IT_PATH_GET_SERVICE_ACCOUNTS}"
 
     @it_request_all_service_accounts_time_tracking.time()
-    def request_service_accounts(self, bearer_token: str, client_ids: Optional[list[str]] = None) -> list[dict]:
+    def request_service_accounts(self, bearer_token: str, client_ids: Optional[Iterable[str]] = None) -> list[dict]:
         """Request the service accounts for a tenant and returns the entire list that IT has."""
+        if client_ids:
+            unique_ids = set(client_ids)
+            results: list[dict] = []
+
+            for batch in itertools.batched(unique_ids, IT_SERVICE_ACCOUNT_BATCH_SIZE):
+                results.extend(
+                    self._request_service_accounts_batch(
+                        bearer_token=bearer_token,
+                        client_ids=list(batch),
+                    )
+                )
+
+            return results
+
+        return self._request_service_accounts_batch(
+            bearer_token=bearer_token,
+            client_ids=None,
+        )
+
+    def _request_service_accounts_batch(self, bearer_token: str, client_ids: Optional[list[str]] = None) -> list[dict]:
+        """Request a single batch of the service accounts for a tenant and returns the entire list that IT has."""
         # We cannot talk to IT if we don't have a bearer token.
         if not bearer_token:
             raise MissingAuthorizationError()
@@ -106,7 +131,7 @@ class ITService:
         try:
             # Define some sane initial values.
             offset = 0
-            limit = 100
+            limit = IT_SERVICE_ACCOUNT_BATCH_SIZE
 
             # If the offset is zero, that means that we need to call the service at least once to get the first
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
@@ -120,7 +145,13 @@ class ITService:
                 # Recreate the parameters dictionary every time since otherwise the "assert_has_calls" statement of the
                 # tests only sees the last value for the offset when attempting to fetch multiple pages.
                 parameters = {"first": offset, "max": limit}
+
+                # Prevent this from resulting in an overly long URL if too many client IDs are passed.
+                # request_service_accounts handles batching the IDs as needed.
                 if client_ids:
+                    if len(client_ids) > IT_SERVICE_ACCOUNT_BATCH_SIZE:
+                        raise ValueError("Request for too many client IDs.")
+
                     parameters["clientId"] = client_ids
 
                 # Call IT.
@@ -562,7 +593,7 @@ class ITService:
             # exist in the database, and the keys of sap_dict are thus all of the client_ids we're interested in.
             it_service_accounts = self.request_service_accounts(
                 bearer_token=user.bearer_token,
-                client_ids=list(sap_dict.keys()),
+                client_ids=sap_dict.keys(),
             )
         else:
             # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
