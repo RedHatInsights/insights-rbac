@@ -1485,7 +1485,7 @@ parameters:
   value: 'inventory'
 - description: The resource type used in workspace permissions
   name: WORKSPACE_RESOURCE_TYPE
-  value: 'groups'
+  value: 'groups,*'
 - description: The attribute filter key used in workspace permissions' resource definitions
   name: WORKSPACE_ATTRIBUTE_FILTER
   value: 'group.id'
