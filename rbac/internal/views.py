@@ -54,6 +54,7 @@ from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache, TenantCache
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -67,6 +68,7 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.relation_replicator.relations_api_check import RelationsApiRelationChecker
 from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
@@ -1657,6 +1659,29 @@ def check_relation(request):
         return JsonResponse(
             {"detail": "Error occurred in call to check relation endpoint", "error": str(e)}, status=500
         )
+
+
+def group_assignments(request, group_uuid):
+    """Calculate and check if group-principals are correct on relations api."""
+    group = get_object_or_404(Group, uuid=group_uuid)
+    principals = list(group.principals.all())
+    relations_assignment_checker = RelationsApiRelationChecker()
+    relations_dual_write_handler = RelationApiDualWriteGroupHandler(
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_checker
+    )
+    relations_dual_write_handler.generate_relations_to_add_principals(principals)
+    relationships = relations_dual_write_handler.relations_to_add
+    relation_assignments = relations_dual_write_handler._replicator.replicate(
+        ReplicationEvent(
+            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+            info={
+                "detail": "Check user-group relations are correct",
+            },
+            partition_key=PartitionKey.byEnvironment(),
+            add=relationships,
+        ),
+    )
+    return JsonResponse(relation_assignments, safe=False)
 
 
 def check_inventory(request):
