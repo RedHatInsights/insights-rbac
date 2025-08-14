@@ -1086,7 +1086,36 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: workspace-data
-
+      - name: additional-scope-bindings-backfill
+        podSpec:
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - /opt/rbac/rbac/manage.py
+            - backfill_additional_scope_bindings
+            - --batch_size
+            - "200"
+          env: *job_common_env_vars
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+      - name: role-binding-scope-migrator
+        podSpec:
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - /opt/rbac/rbac/manage.py
+            - migrate_role_binding_scopes
+          env: *job_common_env_vars
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
 
 - apiVersion: v1
   kind: ConfigMap
