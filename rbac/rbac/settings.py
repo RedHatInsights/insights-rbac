@@ -527,7 +527,10 @@ READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
 
 # Workspace settings
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")
-WORKSPACE_RESOURCE_TYPE = ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups")
+# Comma-separated list of resource types that should trigger workspace hierarchy
+WORKSPACE_RESOURCE_TYPE = [
+    t.strip() for t in ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups,*").split(",")
+]
 WORKSPACE_ATTRIBUTE_FILTER = ENVIRONMENT.get_value("WORKSPACE_ATTRIBUTE_FILTER", default="group.id")
 WORKSPACE_HIERARCHY_ENABLED = ENVIRONMENT.bool("WORKSPACE_HIERARCHY_ENABLED", False)
 WORKSPACE_ORG_CREATION_LIMIT = ENVIRONMENT.get_value("WORKSPACE_ORG_CREATION_LIMIT", default=3000)
