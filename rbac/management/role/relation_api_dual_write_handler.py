@@ -24,6 +24,10 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
+from management.permission_scope import (
+    Scope,
+    highest_scope_for_v2_permissions,
+)
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
@@ -34,10 +38,6 @@ from management.role.model import BindingMapping, Role
 from migration_tool.migrate_role import migrate_role
 from migration_tool.models import cleanNameForV2SchemaCompatibility
 from migration_tool.utils import create_relationship
-from management.permission_scope import (
-    highest_scope_for_v2_permissions,
-    Scope,
-)
 
 
 from api.models import Tenant
