@@ -55,9 +55,6 @@ class WorkspaceService:
                         "The total number of workspaces allowed for this organisation has been exceeded."
                     )
 
-                # Correlate NOTIFY with this request
-                request_id = str(uuid.uuid4())
-
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
                 dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE
@@ -78,9 +75,9 @@ class WorkspaceService:
                             cursor.execute(sql.SQL("LISTEN {};").format(sql.Identifier(channel)))
 
                         logger.info(
-                            "[Service] RYW waiting for NOTIFY channel='%s' request_id='%s' timeout=%ss",
+                            "[Service] RYW waiting for NOTIFY channel='%s' workspace_id='%s' timeout=%ss",
                             channel,
-                            request_id,
+                            str(workspace.id),
                             timeout_seconds,
                         )
 
@@ -91,17 +88,17 @@ class WorkspaceService:
                             conn.poll()
                             while conn.notifies:
                                 notify = conn.notifies.pop(0)
-                                if notify.channel == channel and getattr(notify, "payload", None) == request_id:
+                                if notify.channel == channel and getattr(notify, "payload", None) == str(workspace.id):
                                     logger.info(
-                                        "[Service] RYW received NOTIFY channel='%s' request_id='%s'",
+                                        "[Service] RYW received NOTIFY channel='%s' workspace_id='%s'",
                                         notify.channel,
-                                        request_id,
+                                        str(workspace.id),
                                     )
                                     return
                         logger.warning(
-                            "[Service] RYW timed out waiting for NOTIFY channel='%s' request_id='%s' after %ss",
+                            "[Service] RYW timed out waiting for NOTIFY channel='%s' workspace_id='%s' after %ss",
                             channel,
-                            request_id,
+                            str(workspace.id),
                             timeout_seconds,
                         )
                     except Exception:
