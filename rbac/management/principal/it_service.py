@@ -127,6 +127,8 @@ class ITService:
         if not bearer_token:
             raise MissingAuthorizationError()
 
+        # Prevent this from resulting in an overly long URL if too many client IDs are passed.
+        # request_service_accounts handles batching the IDs as needed.
         if len(client_ids) > IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE:
             raise ValueError("Request for too many client IDs.")
 
@@ -151,8 +153,6 @@ class ITService:
                 # tests only sees the last value for the offset when attempting to fetch multiple pages.
                 parameters = {"first": offset, "max": limit}
 
-                # Prevent this from resulting in an overly long URL if too many client IDs are passed.
-                # request_service_accounts handles batching the IDs as needed.
                 if client_ids:
                     parameters["clientId"] = client_ids
 
