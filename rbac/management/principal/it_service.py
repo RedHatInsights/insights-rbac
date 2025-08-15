@@ -41,7 +41,8 @@ KEY_SERVICE_ACCOUNT = "service-account-"
 IT_PATH_GET_SERVICE_ACCOUNTS = "/service_accounts/v1"
 
 # Maximum number of different service account client IDs to request from IT at once.
-IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE = 100
+# This is a limit set by the IT service.
+IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE = 10
 
 # Set up the metrics for the IT calls.
 it_request_all_service_accounts_time_tracking = Histogram(

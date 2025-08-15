@@ -395,7 +395,7 @@ class ITServiceTests(IdentityRequest):
 
         bearer_token_mock = "bearer-token-mock"
 
-        client_ids = [str(uuid.uuid4()) for _ in range(150)]
+        client_ids = [str(uuid.uuid4()) for _ in range(145)]
 
         # Call the function under test.
         result: list[dict] = self.it_service.request_service_accounts(
@@ -412,7 +412,7 @@ class ITServiceTests(IdentityRequest):
         base_parameters = {"first": 0, "max": 100}
 
         calls = get.call_args_list
-        self.assertEqual(2, len(calls), "Expected two requests to IT to be made.")
+        self.assertEqual(15, len(calls), "Expected two requests to IT to be made.")
 
         seen_client_ids = set()
 
