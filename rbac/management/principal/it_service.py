@@ -40,8 +40,8 @@ KEY_SERVICE_ACCOUNT = "service-account-"
 # IT path to fetch the service accounts.
 IT_PATH_GET_SERVICE_ACCOUNTS = "/service_accounts/v1"
 
-# Maximum number of service accounts to request from IT at once.
-IT_SERVICE_ACCOUNT_BATCH_SIZE = 100
+# Maximum number of different service account client IDs to request from IT at once.
+IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE = 100
 
 # Set up the metrics for the IT calls.
 it_request_all_service_accounts_time_tracking = Histogram(
@@ -106,7 +106,7 @@ class ITService:
         if client_ids:
             results: list[dict] = []
 
-            for batch in itertools.batched(client_ids, IT_SERVICE_ACCOUNT_BATCH_SIZE):
+            for batch in itertools.batched(client_ids, IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE):
                 results.extend(
                     self._request_service_accounts_batch(
                         bearer_token=bearer_token,
@@ -133,7 +133,7 @@ class ITService:
         try:
             # Define some sane initial values.
             offset = 0
-            limit = IT_SERVICE_ACCOUNT_BATCH_SIZE
+            limit = 100
 
             # If the offset is zero, that means that we need to call the service at least once to get the first
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
@@ -151,7 +151,7 @@ class ITService:
                 # Prevent this from resulting in an overly long URL if too many client IDs are passed.
                 # request_service_accounts handles batching the IDs as needed.
                 if client_ids:
-                    if len(client_ids) > IT_SERVICE_ACCOUNT_BATCH_SIZE:
+                    if len(client_ids) > IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE:
                         raise ValueError("Request for too many client IDs.")
 
                     parameters["clientId"] = client_ids
