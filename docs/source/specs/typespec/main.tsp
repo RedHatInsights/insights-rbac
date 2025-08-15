@@ -597,7 +597,7 @@ namespace RoleBindings {
         @doc("Information about parent resource when inherited from parent (only when parent_role_bindings=true)")
         inherited_from?: {
             @doc("Parent resource type")
-            @example("workspace")
+            @example("default")
             type: string;
             @doc("Parent resource name")
             @example("Workspace Z")

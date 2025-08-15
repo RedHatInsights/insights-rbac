@@ -1394,7 +1394,7 @@
               "type": {
                 "type": "string",
                 "description": "Parent resource type",
-                "example": "workspace"
+                "example": "default"
               },
               "name": {
                 "type": "string",
