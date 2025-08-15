@@ -659,9 +659,9 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
-        @doc("Specify which columns to include in response. Basic columns (subject.id, subject.type, role.id, resource.type) are included by default when no columns parameter is specified (type fields are always required, other fields are optional). When columns parameter is provided, only the specified columns are exposed. Use parentheses format: subject(field1,field2), resource(field1,field2). Available fields - subject: user_count, name; resource: name; role: name; other: last_modified")
+        @doc("Specify which fields to include in response. Basic fields (subject.id, subject.type, role.id, resource.type) are included by default when no fields parameter is specified (type fields are always required, other fields are optional). When fields parameter is provided, only the specified fields are exposed. Use parentheses format: subject(field1,field2), resource(field1,field2). Available fields - subject: user_count, name; resource: name; role: name; other: last_modified")
         @example("subject(user_count,name),resource(name,type),last_modified")
-        @query columns?: string;
+        @query fields?: string;
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
         @query sort_by?: string;
