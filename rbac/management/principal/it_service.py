@@ -99,7 +99,12 @@ class ITService:
 
     @it_request_all_service_accounts_time_tracking.time()
     def request_service_accounts(self, bearer_token: str, client_ids: Optional[Iterable[str]] = None) -> list[dict]:
-        """Request the service accounts for a tenant and returns the entire list that IT has."""
+        """
+        Request the service accounts for a tenant.
+
+        If client_ids is None or empty, request all of the service accounts that IT has. Otherwise, request only the
+        service accounts with the specified IDs.
+        """
         if client_ids is not None:
             client_ids = set(client_ids)
 
@@ -122,14 +127,19 @@ class ITService:
         )
 
     def _request_service_accounts_batch(self, bearer_token: str, client_ids: Optional[list[str]] = None) -> list[dict]:
-        """Request a single batch of the service accounts for a tenant and returns the entire list that IT has."""
+        """
+        Request a single batch of service accounts for a tenant and return the list that IT has.
+
+        Here, a "batch" is a set of client IDs to request. If client_ids is None, all service accounts are requested
+        from IT. client_ids shall have size no greater than IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE.
+        """
         # We cannot talk to IT if we don't have a bearer token.
         if not bearer_token:
             raise MissingAuthorizationError()
 
         # Prevent this from resulting in an overly long URL if too many client IDs are passed.
         # request_service_accounts handles batching the IDs as needed.
-        if len(client_ids) > IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE:
+        if (client_ids is not None) and (len(client_ids) > IT_SERVICE_ACCOUNT_CLIENT_ID_BATCH_SIZE):
             raise ValueError("Request for too many client IDs.")
 
         received_service_accounts: list[dict] = []
@@ -144,7 +154,7 @@ class ITService:
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
             parameters: dict[str, Union[int, list[str]]] = {"first": offset, "max": limit}
             # If we were given client IDs to filter the collection with, do it!
-            if client_ids:
+            if client_ids is not None:
                 parameters["clientId"] = client_ids
 
             continue_fetching: bool = True
@@ -153,7 +163,7 @@ class ITService:
                 # tests only sees the last value for the offset when attempting to fetch multiple pages.
                 parameters = {"first": offset, "max": limit}
 
-                if client_ids:
+                if client_ids is not None:
                     parameters["clientId"] = client_ids
 
                 # Call IT.
