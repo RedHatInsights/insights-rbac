@@ -16,6 +16,7 @@
 #
 """Test the principal model."""
 import requests
+import typing
 import uuid
 
 from django.conf import settings
@@ -304,6 +305,39 @@ class ITServiceTests(IdentityRequest):
                 "the time created and created at fields for the RBAC and IT models do not match",
             )
 
+    def _assert_service_account_call(
+        self, call, client_ids_assert: typing.Callable[[list[str]], None], *args, **kwargs
+    ):
+        # This must be checked using client_ids_condition.
+        assert kwargs.get("params", {}).get("clientId") is None
+
+        self.assertEqual(call.args, args, "Incorrect positional arguments for call.")
+
+        call_kwargs: dict[str, typing.Any] = dict(call.kwargs)
+        call_params: dict[str, typing.Any] = dict(call.kwargs.get("params", {}))
+
+        call_client_ids = call_params.pop("clientId", [])
+        call_kwargs["params"] = call_params
+
+        client_ids_assert(call_client_ids)
+        self.assertEqual(kwargs, call_kwargs, "Incorrect keyword arugments for call.")
+
+    def _assert_service_account_mock_called(self, mock: mock.Mock, *args, **kwargs):
+        """Assert that a mock has a call to IT's service accounts endpoint is as expected."""
+        if "params" in kwargs and "clientId" in kwargs["params"]:
+            # We do not care about the order of client IDs.
+
+            actual_client_ids = mock.call_args.kwargs["params"]["clientId"]
+
+            self.assertCountEqual(actual_client_ids, kwargs["params"]["clientId"], "Client IDs did not match call.")
+
+            # Now that the IDs have been verified, just make the expectation match reality.
+            kwargs = dict(kwargs)
+            kwargs["params"] = dict(kwargs["params"])
+            kwargs["params"]["clientId"] = actual_client_ids
+
+        mock.assert_called_with(*args, **kwargs)
+
     @mock.patch("management.principal.it_service.requests.get")
     def test_request_service_accounts_single_page(self, get: mock.Mock):
         """Test that the function under test can handle fetching a single page of service accounts from IT"""
@@ -334,12 +368,70 @@ class ITServiceTests(IdentityRequest):
         parameters = {"first": 0, "max": 100, "clientId": client_ids}
 
         # Assert that the "get" function was called with the expected arguments.
-        get.assert_called_with(
+        self._assert_service_account_mock_called(
+            get,
             url=it_url,
             headers={"Authorization": f"Bearer {bearer_token_mock}"},
             params=parameters,
             timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
         )
+
+        # Assert that the payload is correct.
+        self._assert_IT_to_RBAC_model_transformations(
+            it_service_accounts=mocked_service_accounts, rbac_service_accounts=result
+        )
+
+    @mock.patch("management.principal.it_service.requests.get")
+    def test_request_service_accounts_batching(self, get: mock.Mock):
+        """Test that the function under test can properly batch requests for large numbers of client IDs."""
+        # Create the mocked response from IT.
+        mocked_service_accounts = self._create_mock_it_service_accounts(5)
+
+        get.__name__ = "get"
+        get.return_value = mock.Mock(
+            json=lambda: mocked_service_accounts,
+            status_code=status.HTTP_200_OK,
+        )
+
+        bearer_token_mock = "bearer-token-mock"
+
+        client_ids = [str(uuid.uuid4()) for _ in range(145)]
+
+        # Call the function under test.
+        result: list[dict] = self.it_service.request_service_accounts(
+            bearer_token=bearer_token_mock, client_ids=client_ids
+        )
+
+        # Build IT's URL for the function call's assertion.
+        it_url = (
+            f"{settings.IT_SERVICE_PROTOCOL_SCHEME}://{settings.IT_SERVICE_HOST}:{settings.IT_SERVICE_PORT}"
+            f"{settings.IT_SERVICE_BASE_PATH}{IT_PATH_GET_SERVICE_ACCOUNTS}"
+        )
+
+        # Build the expected parameters to be seen in the "get" function's assertion call, other than clientId.
+        base_parameters = {"first": 0, "max": 100}
+
+        calls = get.call_args_list
+        self.assertEqual(15, len(calls), "Expected two requests to IT to be made.")
+
+        seen_client_ids = set()
+
+        for call in calls:
+            self._assert_service_account_call(
+                call=call,
+                client_ids_assert=lambda call_client_ids: self.assertTrue(
+                    seen_client_ids.isdisjoint(call_client_ids),
+                    f"Duplicate client IDs requested. Seen: {seen_client_ids}. This batch: {call_client_ids}.",
+                ),
+                url=it_url,
+                headers={"Authorization": f"Bearer {bearer_token_mock}"},
+                params=base_parameters,
+                timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+            )
+
+            seen_client_ids.update(call.kwargs["params"]["clientId"])
+
+        self.assertSetEqual(set(client_ids), seen_client_ids, "Expected all client IDs to be requested.")
 
         # Assert that the payload is correct.
         self._assert_IT_to_RBAC_model_transformations(
@@ -394,39 +486,28 @@ class ITServiceTests(IdentityRequest):
         )
 
         # Assert that the "get" function is called with the expected arguments for the multiple pages.
-        parameters_first_call = {"first": 0, "max": 100, "clientId": client_ids}
-        parameters_second_call = {"first": 100, "max": 100, "clientId": client_ids}
-        parameters_third_call = {"first": 200, "max": 100, "clientId": client_ids}
-        parameters_fourth_call = {"first": 300, "max": 100, "clientId": client_ids}
+        # clientId is handled separately.
+        expected_parameters = [
+            {"first": 0, "max": 100},
+            {"first": 100, "max": 100},
+            {"first": 200, "max": 100},
+            {"first": 300, "max": 100},
+        ]
 
-        get.assert_has_calls(
-            [
-                mock.call(
-                    url=it_url,
-                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
-                    params=parameters_first_call,
-                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
-                ),
-                mock.call(
-                    url=it_url,
-                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
-                    params=parameters_second_call,
-                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
-                ),
-                mock.call(
-                    url=it_url,
-                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
-                    params=parameters_third_call,
-                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
-                ),
-                mock.call(
-                    url=it_url,
-                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
-                    params=parameters_fourth_call,
-                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
-                ),
-            ]
-        )
+        calls = get.call_args_list
+        self.assertEqual(4, len(calls), "Expected 4 requests for IT service accounts.")
+
+        seen_parameters: list[dict] = []
+
+        for index, call in enumerate(calls):
+            self._assert_service_account_call(
+                call=call,
+                client_ids_assert=lambda call_client_ids: self.assertCountEqual(client_ids, call_client_ids),
+                url=it_url,
+                headers={"Authorization": f"Bearer {bearer_token_mock}"},
+                params=expected_parameters[index],
+                timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+            )
 
         # Assert that the payload is correct.
         self._assert_IT_to_RBAC_model_transformations(
@@ -466,7 +547,8 @@ class ITServiceTests(IdentityRequest):
         parameters = {"first": 0, "max": 100, "clientId": client_ids}
 
         # Assert that the "get" function was called with the expected arguments.
-        get.assert_called_with(
+        self._assert_service_account_mock_called(
+            get,
             url=it_url,
             headers={"Authorization": f"Bearer {bearer_token_mock}"},
             params=parameters,
@@ -505,7 +587,8 @@ class ITServiceTests(IdentityRequest):
         parameters = {"first": 0, "max": 100, "clientId": client_ids}
 
         # Assert that the "get" function was called with the expected arguments.
-        get.assert_called_with(
+        self._assert_service_account_mock_called(
+            get,
             url=it_url,
             headers={"Authorization": f"Bearer {bearer_token_mock}"},
             params=parameters,
@@ -542,7 +625,8 @@ class ITServiceTests(IdentityRequest):
         parameters = {"first": 0, "max": 100, "clientId": client_ids}
 
         # Assert that the "get" function was called with the expected arguments.
-        get.assert_called_with(
+        self._assert_service_account_mock_called(
+            get,
             url=it_url,
             headers={"Authorization": f"Bearer {bearer_token_mock}"},
             params=parameters,
