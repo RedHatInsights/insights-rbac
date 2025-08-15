@@ -100,11 +100,13 @@ class ITService:
     @it_request_all_service_accounts_time_tracking.time()
     def request_service_accounts(self, bearer_token: str, client_ids: Optional[Iterable[str]] = None) -> list[dict]:
         """Request the service accounts for a tenant and returns the entire list that IT has."""
+        if client_ids is not None:
+            client_ids = set(client_ids)
+
         if client_ids:
-            unique_ids = set(client_ids)
             results: list[dict] = []
 
-            for batch in itertools.batched(unique_ids, IT_SERVICE_ACCOUNT_BATCH_SIZE):
+            for batch in itertools.batched(client_ids, IT_SERVICE_ACCOUNT_BATCH_SIZE):
                 results.extend(
                     self._request_service_accounts_batch(
                         bearer_token=bearer_token,
