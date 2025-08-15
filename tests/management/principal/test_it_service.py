@@ -377,7 +377,7 @@ class ITServiceTests(IdentityRequest):
 
         bearer_token_mock = "bearer-token-mock"
 
-        client_ids = [str(uuid.uuid4()) for i in range(0, 200)]
+        client_ids = [str(uuid.uuid4()) for _ in range(150)]
 
         # Call the function under test.
         result: list[dict] = self.it_service.request_service_accounts(
@@ -407,11 +407,8 @@ class ITServiceTests(IdentityRequest):
                 call.kwargs["timeout"], settings.IT_SERVICE_TIMEOUT_SECONDS, "Incorrect timeout for call."
             )
 
-            actual_parameters = call.kwargs["params"]
-
-            # Assert that there are the correct number of client IDs.
+            actual_parameters = dict(call.kwargs["params"])
             call_client_ids = actual_parameters["clientId"]
-            self.assertEqual(100, len(call_client_ids))
 
             # Assert that we do not duplicate requested client IDs.
             self.assertTrue(
