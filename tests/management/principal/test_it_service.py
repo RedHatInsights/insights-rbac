@@ -350,7 +350,8 @@ class ITServiceTests(IdentityRequest):
         parameters = {"first": 0, "max": 100, "clientId": client_ids}
 
         # Assert that the "get" function was called with the expected arguments.
-        get.assert_called_with(
+        self._assert_service_account_call(
+            get,
             url=it_url,
             headers={"Authorization": f"Bearer {bearer_token_mock}"},
             params=parameters,
