@@ -386,6 +386,84 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], workspace["name"])
 
+    def test_create_workspace_authorized_with_default_workspace_permission_only(self):
+        """Test for creating a workspace with only Default Workspace permission."""
+        workspace = {
+            "name": "New Workspace Default Only",
+            "description": "Workspace created with Default Workspace permission only",
+        }
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        # Set up access for Default Workspace only (not Root Workspace)
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:write", workspace_id=str(self.default_workspace.id)
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+
+        # This should now succeed with our permission fix
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], workspace["name"])
+        self.assertEqual(response.data["parent_id"], str(self.default_workspace.id))
+
+    def test_create_workspace_authorized_with_default_workspace_read_only_fails(self):
+        """Test that creating a workspace with only Default Workspace read permission fails."""
+        workspace = {
+            "name": "New Workspace Read Only",
+            "description": "Workspace creation should fail with read-only permission",
+        }
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        # Set up read-only access for Default Workspace
+        self._setup_access_for_principal(
+            self.user_data["username"], "inventory:groups:read", workspace_id=str(self.default_workspace.id)
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+
+        # This should still fail because we only have read permission
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_create_workspace_authorized_with_root_and_default_workspace_permissions(self):
+        """Test for creating a workspace with both Root and Default Workspace permissions."""
+        workspace = {
+            "name": "New Workspace Both Permissions",
+            "description": "Workspace created with both Root and Default permissions",
+        }
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        # Set up access for both Root and Default Workspace
+        self._setup_access_for_principal(
+            self.user_data["username"],
+            "inventory:groups:write",
+            workspace_id=[str(self.root_workspace.id), str(self.default_workspace.id)],
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+
+        # This should continue to work as before
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], workspace["name"])
+        self.assertEqual(response.data["parent_id"], str(self.default_workspace.id))
+
     def test_duplicate_create_workspace(self):
         """Test that creating a duplicate workspace within same parent is not allowed."""
         workspace_data = {
