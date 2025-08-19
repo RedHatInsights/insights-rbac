@@ -112,7 +112,7 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
 
     def _is_workspace_filter(self, instance):
         is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
-        is_workspace_resource_type = instance.resource_type == settings.WORKSPACE_RESOURCE_TYPE
+        is_workspace_resource_type = instance.resource_type in settings.WORKSPACE_RESOURCE_TYPE
         is_workspace_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
         return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 

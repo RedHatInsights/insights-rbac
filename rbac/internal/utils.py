@@ -17,11 +17,13 @@
 
 """Utilities for Internal RBAC use."""
 import logging
+from contextlib import contextmanager
 
+import grpc
 import jsonschema
 from django.db import transaction
 from django.urls import resolve
-from internal.schemas import RELATION_INPUT_SCHEMAS
+from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
@@ -33,6 +35,13 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    secure_channel = grpc.insecure_channel(addr)
+    yield secure_channel
 
 
 def build_internal_user(request, json_rh_auth):
@@ -125,6 +134,21 @@ def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
 def validate_relations_input(action, request_data) -> bool:
     """Check if request body provided to relations tool endpoints are valid."""
     validation_schema = RELATION_INPUT_SCHEMAS[action]
+    try:
+        validate(instance=request_data, schema=validation_schema)
+        logger.info("JSON data is valid.")
+        return True
+    except jsonschema.exceptions.ValidationError as e:
+        logger.info(f"JSON data is invalid: {e.message}")
+        return False
+    except Exception as e:
+        logger.info(f"Exception occurred when validating JSON body: {e}")
+        return False
+
+
+def validate_inventory_input(action, request_data) -> bool:
+    """Check if request body provided to inventory tool endpoints are valid."""
+    validation_schema = INVENTORY_INPUT_SCHEMAS[action]
     try:
         validate(instance=request_data, schema=validation_schema)
         logger.info("JSON data is valid.")
