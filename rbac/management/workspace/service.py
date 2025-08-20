@@ -213,7 +213,7 @@ class WorkspaceService:
         try:
             connection.ensure_connection()
             conn = connection.connection
-            timeout_seconds = settings.READ_YOUR_WRITES_TIMEOUT_SECONDS
+            timeout_seconds = getattr(settings, "READ_YOUR_WRITES_TIMEOUT_SECONDS", 0)
 
             # Early exit if misconfigured
             if timeout_seconds is None or timeout_seconds <= 0:
