@@ -338,20 +338,49 @@ class ITServiceTests(IdentityRequest):
 
         mock.assert_called_with(*args, **kwargs)
 
+    class FakeIT:
+        _service_accounts: list[dict]
+
+        def __init__(self, service_accounts: list[dict]):
+            self._service_accounts = list(service_accounts)
+
+        def get(self, *args, **kwargs) -> mock.Mock:
+            first = kwargs["params"]["first"]
+            max = kwargs["params"]["max"]
+
+            filtered: list[dict]
+
+            raw_client_ids = kwargs["params"].get("clientId", [])
+
+            if raw_client_ids:
+                client_ids = set(raw_client_ids)
+                filtered = [account for account in self._service_accounts if account["clientId"] in client_ids]
+            else:
+                filtered = self._service_accounts
+
+            # The underlying IT API returns an empty array for a request out of range, and so will this.
+            result = filtered[first : (first + max)]
+
+            return mock.Mock(
+                json=lambda: result,
+                status_code=status.HTTP_200_OK,
+            )
+
     @mock.patch("management.principal.it_service.requests.get")
     def test_request_service_accounts_single_page(self, get: mock.Mock):
         """Test that the function under test can handle fetching a single page of service accounts from IT"""
         # Create the mocked response from IT.
         mocked_service_accounts = self._create_mock_it_service_accounts(5)
+        requested_service_accounts = mocked_service_accounts[0:3]
 
         get.__name__ = "get"
-        get.return_value = mock.Mock(
-            json=lambda: mocked_service_accounts,
-            status_code=status.HTTP_200_OK,
-        )
+        get.side_effect = ITServiceTests.FakeIT(mocked_service_accounts).get
 
         bearer_token_mock = "bearer-token-mock"
-        client_ids = [str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())]
+
+        # client_ids being small means that this will trigger the fast path in request_service_accounts, and only a
+        # single request will be made.
+        client_ids = [account["clientId"] for account in requested_service_accounts]
 
         # Call the function under test.
         result: list[dict] = self.it_service.request_service_accounts(
@@ -378,24 +407,27 @@ class ITServiceTests(IdentityRequest):
 
         # Assert that the payload is correct.
         self._assert_IT_to_RBAC_model_transformations(
-            it_service_accounts=mocked_service_accounts, rbac_service_accounts=result
+            it_service_accounts=requested_service_accounts, rbac_service_accounts=result
         )
 
     @mock.patch("management.principal.it_service.requests.get")
-    def test_request_service_accounts_batching(self, get: mock.Mock):
-        """Test that the function under test can properly batch requests for large numbers of client IDs."""
+    def test_request_service_accounts_client_ids_small(self, get: mock.Mock):
+        """Test that the function under test uses client IDs when few service accounts are needed."""
         # Create the mocked response from IT.
-        mocked_service_accounts = self._create_mock_it_service_accounts(5)
+        mocked_service_accounts = self._create_mock_it_service_accounts(400)
+        requested_service_accounts = mocked_service_accounts[0:5]
 
         get.__name__ = "get"
-        get.return_value = mock.Mock(
-            json=lambda: mocked_service_accounts,
-            status_code=status.HTTP_200_OK,
-        )
+        get.side_effect = ITServiceTests.FakeIT(mocked_service_accounts).get
 
         bearer_token_mock = "bearer-token-mock"
 
-        client_ids = [str(uuid.uuid4()) for _ in range(145)]
+        # Request several additional client IDs to ensure they are properly filtered out.
+        # Ensure the total count is greater than 20 to avoid the fast path.
+        # Ensure the total count is fewer than 40 so that client IDs are used (rather than requesting all accounts).
+        client_ids = [account["clientId"] for account in requested_service_accounts] + [
+            str(uuid.uuid4()) for _ in range(20)
+        ]
 
         # Call the function under test.
         result: list[dict] = self.it_service.request_service_accounts(
@@ -408,15 +440,26 @@ class ITServiceTests(IdentityRequest):
             f"{settings.IT_SERVICE_BASE_PATH}{IT_PATH_GET_SERVICE_ACCOUNTS}"
         )
 
+        # We expect one call to determine what strategy to use, then three additional calls to request actual data.
+        calls = get.call_args_list
+        self.assertEqual(4, len(calls))
+
+        # Check for the initial call to determine how many service accounts exist.
+        self._assert_service_account_call(
+            call=calls[0],
+            url=it_url,
+            headers={"Authorization": f"Bearer {bearer_token_mock}"},
+            params={"first": 249, "max": 1},
+            timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+            client_ids_assert=lambda call_client_ids: self.assertEqual([], call_client_ids),
+        )
+
         # Build the expected parameters to be seen in the "get" function's assertion call, other than clientId.
         base_parameters = {"first": 0, "max": 100}
 
-        calls = get.call_args_list
-        self.assertEqual(15, len(calls), "Expected two requests to IT to be made.")
-
         seen_client_ids = set()
 
-        for call in calls:
+        for call in calls[1:]:
             self._assert_service_account_call(
                 call=call,
                 client_ids_assert=lambda call_client_ids: self.assertTrue(
@@ -433,9 +476,75 @@ class ITServiceTests(IdentityRequest):
 
         self.assertSetEqual(set(client_ids), seen_client_ids, "Expected all client IDs to be requested.")
 
+        # Check that we filtered out unexpected service accounts.
+        self.assertTrue(set(client_ids).issuperset(set(account["clientId"] for account in result)))
+
         # Assert that the payload is correct.
         self._assert_IT_to_RBAC_model_transformations(
-            it_service_accounts=mocked_service_accounts, rbac_service_accounts=result
+            it_service_accounts=requested_service_accounts, rbac_service_accounts=result
+        )
+
+    @mock.patch("management.principal.it_service.requests.get")
+    def test_request_service_accounts_client_ids_large(self, get: mock.Mock):
+        """Test that the function under test uses client IDs when few service accounts are needed."""
+        # Create the mocked response from IT.
+        mocked_service_accounts = self._create_mock_it_service_accounts(400)
+        requested_service_accounts = mocked_service_accounts[0:5]
+
+        get.__name__ = "get"
+        get.side_effect = ITServiceTests.FakeIT(mocked_service_accounts).get
+
+        bearer_token_mock = "bearer-token-mock"
+
+        # Request several additional client IDs to ensure they are properly filtered out.
+        # Ensure the total count is greater than 20 to avoid the fast path.
+        # Ensure the total count is greater than 40 so that all service accounts are requested.
+        client_ids = [account["clientId"] for account in requested_service_accounts] + [
+            str(uuid.uuid4()) for _ in range(40)
+        ]
+
+        # Call the function under test.
+        result: list[dict] = self.it_service.request_service_accounts(
+            bearer_token=bearer_token_mock, client_ids=client_ids
+        )
+
+        # Build IT's URL for the function call's assertion.
+        it_url = (
+            f"{settings.IT_SERVICE_PROTOCOL_SCHEME}://{settings.IT_SERVICE_HOST}:{settings.IT_SERVICE_PORT}"
+            f"{settings.IT_SERVICE_BASE_PATH}{IT_PATH_GET_SERVICE_ACCOUNTS}"
+        )
+
+        # We expect one call to determine what strategy to use, then five additional calls to request actual data
+        # (starting at 0, 100, 200, 300, and 400).
+        calls = get.call_args_list
+        self.assertEqual(6, len(calls))
+
+        # Check for the initial call to determine how many service accounts exist.
+        self._assert_service_account_call(
+            call=calls[0],
+            url=it_url,
+            headers={"Authorization": f"Bearer {bearer_token_mock}"},
+            params={"first": 449, "max": 1},
+            timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+            client_ids_assert=lambda call_client_ids: self.assertEqual([], call_client_ids),
+        )
+
+        for data_call_index, call in enumerate(calls[1:]):
+            self._assert_service_account_call(
+                call=call,
+                client_ids_assert=lambda call_client_ids: self.assertEqual([], call_client_ids),
+                url=it_url,
+                headers={"Authorization": f"Bearer {bearer_token_mock}"},
+                params={"first": data_call_index * 100, "max": 100},
+                timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+            )
+
+        # Check that we filtered out unexpected service accounts.
+        self.assertTrue(set(client_ids).issuperset(set(account["clientId"] for account in result)))
+
+        # Assert that the payload is correct.
+        self._assert_IT_to_RBAC_model_transformations(
+            it_service_accounts=requested_service_accounts, rbac_service_accounts=result
         )
 
     @mock.patch("management.principal.it_service.requests.get")
@@ -470,14 +579,9 @@ class ITServiceTests(IdentityRequest):
         ]
 
         bearer_token_mock = "bearer-token-mock"
-        # For multiple pages giving just three client IDs does not make sense, but we are going to give them anyway to
-        # check that the parameter is included.
-        client_ids = [str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())]
 
         # Call the function under test.
-        result: list[dict] = self.it_service.request_service_accounts(
-            bearer_token=bearer_token_mock, client_ids=client_ids
-        )
+        result: list[dict] = self.it_service.request_service_accounts(bearer_token=bearer_token_mock)
 
         # Build IT's URL for the function call's assertion.
         it_url = (
@@ -502,7 +606,7 @@ class ITServiceTests(IdentityRequest):
         for index, call in enumerate(calls):
             self._assert_service_account_call(
                 call=call,
-                client_ids_assert=lambda call_client_ids: self.assertCountEqual(client_ids, call_client_ids),
+                client_ids_assert=lambda call_client_ids: self.assertEqual([], call_client_ids),
                 url=it_url,
                 headers={"Authorization": f"Bearer {bearer_token_mock}"},
                 params=expected_parameters[index],
