@@ -106,8 +106,8 @@ class ITService:
         """
         Request the service accounts for a tenant.
 
-        If client_ids is None or empty, request all of the service accounts that IT has. Otherwise, request only the
-        service accounts with the specified IDs.
+        If client_ids is None, request all of the service accounts that IT has. Otherwise, request only the service
+        accounts with the specified IDs.
         """
         # We cannot talk to IT if we don't have a bearer token.
         if not bearer_token:
