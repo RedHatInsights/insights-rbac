@@ -590,28 +590,39 @@ class ITServiceTests(IdentityRequest):
         )
 
         # Assert that the "get" function is called with the expected arguments for the multiple pages.
-        # clientId is handled separately.
-        expected_parameters = [
-            {"first": 0, "max": 100},
-            {"first": 100, "max": 100},
-            {"first": 200, "max": 100},
-            {"first": 300, "max": 100},
-        ]
+        parameters_first_call = {"first": 0, "max": 100}
+        parameters_second_call = {"first": 100, "max": 100}
+        parameters_third_call = {"first": 200, "max": 100}
+        parameters_fourth_call = {"first": 300, "max": 100}
 
-        calls = get.call_args_list
-        self.assertEqual(4, len(calls), "Expected 4 requests for IT service accounts.")
-
-        seen_parameters: list[dict] = []
-
-        for index, call in enumerate(calls):
-            self._assert_service_account_call(
-                call=call,
-                client_ids_assert=lambda call_client_ids: self.assertEqual([], call_client_ids),
-                url=it_url,
-                headers={"Authorization": f"Bearer {bearer_token_mock}"},
-                params=expected_parameters[index],
-                timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
-            )
+        get.assert_has_calls(
+            [
+                mock.call(
+                    url=it_url,
+                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
+                    params=parameters_first_call,
+                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+                ),
+                mock.call(
+                    url=it_url,
+                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
+                    params=parameters_second_call,
+                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+                ),
+                mock.call(
+                    url=it_url,
+                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
+                    params=parameters_third_call,
+                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+                ),
+                mock.call(
+                    url=it_url,
+                    headers={"Authorization": f"Bearer {bearer_token_mock}"},
+                    params=parameters_fourth_call,
+                    timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
+                ),
+            ]
+        )
 
         # Assert that the payload is correct.
         self._assert_IT_to_RBAC_model_transformations(
