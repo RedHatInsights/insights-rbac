@@ -241,6 +241,7 @@ class WorkspaceService:
 
             # Clear any stale notifications from before LISTEN was issued
             try:
+                conn.poll()  # bring any pending into conn.notifies
                 if getattr(conn, "notifies", None):
                     conn.notifies.clear()
             except Exception:
