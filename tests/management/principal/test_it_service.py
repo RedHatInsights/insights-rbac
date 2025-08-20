@@ -1793,7 +1793,7 @@ class ITServiceTests(IdentityRequest):
         )
 
         self.assertSetEqual(
-            set(principal.service_account_id for principal in principals_tenant_one),
+            {principal.service_account_id for principal in principals_tenant_one},
             set(request_service_accounts.call_args.kwargs["client_ids"]),
             "Expected request_service_accounts to be called with the service_account_ids passed to _filtered_service_accounts.",
         )
@@ -1838,7 +1838,7 @@ class ITServiceTests(IdentityRequest):
 
         # Select one principal to remove in order to ensure that the local and IT account lists are merged properly.
         selected_principals = principals_tenant_one[1:]
-        expected_usernames = set(principal.username for principal in selected_principals)
+        expected_usernames = {principal.username for principal in selected_principals}
 
         request_service_accounts.return_value = self.it_service._get_mock_service_accounts(selected_principals)
 
