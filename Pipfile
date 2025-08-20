@@ -58,7 +58,7 @@ types-pyyaml = "==6.0.12.20250809"
 cryptography = "==44.0.3"
 flake8 = "==7.3.0"
 pre-commit = "==4.3.0"
-mypy = "==1.15.0"
+mypy = "==1.17.1"
 psycopg2-binary = "==2.9.10"
 tblib = "*"
 
