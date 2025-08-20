@@ -449,7 +449,7 @@ class ITServiceTests(IdentityRequest):
             call=calls[0],
             url=it_url,
             headers={"Authorization": f"Bearer {bearer_token_mock}"},
-            params={"first": 249, "max": 1},
+            params={"first": 299, "max": 1},
             timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
             client_ids_assert=lambda call_client_ids: self.assertEqual([], call_client_ids),
         )
@@ -524,7 +524,7 @@ class ITServiceTests(IdentityRequest):
             call=calls[0],
             url=it_url,
             headers={"Authorization": f"Bearer {bearer_token_mock}"},
-            params={"first": 449, "max": 1},
+            params={"first": 499, "max": 1},
             timeout=settings.IT_SERVICE_TIMEOUT_SECONDS,
             client_ids_assert=lambda call_client_ids: self.assertEqual([], call_client_ids),
         )
