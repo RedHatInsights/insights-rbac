@@ -1857,10 +1857,10 @@ class ITServiceTests(IdentityRequest):
         )
 
         for account in filtered:
-            self.assertEqual(
-                1,
-                len(account),
-                f"Expected each account to have a single key when username_only is true; found {list(account.keys())}.",
+            self.assertCountEqual(
+                ["username"],
+                account.keys(),
+                f"Expected each account to have a single key when username_only is true.",
             )
 
             self.assertIn(account["username"], expected_usernames)
