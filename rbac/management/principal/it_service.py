@@ -129,10 +129,10 @@ class ITService:
             # client IDs if the number of IDs is less than 1/10 of all service accounts in IT.
             #
             # Unfortunately, we have no way to make an educated guess with only RBAC's database, since RBAC's database
-            # is not necessarily in sync with IT. (For instance, stage has a tenant with ~7000 service accounts in
-            # RBAC's database but only 13 in IT.) So, we make a single request in order to determine which strategy is
-            # better (by determining if the number of service accounts in IT is more than 10 times the number of client
-            # IDs).
+            # is not necessarily in sync with IT. (For instance, at time of writing, stage has a tenant with ~7000
+            # service accounts in RBAC's database but only 13 in IT.) So, we make a single request in order to
+            # determine which strategy is better (by determining if the number of service accounts in IT is more than
+            # 10 times the number of client IDs).
             #
             # As a special case, if we would have to make two or fewer requests using client IDs (i.e. if we care about
             # fewer than 20 client IDs), then we can always just do that, since we'd always be making at least two
