@@ -17,6 +17,7 @@
 """Class to manage interactions with the IT service accounts service."""
 import itertools
 import logging
+import math
 import time
 import uuid
 from typing import Any, Iterable, Optional, Tuple
@@ -141,7 +142,7 @@ class ITService:
                 client_ids
             ) <= 2 * IT_SERVICE_ACCOUNT_MAX_CLIENT_IDS or self._it_service_account_count_at_least(
                 bearer_token=bearer_token,
-                count=int(len(client_ids) * IT_SERVICE_ACCOUNT_BATCH_SIZE / IT_SERVICE_ACCOUNT_MAX_CLIENT_IDS),
+                count=math.ceil(len(client_ids) / IT_SERVICE_ACCOUNT_MAX_CLIENT_IDS) * IT_SERVICE_ACCOUNT_BATCH_SIZE,
             )
 
             if use_remote_client_ids:
