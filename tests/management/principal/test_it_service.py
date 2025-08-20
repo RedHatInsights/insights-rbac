@@ -369,7 +369,7 @@ class ITServiceTests(IdentityRequest):
     @mock.patch("management.principal.it_service.requests.get")
     def test_request_service_accounts_single_page(self, get: mock.Mock):
         """Test that the function under test can handle fetching a single page of service accounts from IT"""
-        # Create the mocked response from IT.
+        # Create a fake IT service with service accounts.
         mocked_service_accounts = self._create_mock_it_service_accounts(5)
         requested_service_accounts = mocked_service_accounts[0:3]
 
@@ -413,7 +413,7 @@ class ITServiceTests(IdentityRequest):
     @mock.patch("management.principal.it_service.requests.get")
     def test_request_service_accounts_client_ids_small(self, get: mock.Mock):
         """Test that the function under test uses client IDs when few service accounts are needed."""
-        # Create the mocked response from IT.
+        # Create a fake IT service with service accounts.
         mocked_service_accounts = self._create_mock_it_service_accounts(400)
         requested_service_accounts = mocked_service_accounts[0:5]
 
@@ -487,7 +487,7 @@ class ITServiceTests(IdentityRequest):
     @mock.patch("management.principal.it_service.requests.get")
     def test_request_service_accounts_client_ids_large(self, get: mock.Mock):
         """Test that the function under test uses client IDs when few service accounts are needed."""
-        # Create the mocked response from IT.
+        # Create a fake IT service with service accounts.
         mocked_service_accounts = self._create_mock_it_service_accounts(400)
         requested_service_accounts = mocked_service_accounts[0:5]
 
@@ -550,7 +550,7 @@ class ITServiceTests(IdentityRequest):
     @mock.patch("management.principal.it_service.requests.get")
     def test_request_service_accounts_multiple_pages(self, get: mock.Mock):
         """Test that the function under test can handle fetching multiple pages from IT"""
-        # Create the mocked response from IT.
+        # Create a fake IT service with service accounts.
         mocked_service_accounts = self._create_mock_it_service_accounts(300)
 
         # Make sure the "get" function returns multiple pages of service accounts.
