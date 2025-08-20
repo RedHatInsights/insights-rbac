@@ -19,7 +19,7 @@ import itertools
 import logging
 import time
 import uuid
-from typing import Any, Iterable, Optional, Tuple, Union
+from typing import Any, Iterable, Optional, Tuple
 
 import requests
 from django.conf import settings
@@ -113,8 +113,6 @@ class ITService:
         if not bearer_token:
             raise MissingAuthorizationError()
 
-        LOGGER.info(f"request_service_accounts: client_ids={client_ids}")
-
         if client_ids is not None:
             client_ids = set(client_ids)
 
@@ -187,8 +185,6 @@ class ITService:
         assert client_ids is None or len(client_ids) > 0
         assert client_ids is None or len(client_ids) <= IT_SERVICE_ACCOUNT_MAX_CLIENT_IDS
 
-        LOGGER.info(f"service accounts request: client_ids={client_ids}, offset={offset}, limit={limit}")
-
         parameters: dict[str, int | list[str]] = {"first": offset, "max": limit}
 
         if client_ids is not None:
@@ -233,13 +229,6 @@ class ITService:
             offset = 0
             limit = IT_SERVICE_ACCOUNT_BATCH_SIZE
 
-            # If the offset is zero, that means that we need to call the service at least once to get the first
-            # service accounts. If it equals the limit, that means that there are more pages to fetch.
-            parameters: dict[str, Union[int, list[str]]] = {"first": offset, "max": limit}
-            # If we were given client IDs to filter the collection with, do it!
-            if client_ids is not None:
-                parameters["clientId"] = client_ids
-
             continue_fetching: bool = True
             while continue_fetching:
                 body_contents = self._request_service_accounts_raw(
@@ -250,7 +239,7 @@ class ITService:
                 )
 
                 # Merge the previously received service accounts with the new ones.
-                received_service_accounts = received_service_accounts + body_contents
+                received_service_accounts.extend(body_contents)
 
                 # Reassess if we need to keep fetching pages from IT. They don't return page metadata, so we need to
                 # keep looping until the incoming body is an empty array.
