@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "10187c1c2907ff80d05f37bc0fbcd5adac0b7ac156bd5536b7b32a2a341afdb0"
+            "sha256": "afd4258ee62bee1dd7362fcd2df78d9e7e2e39b68b85300700b938cbba122533"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1309,12 +1309,12 @@
         },
         "xmltodict": {
             "hashes": [
-                "sha256:341595a488e3e01a85a9d8911d8912fd922ede5fecc4dce437eb4b6c8d037e56",
-                "sha256:aa89e8fd76320154a40d19a0df04a4695fb9dc5ba977cbb68ab3e4eb225e7852"
+                "sha256:201e7c28bb210e374999d1dde6382923ab0ed1a8a5faeece48ab525b7810a553",
+                "sha256:20cc7d723ed729276e808f26fb6b3599f786cbc37e06c65e192ba77c40f20aac"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.4'",
-            "version": "==0.13.0"
+            "markers": "python_version >= '3.6'",
+            "version": "==0.14.2"
         },
         "yggdrasil-engine": {
             "hashes": [
