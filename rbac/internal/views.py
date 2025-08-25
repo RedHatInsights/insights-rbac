@@ -40,6 +40,7 @@ from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     delete_bindings,
     get_or_create_ungrouped_workspace,
+    load_request_body,
     validate_inventory_input,
     validate_relations_input,
 )
@@ -1495,8 +1496,8 @@ def retrieve_ungrouped_workspace(request):
 def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
-    request_decoded = request.body.decode("utf-8")
-    req_data = json.loads(request_decoded)
+    req_data = load_request_body(request)
+
     if not validate_relations_input("lookup_resources", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
@@ -1550,8 +1551,7 @@ def lookup_resource(request):
 def read_tuples(request):
     """POST read tuples from relations api."""
     # Parse JSON data from the POST request body
-    request_decoded = request.body.decode("utf-8")
-    req_data = json.loads(request_decoded)
+    req_data = load_request_body(request)
 
     if not validate_relations_input("read_tuples", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to read_tuples."}, status=500)
@@ -1609,8 +1609,8 @@ def read_tuples(request):
 def check_relation(request):
     """POST to check relationship from relations api."""
     # Parse JSON data from the POST request body
-    request_decoded = request.body.decode("utf-8")
-    req_data = json.loads(request_decoded)
+    req_data = load_request_body(request)
+
     if not validate_relations_input("check_relation", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
 
@@ -1689,8 +1689,7 @@ def group_assignments(request, group_uuid):
 def check_inventory(request):
     """POST to check relationship from inventory api."""
     # Parse JSON data from the POST request body
-    request_decoded = request.body.decode("utf-8")
-    req_data = json.loads(request_decoded)
+    req_data = load_request_body(request)
 
     if not validate_inventory_input("check", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check inventory."}, status=500)
