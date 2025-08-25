@@ -162,7 +162,7 @@ def validate_inventory_input(action, request_data) -> bool:
         return False
 
 
-def load_request_body(request):
+def load_request_body(request) -> dict:
     """Decode request body from json into dict structure."""
     request_decoded = request.body.decode("utf-8")
     req_data = json.loads(request_decoded)
