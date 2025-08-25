@@ -4,7 +4,134 @@ info:
   version: v2
 tags:
   - name: Workspaces
+  - name: Role Bindings
 paths:
+  /role-bindings/by-subject:
+    get:
+      operationId: RoleBindings_listBySubject
+      summary: List role bindings grouped by subject
+      description: List role bindings grouped by subject
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 1000
+          explode: false
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 0
+          explode: false
+        - name: resource_type
+          in: query
+          required: false
+          description: Filter by resource type
+          schema:
+            type: string
+          explode: false
+        - name: resource_id
+          in: query
+          required: false
+          description: Filter by resource ID
+          schema:
+            type: string
+          explode: false
+        - name: subject_type
+          in: query
+          required: false
+          description: Filter by subject type
+          schema:
+            type: string
+          explode: false
+        - name: subject_id
+          in: query
+          required: false
+          description: Filter by subject ID
+          schema:
+            type: string
+          explode: false
+        - name: fields
+          in: query
+          required: false
+          description: 'Specify which fields to include in response. Basic fields (subject.id, subject.type, role.id, resource.type) are included by default when no fields parameter is specified (type fields are always required, other fields are optional). When fields parameter is provided, only the specified fields are exposed. Use parentheses format: subject(field1,field2), resource(field1,field2). Available fields - subject: user_count, name; resource: name; role: name; other: last_modified'
+          schema:
+            type: string
+          explode: false
+        - name: sort_by
+          in: query
+          required: false
+          description: Sort by specified field(s), prefix with '-' for descending order
+          schema:
+            type: string
+          explode: false
+        - name: parent_role_bindings
+          in: query
+          required: false
+          description: Include role bindings from parent resources
+          schema:
+            type: boolean
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleBindings.RoleBindingBySubjectListResponse'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Role Bindings
   /workspaces/:
     get:
       operationId: Workspaces_list
@@ -765,6 +892,146 @@ components:
             instance:
               type: string
               format: uri
+    RoleBindings.BaseResource:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          description: Type of resource
+          example: workspace
+        name:
+          type: string
+          description: Name of the resource
+          example: Workspace A
+        inherited_from:
+          type: object
+          properties:
+            type:
+              type: string
+              description: Parent resource type
+              example: default
+            name:
+              type: string
+              description: Parent resource name
+              example: Workspace Z
+          required:
+            - type
+          description: Information about parent resource when inherited from parent (only when parent_role_bindings=true)
+      discriminator:
+        propertyName: type
+        mapping: {}
+    RoleBindings.BaseSubject:
+      type: object
+      required:
+        - type
+      properties:
+        id:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          description: Subject identifier
+        type:
+          type: string
+          description: Type of subject
+        name:
+          type: string
+          description: Name of the subject
+      discriminator:
+        propertyName: type
+        mapping:
+          group: '#/components/schemas/RoleBindings.GroupSubject'
+    RoleBindings.GroupSubject:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - group
+          description: Type of subject
+        user_count:
+          type: integer
+          format: int64
+          description: Number of users in the group
+      allOf:
+        - $ref: '#/components/schemas/RoleBindings.BaseSubject'
+    RoleBindings.Role:
+      type: object
+      properties:
+        id:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          description: Role identifier
+        name:
+          type: string
+          description: Name of the role
+    RoleBindings.RoleBindingBySubject:
+      type: object
+      properties:
+        last_modified:
+          type: string
+          format: date-time
+          description: Timestamp of last modification
+        subject:
+          anyOf:
+            - $ref: '#/components/schemas/RoleBindings.UserSubject'
+            - $ref: '#/components/schemas/RoleBindings.GroupSubject'
+          description: Subject of the role binding
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleBindings.Role'
+          description: Roles assigned to the subject
+        resource:
+          allOf:
+            - $ref: '#/components/schemas/RoleBindings.WorkspaceResource'
+          description: Resource the roles apply to
+    RoleBindings.RoleBindingBySubjectListResponse:
+      type: object
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/Workspaces.PaginationMeta'
+          description: Pagination metadata
+        links:
+          allOf:
+            - $ref: '#/components/schemas/Workspaces.PaginationLinks'
+          description: Pagination links
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleBindings.RoleBindingBySubject'
+          description: List of role bindings grouped by subject
+    RoleBindings.UserSubject:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - user
+          description: Type of subject
+      allOf:
+        - $ref: '#/components/schemas/RoleBindings.BaseSubject'
+    RoleBindings.WorkspaceResource:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - workspace
+          description: Type of resource
+      allOf:
+        - $ref: '#/components/schemas/RoleBindings.BaseResource'
     Timestamps:
       type: object
       required:
@@ -919,8 +1186,8 @@ components:
           type: integer
           format: int64
           description: Limit of returned objects
-          example: 10
-          default: 10
+          example: 1000
+          default: 1000
         offset:
           type: integer
           format: int64
