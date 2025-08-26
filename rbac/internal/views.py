@@ -40,6 +40,7 @@ from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     delete_bindings,
     get_or_create_ungrouped_workspace,
+    load_request_body,
     validate_inventory_input,
     validate_relations_input,
 )
@@ -54,6 +55,7 @@ from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache, TenantCache
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -68,6 +70,7 @@ from management.principal.proxy import (
 from management.relation_replicator.bootstrapped_tenant_check import RelationsApiTenantChecker
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.relation_replicator.relations_api_check import RelationsApiRelationChecker
 from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
@@ -1494,7 +1497,8 @@ def retrieve_ungrouped_workspace(request):
 def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
+
     if not validate_relations_input("lookup_resources", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
@@ -1548,7 +1552,7 @@ def lookup_resource(request):
 def read_tuples(request):
     """POST read tuples from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_relations_input("read_tuples", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to read_tuples."}, status=500)
@@ -1606,7 +1610,7 @@ def read_tuples(request):
 def check_relation(request):
     """POST to check relationship from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_relations_input("check_relation", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
@@ -1660,10 +1664,33 @@ def check_relation(request):
         )
 
 
+def group_assignments(request, group_uuid):
+    """Calculate and check if group-principals are correct on relations api."""
+    group = get_object_or_404(Group, uuid=group_uuid)
+    principals = list(group.principals.all())
+    relations_assignment_checker = RelationsApiRelationChecker()
+    relations_dual_write_handler = RelationApiDualWriteGroupHandler(
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_checker
+    )
+    relations_dual_write_handler.generate_relations_to_add_principals(principals)
+    relationships = relations_dual_write_handler.relations_to_add
+    relation_assignments = relations_dual_write_handler._replicator.replicate(
+        ReplicationEvent(
+            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+            info={
+                "detail": "Check user-group relations are correct",
+            },
+            partition_key=PartitionKey.byEnvironment(),
+            add=relationships,
+        ),
+    )
+    return JsonResponse(relation_assignments, safe=False)
+
+
 def check_inventory(request):
     """POST to check relationship from inventory api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_inventory_input("check", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check inventory."}, status=500)

@@ -2754,6 +2754,47 @@
       }
     }
   },
+    "/_private/api/group_assignments/{group_uuid}": {
+      "post": {
+        "tags": [
+          "Relations"
+        ],
+        "summary": "Check group assignments are correct on relations api.",
+        "description": "Returns resource from relations api.",
+        "responses": {
+          "200": {
+            "description": "Resource returned."
+          },
+          "204": {
+            "description": "No resource found."
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error500"
+                },
+                "examples": {
+                  "gRPCError": {
+                    "value": {
+                      "detail": "[gRPC] check_relation failed",
+                      "error": "gRPC Error"
+                    }
+                  },
+                  "Error": {
+                    "value": {
+                      "detail": "[Unexpected] check_relation failed",
+                      "error": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/_private/api/inventory/check/": {
     "post": {
       "tags": [
