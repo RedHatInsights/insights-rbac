@@ -28,6 +28,7 @@ from kessel.relations.v1beta1 import check_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache
+from management.relation_replicator.relation_replicator import RelationReplicator
 from management.utils import create_client_channel
 
 jwt_cache = JWTCache()
@@ -36,26 +37,17 @@ jwt_manager = JWTManager(jwt_provider, jwt_cache)
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class RelationsApiTenantChecker:
+class RelationsApiTenantChecker(RelationReplicator):
     """Checks bootstrapped tenants via the Relations API over gRPC."""
 
-    def replicate(self, tenant_mappings):
+    def replicate(self, mapping):
         """Check the given event is correct on Kessel Relations via the gRPC API."""
-        assignments = self._check_bootstrapped_tenants(tenant_mappings)
+        assignments = self._check_bootstrapped_tenants(mapping)
         return assignments
 
-    def _check_bootstrapped_tenants(self, mappings):
-        bootstrapped_tenants = {"org_id": "", "workspaces": []}
-        for mapping in mappings:
+    def _check_bootstrapped_tenants(self, mapping):
+        if mapping:
             bootstrapped_tenant_correct = self.check_relation_core(mapping)
-            bootstrapped_tenants["org_id"] = mapping["org_id"]
-            bootstrapped_tenants["workspaces"].append(
-                {
-                    "root_workspace": mapping["root_workspace"],
-                    "default_workspace": mapping["default_workspace"],
-                    "bootstrapped_correct": bootstrapped_tenant_correct,
-                }
-            )
             if not bootstrapped_tenant_correct:
                 logger.warning(f'{mapping["org_id"]} does not have the expected hierarchy for bootstrapped tenant.')
             else:

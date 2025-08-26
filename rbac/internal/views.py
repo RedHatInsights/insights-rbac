@@ -1721,33 +1721,27 @@ def check_inventory(request):
         )
 
 
-def check_bootstrapped_tenants(request):
+def check_bootstrapped_tenants(request, org_id):
     """POST to check if bootstrapped tenant is correct on relations api."""
-    mappings = []
-    relations_bootstrapped_tenants = []
-    # Get all tenants with mappings i.e are bootstrapped
-    bootstrapped_tenants = Tenant.objects.filter(tenant_mapping__isnull=False)
-    for tenant in bootstrapped_tenants:
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+    if tenant and tenant.tenant_mapping:
         default_workspace = Workspace.objects.default(tenant=tenant)
         root_workspace = Workspace.objects.root(tenant=tenant)
-        mappings.append(
-            {
-                "org_id": str(tenant.org_id),
-                "root_workspace": str(root_workspace.id),
-                "default_workspace": str(default_workspace.id),
-                "tenant_mapping": {
-                    "default_group_uuid": str(tenant.tenant_mapping.default_group_uuid),
-                    "default_admin_group_uuid": str(tenant.tenant_mapping.default_admin_group_uuid),
-                    "default_role_binding_uuid": str(tenant.tenant_mapping.default_role_binding_uuid),
-                    "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
-                },
-            }
-        )
-
+        mapping = {
+            "org_id": tenant.org_id,
+            "root_workspace": root_workspace.id,
+            "default_workspace": default_workspace.id,
+            "tenant_mapping": {
+                "default_group_uuid": tenant.tenant_mapping.default_group_uuid,
+                "default_admin_group_uuid": tenant.tenant_mapping.default_admin_group_uuid,
+                "default_role_binding_uuid": tenant.tenant_mapping.default_role_binding_uuid,
+                "default_admin_role_binding_uuid": tenant.tenant_mapping.default_admin_role_binding_uuid,
+            },
+        }
         relations_api_tenant_checker = RelationsApiTenantChecker()
-        bootstrap_tenants = relations_api_tenant_checker.replicate(mappings)
-        relations_bootstrapped_tenants.append({"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants})
-    return JsonResponse(relations_bootstrapped_tenants, safe=False)
+        bootstrap_tenants_correct = relations_api_tenant_checker.replicate(mapping)
+        bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+    return JsonResponse(bootstrapped_tenant_response, safe=False)
 
 
 @require_http_methods(["GET", "DELETE"])
