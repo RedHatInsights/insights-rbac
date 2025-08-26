@@ -67,10 +67,9 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
-from management.relation_replicator.bootstrapped_tenant_check import RelationsApiTenantChecker
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from management.relation_replicator.relations_api_check import RelationsApiRelationChecker
+from management.relation_replicator.relations_api_check import RelationsApiBaseChecker
 from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
@@ -1668,9 +1667,9 @@ def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
     principals = list(group.principals.all())
-    relations_assignment_checker = RelationsApiRelationChecker()
+    relations_api_base_checker = RelationsApiBaseChecker()
     relations_dual_write_handler = RelationApiDualWriteGroupHandler(
-        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_checker
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_api_base_checker
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
@@ -1765,8 +1764,8 @@ def check_bootstrapped_tenants(request, org_id):
                 "default_admin_role_binding_uuid": tenant.tenant_mapping.default_admin_role_binding_uuid,
             },
         }
-        relations_api_tenant_checker = RelationsApiTenantChecker()
-        bootstrap_tenants_correct = relations_api_tenant_checker.replicate(mapping)
+        relations_api_base_checker = RelationsApiBaseChecker()
+        bootstrap_tenants_correct = relations_api_base_checker.replicate(mapping)
         bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
     return JsonResponse(bootstrapped_tenant_response, safe=False)
 
