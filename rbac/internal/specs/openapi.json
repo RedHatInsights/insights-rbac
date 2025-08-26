@@ -2678,7 +2678,7 @@
         }
       }
     },
-  "/_private/api/bootstrap_tenants/{org_id}/": {
+  "/_private/api/relations/bootstrap_tenants/{org_id}/": {
     "post": {
       "tags": [
         "Relations"
