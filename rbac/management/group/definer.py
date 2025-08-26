@@ -24,6 +24,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models.query import QuerySet
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
@@ -141,6 +142,19 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group_name = group.name
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
+    if created:
+        logger.info(f"Created new group {group_name} for tenant {tenant.org_id}.")
+    else:
+        logger.info(f"Group {group_name} already exists for tenant {tenant.org_id}.")
+
+    # check if role exists for the specific tenant
+    for role in roles:
+        role_object = get_object_or_404(Role, uuid=role.uuid)
+        if role_object.tenant != tenant and role_object.tenant.tenant_name != "public":
+            key = "roles"
+            message = f"Role with id {role} does not exist."
+            raise serializers.ValidationError({key: _(message)})
+
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.update_or_create(
         system=True, group=group, name=system_policy_name, defaults={"tenant": tenant}

@@ -1291,6 +1291,7 @@ class GroupViewSet(
 
             with transaction.atomic():
                 group = set_system_flag_before_update(group, request.tenant, request.user)
+
                 add_roles(group, roles, request.tenant, user=request.user)
 
             response_data = GroupRoleSerializerIn(group)
