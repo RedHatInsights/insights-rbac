@@ -143,32 +143,57 @@ def v1_role_to_v2_bindings(
             )
 
     # Project permission sets to roles per set of resources
-    return permission_groupings_to_v2_role_bindings(perm_groupings, v1_role, role_bindings)
+    return permission_groupings_to_v2_role_bindings(perm_groupings, v1_role, role_bindings, default_workspace)
 
 
 def permission_groupings_to_v2_role_bindings(
-    perm_groupings: PermissionGroupings, v1_role: Role, role_bindings: Iterable[BindingMapping]
+    perm_groupings: PermissionGroupings,
+    v1_role: Role,
+    role_bindings: Iterable[BindingMapping],
+    default_workspace: Workspace,
 ) -> list[BindingMapping]:
     """Determine updated role bindings based on latest resource-permission state and current role bindings."""
+    from management.permission_scope import highest_scope_for_v2_permissions, Scope
+
     updated_mappings: list[BindingMapping] = []
     latest_roles_by_id: dict[str, V2role] = {}
     # TODO: this is broken for system roles, need to have Tenant or Policies provided
     # so that we don't look up Policies across all Tenants!
-    latest_groups = frozenset([str(policy.group.uuid) for policy in v1_role.policies.all()])
+    latest_groups = frozenset(str(policy.group.uuid) for policy in v1_role.policies.all())
 
     role_bindings_by_resource = {binding.get_role_binding().resource: binding for binding in role_bindings}
 
     for resource, permissions in perm_groupings.items():
+        # Check if this is a default workspace binding that needs scope adjustment
+        is_default_workspace_binding = resource.resource_type == ("rbac", "workspace") and str(
+            resource.resource_id
+        ) == str(default_workspace.id)
+
+        # If this is a default workspace binding, determine the correct scope
+        if is_default_workspace_binding:
+            # Determine the highest scope from the V2 permissions
+            highest_scope = highest_scope_for_v2_permissions(permissions)
+
+            # Update the resource based on the scope
+            if highest_scope == Scope.TENANT:
+                # Bind to tenant level
+                tenant_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{v1_role.tenant.org_id}"
+                resource = V2boundresource(("rbac", "tenant"), tenant_id)
+            elif highest_scope == Scope.ROOT:
+                # Bind to root workspace
+                root_workspace = Workspace.objects.root(tenant=v1_role.tenant)
+                resource = V2boundresource(("rbac", "workspace"), str(root_workspace.id))
+            # else: keep the default workspace (no change needed)
         mapping = role_bindings_by_resource.get(resource)
         current = mapping.get_role_binding() if mapping is not None else None
         perm_set = frozenset(permissions)
         new_role: Optional[V2role] = None
 
         # Try to find an updated Role that matches (could be our current Role)
-        for _, role in latest_roles_by_id.items():
-            if role.permissions == perm_set:
-                new_role = role
-                break
+        new_role = next(
+            (role for role in latest_roles_by_id.values() if role.permissions == perm_set),
+            None,
+        )
 
         if new_role is None:
             # No updated Role matches. We need a new or reconfigured Role.
@@ -177,15 +202,15 @@ def permission_groupings_to_v2_role_bindings(
                 new_role = V2role(current.role.id, False, perm_set)
             else:
                 # Need to create a new role
-                id = str(uuid.uuid4())
-                new_role = V2role(id, False, perm_set)
+                new_role_id = str(uuid.uuid4())
+                new_role = V2role(new_role_id, False, perm_set)
             latest_roles_by_id[new_role.id] = new_role
 
         # Add the role binding, updating or creating as needed.
         if mapping is None:
             # No existing binding for this resource, have to create one
-            id = str(uuid.uuid4())
-            binding = V2rolebinding(id, new_role, resource, latest_groups)
+            binding_id = str(uuid.uuid4())
+            binding = V2rolebinding(binding_id, new_role, resource, latest_groups)
             updated_mapping = BindingMapping.for_role_binding(binding, v1_role)
         else:
             # Reuse current binding ID and mapping ID
