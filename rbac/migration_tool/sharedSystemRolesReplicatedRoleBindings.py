@@ -22,6 +22,7 @@ from typing import Any, Iterable, Optional, Tuple, Union
 from django.conf import settings
 from management.models import BindingMapping, Workspace
 from management.permission.model import Permission
+from management.permission_scope import _implicit_resource_service
 from management.role.model import Role
 from migration_tool.ingest import add_element
 from migration_tool.models import (
@@ -34,7 +35,7 @@ from migration_tool.models import (
 
 logger = logging.getLogger(__name__)
 
-PermissionGroupings = dict[V2boundresource, set[str]]
+PermissionGroupings = dict[V2boundresource, set[str]]  # V1 permission strings now
 
 
 def add_system_role(system_roles, role: V2role):
@@ -102,7 +103,8 @@ def v1_role_to_v2_bindings(
         if not is_for_enabled_app(v1_perm):
             continue
 
-        v2_perm = v1_perm_to_v2_perm(v1_perm)
+        # Keep V1 permission string for groupings because we need to use it to determine the scope-aware resource
+        v1_perm_string = v1_perm.permission
 
         default = True
         for resource_def in access.resourceDefinitions.all():
@@ -133,12 +135,23 @@ def v1_role_to_v2_bindings(
                         resource_id = str(ungrouped_ws.id)
                     else:
                         continue
-                add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
+                # Explicit binding: set explicitly_bound=True
+                add_element(
+                    perm_groupings,
+                    V2boundresource(resource_type, resource_id, explicitly_bound=True),
+                    v1_perm_string,  # Store V1 permission string
+                    collection=set,
+                )
         if default:
+            # For implicit bindings, just use default workspace for now
+            # The actual scope-aware binding will be handled in permission_groupings_to_v2_role_bindings
+            bound_resource = V2boundresource(
+                ("rbac", "workspace"), str(default_workspace.id), explicitly_bound=False  # This is an implicit binding
+            )
             add_element(
                 perm_groupings,
-                V2boundresource(("rbac", "workspace"), str(default_workspace.id)),
-                v2_perm,
+                bound_resource,
+                v1_perm_string,  # Store V1 permission string
                 collection=set,
             )
 
@@ -147,28 +160,42 @@ def v1_role_to_v2_bindings(
 
 
 def permission_groupings_to_v2_role_bindings(
-    perm_groupings: PermissionGroupings, v1_role: Role, role_bindings: Iterable[BindingMapping]
+    perm_groupings: PermissionGroupings,
+    v1_role: Role,
+    role_bindings: Iterable[BindingMapping],
 ) -> list[BindingMapping]:
     """Determine updated role bindings based on latest resource-permission state and current role bindings."""
+    # Ensure singleton reflects current settings (important for tests with overrides)
+    _implicit_resource_service.refresh_from_settings()
+
     updated_mappings: list[BindingMapping] = []
     latest_roles_by_id: dict[str, V2role] = {}
     # TODO: this is broken for system roles, need to have Tenant or Policies provided
     # so that we don't look up Policies across all Tenants!
-    latest_groups = frozenset([str(policy.group.uuid) for policy in v1_role.policies.all()])
+    latest_groups = frozenset(str(policy.group.uuid) for policy in v1_role.policies.all())
 
     role_bindings_by_resource = {binding.get_role_binding().resource: binding for binding in role_bindings}
 
-    for resource, permissions in perm_groupings.items():
+    for resource, v1_permissions in perm_groupings.items():
         mapping = role_bindings_by_resource.get(resource)
         current = mapping.get_role_binding() if mapping is not None else None
-        perm_set = frozenset(permissions)
+
+        # Convert V1 permissions to V2 permissions for role creation
+        v2_permissions = set()
+        for v1_perm_string in v1_permissions:
+            # Convert V1 string directly to V2 format
+            # "app:resource_type:verb" -> "app_resource_type_verb"
+            v2_perm = cleanNameForV2SchemaCompatibility(v1_perm_string)
+            v2_permissions.add(v2_perm)
+
+        perm_set = frozenset(v2_permissions)
         new_role: Optional[V2role] = None
 
         # Try to find an updated Role that matches (could be our current Role)
-        for _, role in latest_roles_by_id.items():
-            if role.permissions == perm_set:
-                new_role = role
-                break
+        new_role = next(
+            (role for role in latest_roles_by_id.values() if role.permissions == perm_set),
+            None,
+        )
 
         if new_role is None:
             # No updated Role matches. We need a new or reconfigured Role.
@@ -177,15 +204,47 @@ def permission_groupings_to_v2_role_bindings(
                 new_role = V2role(current.role.id, False, perm_set)
             else:
                 # Need to create a new role
-                id = str(uuid.uuid4())
-                new_role = V2role(id, False, perm_set)
+                new_role_id = str(uuid.uuid4())
+                new_role = V2role(new_role_id, False, perm_set)
             latest_roles_by_id[new_role.id] = new_role
 
         # Add the role binding, updating or creating as needed.
         if mapping is None:
             # No existing binding for this resource, have to create one
-            id = str(uuid.uuid4())
-            binding = V2rolebinding(id, new_role, resource, latest_groups)
+            # For new bindings, verify that the resource binding is appropriate for the permission scope
+            target_resource = resource
+
+            # If this is an implicit binding (not explicitly_bound), check if scope-aware binding is needed
+            if not resource.explicitly_bound:
+                # Use the V1 permissions to determine the appropriate scope and resource
+                v1_perm_list = list(v1_permissions)
+                if v1_perm_list:  # Should always have permissions, but safety check
+                    # Get the ROOT workspace for the tenant (assume all tenants have one)
+                    root_workspace_id = None
+                    try:
+                        root_workspace = Workspace.objects.root(tenant=v1_role.tenant)
+                        if root_workspace:
+                            root_workspace_id = str(root_workspace.id)
+                    except Exception:
+                        # Fallback gracefully if ROOT workspace lookup fails
+                        pass
+
+                    # Use the shared singleton service to determine the correct resource binding
+                    scope_aware_resource = _implicit_resource_service.create_v2_bound_resource_for_permissions(
+                        v1_perm_list,
+                        tenant_org_id=v1_role.tenant.org_id,
+                        default_workspace_id=(
+                            resource.resource_id if resource.resource_type == ("rbac", "workspace") else None
+                        ),
+                        root_workspace_id=root_workspace_id,
+                    )
+
+                    # If the scope-aware resource is different from the current resource, use the scope-aware one
+                    if scope_aware_resource != resource:
+                        target_resource = scope_aware_resource
+
+            binding_id = str(uuid.uuid4())
+            binding = V2rolebinding(binding_id, new_role, target_resource, latest_groups)
             updated_mapping = BindingMapping.for_role_binding(binding, v1_role)
         else:
             # Reuse current binding ID and mapping ID
@@ -230,14 +289,10 @@ def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:
     return resource_id.split(",") if op == "in" else [resource_id]
 
 
-def v1_perm_to_v2_perm(v1_permission: Permission):
-    """Convert a V1 permission to a V2 permission."""
-    return cleanNameForV2SchemaCompatibility(
-        v1_permission.application + "_" + v1_permission.resource_type + "_" + v1_permission.verb
-    )
-
-
-V2_RESOURCE_BY_ATTRIBUTE = {"group.id": ("rbac", "workspace")}
+V2_RESOURCE_BY_ATTRIBUTE = {
+    "group.id": ("rbac", "workspace"),
+    "workspace.id": ("rbac", "workspace"),
+}
 
 
 def attribute_key_to_v2_related_resource_type(resourceType: str) -> Optional[Tuple[str, str]]:

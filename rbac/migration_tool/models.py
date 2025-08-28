@@ -60,6 +60,7 @@ class V2boundresource:
 
     resource_type: Tuple[str, str]
     resource_id: str
+    explicitly_bound: bool = False  # True if explicitly bound to this resource, False if implicit/default
 
 
 @dataclass(frozen=True)
