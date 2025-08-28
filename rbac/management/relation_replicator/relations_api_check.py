@@ -19,6 +19,7 @@
 
 
 import logging
+from typing import Union
 
 from django.conf import settings
 from google.protobuf import json_format
@@ -37,17 +38,153 @@ jwt_manager = JWTManager(jwt_provider, jwt_cache)
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class RelationsApiRelationChecker(RelationReplicator):
-    """Checks relations via the Relations API over gRPC."""
+class RelationsApiBaseChecker(RelationReplicator):
+    """Base class used for assignment checks on relations api."""
 
-    def replicate(self, event: ReplicationEvent):
-        """Replicate the given event to Kessel Relations via the gRPC API."""
-        assignments = self._check_relationships(event.add)
-        return assignments
+    def replicate(self, arg):
+        """Check the given event is correct on Kessel Relations via the gRPC API."""
+        if isinstance(arg, dict):
+            assignments = self._check_bootstrapped_tenants(arg)
+            return assignments
 
+        if isinstance(arg, ReplicationEvent):
+            assignments = self._check_relationships(arg.add)
+            return assignments
+
+    def check_relation_core(self, arg: Union[dict, common_pb2.Relationship]) -> bool:
+        """
+        Core method to check relation(s) via gRPC.
+
+        Accepts either a mapping dict for tenant bootstrap or a single Relationship protobuf.
+        """
+        token = jwt_manager.get_jwt_from_redis()
+
+        try:
+            with create_client_channel(settings.RELATION_API_SERVER) as channel:
+                stub = check_pb2_grpc.KesselCheckServiceStub(channel)
+                metadata = [("authorization", f"Bearer {token}")]
+
+                if isinstance(arg, dict):
+                    # Tenant bootstrapping check
+                    mapping = arg
+                    checks = [
+                        # Check root workspace has correct default workspace
+                        check_pb2.CheckRequest(
+                            resource=common_pb2.ObjectReference(
+                                type=common_pb2.ObjectType(namespace="rbac", name="workspace"),
+                                id=mapping["root_workspace"],
+                            ),
+                            relation="parent",
+                            subject=common_pb2.SubjectReference(
+                                subject=common_pb2.ObjectReference(
+                                    type=common_pb2.ObjectType(namespace="rbac", name="workspace"),
+                                    id=mapping["default_workspace"],
+                                ),
+                            ),
+                        ),
+                        # Check default workspace has correct default role binding
+                        check_pb2.CheckRequest(
+                            resource=common_pb2.ObjectReference(
+                                type=common_pb2.ObjectType(namespace="rbac", name="workspace"),
+                                id=mapping["default_workspace"],
+                            ),
+                            relation="binding",
+                            subject=common_pb2.SubjectReference(
+                                subject=common_pb2.ObjectReference(
+                                    type=common_pb2.ObjectType(namespace="rbac", name="role_binding"),
+                                    id=mapping["tenant_mapping"]["default_role_binding_uuid"],
+                                ),
+                            ),
+                        ),
+                        # Check default workspace has correct default admin role binding
+                        check_pb2.CheckRequest(
+                            resource=common_pb2.ObjectReference(
+                                type=common_pb2.ObjectType(namespace="rbac", name="workspace"),
+                                id=mapping["default_workspace"],
+                            ),
+                            relation="binding",
+                            subject=common_pb2.SubjectReference(
+                                subject=common_pb2.ObjectReference(
+                                    type=common_pb2.ObjectType(namespace="rbac", name="role_binding"),
+                                    id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
+                                ),
+                            ),
+                        ),
+                        # Check default role binding is assigned to correct group
+                        check_pb2.CheckRequest(
+                            resource=common_pb2.ObjectReference(
+                                type=common_pb2.ObjectType(namespace="rbac", name="role_binding"),
+                                id=mapping["tenant_mapping"]["default_role_binding_uuid"],
+                            ),
+                            relation="subject",
+                            subject=common_pb2.SubjectReference(
+                                relation="member",
+                                subject=common_pb2.ObjectReference(
+                                    type=common_pb2.ObjectType(namespace="rbac", name="group"),
+                                    id=mapping["tenant_mapping"]["default_group_uuid"],
+                                ),
+                            ),
+                        ),
+                        # Check default admin role binding is assigned to correct group
+                        check_pb2.CheckRequest(
+                            resource=common_pb2.ObjectReference(
+                                type=common_pb2.ObjectType(namespace="rbac", name="role_binding"),
+                                id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
+                            ),
+                            relation="subject",
+                            subject=common_pb2.SubjectReference(
+                                relation="member",
+                                subject=common_pb2.ObjectReference(
+                                    type=common_pb2.ObjectType(namespace="rbac", name="group"),
+                                    id=mapping["tenant_mapping"]["default_admin_group_uuid"],
+                                ),
+                            ),
+                        ),
+                    ]
+
+                    responses = [stub.Check(req, metadata=metadata) for req in checks]
+                    return all(self._is_allowed(res) for res in responses)
+
+                if isinstance(arg, common_pb2.Relationship):
+                    # Single relationship check
+                    r = arg
+                    request_data = check_pb2.CheckRequest(
+                        resource=common_pb2.ObjectReference(
+                            type=common_pb2.ObjectType(namespace=r.resource.type.namespace, name=r.resource.type.name),
+                            id=r.resource.id,
+                        ),
+                        relation=r.relation,
+                        subject=common_pb2.SubjectReference(
+                            relation=r.subject.relation,
+                            subject=common_pb2.ObjectReference(
+                                type=common_pb2.ObjectType(
+                                    namespace=r.subject.subject.type.namespace, name=r.subject.subject.type.name
+                                ),
+                                id=r.subject.subject.id,
+                            ),
+                        ),
+                    )
+                    response = stub.Check(request_data, metadata=metadata)
+                    if response:
+                        response_dict = json_format.MessageToDict(response)
+                        return response_dict.get("allowed", "") != "ALLOWED_FALSE"
+
+        except RpcError as e:
+            logger.error(f"[gRPC] check_relation_core failed: {e}")
+        except Exception as e:
+            logger.error(f"[Unexpected] check_relation_core failed: {e}")
+
+        return False
+
+    def _is_allowed(self, response):
+        response_dict = json_format.MessageToDict(response)
+        return response_dict.get("allowed", "") != "ALLOWED_FALSE"
+
+    # Check group principal assignments
     def _check_relationships(self, relationships):
         relations_assignments = {"group_uuid": "", "principal_relations": []}
         for r in relationships:
+            print(r)
             relation_exists = self.check_relation_core(r)
             relations_assignments["group_uuid"] = r.resource.id
             relations_assignments["principal_relations"].append(
@@ -59,43 +196,12 @@ class RelationsApiRelationChecker(RelationReplicator):
                 )
         return relations_assignments
 
-    def check_relation_core(self, r: common_pb2.Relationship) -> bool:
-        """
-        Core function to check relation between a resource and a subject using gRPC.
-
-        Returns True if relation exists, False otherwise.
-        """
-        token = jwt_manager.get_jwt_from_redis()
-        try:
-            with create_client_channel(settings.RELATION_API_SERVER) as channel:
-                stub = check_pb2_grpc.KesselCheckServiceStub(channel)
-
-                request_data = check_pb2.CheckRequest(
-                    resource=common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=r.resource.type.namespace, name=r.resource.type.name),
-                        id=r.resource.id,
-                    ),
-                    relation=r.relation,
-                    subject=common_pb2.SubjectReference(
-                        relation=r.subject.relation,
-                        subject=common_pb2.ObjectReference(
-                            type=common_pb2.ObjectType(
-                                namespace=r.subject.subject.type.namespace, name=r.subject.subject.type.name
-                            ),
-                            id=r.subject.subject.id,
-                        ),
-                    ),
-                )
-
-                metadata = [("authorization", f"Bearer {token}")]
-                response = stub.Check(request_data, metadata=metadata)
-
-                if response:
-                    response_dict = json_format.MessageToDict(response)
-                    return response_dict.get("allowed", "") != "ALLOWED_FALSE"
-
-        except RpcError as e:
-            logger.error(f"[gRPC] check_relation failed: {e}")
-        except Exception as e:
-            logger.error(f"[Unexpected] check_relation failed: {e}")
-        return False
+    # Check bootstrapped tenants are correct
+    def _check_bootstrapped_tenants(self, mapping):
+        if mapping:
+            bootstrapped_tenant_correct = self.check_relation_core(mapping)
+            if not bootstrapped_tenant_correct:
+                logger.warning(f'{mapping["org_id"]} does not have the expected hierarchy for bootstrapped tenant.')
+            else:
+                logger.info(f'{mapping["org_id"]} is correctly bootstrapped.')
+        return bootstrapped_tenant_correct
