@@ -243,6 +243,10 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
@@ -509,6 +513,10 @@ objects:
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           - name: WORKSPACE_ORG_CREATION_LIMIT
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           ####### Following envs are additional to workers
@@ -1055,6 +1063,7 @@ objects:
           - mountPath: /tmp
             name: workspace-data
 
+
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -1510,6 +1519,12 @@ parameters:
 - name: SCOPES
   description: The Scope for token generation
   value: 'openid'
+ - name: ROOT_SCOPE_PERMISSIONS
+   description: Comma-separated permission patterns that bind to root scope (e.g., advisor:*:*)
+   value: ''
+ - name: TENANT_SCOPE_PERMISSIONS
+   description: Comma-separated permission patterns that bind to tenant scope (e.g., rbac:*:*)
+   value: ''
 - name: TOKEN_GRANT_TYPE
   description: The grant type for token generation
   value: 'client_credentials'
