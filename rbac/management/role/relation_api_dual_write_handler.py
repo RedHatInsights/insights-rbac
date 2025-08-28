@@ -32,7 +32,7 @@ from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import BindingMapping, Role
 from migration_tool.migrate_role import migrate_role
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
+from migration_tool.models import cleanNameForV2SchemaCompatibility
 from migration_tool.utils import create_relationship
 
 
@@ -143,7 +143,9 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         permissions = list()
         for access in self.role.access.all():
             v1_perm = access.permission
-            v2_perm = v1_perm_to_v2_perm(v1_perm)
+            # Convert V1 permission to string and then to V2 format
+            v1_perm_string = v1_perm.permission  # This is already "app:resource_type:verb"
+            v2_perm = cleanNameForV2SchemaCompatibility(v1_perm_string)
             permissions.append(v2_perm)
 
         for permission in permissions:

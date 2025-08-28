@@ -22,6 +22,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from management.models import Workspace
+from management.permission_scope import Scope, _implicit_resource_service
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -47,6 +48,9 @@ class RelationApiDualWriteSubjectHandler:
         if not self.replication_enabled():
             return
 
+        # Use shared singleton service
+        self.permission_service = _implicit_resource_service
+
         try:
             self.relations_to_add = []
             self.relations_to_remove = []
@@ -65,11 +69,28 @@ class RelationApiDualWriteSubjectHandler:
     def _create_default_mapping_for_system_role(self, system_role: Role, **subject: Iterable[str]) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
+
+        # Get permissions from role accesses and find highest scope
+        permissions = [access.permission.permission for access in system_role.access.all() if access.permission]
+        highest_scope = self.permission_service.highest_scope_for_permissions(permissions)
+
+        if highest_scope == Scope.TENANT:
+            # Bind to tenant level
+            tenant_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{self.default_workspace.tenant.org_id}"
+            bound_resource = V2boundresource(("rbac", "tenant"), tenant_id)
+        elif highest_scope == Scope.ROOT:
+            # Bind to root workspace
+            root_workspace = Workspace.objects.root(tenant=self.default_workspace.tenant)
+            bound_resource = V2boundresource(("rbac", "workspace"), str(root_workspace.id))
+        else:
+            # Default to default workspace (existing behavior)
+            bound_resource = V2boundresource(("rbac", "workspace"), str(self.default_workspace.id))
+
         binding = V2rolebinding(
             str(uuid4()),
             # Assumes same role UUID for V2 system role equivalent.
             V2role.for_system_role(str(system_role.uuid)),
-            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
+            bound_resource,
             **subject,
         )
         mapping = BindingMapping.for_role_binding(binding, system_role)

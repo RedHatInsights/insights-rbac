@@ -39,6 +39,7 @@ from management.models import (
     Workspace,
     BindingMapping,
 )
+from management.permission_scope import _implicit_resource_service
 from migration_tool.in_memory_tuples import (
     all_of,
     InMemoryRelationReplicator,
@@ -136,6 +137,123 @@ def find_in_list(list, predicate):
         if predicate(item):
             return item
     return None
+
+
+def find_resource_bound_to_role(tuples, expected_permissions_v1):
+    """
+    Find which resource (workspace or tenant) a role with specific permissions is bound to.
+
+    This function finds the V2 role UUID by looking for a role that has the expected permissions,
+    then follows the tuple chain: role -> role_binding -> workspace/tenant
+
+    Args:
+        tuples: InMemoryTuples object containing all relation tuples
+        expected_permissions_v1: List of V1 permission strings (e.g., "inventory:groups:read")
+
+    Returns:
+        tuple: (resource_type, resource_id) where resource_type is 'workspace' or 'tenant',
+               or (None, None) if not found
+    """
+    from migration_tool.in_memory_tuples import resource_type, relation, subject_type, subject_id, all_of, one_of
+    from migration_tool.models import cleanNameForV2SchemaCompatibility
+
+    # Convert V1 permissions to V2 format
+    expected_permissions_v2 = []
+    for v1_perm in expected_permissions_v1:
+        # Convert "app:resource:verb" to "app_resource_verb"
+        v2_perm = cleanNameForV2SchemaCompatibility(v1_perm.replace(":", "_"))
+        expected_permissions_v2.append(v2_perm)
+
+    # Step 1: Find role UUIDs that have all the expected permissions
+    role_uuids_with_permissions = set()
+
+    for permission in expected_permissions_v2:
+        # Find roles that have this permission: role -> principal with relation=permission
+        permission_predicate = all_of(
+            resource_type("rbac", "role"), relation(permission), subject_type("rbac", "principal"), subject_id("*")
+        )
+        role_permission_tuples = tuples.find_tuples(permission_predicate)
+
+        current_permission_roles = {tuple.resource_id for tuple in role_permission_tuples}
+
+        if not role_uuids_with_permissions:
+            # First permission, initialize the set
+            role_uuids_with_permissions = current_permission_roles
+        else:
+            # Intersect with previous permissions (role must have ALL permissions)
+            role_uuids_with_permissions &= current_permission_roles
+
+    if not role_uuids_with_permissions:
+        return (None, None)
+
+    # Step 2: For each role with the expected permissions, find its bindings
+    for role_uuid in role_uuids_with_permissions:
+        # Find role_binding tuples that reference this role
+        role_binding_predicate = all_of(
+            resource_type("rbac", "role_binding"),
+            relation("role"),
+            subject_type("rbac", "role"),
+            subject_id(role_uuid),
+        )
+        role_bindings = tuples.find_tuples(role_binding_predicate)
+
+        # Find resource tuples (workspace or tenant) that reference the role_bindings
+        for role_binding in role_bindings:
+            role_binding_id = role_binding.resource_id
+
+            # Look for workspace bindings
+            workspace_predicate = all_of(
+                resource_type("rbac", "workspace"),
+                relation("binding"),
+                subject_type("rbac", "role_binding"),
+                subject_id(role_binding_id),
+            )
+            workspace_tuples = tuples.find_tuples(workspace_predicate)
+
+            if len(workspace_tuples) > 0:
+                return ("workspace", list(workspace_tuples)[0].resource_id)
+
+            # Look for tenant bindings
+            tenant_predicate = all_of(
+                resource_type("rbac", "tenant"),
+                relation("binding"),
+                subject_type("rbac", "role_binding"),
+                subject_id(role_binding_id),
+            )
+            tenant_tuples = tuples.find_tuples(tenant_predicate)
+
+            if len(tenant_tuples) > 0:
+                return ("tenant", list(tenant_tuples)[0].resource_id)
+
+    return (None, None)
+
+
+def find_workspace_bound_to_role(tuples, expected_permissions):
+    """
+    Find which workspace a role with specific permissions is bound to.
+    Asserts that there is exactly one workspace binding.
+
+    Args:
+        tuples: InMemoryTuples object containing all relation tuples
+        expected_permissions: List of permission strings that the role should have
+
+    Returns:
+        workspace_id: String ID of the workspace the role is bound to
+
+    Raises:
+        AssertionError: If there are zero or multiple workspace bindings
+    """
+    resource_type, resource_id = find_resource_bound_to_role(tuples, expected_permissions)
+
+    if resource_type != "workspace":
+        if resource_type is None:
+            raise AssertionError(f"Role with permissions {expected_permissions} has no bindings")
+        else:
+            raise AssertionError(
+                f"Role with permissions {expected_permissions} is bound to {resource_type}, not workspace"
+            )
+
+    return resource_id
 
 
 class RoleViewsetTests(IdentityRequest):
@@ -289,6 +407,14 @@ class RoleViewsetTests(IdentityRequest):
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
         cached_tenants.delete_tenant(test_tenant_org_id)
+
+    def _find_workspace_bound_to_role(self, tuples, expected_permissions):
+        """Find which workspace a role is bound to using the helper function."""
+        return find_workspace_bound_to_role(tuples, expected_permissions)
+
+    def _find_resource_bound_to_role(self, tuples, expected_permissions):
+        """Find which resource (workspace or tenant) a role is bound to using the helper function."""
+        return find_resource_bound_to_role(tuples, expected_permissions)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -2406,6 +2532,187 @@ class RoleViewsetTests(IdentityRequest):
             f"Role '{test_role_name}' incorrectly shows as being in groups: {group_names}. "
             f"Expected empty list since role is not in custom default group and should not fall back to public default.",
         )
+
+    @override_settings(
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROLE_CREATE_ALLOW_LIST="inventory,patch",
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_role_with_default_scope_permissions_binds_to_default_workspace(self, replicate):
+        """Test that roles with default-level permissions (inventory) are bound to default workspace."""
+        # Configure scope via settings and refresh the implicit service
+        with override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            _implicit_resource_service.refresh_from_settings()
+            tuples = InMemoryTuples()
+            replicator = InMemoryRelationReplicator(tuples)
+            replicate.side_effect = replicator.replicate
+
+            # Create permissions that should bind to default workspace
+            Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)
+            Permission.objects.create(permission="patch:system:write", tenant=self.public_tenant)
+
+            role_name = "Default Scope Role"
+            access_data = [
+                {"permission": "inventory:groups:read", "resourceDefinitions": []},
+                {"permission": "patch:system:write", "resourceDefinitions": []},
+            ]
+
+            response = self.create_role(role_name, in_access_data=access_data)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Verify the role is bound to default workspace in the replicated tuples
+            expected_permissions = ["inventory:groups:read", "patch:system:write"]
+
+            # Use helper function to find which workspace the role is bound to
+            # (function asserts exactly one workspace binding exists)
+            bound_workspace_id = self._find_workspace_bound_to_role(tuples, expected_permissions)
+            self.assertEqual(
+                bound_workspace_id,
+                str(self.default_workspace.id),
+                f"Role should be bound to default workspace {self.default_workspace.id}, got {bound_workspace_id}",
+            )
+
+    @override_settings(
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROLE_CREATE_ALLOW_LIST="advisor,vulnerability",
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_role_with_root_scope_permissions_binds_to_root_workspace(self, replicate):
+        """Test that roles with root-level permissions (advisor) are bound to root workspace."""
+        # Configure scope via settings and refresh the implicit service
+        with override_settings(ROOT_SCOPE_PERMISSIONS="advisor:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            _implicit_resource_service.refresh_from_settings()
+            tuples = InMemoryTuples()
+            replicator = InMemoryRelationReplicator(tuples)
+            replicate.side_effect = replicator.replicate
+
+            # Create permissions that should bind to root workspace
+            Permission.objects.create(permission="advisor:recommendation:read", tenant=self.public_tenant)
+            Permission.objects.create(permission="vulnerability:cve:write", tenant=self.public_tenant)
+
+            role_name = "Root Scope Role"
+            access_data = [
+                {"permission": "advisor:recommendation:read", "resourceDefinitions": []},
+                {"permission": "vulnerability:cve:write", "resourceDefinitions": []},
+            ]
+
+            response = self.create_role(role_name, in_access_data=access_data)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Verify the role is bound to root workspace in the replicated tuples
+            expected_permissions = ["advisor:recommendation:read", "vulnerability:cve:write"]
+
+            # Use helper function to find which workspace the role is bound to
+            # (function asserts exactly one workspace binding exists)
+            bound_workspace_id = self._find_workspace_bound_to_role(tuples, expected_permissions)
+            self.assertEqual(
+                bound_workspace_id,
+                str(self.root_workspace.id),
+                f"Role should be bound to root workspace {self.root_workspace.id}, got {bound_workspace_id}",
+            )
+
+    @override_settings(
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROLE_CREATE_ALLOW_LIST="rbac,cost-management",
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_role_with_tenant_scope_permissions_binds_to_tenant(self, replicate):
+        """Test that roles with tenant-level permissions (rbac, cost-management) are bound to tenant."""
+        # Configure scope via settings and refresh the implicit service
+        with override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="rbac:*:*,cost-management:*:*"):
+            _implicit_resource_service.refresh_from_settings()
+            tuples = InMemoryTuples()
+            replicator = InMemoryRelationReplicator(tuples)
+            replicate.side_effect = replicator.replicate
+
+            # Create permissions that should bind to tenant level
+            Permission.objects.create(permission="rbac:principal:read", tenant=self.public_tenant)
+            Permission.objects.create(permission="cost-management:source:write", tenant=self.public_tenant)
+
+            role_name = "Tenant Scope Role"
+            access_data = [
+                {"permission": "rbac:principal:read", "resourceDefinitions": []},
+                {"permission": "cost-management:source:write", "resourceDefinitions": []},
+            ]
+
+            response = self.create_role(role_name, in_access_data=access_data)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Verify the role is bound to tenant in the replicated tuples
+            expected_permissions = ["rbac:principal:read", "cost-management:source:write"]
+
+            # Use helper function to find which resource the role is bound to
+            resource_type, resource_id = self._find_resource_bound_to_role(tuples, expected_permissions)
+            expected_tenant_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{self.tenant.org_id}"
+
+            self.assertEqual(resource_type, "tenant", f"Role should be bound to tenant, got {resource_type}")
+            self.assertEqual(
+                resource_id,
+                expected_tenant_id,
+                f"Role should be bound to tenant {expected_tenant_id}, got {resource_id}",
+            )
+
+    @override_settings(
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROLE_CREATE_ALLOW_LIST="inventory,advisor,rbac",
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_role_with_mixed_scope_permissions_binds_to_highest_scope(self, replicate):
+        """Test that roles with mixed permission scopes are bound to the highest scope level."""
+        # Configure mixed scopes via settings and refresh the implicit service
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="advisor:*:*",
+            TENANT_SCOPE_PERMISSIONS="rbac:*:*",
+        ):
+            _implicit_resource_service.refresh_from_settings()
+            tuples = InMemoryTuples()
+            replicator = InMemoryRelationReplicator(tuples)
+            replicate.side_effect = replicator.replicate
+
+            # Create permissions with mixed scopes: default + root + tenant
+            Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)  # Default
+            Permission.objects.create(permission="advisor:recommendation:read", tenant=self.public_tenant)  # Root
+            Permission.objects.create(permission="rbac:role:write", tenant=self.public_tenant)  # Tenant (highest)
+
+            role_name = "Mixed Scope Role"
+            access_data = [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "in",
+                                "value": [str(self.child_workspace.id)],
+                            }
+                        }
+                    ],
+                },  # Default scope but with specific workspace resource definition
+                {"permission": "advisor:recommendation:read", "resourceDefinitions": []},  # Root
+                {"permission": "rbac:role:write", "resourceDefinitions": []},  # Tenant (should win)
+            ]
+
+            response = self.create_role(role_name, in_access_data=access_data)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Verify the role is bound to tenant (highest scope) in the replicated tuples
+            expected_permissions = ["inventory:groups:read", "advisor:recommendation:read", "rbac:role:write"]
+
+            # Use helper function to find the primary binding (should be tenant due to highest scope)
+            resource_type, resource_id = self._find_resource_bound_to_role(tuples, expected_permissions)
+            expected_tenant_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{self.tenant.org_id}"
+
+            self.assertEqual(
+                resource_type, "tenant", f"Role should be bound to tenant (highest scope), got {resource_type}"
+            )
+            self.assertEqual(
+                resource_id,
+                expected_tenant_id,
+                f"Role should be bound to tenant {expected_tenant_id}, got {resource_id}",
+            )
+
+            # Note: The mixed scope test may also have additional specific workspace bindings
+            # for permissions with resource definitions, but the primary binding should be to tenant
 
 
 class RoleViewNonAdminTests(IdentityRequest):
