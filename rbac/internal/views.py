@@ -46,11 +46,11 @@ from internal.utils import (
 )
 from kessel.inventory.v1beta2 import (
     check_request_pb2,
+    inventory_service_pb2_grpc,
     reporter_reference_pb2,
     resource_reference_pb2,
     subject_reference_pb2,
 )
-from kessel.inventory.v1beta2 import inventory_service_pb2_grpc
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
