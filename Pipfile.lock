@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "cc773c0e38a0c508e92f1299e14912e9815922930ded6f4788696713117d81ae"
+            "sha256": "39b10fccaf9356f81df30606605e0c51d5a5694677333b14455eaa09b9880a2c"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -673,15 +673,6 @@
             ],
             "markers": "python_version >= '3.9'",
             "version": "==8.7.0"
-        },
-        "inventory-grpc-clients-python-kessel-project": {
-            "hashes": [
-                "sha256:6cd887a0d79afc44cd65f5776eaec2956599f1a04c8f6e6a998cd22d04360a87",
-                "sha256:fbd95474b803b28fd9c08a93a01f3776cfd4968ce6b186a537991d27ee19be02"
-            ],
-            "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==0.10.15"
         },
         "jinja2": {
             "hashes": [
