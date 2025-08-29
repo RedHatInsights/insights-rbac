@@ -16,6 +16,7 @@
 #
 
 """Utilities for Internal RBAC use."""
+import json
 import logging
 from contextlib import contextmanager
 
@@ -159,3 +160,10 @@ def validate_inventory_input(action, request_data) -> bool:
     except Exception as e:
         logger.info(f"Exception occurred when validating JSON body: {e}")
         return False
+
+
+def load_request_body(request) -> dict:
+    """Decode request body from json into dict structure."""
+    request_decoded = request.body.decode("utf-8")
+    req_data = json.loads(request_decoded)
+    return req_data
