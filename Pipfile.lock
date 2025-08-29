@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "0bb12bdd0b7e64cbd4e34ff15916b163a9e934005da74cfe5ff3905a06128caa"
+            "sha256": "046ca6d506602d9732e5c0cbb93a31677bb04038c70258b2e3ece7b04ad3923b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -743,11 +743,13 @@
             "version": "==2.1.5"
         },
         "kessel-sdk": {
+            "extras": [
+                "auth"
+            ],
             "hashes": [
                 "sha256:af8eab7b1ba515a5c802c690d540e2490305065ffdd03962f6947d2e97ec434e",
                 "sha256:bab0e65f69f0ed2d014b5bfdeb376dac450d45fc8b1de1da878f0cf24cebf7fc"
             ],
-            "index": "pypi",
             "markers": "python_version >= '3.11'",
             "version": "==1.2.2"
         },
@@ -1185,6 +1187,13 @@
             "index": "pypi",
             "markers": "python_version >= '3.9'",
             "version": "==2.32.5"
+        },
+        "requests-oauthlib": {
+            "hashes": [
+                "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36",
+                "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9"
+            ],
+            "version": "==2.0.0"
         },
         "rpds-py": {
             "hashes": [
