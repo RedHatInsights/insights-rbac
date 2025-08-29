@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "18fe665cdec2717260bf7fbfae5ee86e3e9e2ae0f0448fbd3c7711165039956d"
+            "sha256": "cc773c0e38a0c508e92f1299e14912e9815922930ded6f4788696713117d81ae"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -193,7 +193,7 @@
                 "sha256:fe8cb43962af8e43facad740930fadc4cf8cdc1e073f59d0f13714711807979f",
                 "sha256:ffbbeedd6bac26c0373b71831d3c73181a1c100dc6fc7aadbfcca54cace417db"
             ],
-            "markers": "python_version >= '3.9'",
+            "markers": "platform_python_implementation != 'PyPy'",
             "version": "==2.0.0b1"
         },
         "charset-normalizer": {
@@ -1039,7 +1039,7 @@
                 "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6",
                 "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "implementation_name != 'PyPy'",
             "version": "==2.22"
         },
         "python-dateutil": {
@@ -1408,7 +1408,7 @@
                 "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8",
                 "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"
             ],
-            "markers": "python_version >= '2'",
+            "markers": "python_version >= '3.9'",
             "version": "==2025.2"
         },
         "tzlocal": {
@@ -1738,7 +1738,7 @@
                 "sha256:fe8cb43962af8e43facad740930fadc4cf8cdc1e073f59d0f13714711807979f",
                 "sha256:ffbbeedd6bac26c0373b71831d3c73181a1c100dc6fc7aadbfcca54cace417db"
             ],
-            "markers": "python_version >= '3.9'",
+            "markers": "platform_python_implementation != 'PyPy'",
             "version": "==2.0.0b1"
         },
         "cfgv": {
@@ -2359,7 +2359,7 @@
                 "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6",
                 "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "implementation_name != 'PyPy'",
             "version": "==2.22"
         },
         "pydocstyle": {
