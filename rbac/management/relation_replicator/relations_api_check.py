@@ -153,7 +153,7 @@ class RelationsApiBaseChecker(RelationReplicator):
 
                 # Check group principal assignments
                 if key == "group-principals":
-                    r = arg
+                    r: common_pb2.Relationship = arg
                     request_data = check_pb2.CheckRequest(
                         resource=common_pb2.ObjectReference(
                             type=common_pb2.ObjectType(namespace=r.resource.type.namespace, name=r.resource.type.name),
