@@ -30,6 +30,24 @@ model Timestamps {
 @format("uuid")
 scalar UUID extends string;
 
+model CursorPaginationMeta {
+    @doc("Limit of returned objects")
+    @example(10)
+    limit: int64 = 10;
+}
+
+model CursorPaginationLinks {
+    @doc("The next link in pagination")
+    @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9")
+    @format("uri")
+    next: string | null;
+
+    @doc("The previous link in pagination")
+    @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9")
+    @format("uri")
+    previous: string | null;
+}
+
 namespace Problems {
     enum ProblemType {
         InsufficientPermission:"http://project-kessel.org/problems/insufficient-permission",
@@ -261,124 +279,22 @@ namespace Workspaces {
         parent_id: UUID = "New parent ID of moved workspace";
     }
 
-    @discriminator("type")
-    model BasePaginationMeta {
-        @doc("Pagination type")
-        type: string;
 
-        @doc("Limit of returned objects")
-        @example(1000)
-        limit: int64 = 1000;
-    }
 
-    model OffsetPaginationMeta extends BasePaginationMeta {
-        @doc("Pagination type")
-        type: "offset";
 
-        @doc("Total count of objects")
-        @example(10)
-        count: int64;
-
-        @doc("Offset of returned objects")
-        @example(10)
-        offset: int64;
-    }
-
-    model CursorPaginationMeta {
-        @doc("Limit of returned objects")
-        @example(10)
-        limit: int64 = 10;
-
-        @doc("Cursor for the current page")
-        @example("eyJpZCI6IjEyMyIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEyOjAwOjAwWiJ9")
-        cursor?: string;
-    }
-
-    alias PaginationMeta = OffsetPaginationMeta | CursorPaginationMeta;
-
-    @discriminator("type")
-    model BasePaginationLinks {
-        @doc("Pagination type")
-        type: string;
-    }
-
-    model OffsetPaginationLinks extends BasePaginationLinks {
-        @doc("Pagination type")
-        type: "offset";
-
-        @doc("The first link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
-        @format("uri")
-        first: string;
-
-        @doc("The next link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=10")
-        @format("uri")
-        next: string | null;
-
-        @doc("The previous link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
-        @format("uri")
-        previous: string | null;
-
-        @doc("The last link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=20")
-        @format("uri")
-        last: string;
-    }
-
-    model CursorPaginationLinks {
-        @doc("The next link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9")
-        @format("uri")
-        next: string | null;
-
-        @doc("The previous link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9")
-        @format("uri")
-        previous: string | null;
-    }
-
-    alias PaginationLinks = OffsetPaginationLinks | CursorPaginationLinks;
 
     model Pagination {
         @doc("Pagination metadata")
-        meta: PaginationMeta;
+        meta: CursorPaginationMeta;
 
         @doc("Pagination links")
-        links: PaginationLinks;
+        links: CursorPaginationLinks;
     }
+
 
     @example(#{
         meta: #{
-            type: "offset",
-            count: 50,
-            limit: 10,
-            offset: 0
-        },
-        links: #{
-            type: "offset",
-            first: "/api/rbac/v2/workspaces?limit=10&offset=0",
-            next: "/api/rbac/v2/workspaces?limit=10&offset=10",
-            previous: null,
-            last: "/api/rbac/v2/workspaces?limit=10&offset=40"
-        },
-        data: #[
-            #{
-                id: "e4277742-b91c-43f1-a185-b827e8574345",
-                parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11",
-                type: WorkspaceTypes.standard,
-                name: "My first workspace",
-                description: "This is a basic workspace.",
-                created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-                modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-            },
-        ]
-    })
-    @example(#{
-        meta: #{
-            limit: 10,
-            cursor: "eyJpZCI6IjEyMyIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEyOjAwOjAwWiJ9"
+            limit: 10
         },
         links: #{
             next: "/api/rbac/v2/workspaces?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9",
@@ -410,21 +326,15 @@ namespace Workspaces {
       #{
         parameters: #{
           limit: 10,
-          offset: 0
+          cursor: "eyJpZCI6IjEyMyIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEyOjAwOjAwWiJ9"
         },
         returnType: #{
           meta: #{
-            type: "offset",
-            count: 1,
-            limit: 10,
-            offset: 0
+            limit: 10
           },
           links: #{
-            type: "offset",
-            first: "/api/rbac/v2/workspaces/?limit=10&offset=0",
-            next: "/api/rbac/v2/workspaces/?limit=10&offset=10",
-            previous: null,
-            last: "/api/rbac/v2/workspaces/?limit=10&offset=20"
+            next: "/api/rbac/v2/workspaces/?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9",
+            previous: null
           },
           data: #[
             #{
@@ -442,9 +352,8 @@ namespace Workspaces {
     )
     @get op list(
         @query limit?: int64 = 10;
-        @query offset?: int64 = 0;
 
-        @doc("Cursor for cursor-based pagination. When provided, offset parameter is ignored.")
+        @doc("Cursor for cursor-based pagination.")
         @query cursor?: string;
 
         @doc("Defaults to all when param is not supplied.")
@@ -749,9 +658,9 @@ namespace RoleBindings {
 
     model RoleBindingBySubjectListResponse {
         @doc("Pagination metadata")
-        meta: Workspaces.CursorPaginationMeta;
+        meta: CursorPaginationMeta;
         @doc("Pagination links")
-        links: Workspaces.CursorPaginationLinks;
+        links: CursorPaginationLinks;
         @doc("List of role bindings grouped by subject")
         data: RoleBindingBySubject[];
     }
