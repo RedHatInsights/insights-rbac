@@ -107,6 +107,7 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
+relations_api_base_checker = RelationsApiBaseChecker()
 
 
 @contextmanager
@@ -1667,14 +1668,14 @@ def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
     principals = list(group.principals.all())
-    relations_api_base_checker = RelationsApiBaseChecker()
     relations_dual_write_handler = RelationApiDualWriteGroupHandler(
         group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_api_base_checker
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
     relation_assignments = relations_dual_write_handler._replicator.replicate(
-        ReplicationEvent(
+        key="group-principals",
+        arg=ReplicationEvent(
             event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
             info={
                 "detail": "Check user-group relations are correct",
@@ -1764,8 +1765,10 @@ def check_bootstrapped_tenants(request, org_id):
                 "default_admin_role_binding_uuid": tenant.tenant_mapping.default_admin_role_binding_uuid,
             },
         }
-        relations_api_base_checker = RelationsApiBaseChecker()
-        bootstrap_tenants_correct = relations_api_base_checker.replicate(mapping)
+        try:
+            bootstrap_tenants_correct = relations_api_base_checker.replicate(mapping, key="bootstrap-tenant")
+        except ValueError as e:
+            return JsonResponse({"error": str(e)}, status=400)
         bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
     return JsonResponse(bootstrapped_tenant_response, safe=False)
 

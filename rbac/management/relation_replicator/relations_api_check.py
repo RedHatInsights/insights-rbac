@@ -29,7 +29,7 @@ from kessel.relations.v1beta1 import check_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache
-from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
+from management.relation_replicator.relation_replicator import RelationReplicator
 from management.utils import create_client_channel
 
 jwt_cache = JWTCache()
@@ -41,17 +41,23 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class RelationsApiBaseChecker(RelationReplicator):
     """Base class used for assignment checks on relations api."""
 
-    def replicate(self, arg):
+    def replicate(self, arg, key):
         """Check the given event is correct on Kessel Relations via the gRPC API."""
-        if isinstance(arg, dict):
-            assignments = self._check_bootstrapped_tenants(arg)
+        valid_keys = {"bootstrap-tenant", "group-principals"}
+        if key not in valid_keys and key is not None:
+            logger.info("Invalid option provided to key for replicate method")
+            raise ValueError(f"Invalid key '{key}'. Valid options are: {', '.join(valid_keys)}.")
+
+        if key == "bootstrap-tenant":
+            logger.info("check bootstrapped tenant endpoint used")
+            assignments = self._check_bootstrapped_tenants(arg, key)
             return assignments
 
-        if isinstance(arg, ReplicationEvent):
-            assignments = self._check_relationships(arg.add)
+        if key == "group-principals":
+            assignments = self._check_relationships(arg.add, key)
             return assignments
 
-    def check_relation_core(self, arg: Union[dict, common_pb2.Relationship]) -> bool:
+    def check_relation_core(self, arg: Union[dict, common_pb2.Relationship], key) -> bool:
         """
         Core method to check relation(s) via gRPC.
 
@@ -64,7 +70,7 @@ class RelationsApiBaseChecker(RelationReplicator):
                 stub = check_pb2_grpc.KesselCheckServiceStub(channel)
                 metadata = [("authorization", f"Bearer {token}")]
 
-                if isinstance(arg, dict):
+                if key == "bootstrap-tenant":
                     # Tenant bootstrapping check
                     mapping = arg
                     checks = [
@@ -145,8 +151,8 @@ class RelationsApiBaseChecker(RelationReplicator):
                     responses = [stub.Check(req, metadata=metadata) for req in checks]
                     return all(self._is_allowed(res) for res in responses)
 
-                if isinstance(arg, common_pb2.Relationship):
-                    # Single relationship check
+                # Check group principal assignments
+                if key == "group-principals":
                     r = arg
                     request_data = check_pb2.CheckRequest(
                         resource=common_pb2.ObjectReference(
@@ -181,11 +187,10 @@ class RelationsApiBaseChecker(RelationReplicator):
         return response_dict.get("allowed", "") != "ALLOWED_FALSE"
 
     # Check group principal assignments
-    def _check_relationships(self, relationships):
+    def _check_relationships(self, relationships, key):
         relations_assignments = {"group_uuid": "", "principal_relations": []}
         for r in relationships:
-            print(r)
-            relation_exists = self.check_relation_core(r)
+            relation_exists = self.check_relation_core(r, key)
             relations_assignments["group_uuid"] = r.resource.id
             relations_assignments["principal_relations"].append(
                 {"id": r.subject.subject.id, "relation_exists": relation_exists}
@@ -197,9 +202,9 @@ class RelationsApiBaseChecker(RelationReplicator):
         return relations_assignments
 
     # Check bootstrapped tenants are correct
-    def _check_bootstrapped_tenants(self, mapping):
+    def _check_bootstrapped_tenants(self, mapping, key):
         if mapping:
-            bootstrapped_tenant_correct = self.check_relation_core(mapping)
+            bootstrapped_tenant_correct = self.check_relation_core(mapping, key)
             if not bootstrapped_tenant_correct:
                 logger.warning(f'{mapping["org_id"]} does not have the expected hierarchy for bootstrapped tenant.')
             else:
