@@ -69,7 +69,10 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from management.relation_replicator.relations_api_check import RelationsApiBaseChecker
+from management.relation_replicator.relations_api_check import (
+    BootstrappedTenantRelationChecker,
+    GroupPrincipalRelationChecker,
+)
 from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
@@ -107,7 +110,8 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
-relations_api_base_checker = RelationsApiBaseChecker()
+BootstrappedTenantChecker = BootstrappedTenantRelationChecker()
+GroupPrincipalChecker = GroupPrincipalRelationChecker()
 
 
 @contextmanager
@@ -1669,13 +1673,12 @@ def group_assignments(request, group_uuid):
     group = get_object_or_404(Group, uuid=group_uuid)
     principals = list(group.principals.all())
     relations_dual_write_handler = RelationApiDualWriteGroupHandler(
-        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_api_base_checker
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, GroupPrincipalChecker
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
-    relation_assignments = relations_dual_write_handler._replicator.replicate(
-        key="group-principals",
-        arg=ReplicationEvent(
+    relation_assignments = relations_dual_write_handler._replicator._check_relationships(
+        ReplicationEvent(
             event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
             info={
                 "detail": "Check user-group relations are correct",
@@ -1756,17 +1759,17 @@ def check_bootstrapped_tenants(request, org_id):
         root_workspace = Workspace.objects.root(tenant=tenant)
         mapping = {
             "org_id": tenant.org_id,
-            "root_workspace": root_workspace.id,
-            "default_workspace": default_workspace.id,
+            "root_workspace": str(root_workspace.id),
+            "default_workspace": str(default_workspace.id),
             "tenant_mapping": {
-                "default_group_uuid": tenant.tenant_mapping.default_group_uuid,
-                "default_admin_group_uuid": tenant.tenant_mapping.default_admin_group_uuid,
-                "default_role_binding_uuid": tenant.tenant_mapping.default_role_binding_uuid,
-                "default_admin_role_binding_uuid": tenant.tenant_mapping.default_admin_role_binding_uuid,
+                "default_group_uuid": str(tenant.tenant_mapping.default_group_uuid),
+                "default_admin_group_uuid": str(tenant.tenant_mapping.default_admin_group_uuid),
+                "default_role_binding_uuid": str(tenant.tenant_mapping.default_role_binding_uuid),
+                "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
             },
         }
         try:
-            bootstrap_tenants_correct = relations_api_base_checker.replicate(mapping, key="bootstrap-tenant")
+            bootstrap_tenants_correct = BootstrappedTenantChecker._check_bootstrapped_tenants(mapping)
         except ValueError as e:
             return JsonResponse({"error": str(e)}, status=400)
         bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
