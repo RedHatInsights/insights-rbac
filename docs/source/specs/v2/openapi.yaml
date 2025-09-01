@@ -27,13 +27,6 @@ paths:
           schema:
             type: string
           explode: false
-        - name: resource_type
-          in: query
-          required: false
-          description: Filter by resource type
-          schema:
-            type: string
-          explode: false
         - name: resource_id
           in: query
           required: false
@@ -62,10 +55,10 @@ paths:
             Control which fields are included in the response to optimize payload size and improve performance.
 
             **Default Behavior (no fields parameter):**
-            Basic required fields are always included: subject.id, subject.type, role.id, resource.type
+            Basic required fields are always included: subject.id, subject.type, role.id, resource.id
 
             **When fields parameter is provided:**
-            Only explicitly specified fields are included in the response. Type fields (subject.type, resource.type) are always required and included even if not specified.
+            Only explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.
 
             **Syntax:**
             - Use parentheses to specify fields for nested objects: `object(field1,field2)`
@@ -90,14 +83,10 @@ paths:
             - id (UUID) - always included
             - name (string) - role display name
 
-            **resource object (polymorphic - available fields depend on type):**
+            **resource object:**
             - id (UUID) - always included
-            - type (string) - always included, cannot be excluded (determines which additional fields are available)
-
-            *When type = "workspace":*
-            - workspace.name (string) - name of the workspace
-            - workspace.type (string) - type of workspace (e.g., "default", "standard")
-            - workspace.description (string) - description of the workspace
+            - name (string) - resource name
+            - url (string) - link to the resource
 
             **root level:**
             - last_modified (datetime) - timestamp of last modification
@@ -106,11 +95,11 @@ paths:
             - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
             - `subject(user.username)` - Include username (only for user subjects)
             - `role(name)` - Include role name
-            - `resource(workspace.name,workspace.description)` - Include workspace name and description (only for workspace resources)
-            - `subject(group.name),role(name),resource(workspace.name)` - Combine multiple object field specifications
+            - `resource(name,url)` - Include resource name and URL
+            - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
             - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
             - `last_modified` - Include only modification timestamp (plus required fields)
-            - `subject(group.name,group.user_count),resource(workspace.type)` - Mix group and workspace specific fields
+            - `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields
           schema:
             type: string
           explode: false
@@ -148,11 +137,8 @@ paths:
                         name: Workspace Admin
                     resource:
                       id: 550e8400-e29b-41d4-a716-446655440001
-                      type: workspace
-                      workspace:
-                        name: Engineering Workspace
-                        type: default
-                        description: Main workspace for engineering team
+                      name: Engineering Workspace
+                      url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
         '401':
           description: Access is unauthorized.
           content:
@@ -985,22 +971,6 @@ components:
             instance:
               type: string
               format: uri
-    RoleBindings.BaseResource:
-      type: object
-      required:
-        - type
-      properties:
-        id:
-          allOf:
-            - $ref: '#/components/schemas/UUID'
-          description: Resource identifier
-        type:
-          type: string
-          description: Type of resource
-          example: workspace
-      discriminator:
-        propertyName: type
-        mapping: {}
     RoleBindings.BaseSubject:
       type: object
       required:
@@ -1046,6 +1016,21 @@ components:
           description: Group details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
+    RoleBindings.Resource:
+      type: object
+      properties:
+        id:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          description: Resource identifier
+        name:
+          type: string
+          description: Resource name
+        url:
+          type: string
+          format: uri
+          description: Link to the resource
+          example: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
     RoleBindings.Role:
       type: object
       properties:
@@ -1075,7 +1060,7 @@ components:
           description: Roles assigned to the subject
         resource:
           allOf:
-            - $ref: '#/components/schemas/RoleBindings.WorkspaceResource'
+            - $ref: '#/components/schemas/RoleBindings.Resource'
           description: Resource the roles apply to
       example:
         last_modified: '2024-08-04T12:00:00Z'
@@ -1091,11 +1076,8 @@ components:
             name: Workspace Admin
         resource:
           id: 550e8400-e29b-41d4-a716-446655440001
-          type: workspace
-          workspace:
-            name: Engineering Workspace
-            type: default
-            description: Main workspace for engineering team
+          name: Engineering Workspace
+          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
     RoleBindings.RoleBindingBySubjectListResponse:
       type: object
       required:
@@ -1138,35 +1120,6 @@ components:
           description: User details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
-    RoleBindings.WorkspaceDetails:
-      type: object
-      properties:
-        name:
-          type: string
-          description: Name of the workspace
-          example: Workspace A
-        type:
-          type: string
-          example: default
-        description:
-          type: string
-          description: Description of the workspace
-    RoleBindings.WorkspaceResource:
-      type: object
-      required:
-        - type
-      properties:
-        type:
-          type: string
-          enum:
-            - workspace
-          description: Type of resource
-        workspace:
-          allOf:
-            - $ref: '#/components/schemas/RoleBindings.WorkspaceDetails'
-          description: Workspace details
-      allOf:
-        - $ref: '#/components/schemas/RoleBindings.BaseResource'
     Timestamps:
       type: object
       required:
