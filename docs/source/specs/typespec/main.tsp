@@ -624,6 +624,34 @@ namespace RoleBindings {
             url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
         }
     })
+    @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        subject: #{
+            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            type: "group",
+            group: #{
+                name: "Engineering Team",
+                description: "Development and engineering team",
+                user_count: 25
+            }
+        },
+        roles: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                name: "Workspace Admin"
+            }
+        ],
+        resource: #{
+            id: "550e8400-e29b-41d4-a716-446655440003",
+            name: "Child Workspace",
+            url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003"
+        },
+        inherited_from: #{
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            name: "Parent Workspace",
+            url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+        }
+    })
     model RoleBindingBySubject {
         @doc("Timestamp of last modification")
         last_modified?: offsetDateTime;
@@ -633,6 +661,8 @@ namespace RoleBindings {
         roles?: Role[];
         @doc("Resource the roles apply to")
         resource?: Resource;
+        @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
+        inherited_from?: Resource;
     }
 
     model RoleBindingBySubjectListResponse {
@@ -687,6 +717,51 @@ namespace RoleBindings {
             ]
         }
     })
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            parent_role_bindings: true
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                previous: null
+            },
+            data: #[
+                #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                    subject: #{
+                        id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        type: "group",
+                        group: #{
+                            name: "Engineering Team",
+                            description: "Development and engineering team",
+                            user_count: 25
+                        }
+                    },
+                    roles: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440002",
+                            name: "Workspace Admin"
+                        }
+                    ],
+                    resource: #{
+                        id: "550e8400-e29b-41d4-a716-446655440003",
+                        name: "Child Workspace",
+                        url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003"
+                    },
+                    inherited_from: #{
+                        id: "550e8400-e29b-41d4-a716-446655440001",
+                        name: "Parent Workspace",
+                        url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+                    }
+                }
+            ]
+        }
+    })
     @get op listBySubject(
         @query limit?: int64 = 10;
 
@@ -702,6 +777,9 @@ namespace RoleBindings {
         @doc("Filter by subject ID")
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
+
+        @doc("Include role bindings inherited from parent resources")
+        @query parent_role_bindings?: boolean = false;
 
         @doc("""
         Control which fields are included in the response to optimize payload size and improve performance.
@@ -742,6 +820,7 @@ namespace RoleBindings {
 
         **root level:**
         - last_modified (datetime) - timestamp of last modification
+        - inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)
 
         **Examples:**
         - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
@@ -752,6 +831,7 @@ namespace RoleBindings {
         - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
         - `last_modified` - Include only modification timestamp (plus required fields)
         - `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields
+        - `inherited_from(name,url)` - Include inherited resource name and URL (only relevant when parent_role_bindings=true)
         """)
         @example("subject(group.name,group.user_count),role(name),resource(name,url),last_modified")
         @query fields?: string;
