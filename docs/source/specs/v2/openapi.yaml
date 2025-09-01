@@ -48,6 +48,14 @@ paths:
           schema:
             type: string
           explode: false
+        - name: parent_role_bindings
+          in: query
+          required: false
+          description: Include role bindings inherited from parent resources
+          schema:
+            type: boolean
+            default: false
+          explode: false
         - name: fields
           in: query
           required: false
@@ -90,6 +98,7 @@ paths:
 
             **root level:**
             - last_modified (datetime) - timestamp of last modification
+            - inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)
 
             **Examples:**
             - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
@@ -100,6 +109,7 @@ paths:
             - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
             - `last_modified` - Include only modification timestamp (plus required fields)
             - `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields
+            - `inherited_from(name,url)` - Include inherited resource name and URL (only relevant when parent_role_bindings=true)
           schema:
             type: string
           explode: false
@@ -117,28 +127,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoleBindings.RoleBindingBySubjectListResponse'
-              example:
-                meta:
-                  limit: 10
-                links:
-                  next: http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw
-                  previous: null
-                data:
-                  - last_modified: '2024-08-04T12:00:00Z'
-                    subject:
-                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                      type: group
-                      group:
-                        name: Engineering Team
-                        description: Development and engineering team
-                        user_count: 25
-                    roles:
-                      - id: 550e8400-e29b-41d4-a716-446655440002
-                        name: Workspace Admin
-                    resource:
-                      id: 550e8400-e29b-41d4-a716-446655440001
-                      name: Engineering Workspace
-                      url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
+              examples:
+                example0:
+                  value:
+                    meta:
+                      limit: 10
+                    links:
+                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz
+                      previous: null
+                    data:
+                      - last_modified: '2024-08-04T12:00:00Z'
+                        subject:
+                          id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                          type: group
+                          group:
+                            name: Engineering Team
+                            description: Development and engineering team
+                            user_count: 25
+                        roles:
+                          - id: 550e8400-e29b-41d4-a716-446655440002
+                            name: Workspace Admin
+                        resource:
+                          id: 550e8400-e29b-41d4-a716-446655440003
+                          name: Child Workspace
+                          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003
+                        inherited_from:
+                          id: 550e8400-e29b-41d4-a716-446655440001
+                          name: Parent Workspace
+                          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
+                example1:
+                  value:
+                    meta:
+                      limit: 10
+                    links:
+                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw
+                      previous: null
+                    data:
+                      - last_modified: '2024-08-04T12:00:00Z'
+                        subject:
+                          id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                          type: group
+                          group:
+                            name: Engineering Team
+                            description: Development and engineering team
+                            user_count: 25
+                        roles:
+                          - id: 550e8400-e29b-41d4-a716-446655440002
+                            name: Workspace Admin
+                        resource:
+                          id: 550e8400-e29b-41d4-a716-446655440001
+                          name: Engineering Workspace
+                          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
         '401':
           description: Access is unauthorized.
           content:
@@ -1062,6 +1101,10 @@ components:
           allOf:
             - $ref: '#/components/schemas/RoleBindings.Resource'
           description: Resource the roles apply to
+        inherited_from:
+          allOf:
+            - $ref: '#/components/schemas/RoleBindings.Resource'
+          description: Resource from which this role binding is inherited (only present when parent_role_bindings=true)
       example:
         last_modified: '2024-08-04T12:00:00Z'
         subject:
@@ -1075,8 +1118,12 @@ components:
           - id: 550e8400-e29b-41d4-a716-446655440002
             name: Workspace Admin
         resource:
+          id: 550e8400-e29b-41d4-a716-446655440003
+          name: Child Workspace
+          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003
+        inherited_from:
           id: 550e8400-e29b-41d4-a716-446655440001
-          name: Engineering Workspace
+          name: Parent Workspace
           url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
     RoleBindings.RoleBindingBySubjectListResponse:
       type: object

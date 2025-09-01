@@ -71,10 +71,21 @@
             "explode": false
           },
           {
+            "name": "parent_role_bindings",
+            "in": "query",
+            "required": false,
+            "description": "Include role bindings inherited from parent resources",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "explode": false
+          },
+          {
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.id\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- url (string) - link to the resource\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(name,url)` - Include resource name and URL\n- `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.id\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- url (string) - link to the resource\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n- inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(name,url)` - Include resource name and URL\n- `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields\n- `inherited_from(name,url)` - Include inherited resource name and URL (only relevant when parent_role_bindings=true)",
             "schema": {
               "type": "string"
             },
@@ -99,39 +110,84 @@
                 "schema": {
                   "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubjectListResponse"
                 },
-                "example": {
-                  "meta": {
-                    "limit": 10
-                  },
-                  "links": {
-                    "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
-                    "previous": null
-                  },
-                  "data": [
-                    {
-                      "last_modified": "2024-08-04T12:00:00Z",
-                      "subject": {
-                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                        "type": "group",
-                        "group": {
-                          "name": "Engineering Team",
-                          "description": "Development and engineering team",
-                          "user_count": 25
-                        }
+                "examples": {
+                  "example0": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
                       },
-                      "roles": [
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "previous": null
+                      },
+                      "data": [
                         {
-                          "id": "550e8400-e29b-41d4-a716-446655440002",
-                          "name": "Workspace Admin"
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "subject": {
+                            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            "type": "group",
+                            "group": {
+                              "name": "Engineering Team",
+                              "description": "Development and engineering team",
+                              "user_count": 25
+                            }
+                          },
+                          "roles": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440002",
+                              "name": "Workspace Admin"
+                            }
+                          ],
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440003",
+                            "name": "Child Workspace",
+                            "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003"
+                          },
+                          "inherited_from": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Parent Workspace",
+                            "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+                          }
                         }
-                      ],
-                      "resource": {
-                        "id": "550e8400-e29b-41d4-a716-446655440001",
-                        "name": "Engineering Workspace",
-                        "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
-                      }
+                      ]
                     }
-                  ]
+                  },
+                  "example1": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "subject": {
+                            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            "type": "group",
+                            "group": {
+                              "name": "Engineering Team",
+                              "description": "Development and engineering team",
+                              "user_count": 25
+                            }
+                          },
+                          "roles": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440002",
+                              "name": "Workspace Admin"
+                            }
+                          ],
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Engineering Workspace",
+                            "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+                          }
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -1563,6 +1619,14 @@
               }
             ],
             "description": "Resource the roles apply to"
+          },
+          "inherited_from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
           }
         },
         "example": {
@@ -1583,8 +1647,13 @@
             }
           ],
           "resource": {
+            "id": "550e8400-e29b-41d4-a716-446655440003",
+            "name": "Child Workspace",
+            "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003"
+          },
+          "inherited_from": {
             "id": "550e8400-e29b-41d4-a716-446655440001",
-            "name": "Engineering Workspace",
+            "name": "Parent Workspace",
             "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
           }
         }
