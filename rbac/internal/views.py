@@ -1768,10 +1768,7 @@ def check_bootstrapped_tenants(request, org_id):
                 "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
             },
         }
-        try:
-            bootstrap_tenants_correct = BootstrappedTenantChecker._check_bootstrapped_tenants(mapping)
-        except ValueError as e:
-            return JsonResponse({"error": str(e)}, status=400)
+        bootstrap_tenants_correct = BootstrappedTenantChecker._check_bootstrapped_tenants(mapping)
         bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
     return JsonResponse(bootstrapped_tenant_response, safe=False)
 
