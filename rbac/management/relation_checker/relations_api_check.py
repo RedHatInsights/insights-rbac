@@ -75,9 +75,10 @@ class RelationsApiBaseChecker:
 class GroupPrincipalRelationChecker(RelationsApiBaseChecker):
     """Subclass to check group principal relations are correct on relations api."""
 
-    def _check_relationships(self, relationships):
+    def check_relationships(self, relationships):
+        """Core logic to check group principal relations are correct."""
         relations_assignments = {"group_uuid": "", "principal_relations": []}
-        for r in relationships.add:
+        for r in relationships:
             # Build the check request
             check_request = check_pb2.CheckRequest(
                 resource=common_pb2.ObjectReference(
@@ -110,7 +111,8 @@ class GroupPrincipalRelationChecker(RelationsApiBaseChecker):
 class BootstrappedTenantRelationChecker(RelationsApiBaseChecker):
     """Subclass to check bootstrapped tenants are correct on relations api."""
 
-    def _check_bootstrapped_tenants(self, mapping):
+    def check_bootstrapped_tenants(self, mapping):
+        """Core logic to check bootstrapped tenants are correct."""
         if mapping:
             # If mapping provided create the correct check requests for check_relation_core
             checks = [

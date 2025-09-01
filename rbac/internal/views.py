@@ -67,12 +67,12 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
-from management.relation_replicator.outbox_replicator import OutboxReplicator
-from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from management.relation_replicator.relations_api_check import (
+from management.relation_checker.relations_api_check import (
     BootstrappedTenantRelationChecker,
     GroupPrincipalRelationChecker,
 )
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
@@ -1677,16 +1677,7 @@ def group_assignments(request, group_uuid):
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
-    relation_assignments = relations_dual_write_handler._replicator._check_relationships(
-        ReplicationEvent(
-            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
-            info={
-                "detail": "Check user-group relations are correct",
-            },
-            partition_key=PartitionKey.byEnvironment(),
-            add=relationships,
-        ),
-    )
+    relation_assignments = relations_dual_write_handler._replicator.check_relationships(relationships)
     return JsonResponse(relation_assignments, safe=False)
 
 
@@ -1768,7 +1759,7 @@ def check_bootstrapped_tenants(request, org_id):
                 "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
             },
         }
-        bootstrap_tenants_correct = BootstrappedTenantChecker._check_bootstrapped_tenants(mapping)
+        bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
         bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
     return JsonResponse(bootstrapped_tenant_response, safe=False)
 
