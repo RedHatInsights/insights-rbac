@@ -583,33 +583,16 @@ namespace RoleBindings {
 
 
 
-    @discriminator("type")
-    model BaseResource {
+    model Resource {
         @doc("Resource identifier")
         id?: UUID;
-        @doc("Type of resource")
-        @example("workspace")
-        type: string;
-    }
-
-    model WorkspaceDetails {
-        @doc("Name of the workspace")
-        @example("Workspace A")
+        @doc("Resource name")
         name?: string;
-        @example("default")
-        type?: string;
-        @doc("Description of the workspace")
-        description?: string;
+        @doc("Link to the resource")
+        @example("https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001")
+        @format("uri")
+        url?: string;
     }
-
-    model WorkspaceResource extends BaseResource {
-        @doc("Type of resource")
-        type: "workspace";
-        @doc("Workspace details")
-        workspace?: WorkspaceDetails;
-    }
-
-    alias Resource = WorkspaceResource;
 
     model Role {
         @doc("Role identifier")
@@ -637,12 +620,8 @@ namespace RoleBindings {
         ],
         resource: #{
             id: "550e8400-e29b-41d4-a716-446655440001",
-            type: "workspace",
-            workspace: #{
-                name: "Engineering Workspace",
-                type: "default",
-                description: "Main workspace for engineering team"
-            }
+            name: "Engineering Workspace",
+            url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
         }
     })
     model RoleBindingBySubject {
@@ -701,12 +680,8 @@ namespace RoleBindings {
                     ],
                     resource: #{
                         id: "550e8400-e29b-41d4-a716-446655440001",
-                        type: "workspace",
-                        workspace: #{
-                            name: "Engineering Workspace",
-                            type: "default",
-                            description: "Main workspace for engineering team"
-                        }
+                        name: "Engineering Workspace",
+                        url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
                     }
                 }
             ]
@@ -718,9 +693,6 @@ namespace RoleBindings {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: string;
 
-        @doc("Filter by resource type")
-        @example("workspace")
-        @query resource_type?: string;
         @doc("Filter by resource ID")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id?: string;
@@ -735,10 +707,10 @@ namespace RoleBindings {
         Control which fields are included in the response to optimize payload size and improve performance.
 
         **Default Behavior (no fields parameter):**
-        Basic required fields are always included: subject.id, subject.type, role.id, resource.type
+        Basic required fields are always included: subject.id, subject.type, role.id, resource.id
 
         **When fields parameter is provided:**
-        Only explicitly specified fields are included in the response. Type fields (subject.type, resource.type) are always required and included even if not specified.
+        Only explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.
 
         **Syntax:**
         - Use parentheses to specify fields for nested objects: `object(field1,field2)`
@@ -763,14 +735,10 @@ namespace RoleBindings {
         - id (UUID) - always included
         - name (string) - role display name
 
-        **resource object (polymorphic - available fields depend on type):**
+        **resource object:**
         - id (UUID) - always included
-        - type (string) - always included, cannot be excluded (determines which additional fields are available)
-
-        *When type = "workspace":*
-        - workspace.name (string) - name of the workspace
-        - workspace.type (string) - type of workspace (e.g., "default", "standard")
-        - workspace.description (string) - description of the workspace
+        - name (string) - resource name
+        - url (string) - link to the resource
 
         **root level:**
         - last_modified (datetime) - timestamp of last modification
@@ -779,13 +747,13 @@ namespace RoleBindings {
         - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
         - `subject(user.username)` - Include username (only for user subjects)
         - `role(name)` - Include role name
-        - `resource(workspace.name,workspace.description)` - Include workspace name and description (only for workspace resources)
-        - `subject(group.name),role(name),resource(workspace.name)` - Combine multiple object field specifications
+        - `resource(name,url)` - Include resource name and URL
+        - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
         - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
         - `last_modified` - Include only modification timestamp (plus required fields)
-        - `subject(group.name,group.user_count),resource(workspace.type)` - Mix group and workspace specific fields
+        - `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields
         """)
-        @example("subject(group.name,group.user_count),role(name),last_modified")
+        @example("subject(group.name,group.user_count),role(name),resource(name,url),last_modified")
         @query fields?: string;
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")

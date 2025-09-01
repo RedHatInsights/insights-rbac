@@ -41,16 +41,6 @@
             "explode": false
           },
           {
-            "name": "resource_type",
-            "in": "query",
-            "required": false,
-            "description": "Filter by resource type",
-            "schema": {
-              "type": "string"
-            },
-            "explode": false
-          },
-          {
             "name": "resource_id",
             "in": "query",
             "required": false,
@@ -84,7 +74,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Type fields (subject.type, resource.type) are always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"workspace\":*\n- workspace.name (string) - name of the workspace\n- workspace.type (string) - type of workspace (e.g., \"default\", \"standard\")\n- workspace.description (string) - description of the workspace\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(workspace.name,workspace.description)` - Include workspace name and description (only for workspace resources)\n- `subject(group.name),role(name),resource(workspace.name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(workspace.type)` - Mix group and workspace specific fields",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.id\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- url (string) - link to the resource\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(name,url)` - Include resource name and URL\n- `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields",
             "schema": {
               "type": "string"
             },
@@ -137,12 +127,8 @@
                       ],
                       "resource": {
                         "id": "550e8400-e29b-41d4-a716-446655440001",
-                        "type": "workspace",
-                        "workspace": {
-                          "name": "Engineering Workspace",
-                          "type": "default",
-                          "description": "Main workspace for engineering team"
-                        }
+                        "name": "Engineering Workspace",
+                        "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
                       }
                     }
                   ]
@@ -1432,31 +1418,6 @@
           }
         ]
       },
-      "RoleBindings.BaseResource": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "Resource identifier"
-          },
-          "type": {
-            "type": "string",
-            "description": "Type of resource",
-            "example": "workspace"
-          }
-        },
-        "discriminator": {
-          "propertyName": "type",
-          "mapping": {}
-        }
-      },
       "RoleBindings.BaseSubject": {
         "type": "object",
         "required": [
@@ -1529,6 +1490,29 @@
           }
         ]
       },
+      "RoleBindings.Resource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Resource identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Resource name"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link to the resource",
+            "example": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+          }
+        }
+      },
       "RoleBindings.Role": {
         "type": "object",
         "properties": {
@@ -1575,7 +1559,7 @@
           "resource": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/RoleBindings.WorkspaceResource"
+                "$ref": "#/components/schemas/RoleBindings.Resource"
               }
             ],
             "description": "Resource the roles apply to"
@@ -1600,12 +1584,8 @@
           ],
           "resource": {
             "id": "550e8400-e29b-41d4-a716-446655440001",
-            "type": "workspace",
-            "workspace": {
-              "name": "Engineering Workspace",
-              "type": "default",
-              "description": "Main workspace for engineering team"
-            }
+            "name": "Engineering Workspace",
+            "url": "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
           }
         }
       },
@@ -1676,52 +1656,6 @@
         "allOf": [
           {
             "$ref": "#/components/schemas/RoleBindings.BaseSubject"
-          }
-        ]
-      },
-      "RoleBindings.WorkspaceDetails": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Name of the workspace",
-            "example": "Workspace A"
-          },
-          "type": {
-            "type": "string",
-            "example": "default"
-          },
-          "description": {
-            "type": "string",
-            "description": "Description of the workspace"
-          }
-        }
-      },
-      "RoleBindings.WorkspaceResource": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "workspace"
-            ],
-            "description": "Type of resource"
-          },
-          "workspace": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.WorkspaceDetails"
-              }
-            ],
-            "description": "Workspace details"
-          }
-        },
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/RoleBindings.BaseResource"
           }
         ]
       },
