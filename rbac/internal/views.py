@@ -56,6 +56,10 @@ from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_t
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache, TenantCache
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.inventory_checker.inventory_api_check import (
+    BootstrappedTenantInventoryChecker,
+    GroupPrincipalInventoryChecker,
+)
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -66,10 +70,6 @@ from management.principal.proxy import PrincipalProxy
 from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
-)
-from management.relation_checker.relations_api_check import (
-    BootstrappedTenantRelationChecker,
-    GroupPrincipalRelationChecker,
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
@@ -110,8 +110,8 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
-BootstrappedTenantChecker = BootstrappedTenantRelationChecker()
-GroupPrincipalChecker = GroupPrincipalRelationChecker()
+BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
+GroupPrincipalChecker = GroupPrincipalInventoryChecker()
 
 
 @contextmanager
