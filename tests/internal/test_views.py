@@ -108,7 +108,7 @@ class BaseInternalViewsetTests(IdentityRequest):
         self.group.policies.add(self.policy)
         self.group.save()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-        self.root_workspace = Workspace.objects.get(
+        self.root_workspace_test = Workspace.objects.create(
             name="Root Workspace",
             tenant=self.tenant,
             type=Workspace.Types.ROOT,
@@ -118,7 +118,7 @@ class BaseInternalViewsetTests(IdentityRequest):
             type=Workspace.Types.DEFAULT,
             name="Default Workspace",
             description="Default Description",
-            parent_id=self.root_workspace.id,
+            parent_id=self.root_workspace_test.id,
         )
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
