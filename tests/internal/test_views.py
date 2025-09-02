@@ -3139,6 +3139,54 @@ class InternalS2SViewsetTests(IdentityRequest):
         payload_get.pop("modified")
         self.assertEqual(ungrouped_hosts, payload_get)
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, SERVICE_PSKS={"hbi": {"secret": "abc123"}})
+    def test_create_ungrouped_workspace_with_new_tenant(self, replicate, replicate_workspace):
+        """Test creating ungrouped workspace when tenant doesn't exist yet."""
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+
+        org_id = "new-org-12345"
+
+        # Ensure tenant doesn't exist
+        self.assertFalse(Tenant.objects.filter(org_id=org_id).exists())
+
+        self.service_headers = {
+            "HTTP_X_RH_RBAC_PSK": "abc123",
+            "HTTP_X_RH_RBAC_CLIENT_ID": "hbi",
+            "HTTP_X_RH_RBAC_ORG_ID": org_id,
+        }
+
+        # Call the endpoint
+        response = self.client.get(
+            f"/_private/_s2s/workspaces/ungrouped/",
+            **self.service_headers,
+            content_type="application/json",
+        )
+
+        # Verify successful response
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Verify tenant was created
+        tenant = Tenant.objects.get(org_id=org_id)
+        self.assertIsNotNone(tenant)
+
+        # Verify default workspace was created
+        default_workspace = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+        self.assertIsNotNone(default_workspace)
+
+        # Verify ungrouped workspace was created
+        ungrouped_workspace = Workspace.objects.get(tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+        self.assertIsNotNone(ungrouped_workspace)
+        self.assertEqual(ungrouped_workspace.parent, default_workspace)
+
+        # Verify response content
+        ungrouped_hosts_data = response.json()
+        self.assertEqual(ungrouped_hosts_data["id"], str(ungrouped_workspace.id))
+        self.assertEqual(ungrouped_hosts_data["type"], Workspace.Types.UNGROUPED_HOSTS)
+        self.assertEqual(ungrouped_hosts_data["name"], Workspace.SpecialNames.UNGROUPED_HOSTS)
 
 def valid_destructive_time():
     return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
