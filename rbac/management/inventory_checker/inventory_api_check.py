@@ -23,7 +23,6 @@ from typing import List, Union
 
 from django.conf import settings
 from google.protobuf import json_format
-from grpc import RpcError
 from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.inventory.v1beta2 import (
     inventory_service_pb2_grpc,
@@ -55,19 +54,12 @@ class InventoryApiBaseChecker:
         if isinstance(checks, CheckRequest):
             checks = [checks]
 
-        try:
             with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
                 stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
                 metadata = [("authorization", f"Bearer {token}")]
 
                 responses = [stub.Check(req, metadata=metadata) for req in checks]
                 return all(self._is_allowed(res) for res in responses)
-
-        except RpcError as e:
-            logger.error(f"[gRPC] check_inventory_core failed: {e}")
-        except Exception as e:
-            logger.error(f"[Unexpected] check_inventory_core failed: {e}")
-
         return False
 
     def _is_allowed(self, response):

@@ -1677,7 +1677,18 @@ def group_assignments(request, group_uuid):
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
-    relation_assignments = relations_dual_write_handler._replicator.check_relationships(relationships)
+    try:
+        relation_assignments = relations_dual_write_handler._replicator.check_relationships(relationships)
+    except RpcError as e:
+        return JsonResponse(
+            {"detail": "gRPC error occurred during inventory group assignment relationship check", "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"detail": "Unexpected error during inventory group assignment relationship check", "error": str(e)},
+            status=500,
+        )
     return JsonResponse(relation_assignments, safe=False)
 
 
