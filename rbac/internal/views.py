@@ -1484,7 +1484,6 @@ def retrieve_ungrouped_workspace(request):
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
     org_id = request.user.org_id
-
     if not org_id:
         return HttpResponse("No org_id found for the user.", status=400)
 
@@ -1498,9 +1497,24 @@ def retrieve_ungrouped_workspace(request):
                 tenant_bootstrap_service.bootstrap_tenant(tenant)
             ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
-            return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+        return HttpResponse(json.dumps(data, cls=DjangoJSONEncoder), content_type="application/json", status=201)
     except Exception as e:
-        return HttpResponse(str(e), status=500)
+        error_details = {
+            "function": "retrieve_ungrouped_workspace",
+            "org_id": org_id,
+            "user_id": getattr(request.user, "user_id", "unknown"),
+            "username": getattr(request.user, "username", "unknown"),
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+        }
+        logger.exception(
+            "retrieve_ungrouped_workspace: Unexpected error occurred. "
+            "org_id=%(org_id)s, user_id=%(user_id)s, username=%(username)s, "
+            "error_type=%(error_type)s, error_message=%(error_message)s",
+            error_details,
+            extra={"error_context": error_details},
+        )
+        return HttpResponse("An unexpected error occurred", status=500)
 
 
 def lookup_resource(request):
