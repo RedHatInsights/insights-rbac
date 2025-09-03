@@ -3188,6 +3188,7 @@ class InternalS2SViewsetTests(IdentityRequest):
         self.assertEqual(ungrouped_hosts_data["type"], Workspace.Types.UNGROUPED_HOSTS)
         self.assertEqual(ungrouped_hosts_data["name"], Workspace.SpecialNames.UNGROUPED_HOSTS)
 
+
 def valid_destructive_time():
     return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) + timedelta(hours=1)
 
