@@ -4039,7 +4039,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_group_assignments(self, mock_check_relationships, mock_create_channel, mock_get_token):
         """Test a request to check group assignments of inventory returns correct response."""
         group_uuid = str(self.group.uuid)
-        
+
         # Create the required workspaces for this check
         self.root_workspace = Workspace.objects.create(
             name="Root Workspace",
@@ -4086,7 +4086,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_group_assignments_grpc_error(self, mock_check_relationships):
         """Test the expected grpc error is returned in cases of grpc error for group assignments check"""
         group_uuid = str(self.group.uuid)
-        
+
         # Create the required workspaces for this check
         self.root_workspace = Workspace.objects.create(
             name="Root Workspace",
@@ -4100,7 +4100,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
             description="Default Description",
             parent_id=self.root_workspace.id,
         )
-        
+
         response = self.client.get(
             f"/_private/api/inventory/group_assignments/{group_uuid}/",
             format="json",
@@ -4123,7 +4123,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_group_assignments_error(self, mock_check_relationships):
         """Test the expected error is returned in cases of unexpected error for group assignments check"""
         group_uuid = str(self.group.uuid)
-        
+
         # Create the required workspaces for this check
         self.root_workspace = Workspace.objects.create(
             name="Root Workspace",
