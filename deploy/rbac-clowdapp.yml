@@ -96,6 +96,7 @@ objects:
           name: model-access-permissions
         - name: umb-certificates
           secret:
+            optional: true
             secretName: it-umb-key-pair
         resources:
           limits:
