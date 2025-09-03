@@ -1681,12 +1681,12 @@ def group_assignments(request, group_uuid):
         relation_assignments = relations_dual_write_handler._replicator.check_relationships(relationships)
     except RpcError as e:
         return JsonResponse(
-            {"detail": "gRPC error occurred during inventory group assignment relationship check", "error": str(e)},
+            {"detail": "gRPC error occurred during inventory group assignment check", "error": str(e)},
             status=400,
         )
     except Exception as e:
         return JsonResponse(
-            {"detail": "Unexpected error during inventory group assignment relationship check", "error": str(e)},
+            {"detail": "Unexpected error during inventory group assignment check", "error": str(e)},
             status=500,
         )
     return JsonResponse(relation_assignments, safe=False)
@@ -1770,8 +1770,19 @@ def check_bootstrapped_tenants(request, org_id):
                 "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
             },
         }
-        bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
-        bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+        try:
+            bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
+            bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+        except RpcError as e:
+            return JsonResponse(
+                {"detail": "gRPC error occurred during inventory bootstrapped tenant check", "error": str(e)},
+                status=400,
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"detail": "Unexpected error during inventory bootstrapped tenant check", "error": str(e)},
+                status=500,
+            )
     return JsonResponse(bootstrapped_tenant_response, safe=False)
 
 
