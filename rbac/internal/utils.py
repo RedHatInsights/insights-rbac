@@ -16,7 +16,6 @@
 #
 
 """Utilities for Internal RBAC use."""
-import functools
 import json
 import logging
 from contextlib import contextmanager
@@ -37,44 +36,6 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
-
-
-def log_call(include_args=False):
-    """
-    Log function entry, success, and failures.
-
-    Args:
-        include_args (bool): Whether to include function arguments in logs
-    """
-
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            name = func.__name__
-            # build entry message
-            entry = f"{name}: start"
-            if include_args and args:
-                # capture either .id if present or the raw first arg
-                ctx = getattr(args[0], "id", args[0])
-                entry += f" (context={ctx})"
-            logger.info(entry)
-
-            try:
-                result = func(*args, **kwargs)
-            except Exception:
-                logger.exception(f"{name}: failed")
-                raise
-
-            # build success message
-            result_id = getattr(result, "id", None)
-            suffix = f" (result_id={result_id})" if result_id is not None else ""
-            logger.info(f"{name}: success{suffix}")
-
-            return result
-
-        return wrapper
-
-    return decorator
 
 
 @contextmanager
@@ -147,7 +108,6 @@ def delete_bindings(bindings):
 
 
 @transaction.atomic
-@log_call(include_args=True)
 def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
     """
     Retrieve the ungrouped workspace for the given tenant.

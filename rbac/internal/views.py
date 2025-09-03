@@ -1486,7 +1486,7 @@ def retrieve_ungrouped_workspace(request):
     org_id = request.user.org_id
     if not org_id:
         return HttpResponse("No org_id found for the user.", status=400)
-
+    logger.info(f"Retrieving ungrouped workspace for org_id: {org_id}")
     try:
         with transaction.atomic():
             tenant, created = Tenant.objects.get_or_create(org_id=org_id)
@@ -1495,6 +1495,7 @@ def retrieve_ungrouped_workspace(request):
             if created:
                 tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
                 tenant_bootstrap_service.bootstrap_tenant(tenant)
+                logger.info(f"[Tenant Bootstrap]Retrieving ungrouped workspace for org_id: {org_id}")
             ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
         return HttpResponse(json.dumps(data, cls=DjangoJSONEncoder), content_type="application/json", status=201)
