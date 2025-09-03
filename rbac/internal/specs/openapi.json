@@ -2678,6 +2678,82 @@
         }
       }
     },
+  "/_private/api/relations/bootstrap_tenants/{org_id}/": {
+    "post": {
+      "tags": [
+        "Relations"
+      ],
+      "summary": "Check if a tenant is correctly bootstrapped in the relations API",
+      "description": "Checks if the tenant's bootstrapped resources and relationships are correctly replicated in the Relations API.",
+      "parameters": [
+        {
+          "name": "org_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The organization ID of the tenant to check."
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Bootstrapped tenant check result.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org_id": {
+                    "type": "string",
+                    "example": "example-org-id"
+                  },
+                  "bootstrapped_correct": {
+                    "type": "boolean",
+                    "example": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Tenant not found.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error404"
+              }
+            }
+          }
+        },
+        "500": {
+          "description": "Unexpected Error",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error500"
+              },
+              "examples": {
+                "gRPCError": {
+                  "value": {
+                    "detail": "Error occurred in gRPC call",
+                    "error": "gRPC Error"
+                  }
+                },
+                "GeneralError": {
+                  "value": {
+                    "detail": "Error occurred during bootstrapped tenant check",
+                    "error": "Unexpected error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
     "/_private/api/group_assignments/{group_uuid}": {
       "post": {
         "tags": [

@@ -16,6 +16,7 @@
 #
 
 """Utilities for Internal RBAC use."""
+import json
 import logging
 from contextlib import contextmanager
 
@@ -118,16 +119,19 @@ def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
     """
     # fetch parent only once
     default_ws = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+
     # single select_for_update + get_or_create
     workspace, created = Workspace.objects.select_for_update().get_or_create(
         tenant=tenant,
         type=Workspace.Types.UNGROUPED_HOSTS,
         defaults={"name": Workspace.SpecialNames.UNGROUPED_HOSTS, "parent": default_ws},
     )
+
     if created:
         RelationApiDualWriteWorkspaceHandler(
             workspace, ReplicationEventType.CREATE_WORKSPACE
         ).replicate_new_workspace()
+
     return workspace
 
 
@@ -159,3 +163,10 @@ def validate_inventory_input(action, request_data) -> bool:
     except Exception as e:
         logger.info(f"Exception occurred when validating JSON body: {e}")
         return False
+
+
+def load_request_body(request) -> dict:
+    """Decode request body from json into dict structure."""
+    request_decoded = request.body.decode("utf-8")
+    req_data = json.loads(request_decoded)
+    return req_data

@@ -40,16 +40,17 @@ from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     delete_bindings,
     get_or_create_ungrouped_workspace,
+    load_request_body,
     validate_inventory_input,
     validate_relations_input,
 )
 from kessel.inventory.v1beta2 import (
     check_request_pb2,
+    inventory_service_pb2_grpc,
     reporter_reference_pb2,
     resource_reference_pb2,
     subject_reference_pb2,
 )
-from kessel.inventory.v1beta2 import inventory_service_pb2_grpc
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
@@ -66,9 +67,12 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
+from management.relation_checker.relations_api_check import (
+    BootstrappedTenantRelationChecker,
+    GroupPrincipalRelationChecker,
+)
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from management.relation_replicator.relations_api_check import RelationsApiRelationChecker
 from management.role.definer import delete_permission
 from management.role.model import Access
 from management.role.serializer import BindingMappingSerializer
@@ -106,6 +110,8 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
+BootstrappedTenantChecker = BootstrappedTenantRelationChecker()
+GroupPrincipalChecker = GroupPrincipalRelationChecker()
 
 
 @contextmanager
@@ -1478,24 +1484,45 @@ def retrieve_ungrouped_workspace(request):
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
     org_id = request.user.org_id
-
     if not org_id:
         return HttpResponse("No org_id found for the user.", status=400)
-
+    logger.info(f"Retrieving ungrouped workspace for org_id: {org_id}")
     try:
         with transaction.atomic():
-            tenant = Tenant.objects.get(org_id=org_id)
+            tenant, created = Tenant.objects.get_or_create(org_id=org_id)
+            # Some tenants are misssing due to no users, hence no sync into RBAC
+            # or org type is not correctly set in IT, no events sent to RBAC.
+            if created:
+                tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+                tenant_bootstrap_service.bootstrap_tenant(tenant)
+                logger.info(f"[Tenant Bootstrap]Retrieving ungrouped workspace for org_id: {org_id}")
             ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
-            return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+        return HttpResponse(json.dumps(data, cls=DjangoJSONEncoder), content_type="application/json", status=201)
     except Exception as e:
-        return HttpResponse(str(e), status=500)
+        error_details = {
+            "function": "retrieve_ungrouped_workspace",
+            "org_id": org_id,
+            "user_id": getattr(request.user, "user_id", "unknown"),
+            "username": getattr(request.user, "username", "unknown"),
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+        }
+        logger.exception(
+            "retrieve_ungrouped_workspace: Unexpected error occurred. "
+            "org_id=%(org_id)s, user_id=%(user_id)s, username=%(username)s, "
+            "error_type=%(error_type)s, error_message=%(error_message)s",
+            error_details,
+            extra={"error_context": error_details},
+        )
+        return HttpResponse("An unexpected error occurred", status=500)
 
 
 def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
+
     if not validate_relations_input("lookup_resources", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
@@ -1549,7 +1576,7 @@ def lookup_resource(request):
 def read_tuples(request):
     """POST read tuples from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_relations_input("read_tuples", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to read_tuples."}, status=500)
@@ -1607,7 +1634,7 @@ def read_tuples(request):
 def check_relation(request):
     """POST to check relationship from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_relations_input("check_relation", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
@@ -1665,29 +1692,19 @@ def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
     principals = list(group.principals.all())
-    relations_assignment_checker = RelationsApiRelationChecker()
     relations_dual_write_handler = RelationApiDualWriteGroupHandler(
-        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_checker
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, GroupPrincipalChecker
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
-    relation_assignments = relations_dual_write_handler._replicator.replicate(
-        ReplicationEvent(
-            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
-            info={
-                "detail": "Check user-group relations are correct",
-            },
-            partition_key=PartitionKey.byEnvironment(),
-            add=relationships,
-        ),
-    )
+    relation_assignments = relations_dual_write_handler._replicator.check_relationships(relationships)
     return JsonResponse(relation_assignments, safe=False)
 
 
 def check_inventory(request):
     """POST to check relationship from inventory api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_inventory_input("check", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check inventory."}, status=500)
@@ -1743,6 +1760,28 @@ def check_inventory(request):
         return JsonResponse(
             {"detail": "Error occurred in call to check inventory endpoint", "error": str(e)}, status=500
         )
+
+
+def check_bootstrapped_tenants(request, org_id):
+    """POST to check if bootstrapped tenant is correct on relations api."""
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+    if tenant and tenant.tenant_mapping:
+        default_workspace = Workspace.objects.default(tenant=tenant)
+        root_workspace = Workspace.objects.root(tenant=tenant)
+        mapping = {
+            "org_id": tenant.org_id,
+            "root_workspace": str(root_workspace.id),
+            "default_workspace": str(default_workspace.id),
+            "tenant_mapping": {
+                "default_group_uuid": str(tenant.tenant_mapping.default_group_uuid),
+                "default_admin_group_uuid": str(tenant.tenant_mapping.default_admin_group_uuid),
+                "default_role_binding_uuid": str(tenant.tenant_mapping.default_role_binding_uuid),
+                "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
+            },
+        }
+        bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
+        bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+    return JsonResponse(bootstrapped_tenant_response, safe=False)
 
 
 @require_http_methods(["GET", "DELETE"])

@@ -1988,7 +1988,7 @@ class GroupViewsetTests(IdentityRequest):
 
     @patch("management.group.relation_api_dual_write_subject_handler.OutboxReplicator.replicate")
     def test_add_group_role_not_found_will_not_replicate(self, replicate_mock):
-        """Test that adding roles to a group skips ids not found, and returns success."""
+        """Test that adding roles to a group skips ids not found, and returns failure."""
         groupC = Group.objects.create(name="groupC", tenant=self.tenant)
         url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
         client = APIClient()
@@ -1996,8 +1996,7 @@ class GroupViewsetTests(IdentityRequest):
 
         response = client.post(url, test_data, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertCountEqual([], list(groupC.roles()))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         replicate_mock.assert_not_called()
 
     def test_remove_group_roles_success(self):
@@ -2193,7 +2192,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?roles={}".format(url, self.dummy_role_id)
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_admin_RonR(self):
         """Test that an admin user can group RBAC resources"""

@@ -51,6 +51,13 @@ SERVICE_ACCOUNT_KEY = "service-account"
 logger = logging.getLogger(__name__)
 
 
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    secure_channel = grpc.insecure_channel(addr)
+    yield secure_channel
+
+
 def validate_psk(psk, client_id):
     """Validate the PSK for the client."""
     psks = settings.SERVICE_PSKS
@@ -474,10 +481,3 @@ def flatten_validation_error(e: ValidationError):
         return [("__all__", str(msg)) for msg in e.messages]
     else:
         return [("__all__", str(e))]
-
-
-@contextmanager
-def create_client_channel(addr):
-    """Create secure channel for grpc requests."""
-    secure_channel = grpc.insecure_channel(addr)
-    yield secure_channel
