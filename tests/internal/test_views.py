@@ -108,25 +108,6 @@ class BaseInternalViewsetTests(IdentityRequest):
         self.group.policies.add(self.policy)
         self.group.save()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-        self.root_workspace = Workspace.objects.get(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.get(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-        self.workspace = Workspace.objects.get(
-            name="Test Workspace",
-            description="Test Workspace - description",
-            tenant=self.tenant,
-            parent=self.default_workspace,
-            type=Workspace.Types.STANDARD,
-        )
         self._prior_logging_disable_level = logging.root.manager.disable
         logging.disable(logging.NOTSET)
         self._tuples = InMemoryTuples()
@@ -4058,6 +4039,20 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_group_assignments(self, mock_check_relationships, mock_create_channel, mock_get_token):
         """Test a request to check group assignments of inventory returns correct response."""
         group_uuid = str(self.group.uuid)
+        
+        # Create the required workspaces for this check
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
 
         mock_stub = MagicMock()
         mock_stub.Check.return_value = check_response_pb2.CheckResponse(allowed=allowed_pb2.Allowed.ALLOWED_TRUE)
@@ -4091,6 +4086,21 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_group_assignments_grpc_error(self, mock_check_relationships):
         """Test the expected grpc error is returned in cases of grpc error for group assignments check"""
         group_uuid = str(self.group.uuid)
+        
+        # Create the required workspaces for this check
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        
         response = self.client.get(
             f"/_private/api/inventory/group_assignments/{group_uuid}/",
             format="json",
@@ -4113,6 +4123,21 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_group_assignments_error(self, mock_check_relationships):
         """Test the expected error is returned in cases of unexpected error for group assignments check"""
         group_uuid = str(self.group.uuid)
+        
+        # Create the required workspaces for this check
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
         response = self.client.get(
             f"/_private/api/inventory/group_assignments/{group_uuid}/",
             format="json",
