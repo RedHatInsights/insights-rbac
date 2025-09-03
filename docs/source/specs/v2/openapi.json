@@ -7,9 +7,548 @@
   "tags": [
     {
       "name": "Workspaces"
+    },
+    {
+      "name": "Roles"
     }
   ],
   "paths": {
+    "/roles/": {
+      "get": {
+        "operationId": "Roles_list",
+        "summary": "List roles",
+        "description": "List roles visible to the caller's tenant",
+        "parameters": [
+          {
+            "name": "X-Consistency-Zookie",
+            "in": "header",
+            "required": false,
+            "description": "Consistency token (zookie). If omitted, service may use an org-level token.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20
+            },
+            "explode": false
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Roles.RoleType"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Roles.RoleScope"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_application",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "description": "Optional expansions: stats,parent,children (comma-separated)",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.RoleListResponse"
+                },
+                "example": {
+                  "meta": {
+                    "limit": 20
+                  },
+                  "links": {
+                    "next": "/api/rbac/v2/roles/?limit=20&cursor=abc",
+                    "previous": null
+                  },
+                  "data": [
+                    {
+                      "id": "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+                      "name": "Workspace Admin",
+                      "display_name": "Workspace Admin",
+                      "type": "seeded",
+                      "scope": "default_workspace",
+                      "stats": {
+                        "permissions_count": 12,
+                        "workspace_count": 3,
+                        "group_count": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Roles"
+        ]
+      }
+    },
+    "/roles/{role_id}/": {
+      "get": {
+        "operationId": "Roles_read",
+        "summary": "Read role",
+        "description": "Get a single role",
+        "parameters": [
+          {
+            "name": "X-Consistency-Zookie",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.Role"
+                },
+                "example": {
+                  "data": {
+                    "id": "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+                    "name": "Workspace Admin",
+                    "display_name": "Workspace Admin",
+                    "type": "seeded",
+                    "scope": "default_workspace",
+                    "created_at": "2024-06-01T00:00:00Z",
+                    "updated_at": "2024-08-04T12:00:00Z",
+                    "stats": {
+                      "permissions_count": 12
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Roles"
+        ]
+      }
+    },
+    "/roles/{role_id}/permissions/": {
+      "get": {
+        "operationId": "Roles_listPermissions",
+        "summary": "List role permissions",
+        "description": "List permissions that belong to a role",
+        "parameters": [
+          {
+            "name": "X-Consistency-Zookie",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 50
+            },
+            "explode": false
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_application",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_resource",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "filter_action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.PermissionListResponse"
+                },
+                "example": {
+                  "meta": {
+                    "limit": 50
+                  },
+                  "links": {
+                    "next": "/api/rbac/v2/roles/9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001/permissions/?limit=50&cursor=def",
+                    "previous": null
+                  },
+                  "data": [
+                    {
+                      "id": "f3db6c15-45ad-4f57-bbbf-4b1e2bd4c0a1",
+                      "application": "inventory",
+                      "resource": "host",
+                      "action": "read",
+                      "name": "inventory:host:read",
+                      "description": "Read host metadata"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Roles"
+        ]
+      }
+    },
     "/workspaces/": {
       "get": {
         "operationId": "Workspaces_list",
@@ -1181,6 +1720,268 @@
           }
         ]
       },
+      "Roles.Pagination": {
+        "type": "object",
+        "required": [
+          "meta",
+          "links"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/Workspaces.CursorPaginationMeta"
+          },
+          "links": {
+            "$ref": "#/components/schemas/Workspaces.CursorPaginationLinks"
+          }
+        },
+        "description": "Lightweight pagination envelope (reuses shared cursor models)"
+      },
+      "Roles.Permission": {
+        "type": "object",
+        "required": [
+          "id",
+          "application",
+          "resource",
+          "action",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "application": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "<application>:<resource>:<action>"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "example": {
+          "id": "f3db6c15-45ad-4f57-bbbf-4b1e2bd4c0a1",
+          "application": "inventory",
+          "resource": "host",
+          "action": "read",
+          "name": "inventory:host:read",
+          "description": "Read host metadata"
+        }
+      },
+      "Roles.PermissionListResponse": {
+        "type": "object",
+        "required": [
+          "meta",
+          "links",
+          "data"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/Workspaces.CursorPaginationMeta"
+          },
+          "links": {
+            "$ref": "#/components/schemas/Workspaces.CursorPaginationLinks"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Roles.Permission"
+            }
+          }
+        }
+      },
+      "Roles.Role": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Roles.RoleBody"
+          }
+        },
+        "example": {
+          "data": {
+            "id": "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+            "name": "Workspace Admin",
+            "display_name": "Workspace Admin",
+            "description": "Administrative permissions scoped to a workspace.",
+            "type": "seeded",
+            "scope": "default_workspace",
+            "updated_at": "2024-08-04T12:00:00Z",
+            "created_at": "2024-06-01T00:00:00Z",
+            "parent": {
+              "id": "11111111-2222-3333-4444-555555555555",
+              "name": "Parent Role"
+            },
+            "children": [
+              {
+                "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "name": "Child Role"
+              }
+            ]
+          }
+        }
+      },
+      "Roles.RoleBody": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation time"
+          },
+          "parent": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/UUID"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Optional parent link when the role is derived"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/UUID"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Optional direct children"
+          }
+        },
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Roles.RoleSummary"
+          }
+        ]
+      },
+      "Roles.RoleListResponse": {
+        "type": "object",
+        "required": [
+          "meta",
+          "links",
+          "data"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/Workspaces.CursorPaginationMeta"
+          },
+          "links": {
+            "$ref": "#/components/schemas/Workspaces.CursorPaginationLinks"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Roles.RoleSummary"
+            }
+          }
+        }
+      },
+      "Roles.RoleScope": {
+        "type": "string",
+        "enum": [
+          "organization",
+          "root_workspace",
+          "default_workspace",
+          "none"
+        ]
+      },
+      "Roles.RoleSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "name": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/Roles.RoleType"
+          },
+          "scope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Roles.RoleScope"
+              }
+            ],
+            "description": "High-level applicability; not a resource binding",
+            "default": "none"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "permissions_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "workspace_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "group_count": {
+                "type": "integer",
+                "format": "int64"
+              }
+            },
+            "description": "Optional, only when requested via include=stats"
+          }
+        },
+        "example": {
+          "id": "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+          "name": "Workspace Admin",
+          "display_name": "Workspace Admin",
+          "description": "Administrative permissions scoped to a workspace.",
+          "type": "seeded",
+          "scope": "default_workspace",
+          "updated_at": "2024-08-04T12:00:00Z"
+        }
+      },
+      "Roles.RoleType": {
+        "type": "string",
+        "enum": [
+          "platform",
+          "seeded",
+          "custom"
+        ]
+      },
       "Timestamps": {
         "type": "object",
         "required": [
@@ -1272,6 +2073,44 @@
           "description": "Create a standard workspace.",
           "created": "2024-08-04T12:00:00Z",
           "modified": "2024-08-04T12:00:00Z"
+        }
+      },
+      "Workspaces.CursorPaginationLinks": {
+        "type": "object",
+        "required": [
+          "next",
+          "previous"
+        ],
+        "properties": {
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The next link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The previous link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9"
+          }
+        }
+      },
+      "Workspaces.CursorPaginationMeta": {
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Limit of returned objects",
+            "example": 10,
+            "default": 10
+          }
         }
       },
       "Workspaces.MoveWorkspaceRequest": {

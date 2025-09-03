@@ -7,7 +7,7 @@ using TypeSpec.Http;
 using TypeSpec.Rest;
 using TypeSpec.Versioning;
 
-@service({title:"Role Based Access Control for Kessel Project"})
+@service(#{title:"Role Based Access Control for Kessel Project"})
 
 @server("https://localhost:{port}/{basePath}", "Development Server", { basePath: string="api/rbac/v2", port: string="8000" })
 @server("https://console.stage.redhat.com/{basePath}", "Stage Server", { basePath: string="api/rbac/v2" })
@@ -305,6 +305,24 @@ namespace Workspaces {
         links: PaginationLinks;
     }
 
+    model CursorPaginationMeta {
+        @doc("Limit of returned objects")
+        @example(10)
+        limit: int64 = 10;
+    }
+
+    model CursorPaginationLinks {
+        @doc("The next link in pagination")
+        @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9")
+        @format("uri")
+        next: string | null;
+
+        @doc("The previous link in pagination")
+        @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9")
+        @format("uri")
+        previous: string | null;
+    }
+
     @example(#{
         meta: #{
             count: 50,
@@ -336,6 +354,244 @@ namespace Workspaces {
         data: Workspace[];
     }
 
+}
+
+@route("/roles/")
+@tag("Roles")
+@doc("Read-only APIs for RoleV2 discovery and inspection")
+namespace Roles {
+  @doc("Lightweight pagination envelope (reuses shared cursor models)")
+  model Pagination {
+    meta: Workspaces.CursorPaginationMeta;
+    links: Workspaces.CursorPaginationLinks;
+  }
+
+  enum RoleType {
+    platform,
+    seeded,
+    custom
+  }
+
+  enum RoleScope {
+    organization,
+    root_workspace,
+    default_workspace,
+    none
+  }
+
+  @example(#{
+    id: "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+    name: "Workspace Admin",
+    display_name: "Workspace Admin",
+    description: "Administrative permissions scoped to a workspace.",
+    type: Roles.RoleType.seeded,
+    scope: Roles.RoleScope.default_workspace,
+    updated_at: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+  })
+  model RoleSummary {
+    @key id: UUID;
+    name: string;
+    display_name?: string;
+    description?: string;
+    type: RoleType;
+    @doc("High-level applicability; not a resource binding")
+    scope?: RoleScope = RoleScope.none;
+    updated_at?: offsetDateTime;
+
+    @doc("Optional, only when requested via include=stats")
+    stats?: {
+      permissions_count?: int64;
+      workspace_count?: int64;
+      group_count?: int64;
+    };
+  }
+
+  @example(#{
+    data: #{
+      id: "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+      name: "Workspace Admin",
+      display_name: "Workspace Admin",
+      description: "Administrative permissions scoped to a workspace.",
+      type: Roles.RoleType.seeded,
+      scope: Roles.RoleScope.default_workspace,
+      updated_at: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+      created_at: offsetDateTime.fromISO("2024-06-01T00:00:00Z"),
+      parent: #{
+        id: "11111111-2222-3333-4444-555555555555",
+        name: "Parent Role"
+      },
+      children: #[
+        #{
+          id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          name: "Child Role"
+        }
+      ]
+    }
+  })
+  model Role {
+    data: RoleBody;
+  }
+
+  model RoleBody extends RoleSummary {
+    @doc("Creation time")
+    created_at?: offsetDateTime;
+
+    @doc("Optional parent link when the role is derived")
+    parent?: {
+      id: UUID;
+      name?: string;
+    };
+
+    @doc("Optional direct children")
+    children?: {
+      id: UUID;
+      name?: string;
+    }[];
+  }
+
+  @example(#{
+    id: "f3db6c15-45ad-4f57-bbbf-4b1e2bd4c0a1",
+    application: "inventory",
+    resource: "host",
+    action: "read",
+    name: "inventory:host:read",
+    description: "Read host metadata"
+  })
+  model Permission {
+    @key id: UUID;
+    application: string;
+    resource: string;
+    action: string;
+    @doc("<application>:<resource>:<action>")
+    name: string;
+    description?: string;
+  }
+
+  model RoleListResponse {
+    ...Pagination;
+    data: RoleSummary[];
+  }
+
+  model PermissionListResponse {
+    ...Pagination;
+    data: Permission[];
+  }
+
+  // ---------- Operations ----------
+
+  @doc("List roles visible to the caller's tenant")
+  @summary("List roles")
+  @opExample(#{
+    parameters: #{
+      x_consistency_zookie: "zkgAAAA...",
+      limit: 20,
+      filter_name: "admin",
+      include: "stats"
+    },
+    returnType: #{
+      meta: #{ limit: 20 },
+      links: #{
+        next: "/api/rbac/v2/roles/?limit=20&cursor=abc",
+        previous: null
+      },
+      data: #[
+        #{
+          id: "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+          name: "Workspace Admin",
+          display_name: "Workspace Admin",
+          type: Roles.RoleType.seeded,
+          scope: Roles.RoleScope.default_workspace,
+          stats: #{ permissions_count: 12, workspace_count: 3, group_count: 2 }
+        }
+      ]
+    }
+  })
+  @get op list(
+    @header("X-Consistency-Zookie")
+    @doc("Consistency token (zookie). If omitted, service may use an org-level token.")
+    x_consistency_zookie?: string;
+
+    @query limit?: int64 = 20;
+    @query cursor?: string;
+
+    @query filter_name?: string;
+    @query filter_type?: RoleType;
+    @query filter_scope?: RoleScope;
+    @query filter_application?: string;
+    @query filter_action?: string;
+
+    @doc("Optional expansions: stats,parent,children (comma-separated)")
+    @example("stats,parent")
+    @query include?: string;
+  ): RoleListResponse | Problems.CommonProblems;
+
+  @doc("Get a single role")
+  @summary("Read role")
+  @route("{role_id}/")
+  @opExample(#{
+    parameters: #{
+      role_id: "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+      include: "stats,children"
+    },
+    returnType: #{
+      data: #{
+        id: "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+        name: "Workspace Admin",
+        display_name: "Workspace Admin",
+        type: Roles.RoleType.seeded,
+        scope: Roles.RoleScope.default_workspace,
+        created_at: offsetDateTime.fromISO("2024-06-01T00:00:00Z"),
+        updated_at: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        stats: #{ permissions_count: 12 }
+      }
+    }
+  })
+  @get op read(
+    @header("X-Consistency-Zookie") x_consistency_zookie?: string,
+    @path role_id: UUID,
+    @query include?: string
+  ): Role | Problems.CommonProblems | Problems.Problem404;
+
+  @doc("List permissions that belong to a role")
+  @summary("List role permissions")
+  @route("{role_id}/permissions/")
+  @opExample(#{
+    parameters: #{
+      role_id: "9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001",
+      limit: 50,
+      filter_application: "inventory",
+      filter_resource: "host"
+    },
+    returnType: #{
+      meta: #{ limit: 50 },
+      links: #{
+        next: "/api/rbac/v2/roles/9b4ef5f9-8d26-4b61-8c9f-8ab5d9e9c001/permissions/?limit=50&cursor=def",
+        previous: null
+      },
+      data: #[
+        #{
+          id: "f3db6c15-45ad-4f57-bbbf-4b1e2bd4c0a1",
+          application: "inventory",
+          resource: "host",
+          action: "read",
+          name: "inventory:host:read",
+          description: "Read host metadata"
+        }
+      ]
+    }
+  })
+  @get op listPermissions(
+    @header("X-Consistency-Zookie") x_consistency_zookie?: string,
+    @path role_id: UUID,
+    @query limit?: int64 = 50,
+    @query cursor?: string,
+    @query filter_application?: string,
+    @query filter_resource?: string,
+    @query filter_action?: string
+  ): PermissionListResponse | Problems.CommonProblems | Problems.Problem404;
+}
+
+namespace Workspaces {
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
 
