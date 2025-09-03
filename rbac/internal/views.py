@@ -1490,7 +1490,12 @@ def retrieve_ungrouped_workspace(request):
 
     try:
         with transaction.atomic():
-            tenant = Tenant.objects.get(org_id=org_id)
+            tenant, created = Tenant.objects.get_or_create(org_id=org_id)
+            # Some tenants are misssing due to no users, hence no sync into RBAC
+            # or org type is not correctly set in IT, no events sent to RBAC.
+            if created:
+                tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+                tenant_bootstrap_service.bootstrap_tenant(tenant)
             ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
             return HttpResponse(json.dumps(data), content_type="application/json", status=201)
