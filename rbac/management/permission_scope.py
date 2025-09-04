@@ -91,6 +91,30 @@ class _PermissionDescriptor:
 
         return cls(app=parts[0], resource=parts[1], verb=parts[2])
 
+    def with_unconstrained_resource(self) -> "_PermissionDescriptor":
+        """Return a new permission with a wildcard resource."""
+        return _PermissionDescriptor(
+            app=self.app,
+            resource="*",
+            verb=self.verb,
+        )
+
+    def with_unconstrained_verb(self) -> "_PermissionDescriptor":
+        """Return a new permission with a wildcard verb."""
+        return _PermissionDescriptor(
+            app=self.app,
+            resource=self.resource,
+            verb="*",
+        )
+
+    def with_app_only(self) -> "_PermissionDescriptor":
+        """Return a new permission with a wildcard resource and verb."""
+        return _PermissionDescriptor(
+            app=self.app,
+            resource="*",
+            verb="*",
+        )
+
     def v1_string(self) -> str:
         """Return the V1 representation of this permission: app:resource:verb."""
         return f"{self.app}:{self.resource}:{self.verb}"
@@ -129,3 +153,42 @@ class ImplicitResourceService:
 
         for permission_str in tenant_scope_permissions:
             add_permission(_PermissionDescriptor.parse_v1(permission_str), Scope.TENANT)
+
+    def scope_for_permission(self, permission: str) -> Scope:
+        """
+        Return the scope that a permission binds to using this object's configured permissions.
+
+        The argument shall be a V1 permission string (as if for _PermissionDescriptor.parse_v1).
+        The permission may be a wildcard.
+
+        Matching precedence (highest to lowest):
+        1. Exact app:resource_type:verb match.
+        2. Wildcard app:resource_type:* match.
+        3. Wildcard app:*:verb match.
+        4. Wildcard app:*:* match.
+        5. Finally, if no match exists, the DEFAULT scope.
+
+        Note that, if the permission is a wildcard, some of these steps will be redundant.
+        For instance, if the permission is app:*:verb, there are only two possible matches:
+        app:*:verb and app:*:*.
+        """
+        parsed = _PermissionDescriptor.parse_v1(permission)
+
+        # If we are passed a wildcard, some wildcard checks will be redundant.
+        candidates = [parsed] + [
+            wildcard
+            for wildcard in [
+                parsed.with_unconstrained_verb(),
+                parsed.with_unconstrained_resource(),
+                parsed.with_app_only(),
+            ]
+            if wildcard != parsed
+        ]
+
+        for candidate in candidates:
+            scope = self._permissions_map.get(candidate, None)
+
+            if scope is not None:
+                return scope
+
+        return Scope.DEFAULT
