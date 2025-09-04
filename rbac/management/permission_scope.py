@@ -91,6 +91,10 @@ class _PermissionDescriptor:
 
         return cls(app=parts[0], resource=parts[1], verb=parts[2])
 
+    def v1_string(self) -> str:
+        """Return the V1 representation of this permission: app:resource:verb."""
+        return f"{self.app}:{self.resource}:{self.verb}"
+
 
 class ImplicitResourceService:
     """Classifies permissions based on their default scope."""
@@ -113,7 +117,10 @@ class ImplicitResourceService:
             previous_scope = self._permissions_map.get(permission, None)
 
             if previous_scope is not None and previous_scope != scope:
-                raise ValueError(f"Permission is in multiple scopes: {previous_scope} and {scope}")
+                raise ValueError(
+                    f"Duplicate permission found: {permission.v1_string()} is in multiple scopes: "
+                    f"{previous_scope} and {scope}"
+                )
 
             self._permissions_map[permission] = scope
 
