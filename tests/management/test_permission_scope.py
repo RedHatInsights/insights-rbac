@@ -84,6 +84,16 @@ class SinglePermissionTest(TestCase):
             f"Expected permission {permission} to have scope {scope.name}, but got {actual_single.name}",
         )
 
+        actual_max = service.highest_scope_for_permissions([permission])
+
+        self.assertEqual(
+            scope,
+            actual_max,
+            f"Expected highest_scope_for_permissions to be consistent with scope_for_permission, "
+            f"but got {scope} from scope_for_permission and {actual_max} from highest_scope_for_permissions "
+            f"for permission {permission}",
+        )
+
     def _assert_app_default(self, service: ImplicitResourceService, app: str):
         self._assert_scope(Scope.DEFAULT, service, f"{app}:resource:verb")
         self._assert_scope(Scope.DEFAULT, service, f"{app}:resource:*")
@@ -223,3 +233,122 @@ class SinglePermissionTest(TestCase):
         # More specific wildcards take precedence over full-app permissions.
         self._assert_scope(Scope.ROOT, service, "app:resource:other_verb")
         self._assert_scope(Scope.ROOT, service, "app:other_resource:verb")
+
+
+class MaxPermissionTest(TestCase):
+    def _assert_max_scope(self, scope: Scope, service: ImplicitResourceService, permissions: list[str]):
+        self.assertEqual(scope, service.highest_scope_for_permissions(permissions))
+
+    def test_empty(self):
+        """Test that an empty list of permissions is assigned default workspace scope."""
+        service = ImplicitResourceService(root_scope_permissions=["app:resource:verb"], tenant_scope_permissions=[])
+        self._assert_max_scope(Scope.DEFAULT, service, [])
+
+    def test_invalid(self):
+        """Test that invalid permissions are correctly rejected."""
+        service = ImplicitResourceService(root_scope_permissions=[], tenant_scope_permissions=["tenant_app:*:*"])
+
+        for permission in INVALID_PERMISSIONS:
+            with self.subTest(permission=permission):
+                self.assertRaises(
+                    ValueError,
+                    service.highest_scope_for_permissions,
+                    [permission],
+                )
+
+                # Assert that we do not exit before validating all inputs,
+                # even if a tenant scope permission occurs first.
+                self.assertRaises(
+                    ValueError,
+                    service.highest_scope_for_permissions,
+                    ["tenant_app:resource:verb", permission],
+                )
+
+    def test_single(self):
+        """Test that single permissions are handled correctly."""
+        service = ImplicitResourceService(
+            root_scope_permissions=["app:resource:verb"],
+            tenant_scope_permissions=["other_app:other_resource:other_verb"],
+        )
+
+        self._assert_max_scope(
+            Scope.DEFAULT,
+            service,
+            ["elsewhere:resource:verb"],
+        )
+
+        self._assert_max_scope(
+            Scope.ROOT,
+            service,
+            ["app:resource:verb"],
+        )
+
+        self._assert_max_scope(
+            Scope.TENANT,
+            service,
+            ["other_app:other_resource:other_verb"],
+        )
+
+    def test_max_default(self):
+        """Test that the max scope being the default workspace is handled correctly."""
+        service = ImplicitResourceService(
+            root_scope_permissions=["app:*:*", "other_app:*:*"],
+            tenant_scope_permissions=[],
+        )
+
+        self._assert_max_scope(
+            Scope.DEFAULT,
+            service,
+            ["unrelated:resource:verb", "elsewhere:*:*"],
+        )
+
+    def test_max_root(self):
+        """Test that the max scope being the root workspace is handled correctly."""
+        service = ImplicitResourceService(
+            root_scope_permissions=["app:*:*", "other_app:resource:verb"],
+            tenant_scope_permissions=["other_app:*:*"],
+        )
+
+        self._assert_max_scope(
+            Scope.ROOT,
+            service,
+            ["app:resource:verb", "other_app:resource:verb", "app:*:other_verb", "default_app:*:*"],
+        )
+
+    def test_max_tenant(self):
+        """Test that the max scope being tenant is handled correctly."""
+        service = ImplicitResourceService(
+            root_scope_permissions=["root_app:*:*"],
+            tenant_scope_permissions=["tenant_app:*:*"],
+        )
+
+        self._assert_max_scope(
+            Scope.TENANT,
+            service,
+            ["default_app:resource:verb", "tenant_app:other_resource:other_verb", "root_app:*:verb"],
+        )
+
+    def test_repeat(self):
+        """Test that repeated permissions are handled correctly."""
+        service = ImplicitResourceService(
+            root_scope_permissions=["root_app:*:*"],
+            tenant_scope_permissions=["tenant_app:*:*"],
+        )
+
+        self._assert_max_scope(
+            Scope.DEFAULT,
+            service,
+            ["default_app:resource:verb", "default_app:resource:verb"],
+        )
+
+        self._assert_max_scope(
+            Scope.ROOT,
+            service,
+            ["root_app:resource:verb", "root_app:resource:verb"],
+        )
+
+        self._assert_max_scope(
+            Scope.TENANT,
+            service,
+            ["tenant_app:resource:verb", "tenant _app:resource:verb"],
+        )

@@ -17,6 +17,7 @@
 """Helper for determining workspace/tenant binding levels for permissions."""
 import dataclasses
 from enum import IntEnum
+from typing import Iterable
 
 
 class Scope(IntEnum):
@@ -192,3 +193,14 @@ class ImplicitResourceService:
                 return scope
 
         return Scope.DEFAULT
+
+    def highest_scope_for_permissions(self, permissions: Iterable[str]) -> Scope:
+        """
+        Return the highest scope to which any permission in permissions is assigned.
+
+        Permission scopes are determined as if by using scope_for_permission.
+        """
+        return max(
+            [self.scope_for_permission(permission) for permission in permissions],
+            default=Scope.DEFAULT,
+        )
