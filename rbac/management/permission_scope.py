@@ -143,7 +143,7 @@ class ImplicitResourceService:
         self._permissions_map = {}
 
         def add_permission(permission: _PermissionDescriptor, scope: Scope):
-            previous_scope = self._permissions_map.get(permission, None)
+            previous_scope = self._permissions_map.get(permission)
 
             if previous_scope is not None and previous_scope != scope:
                 raise ValueError(
@@ -216,7 +216,7 @@ class ImplicitResourceService:
         ]
 
         for candidate in candidates:
-            scope = self._permissions_map.get(candidate, None)
+            scope = self._permissions_map.get(candidate)
 
             if scope is not None:
                 return scope
