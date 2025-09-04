@@ -15,3 +15,22 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper for determining workspace/tenant binding levels for permissions."""
+from enum import IntEnum
+
+
+class Scope(IntEnum):
+    """
+    Permission scope levels, ordered from lowest to highest.
+
+    This represents the possible default scopes for a permission:
+    * DEFAULT, for the default workspace of a tenant.
+    * ROOT, for the root workspace of a tenant.
+    * TENANT, for the tenant itself.
+
+    Later scopes are said to be "higher" than earlier scopes, as they encompass
+    more resources.
+    """
+
+    DEFAULT = 1
+    ROOT = 2
+    TENANT = 3
