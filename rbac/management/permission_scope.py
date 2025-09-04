@@ -16,6 +16,7 @@
 #
 """Helper for determining workspace/tenant binding levels for permissions."""
 import dataclasses
+import threading
 from enum import IntEnum
 from typing import Iterable
 
@@ -158,6 +159,31 @@ class ImplicitResourceService:
         for permission_str in tenant_scope_permissions:
             add_permission(_PermissionDescriptor.parse_v1(permission_str), Scope.TENANT)
 
+    @classmethod
+    def from_settings(cls) -> "ImplicitResourceService":
+        """
+        Create an ImplicitResourceService from the configuration in settings.
+
+        Root workspace permissions are determined from the ROOT_SCOPE_PERMISSIONS setting.
+        Tenant permissions are determined from the TENANT_SCOPE_PERMISSIONS setting.
+
+        Each setting must be a comma-separated list of V1 permissions strings (as if for
+        _PermissionDescriptor.parse_v1); spaces are trimmed from the start and each of
+        each permission. An empty (or blank) string is acceptable and will be parsed to
+        the empty list.
+        """
+
+        def parse_setting(value: str) -> list[str]:
+            if value.strip() == "":
+                return []
+
+            return [p.strip() for p in value.split(",")]
+
+        return cls(
+            root_scope_permissions=parse_setting(settings.ROOT_SCOPE_PERMISSIONS),
+            tenant_scope_permissions=parse_setting(settings.TENANT_SCOPE_PERMISSIONS),
+        )
+
     def scope_for_permission(self, permission: str) -> Scope:
         """
         Return the scope that a permission binds to using this object's configured permissions.
@@ -232,3 +258,34 @@ class ImplicitResourceService:
             return V2boundresource(resource_type=("rbac", "workspace"), resource_id=default_workspace_id)
         else:
             raise AssertionError(f"Unexpected scope: {scope}")
+
+
+_default_service = threading.local()
+
+
+def default_implicit_resource_service() -> ImplicitResourceService:
+    """
+    Return an ImplicitResourceService configured from Django settings.
+
+    This is configured with the ROOT_SCOPE_PERMISSIONS and TENANT_SCOPE_PERMISSIONS
+    settings, as if by ImplicitResourceService.from_settings.
+
+    Note that the configuration is cached per thread, and the same ImplicitResourceService
+    may be returned for subsequent calls. This should not matter in application code,
+    as Django settings are prohibited from being changed. For use in test code,
+    see clear_default_implicit_resource_service.
+    """
+    if _default_service.value is None:
+        _default_service.value = ImplicitResourceService.from_settings()
+
+    return _default_service.value
+
+
+def clear_default_implicit_resource_service():
+    """
+    Ensure that future calls to default_implicit_resource_service use updated settings.
+
+    Since settings cannot change in normal application code, this is only relevant to
+    test code.
+    """
+    _default_service.value = None
