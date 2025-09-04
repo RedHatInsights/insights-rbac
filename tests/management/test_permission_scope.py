@@ -357,7 +357,7 @@ class MaxPermissionTest(TestCase):
         self._assert_max_scope(
             Scope.TENANT,
             service,
-            ["tenant_app:resource:verb", "tenant _app:resource:verb"],
+            ["tenant_app:resource:verb", "tenant_app:resource:verb"],
         )
 
 
