@@ -20,7 +20,12 @@ Tests for permission scope functionality.
 from django.test import override_settings
 from typing import Tuple
 from unittest import TestCase
-from management.permission_scope import ImplicitResourceService, Scope
+from management.permission_scope import (
+    ImplicitResourceService,
+    Scope,
+    default_implicit_resource_service,
+    clear_default_implicit_resource_service,
+)
 
 DEFAULT_APPS = [
     "advisor",
@@ -443,3 +448,151 @@ class ResourceTest(TestCase):
             resource_id=f"some_domain/{self.org_id}",
             permissions=["default_app:*:verb", "root_app:resource:*", "tenant_app:resource:verb"],
         )
+
+
+class SettingsTest(TestCase):
+    # Unfortunately, we do have to explicitly clear the global twice. We clear it
+    # before each test to prevent any other test from interfering (and to prevent
+    # these tests from interfering with each other), and we clear it after the
+    # final test in order to prevent these tests from interfering with anything
+    # else.
+
+    def setUp(self):
+        clear_default_implicit_resource_service()
+
+    @classmethod
+    def tearDownClass(cls):
+        clear_default_implicit_resource_service()
+
+    def _fresh_default(self) -> ImplicitResourceService:
+        clear_default_implicit_resource_service()
+        return default_implicit_resource_service()
+
+    def _service_sources(self) -> list[Tuple[str, ImplicitResourceService]]:
+        """Return a list of ImplicitResourceServices from the current settings and a description of their source."""
+        return [
+            ("settings", ImplicitResourceService.from_settings()),
+            ("default", self._fresh_default()),
+        ]
+
+    def test_settings_invalid(self):
+        """Test that invalid settings are correctly rejected."""
+        # The empty string is a valid setting, but no other invalid permission is.
+        invalid_settings = [
+            setting
+            for setting in (
+                INVALID_PERMISSIONS
+                + [
+                    "app:resource:verb;app:resource:verb",
+                    "app:resource:verb,",
+                    ",app:resource:verb",
+                ]
+            )
+            if setting != ""
+        ]
+
+        for setting in invalid_settings:
+            with self.subTest(setting=setting):
+                with override_settings(ROOT_SCOPE_PERMISSIONS=setting):
+                    self.assertRaises(ValueError, ImplicitResourceService.from_settings)
+                    self.assertRaises(ValueError, default_implicit_resource_service)
+
+                with override_settings(TENANT_SCOPE_PERMISSIONS=setting):
+                    self.assertRaises(ValueError, ImplicitResourceService.from_settings)
+                    self.assertRaises(ValueError, default_implicit_resource_service)
+
+    def test_empty(self):
+        """Test that blank settings are correctly parsed as no permissions."""
+        empty_settings = [
+            "",
+            " ",
+            "        ",
+            "\t",
+            "\n",
+            "\r",
+        ]
+
+        for setting in empty_settings:
+            with self.subTest(setting=setting):
+                with override_settings(ROOT_SCOPE_PERMISSIONS=setting, TENANT_SCOPE_PERMISSIONS=setting):
+                    for source, service in self._service_sources():
+                        with self.subTest(source=source):
+                            self.assertEqual(
+                                Scope.DEFAULT,
+                                service.scope_for_permission("app:resource:verb"),
+                            )
+
+    def test_trim(self):
+        """Test that whitespace is trimmed around permissions in settings."""
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="\t  root_app:resource:verb,  root_app:resource:other_verb\n",
+            TENANT_SCOPE_PERMISSIONS="\n\ntenant_app:resource:verb \r",
+        ):
+            for source, service in self._service_sources():
+                with self.subTest(source=source):
+                    self.assertEqual(
+                        Scope.ROOT,
+                        service.scope_for_permission("root_app:resource:verb"),
+                    )
+
+                    self.assertEqual(
+                        Scope.ROOT,
+                        service.scope_for_permission("root_app:resource:other_verb"),
+                    )
+
+                    self.assertEqual(
+                        Scope.TENANT,
+                        service.scope_for_permission("tenant_app:resource:verb"),
+                    )
+
+    def test_wildcard(self):
+        """Test that wildcards are correctly parsed in settings."""
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="root_app:*:*",
+            TENANT_SCOPE_PERMISSIONS="tenant_app:*:*",
+        ):
+            for source, service in self._service_sources():
+                with self.subTest(source=source):
+                    self.assertEqual(
+                        Scope.ROOT,
+                        service.scope_for_permission("root_app:resource:verb"),
+                    )
+
+                    self.assertEqual(
+                        Scope.TENANT,
+                        service.scope_for_permission("tenant_app:resource:verb"),
+                    )
+
+    def test_default_cached(self):
+        """Test that default_implicit_resource_services caches its configuration."""
+        service: ImplicitResourceService
+
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="root_app:*:*",
+            TENANT_SCOPE_PERMISSIONS="",
+        ):
+            service = default_implicit_resource_service()
+
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="",
+        ):
+            # Check that any given instance does not get new settings.
+            self.assertEqual(
+                Scope.ROOT,
+                service.scope_for_permission("root_app:resource:verb"),
+            )
+
+            # Check that getting the default again does not update settings.
+            self.assertEqual(
+                Scope.ROOT,
+                default_implicit_resource_service().scope_for_permission("root_app:resource:verb"),
+            )
+
+            clear_default_implicit_resource_service()
+
+            # Check that clearing the default and getting it again *does* update settings.
+            self.assertEqual(
+                Scope.DEFAULT,
+                default_implicit_resource_service().scope_for_permission("root_app:resource:verb"),
+            )
