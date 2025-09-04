@@ -17,6 +17,8 @@
 """
 Tests for permission scope functionality.
 """
+from django.test import override_settings
+from typing import Tuple
 from unittest import TestCase
 from management.permission_scope import ImplicitResourceService, Scope
 
@@ -351,4 +353,93 @@ class MaxPermissionTest(TestCase):
             Scope.TENANT,
             service,
             ["tenant_app:resource:verb", "tenant _app:resource:verb"],
+        )
+
+
+class ResourceTest(TestCase):
+    org_id = "an_org"
+    root_id = "root_workspace"
+    default_id = "default_workspace"
+
+    service = ImplicitResourceService(
+        root_scope_permissions=["root_app:*:*"],
+        tenant_scope_permissions=["tenant_app:*:*"],
+    )
+
+    def _assert_resource(self, resource_type: Tuple[str, str], resource_id: str, permissions: list[str]):
+        """Assert that v2_bound_resource_for_permission returns the specified result."""
+        result = self.service.v2_bound_resource_for_permission(
+            permissions,
+            tenant_org_id=self.org_id,
+            root_workspace_id=self.root_id,
+            default_workspace_id=self.default_id,
+        )
+
+        self.assertEqual(
+            resource_type,
+            result.resource_type,
+            f"Expected bound resource for permissions {permissions} to be {resource_type}",
+        )
+
+        self.assertEqual(
+            resource_id,
+            result.resource_id,
+            f"For permissions {permissions}, got correct resource type {resource_type}, but expected ID {resource_id}",
+        )
+
+    def test_invalid(self):
+        """Test that invalid permissions are correctly rejected."""
+        for permission in INVALID_PERMISSIONS:
+            with self.subTest(permission=permission):
+                self.assertRaises(
+                    ValueError,
+                    self.service.v2_bound_resource_for_permission,
+                    permissions=[permission],
+                    tenant_org_id=self.org_id,
+                    root_workspace_id=self.root_id,
+                    default_workspace_id=self.default_id,
+                )
+
+                # Assert that we do not exit before validating all inputs,
+                # even if a tenant scope permission occurs first.
+                self.assertRaises(
+                    ValueError,
+                    self.service.v2_bound_resource_for_permission,
+                    permissions=["tenant_app:resource:verb", permission],
+                    tenant_org_id=self.org_id,
+                    root_workspace_id=self.root_id,
+                    default_workspace_id=self.default_id,
+                )
+
+    def test_empty(self):
+        """Test that an empty set of permissions results in the default workspace."""
+        self._assert_resource(
+            resource_type=("rbac", "workspace"),
+            resource_id=self.default_id,
+            permissions=[],
+        )
+
+    def test_max_default(self):
+        """Test that resources are correctly bound to the default workspace."""
+        self._assert_resource(
+            resource_type=("rbac", "workspace"),
+            resource_id=self.default_id,
+            permissions=["default_app:*:verb"],
+        )
+
+    def test_max_root(self):
+        """Test that resources are correctly bound to the root workspace."""
+        self._assert_resource(
+            resource_type=("rbac", "workspace"),
+            resource_id=self.root_id,
+            permissions=["default_app:*:verb", "root_app:resource:*"],
+        )
+
+    @override_settings(PRINCIPAL_USER_DOMAIN="some_domain")
+    def test_max_tenant(self):
+        """Test that resources are correctly bound to the tenant."""
+        self._assert_resource(
+            resource_type=("rbac", "tenant"),
+            resource_id=f"some_domain/{self.org_id}",
+            permissions=["default_app:*:verb", "root_app:resource:*", "tenant_app:resource:verb"],
         )

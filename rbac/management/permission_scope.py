@@ -19,6 +19,9 @@ import dataclasses
 from enum import IntEnum
 from typing import Iterable
 
+from django.conf import settings
+from migration_tool.models import V2boundresource
+
 
 class Scope(IntEnum):
     """
@@ -204,3 +207,28 @@ class ImplicitResourceService:
             [self.scope_for_permission(permission) for permission in permissions],
             default=Scope.DEFAULT,
         )
+
+    def v2_bound_resource_for_permission(
+        self,
+        permissions: Iterable[str],
+        tenant_org_id: str,
+        root_workspace_id: str,
+        default_workspace_id: str,
+    ) -> V2boundresource:
+        """
+        Return a V2boundresource corresponding the highest scope for any permission in permissions.
+
+        The appropriate scope is determined as if by highest_scope_for_permissions. A
+        V2boundresource is then returned, bound to the appropriate provided resource.
+        """
+        scope = self.highest_scope_for_permissions(permissions)
+
+        if scope == Scope.TENANT:
+            tenant_resource_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{tenant_org_id}"
+            return V2boundresource(resource_type=("rbac", "tenant"), resource_id=tenant_resource_id)
+        elif scope == Scope.ROOT:
+            return V2boundresource(resource_type=("rbac", "workspace"), resource_id=root_workspace_id)
+        elif scope == Scope.DEFAULT:
+            return V2boundresource(resource_type=("rbac", "workspace"), resource_id=default_workspace_id)
+        else:
+            raise AssertionError(f"Unexpected scope: {scope}")
