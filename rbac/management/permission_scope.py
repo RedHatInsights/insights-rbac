@@ -275,10 +275,15 @@ def default_implicit_resource_service() -> ImplicitResourceService:
     as Django settings are prohibited from being changed. For use in test code,
     see clear_default_implicit_resource_service.
     """
-    if _default_service.value is None:
-        _default_service.value = ImplicitResourceService.from_settings()
+    existing = _default_service.__dict__.get("value")
 
-    return _default_service.value
+    if existing is not None:
+        return existing
+
+    created = ImplicitResourceService.from_settings()
+    _default_service.value = created
+
+    return created
 
 
 def clear_default_implicit_resource_service():
