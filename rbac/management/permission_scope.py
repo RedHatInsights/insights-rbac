@@ -90,3 +90,35 @@ class _PermissionDescriptor:
             raise ValueError(f"Permission string must contain three colon-separated parts: {permission_str}")
 
         return cls(app=parts[0], resource=parts[1], verb=parts[2])
+
+
+class ImplicitResourceService:
+    """Classifies permissions based on their default scope."""
+
+    _permissions_map: dict[_PermissionDescriptor, Scope]
+
+    def __init__(self, root_scope_permissions: list[str], tenant_scope_permissions: list[str]):
+        """
+        Create an ImplicitResourceService with specific root and tenant scope permissions.
+
+        root_scope_permissions is a set of permissions assigned to the root workspace scope.
+        tenant_scope_permissions is a set of permissions assigned to tenant scope.
+
+        Both sets of permissions are represented as V1 permission strings (valid for
+        _PermissionDescriptor.parse_v1). Both sets may contain wildcards.
+        """
+        self._permissions_map = {}
+
+        def add_permission(permission: _PermissionDescriptor, scope: Scope):
+            previous_scope = self._permissions_map.get(permission, None)
+
+            if previous_scope is not None and previous_scope != scope:
+                raise ValueError(f"Permission is in multiple scopes: {previous_scope} and {scope}")
+
+            self._permissions_map[permission] = scope
+
+        for permission_str in root_scope_permissions:
+            add_permission(_PermissionDescriptor.parse_v1(permission_str), Scope.ROOT)
+
+        for permission_str in tenant_scope_permissions:
+            add_permission(_PermissionDescriptor.parse_v1(permission_str), Scope.TENANT)
