@@ -102,6 +102,7 @@ urlpatterns = [
     path("api/relations/read_tuples/", views.read_tuples),
     path("api/inventory/bootstrap_tenants/<org_id>/", views.check_bootstrapped_tenants),
     path("api/inventory/group_assignments/<group_uuid>/", views.group_assignments),
+    path("api/inventory/check_workspace/<workspace_uuid>/", views.check_workspace_relation),
     path("api/inventory/check/", views.check_inventory),
     path("api/utils/workspace/", views.workspace_removal),
 ]

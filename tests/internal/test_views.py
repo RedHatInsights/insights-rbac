@@ -4316,3 +4316,144 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertIn("error", response_body)
         self.assertEqual(response_body["detail"], "Unexpected error during inventory bootstrapped tenant check")
         self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("management.utils.create_client_channel")
+    @patch("management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace")
+    @patch("internal.views.check_workspace_relation")
+    def test_inventory_workspace_relation(
+        self, mock_workspace_view, mock_check_workspace_relation, mock_create_channel, mock_get_token
+    ):
+        """Test a request to check workspace relation on inventory returns correct response."""
+        # Create the required objects for this test
+        TenantMapping.objects.create(tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.test_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            name="Test Workspace",
+            description="Default Description",
+            parent_id=self.default_workspace.id,
+        )
+        mock_stub = MagicMock()
+        mock_stub.Check.return_value = "true"
+
+        mock_check_workspace_relation.return_value = mock_stub.Check.return_value
+        mock_workspace_view.return_value = {
+            "org_id": self.test_workspace.tenant.org_id,
+            "workspace_id": self.test_workspace.id,
+            "workspace_parent_id": self.test_workspace.parent.id,
+            "workspace_relation_correct": mock_stub.Check.return_value,
+        }
+        with patch(
+            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            response = self.client.get(
+                f"/_private/api/inventory/check_workspace/{str(self.test_workspace.id)}/",
+                format="json",
+                **self.request.META,
+            )
+
+        # Parse and validate response
+        self.assertEqual(response.status_code, 200)
+        response_body = response.json()
+        self.assertEqual(response_body["org_id"], self.test_workspace.tenant.org_id)
+        self.assertEqual(response_body["workspace_id"], str(self.test_workspace.id))
+        self.assertEqual(response_body["workspace_parent_id"], str(self.test_workspace.parent.id))
+        self.assertEqual(response_body["workspace_relation_correct"], "true")
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace",
+        side_effect=RpcError("Simulated GRPC error"),
+    )
+    def test_inventory_workspace_relation_grpc_error(self, mock_check_workspace):
+        """Test the expected grpc error is returned in cases of grpc error for workspace relation check"""
+        # Create the required objects for this test
+        TenantMapping.objects.create(tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.test_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            name="Test Workspace",
+            description="Default Description",
+            parent_id=self.default_workspace.id,
+        )
+
+        response = self.client.get(
+            f"/_private/api/inventory/check_workspace/{str(self.test_workspace.id)}/",
+            format="json",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "gRPC error occurred during inventory workspace relation check")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace",
+        side_effect=Exception("Simulated internal error"),
+    )
+    def test_inventory_workspace_relation_error(self, mock_check_workspace):
+        """Test the expected error is returned in cases of generic error for workspace relation check"""
+        # Create the required objects for this test
+        TenantMapping.objects.create(tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.test_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            name="Test Workspace",
+            description="Default Description",
+            parent_id=self.default_workspace.id,
+        )
+
+        response = self.client.get(
+            f"/_private/api/inventory/check_workspace/{str(self.test_workspace.id)}/",
+            format="json",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, 500)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Unexpected error during inventory workspace relation check")
+        self.assertEqual(response_body["error"], "Simulated internal error")
