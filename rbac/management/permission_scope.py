@@ -230,7 +230,7 @@ class ImplicitResourceService:
         Permission scopes are determined as if by using scope_for_permission.
         """
         return max(
-            [self.scope_for_permission(permission) for permission in permissions],
+            (self.scope_for_permission(permission) for permission in permissions),
             default=Scope.DEFAULT,
         )
 
