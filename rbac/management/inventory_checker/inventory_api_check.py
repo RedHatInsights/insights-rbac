@@ -197,3 +197,33 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
             else:
                 logger.info(f'{mapping["org_id"]} is correctly bootstrapped.')
         return bootstrapped_tenant_correct
+
+
+class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
+    """Subclass to check workspace parent relations are correct on inventory api."""
+
+    def check_workspace(self, workspace_id, workspace_parent_id):
+        """Core logic to check workspace relation on inventory api."""
+        # Build the check request for checking parent-child workspace relationship
+        check_request = CheckRequest(
+            object=resource_reference_pb2.ResourceReference(
+                resource_id=workspace_parent_id,
+                resource_type="workspace",
+                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+            ),
+            relation="parent",
+            subject=subject_reference_pb2.SubjectReference(
+                resource=resource_reference_pb2.ResourceReference(
+                    resource_id=workspace_id,
+                    resource_type="workspace",
+                    reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                )
+            ),
+        )
+
+        workspace_check = self.check_inventory_core(check_request)
+        if not workspace_check:
+            logger.warning(f"{workspace_id} does not have the expected parent workspace.")
+        else:
+            logger.info(f"{workspace_id} has the correct parent workspace.")
+        return workspace_check
