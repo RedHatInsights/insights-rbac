@@ -61,6 +61,15 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 from migration_tool.utils import create_relationship
+from kessel.inventory.v1beta2 import (
+    inventory_service_pb2_grpc,
+    reporter_reference_pb2,
+    resource_reference_pb2,
+    subject_reference_pb2,
+    check_response_pb2,
+    allowed_pb2,
+)
+from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
@@ -99,7 +108,6 @@ class BaseInternalViewsetTests(IdentityRequest):
         self.group.policies.add(self.policy)
         self.group.save()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-
         self._prior_logging_disable_level = logging.root.manager.disable
         logging.disable(logging.NOTSET)
         self._tuples = InMemoryTuples()
@@ -4069,3 +4077,242 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         response_body = json.loads(response.content)
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response_body["detail"], "Invalid request body provided in request to check inventory.")
+
+
+class InternalInventoryViewsetTests(BaseInternalViewsetTests):
+    """Test the /_private/api/inventory/ endpoints from internal viewset."""
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("management.utils.create_client_channel")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    def test_inventory_group_assignments(self, mock_check_relationships, mock_create_channel, mock_get_token):
+        """Test a request to check group assignments of inventory returns correct response."""
+        group_uuid = str(self.group.uuid)
+
+        # Create the required workspaces for this check
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        mock_stub = MagicMock()
+        mock_stub.Check.return_value = check_response_pb2.CheckResponse(allowed=allowed_pb2.Allowed.ALLOWED_TRUE)
+
+        mock_check_relationships.return_value = {
+            "group_uuid": group_uuid,
+            "principal_relations": [{"id": "213072139", "relation_exists": True}],
+        }
+
+        with patch(
+            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            response = self.client.get(
+                f"/_private/api/inventory/group_assignments/{group_uuid}/",
+                format="json",
+                **self.request.META,
+            )
+
+        # Parse and validate response
+        self.assertEqual(response.status_code, 200)
+        response_body = response.json()
+        self.assertEqual(response_body["group_uuid"], group_uuid)
+        self.assertIn("principal_relations", response_body)
+        self.assertEqual(response_body["principal_relations"], [{"id": "213072139", "relation_exists": True}])
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships",
+        side_effect=RpcError("Simulated GRPC error"),
+    )
+    def test_inventory_group_assignments_grpc_error(self, mock_check_relationships):
+        """Test the expected grpc error is returned in cases of grpc error for group assignments check"""
+        group_uuid = str(self.group.uuid)
+
+        # Create the required workspaces for this check
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        response = self.client.get(
+            f"/_private/api/inventory/group_assignments/{group_uuid}/",
+            format="json",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, 400)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "gRPC error occurred during inventory group assignment check")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships",
+        side_effect=Exception("Simulated internal error"),
+    )
+    def test_inventory_group_assignments_error(self, mock_check_relationships):
+        """Test the expected error is returned in cases of unexpected error for group assignments check"""
+        group_uuid = str(self.group.uuid)
+
+        # Create the required workspaces for this check
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        response = self.client.get(
+            f"/_private/api/inventory/group_assignments/{group_uuid}/",
+            format="json",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, 500)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Unexpected error during inventory group assignment check")
+        self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("management.utils.create_client_channel")
+    @patch(
+        "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenants"
+    )
+    @patch("internal.views.check_bootstrapped_tenants")
+    def test_inventory_bootstrapped_tenants(
+        self, mock_bootstrapped_view, mock_check_bootstrapped_tenants, mock_create_channel, mock_get_token
+    ):
+        """Test a request to check bootstrapped tenants on inventory returns correct response."""
+        # Create the required objects for this test
+        TenantMapping.objects.create(tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        mock_stub = MagicMock()
+        mock_stub.Check.return_value = {"allowed": True}
+
+        mock_check_bootstrapped_tenants.return_value = mock_stub.Check.return_value
+        mock_bootstrapped_view.return_value = {
+            "org_id": self.tenant.org_id,
+            "bootstrapped_correct": mock_check_bootstrapped_tenants,
+        }
+        with patch(
+            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            response = self.client.get(
+                f"/_private/api/inventory/bootstrap_tenants/{self.tenant.org_id}/",
+                format="json",
+                **self.request.META,
+            )
+
+        # Parse and validate response
+        self.assertEqual(response.status_code, 200)
+        response_body = response.json()
+        self.assertEqual(response_body["org_id"], str(self.tenant.org_id))
+        self.assertIn("allowed", response_body["bootstrapped_correct"])
+        self.assertTrue(response_body["bootstrapped_correct"]["allowed"])
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenants",
+        side_effect=RpcError("Simulated GRPC error"),
+    )
+    def test_inventory_bootstrapped_tenants_grpc_error(self, mock_check_relationships):
+        """Test the expected grpc error is returned in cases of grpc error for bootstrapped tenant check"""
+        # Create the required objects for this test
+        TenantMapping.objects.create(tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        response = self.client.get(
+            f"/_private/api/inventory/bootstrap_tenants/{self.tenant.org_id}/",
+            format="json",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "gRPC error occurred during inventory bootstrapped tenant check")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenants",
+        side_effect=Exception("Simulated internal error"),
+    )
+    def test_inventory_bootstrapped_tenants_error(self, mock_check_relationships):
+        """Test the expected error is returned in cases of generic error for bootstrapped tenant check"""
+        # Create the required objects for this test
+        TenantMapping.objects.create(tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        response = self.client.get(
+            f"/_private/api/inventory/bootstrap_tenants/{self.tenant.org_id}/",
+            format="json",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, 500)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Unexpected error during inventory bootstrapped tenant check")
+        self.assertEqual(response_body["error"], "Simulated internal error")
