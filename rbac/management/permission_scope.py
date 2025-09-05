@@ -16,7 +16,6 @@
 #
 """Helper for determining workspace/tenant binding levels for permissions."""
 import dataclasses
-import threading
 from enum import IntEnum
 from typing import Iterable
 
@@ -260,37 +259,9 @@ class ImplicitResourceService:
             raise AssertionError(f"Unexpected scope: {scope}")
 
 
-_default_service = threading.local()
+"""
+A global ImplicitResourceService configured using Django Settings.
 
-
-def default_implicit_resource_service() -> ImplicitResourceService:
-    """
-    Return an ImplicitResourceService configured from Django settings.
-
-    This is configured with the ROOT_SCOPE_PERMISSIONS and TENANT_SCOPE_PERMISSIONS
-    settings, as if by ImplicitResourceService.from_settings.
-
-    Note that the configuration is cached per thread, and the same ImplicitResourceService
-    may be returned for subsequent calls. This should not matter in application code,
-    as Django settings are prohibited from being changed. For use in test code,
-    see clear_default_implicit_resource_service.
-    """
-    existing = _default_service.__dict__.get("value")
-
-    if existing is not None:
-        return existing
-
-    created = ImplicitResourceService.from_settings()
-    _default_service.value = created
-
-    return created
-
-
-def clear_default_implicit_resource_service():
-    """
-    Ensure that future calls to default_implicit_resource_service use updated settings.
-
-    Since settings cannot change in normal application code, this is only relevant to
-    test code.
-    """
-    _default_service.value = None
+See ImplicitResourceService.from_settings for details on how this is configured.
+"""
+default_implicit_resource_service = ImplicitResourceService.from_settings()
