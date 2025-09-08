@@ -4626,7 +4626,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         )
 
         response = self.client.get(
-            f"/_private/api/inventory/check_workspace/{str(self.root_workspace.id)}//?descendants=true",
+            f"/_private/api/inventory/check_workspace/{str(self.root_workspace.id)}/?descendants=true",
             format="json",
             **self.request.META,
         )
