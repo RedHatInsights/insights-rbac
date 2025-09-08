@@ -2869,6 +2869,67 @@
         }
       }
     }
+  },
+    "/_private/api/inventory/check_workspace/{workspace_uuid}/": {
+    "post": {
+      "tags": [
+        "Inventory"
+      ],
+      "summary": "Check a relationship in the inventory api.",
+      "description": "Returns whether a relationship exists between a parent-child workspaces on inventory api.",
+        "parameters": [
+          {
+            "name": "descendants",
+            "in": "query",
+            "description": "Flag to enable checks on a workspaces descendants.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+      "responses": {
+        "200": {
+          "description": "Relation evaluated and returned."
+        },
+        "204": {
+          "description": "No relation found."
+        },
+        "400": {
+          "description": "gRPC Error",
+          "content": {
+            "application/json": {
+              "examples": {
+                "gRPCError": {
+                  "value": {
+                    "detail": "gRPC error occurred during inventory workspace relation check",
+                    "error": "gRPC Error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "500": {
+          "description": "Unexpected Error",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error500"
+              },
+              "examples": {
+                "Error": {
+                  "value": {
+                    "detail": "Unexpected error during inventory workspace relation check",
+                    "error": "Error message"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 },
   "servers": [

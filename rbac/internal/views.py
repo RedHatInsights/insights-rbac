@@ -1809,9 +1809,45 @@ def check_bootstrapped_tenants(request, org_id):
 
 
 def check_workspace_relation(request, workspace_uuid):
-    """Post to check a workspace has the correct parent relation on inventory api."""
+    """Post to check a workspace has the correct parent relation on inventory api.
+
+    query param 'descendants=true' to check descendant workspace relations on the workspace uuid provided.
+    default is single workspace parent relationship check.
+    """
     workspace = get_object_or_404(Workspace, id=workspace_uuid)
-    if workspace:
+    query_params = request.GET
+    # Check workspaces descendants
+    if workspace and query_params.get("descendants") == "true":
+        workspace_descendants = workspace.descendants()
+        responses = []
+        try:
+            for workspace in workspace_descendants:
+                workspace_uuid = str(workspace.id)
+                workspace_parent = str(workspace.parent.id)
+                workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent)
+                responses.append(
+                    {
+                        "org_id": workspace.tenant.org_id,
+                        "workspace_id": workspace_uuid,
+                        "workspace_parent_id": workspace_parent,
+                        "workspace_relation_correct": workspace_correct,
+                    }
+                )
+            workspace_check_response = responses
+        except RpcError as e:
+            return JsonResponse(
+                {
+                    "detail": "gRPC error occurred during inventory workspace descendants relation check",
+                    "error": str(e),
+                },
+                status=400,
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"detail": "Unexpected error during inventory workspace descendants relation check", "error": str(e)},
+                status=500,
+            )
+    elif workspace:
         workspace_parent_id = str(workspace.parent.id)
         workspace_uuid_str = str(workspace_uuid)
         try:
