@@ -13,6 +13,8 @@
 !Makefile
 !mypy.ini
 !.coveragerc
+!labels.json
+!Dockerfile
 
 # keep the test files out of the final image
 #**/*test*
