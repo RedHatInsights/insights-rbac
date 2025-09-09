@@ -125,8 +125,8 @@ class ImplicitResourceService:
             wildcard
             for wildcard in [
                 parsed.with_unconstrained_verb(),
-                parsed.with_unconstrained_resource(),
-                parsed.with_app_only(),
+                parsed.with_unconstrained_resource_type(),
+                parsed.with_application_only(),
             ]
             if wildcard != parsed
         ]

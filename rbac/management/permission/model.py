@@ -37,8 +37,8 @@ class PermissionValue:
     remains unambiguous.
     """
 
-    app: str
-    resource: str
+    application: str
+    resource_type: str
     verb: str
 
     @staticmethod
@@ -59,11 +59,11 @@ class PermissionValue:
 
     def __post_init__(self):
         """Verify that this permission is valid."""
-        if "*" in self.app:
+        if "*" in self.application:
             raise ValueError("Wildcards are not permitted in the app portion of permissions.")
 
-        self._check_valid_component("app", self.app)
-        self._check_valid_component("resource", self.resource)
+        self._check_valid_component("app", self.application)
+        self._check_valid_component("resource", self.resource_type)
         self._check_valid_component("action", self.verb)
 
     @classmethod
@@ -74,35 +74,35 @@ class PermissionValue:
         if len(parts) != 3:
             raise ValueError(f"Permission string must contain three colon-separated parts: {permission_str}")
 
-        return cls(app=parts[0], resource=parts[1], verb=parts[2])
+        return cls(application=parts[0], resource_type=parts[1], verb=parts[2])
 
-    def with_unconstrained_resource(self) -> "PermissionValue":
+    def with_unconstrained_resource_type(self) -> "PermissionValue":
         """Return a new permission with a wildcard resource."""
         return PermissionValue(
-            app=self.app,
-            resource="*",
+            application=self.application,
+            resource_type="*",
             verb=self.verb,
         )
 
     def with_unconstrained_verb(self) -> "PermissionValue":
         """Return a new permission with a wildcard verb."""
         return PermissionValue(
-            app=self.app,
-            resource=self.resource,
+            application=self.application,
+            resource_type=self.resource_type,
             verb="*",
         )
 
-    def with_app_only(self) -> "PermissionValue":
+    def with_application_only(self) -> "PermissionValue":
         """Return a new permission with a wildcard resource and verb."""
         return PermissionValue(
-            app=self.app,
-            resource="*",
+            application=self.application,
+            resource_type="*",
             verb="*",
         )
 
     def v1_string(self) -> str:
         """Return the V1 representation of this permission: app:resource:verb."""
-        return f"{self.app}:{self.resource}:{self.verb}"
+        return f"{self.application}:{self.resource_type}:{self.verb}"
 
 
 class Permission(TenantAwareModel):
