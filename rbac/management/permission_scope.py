@@ -20,7 +20,7 @@ from typing import Iterable
 
 from django.conf import settings
 from migration_tool.models import V2boundresource
-from management.permission.model import _PermissionDescriptor
+from management.permission.model import PermissionValue
 
 
 class Scope(IntEnum):
@@ -44,7 +44,7 @@ class Scope(IntEnum):
 class ImplicitResourceService:
     """Classifies permissions based on their default scope."""
 
-    _permissions_map: dict[_PermissionDescriptor, Scope]
+    _permissions_map: dict[PermissionValue, Scope]
 
     def __init__(self, root_scope_permissions: list[str], tenant_scope_permissions: list[str]):
         """
@@ -58,7 +58,7 @@ class ImplicitResourceService:
         """
         self._permissions_map = {}
 
-        def add_permission(permission: _PermissionDescriptor, scope: Scope):
+        def add_permission(permission: PermissionValue, scope: Scope):
             previous_scope = self._permissions_map.get(permission)
 
             if previous_scope is not None and previous_scope != scope:
@@ -70,10 +70,10 @@ class ImplicitResourceService:
             self._permissions_map[permission] = scope
 
         for permission_str in root_scope_permissions:
-            add_permission(_PermissionDescriptor.parse_v1(permission_str), Scope.ROOT)
+            add_permission(PermissionValue.parse_v1(permission_str), Scope.ROOT)
 
         for permission_str in tenant_scope_permissions:
-            add_permission(_PermissionDescriptor.parse_v1(permission_str), Scope.TENANT)
+            add_permission(PermissionValue.parse_v1(permission_str), Scope.TENANT)
 
     @classmethod
     def from_settings(cls) -> "ImplicitResourceService":
@@ -118,7 +118,7 @@ class ImplicitResourceService:
         For instance, if the permission is app:*:verb, there are only two possible matches:
         app:*:verb and app:*:*.
         """
-        parsed = _PermissionDescriptor.parse_v1(permission)
+        parsed = PermissionValue.parse_v1(permission)
 
         # If we are passed a wildcard, some wildcard checks will be redundant.
         candidates = [parsed] + [

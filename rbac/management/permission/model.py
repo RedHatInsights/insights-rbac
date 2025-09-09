@@ -23,7 +23,7 @@ from api.models import TenantAwareModel
 
 
 @dataclasses.dataclass(frozen=True)
-class _PermissionDescriptor:
+class PermissionValue:
     """
     Represents the value of a single permission.
 
@@ -67,7 +67,7 @@ class _PermissionDescriptor:
         self._check_valid_component("action", self.verb)
 
     @classmethod
-    def parse_v1(cls, permission_str: str) -> "_PermissionDescriptor":
+    def parse_v1(cls, permission_str: str) -> "PermissionValue":
         """Parse a V1 permission string, e.g. app:resource:verb."""
         parts = permission_str.split(":")
 
@@ -76,25 +76,25 @@ class _PermissionDescriptor:
 
         return cls(app=parts[0], resource=parts[1], verb=parts[2])
 
-    def with_unconstrained_resource(self) -> "_PermissionDescriptor":
+    def with_unconstrained_resource(self) -> "PermissionValue":
         """Return a new permission with a wildcard resource."""
-        return _PermissionDescriptor(
+        return PermissionValue(
             app=self.app,
             resource="*",
             verb=self.verb,
         )
 
-    def with_unconstrained_verb(self) -> "_PermissionDescriptor":
+    def with_unconstrained_verb(self) -> "PermissionValue":
         """Return a new permission with a wildcard verb."""
-        return _PermissionDescriptor(
+        return PermissionValue(
             app=self.app,
             resource=self.resource,
             verb="*",
         )
 
-    def with_app_only(self) -> "_PermissionDescriptor":
+    def with_app_only(self) -> "PermissionValue":
         """Return a new permission with a wildcard resource and verb."""
-        return _PermissionDescriptor(
+        return PermissionValue(
             app=self.app,
             resource="*",
             verb="*",
