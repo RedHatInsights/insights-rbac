@@ -19,9 +19,7 @@
 import json
 import logging
 import uuid
-from contextlib import contextmanager
 
-import grpc
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
@@ -38,14 +36,14 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
+    create_client_channel,
+    create_client_channel_inventory,
     delete_bindings,
     get_or_create_ungrouped_workspace,
     load_request_body,
     validate_inventory_input,
     validate_relations_input,
 )
-from kessel.auth import OAuth2ClientCredentials
-from kessel.grpc import oauth2_call_credentials
 from kessel.inventory.v1beta2 import (
     check_request_pb2,
     inventory_service_pb2_grpc,
@@ -116,36 +114,6 @@ jwt_manager = JWTManager(jwt_provider, jwt_cache)
 BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
 GroupPrincipalChecker = GroupPrincipalInventoryChecker()
 WorkspaceRelationChecker = WorkspaceRelationInventoryChecker()
-
-# Configure OAuth credentials with direct token URL
-inventory_auth_credentials = OAuth2ClientCredentials(
-    client_id=settings.INVENTORY_API_CLIENT_ID,
-    client_secret=settings.INVENTORY_API_CLIENT_SECRET,
-    token_endpoint=settings.INVENTORY_API_TOKEN_URL,  # Direct token endpoint
-)
-
-call_credentials = oauth2_call_credentials(inventory_auth_credentials)
-
-
-@contextmanager
-def create_client_channel(addr):
-    """Create secure channel for grpc requests for relations api."""
-    secure_channel = grpc.insecure_channel(addr)
-    yield secure_channel
-
-
-@contextmanager
-def create_client_channel_inventory(addr):
-    """Create secure channel for grpc requests for inventory api."""
-    if settings.INVENTORY_API_LOCAL:  # Flag for local dev (avoids ssl error)
-        channel = grpc.insecure_channel(addr)
-        yield channel
-    else:
-        # Combine with TLS for secure channel
-        ssl_credentials = grpc.ssl_channel_credentials()
-        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
-        secure_channel = grpc.secure_channel(addr, channel_credentials)
-        yield secure_channel
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
