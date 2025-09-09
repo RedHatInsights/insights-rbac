@@ -1,0 +1,12 @@
+{
+    "summary": "Insights RBAC is a role based access control web server",
+    "description": "Insights RBAC is a role based access control web server",
+    "io.k8s.description": "Insights RBAC is a role based access control web server",
+    "io.k8s.display-name": "insights-rbac",
+    "io.openshift.expose-services": "8080:http",
+    "io.openshift.tags": "python,python312,rh-python312",
+    "com.redhat.component": "python312-docker",
+    "name": "insights-rbac",
+    "version": "1",
+    "maintainer": "Red Hat Insights"
+}
