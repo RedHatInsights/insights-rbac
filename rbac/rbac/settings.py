@@ -517,6 +517,12 @@ TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_cre
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
 RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
 RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
+INVENTORY_API_CLIENT_ID = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_ID", default="")
+INVENTORY_API_CLIENT_SECRET = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_SECRET", default="")
+INVENTORY_API_TOKEN_URL = ENVIRONMENT.get_value(
+    "INVENTORY_API_TOKEN_URL", default="https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
+)
+INVENTORY_API_LOCAL = ENVIRONMENT.bool("INVENTORY_API_LOCAL", default=True)
 INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 

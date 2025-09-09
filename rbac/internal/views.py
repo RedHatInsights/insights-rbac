@@ -44,6 +44,8 @@ from internal.utils import (
     validate_inventory_input,
     validate_relations_input,
 )
+from kessel.auth import OAuth2ClientCredentials
+from kessel.grpc import oauth2_call_credentials
 from kessel.inventory.v1beta2 import (
     check_request_pb2,
     inventory_service_pb2_grpc,
@@ -115,12 +117,35 @@ BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
 GroupPrincipalChecker = GroupPrincipalInventoryChecker()
 WorkspaceRelationChecker = WorkspaceRelationInventoryChecker()
 
+# Configure OAuth credentials with direct token URL
+inventory_auth_credentials = OAuth2ClientCredentials(
+    client_id=settings.INVENTORY_API_CLIENT_ID,
+    client_secret=settings.INVENTORY_API_CLIENT_SECRET,
+    token_endpoint=settings.INVENTORY_API_TOKEN_URL,  # Direct token endpoint
+)
+
+call_credentials = oauth2_call_credentials(inventory_auth_credentials)
+
 
 @contextmanager
 def create_client_channel(addr):
-    """Create secure channel for grpc requests."""
+    """Create secure channel for grpc requests for relations api."""
     secure_channel = grpc.insecure_channel(addr)
     yield secure_channel
+
+
+@contextmanager
+def create_client_channel_inventory(addr):
+    """Create secure channel for grpc requests for inventory api."""
+    if settings.INVENTORY_API_LOCAL:  # Flag for local dev (avoids ssl error)
+        channel = grpc.insecure_channel(addr)
+        yield channel
+    else:
+        # Combine with TLS for secure channel
+        ssl_credentials = grpc.ssl_channel_credentials()
+        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
+        secure_channel = grpc.secure_channel(addr, channel_credentials)
+        yield secure_channel
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -1730,10 +1755,9 @@ def check_inventory(request):
     subject_resource_id = req_data["subject"]["resource"]["resource_id"]
     subject_resource_type = req_data["subject"]["resource"]["resource_type"]
     subject_resource_reporter_type = req_data["subject"]["resource"]["reporter"]["type"]
-    token = jwt_manager.get_jwt_from_redis()
 
     try:
-        with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
+        with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
             resource_ref = resource_reference_pb2.ResourceReference(
@@ -1755,9 +1779,7 @@ def check_inventory(request):
             relation=resource_relation,
             object=resource_ref,
         )
-        # Pass JWT token in metadata
-        metadata = [("authorization", f"Bearer {token}")]
-        response = stub.Check(request, metadata=metadata)
+        response = stub.Check(request)
 
         if response:
             response_to_dict = json_format.MessageToDict(response)
