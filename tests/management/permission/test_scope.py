@@ -20,7 +20,7 @@ Tests for permission scope functionality.
 from django.test import override_settings
 from typing import Tuple
 from unittest import TestCase
-from management.permission_scope import ImplicitResourceService, Scope
+from management.permission.scope import ImplicitResourceService, Scope
 
 DEFAULT_APPS = [
     "advisor",
