@@ -33,8 +33,8 @@ class PermissionValue:
     If either component contains a wildcard, it must be the entire component.
     (That is, 'foo*' is not a glob.) The app name may not be a wildcard.
 
-    No component may contain a colon in order to ensure the string representation
-    remains unambiguous.
+    No component may contain a colon; this ensures that the V1 string
+    representation remains unambiguous.
     """
 
     application: str
