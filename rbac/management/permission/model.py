@@ -17,6 +17,7 @@
 
 """Model for permission management."""
 import dataclasses
+
 from django.db import models
 
 from api.models import TenantAwareModel

@@ -19,8 +19,8 @@ from enum import IntEnum
 from typing import Iterable
 
 from django.conf import settings
-from migration_tool.models import V2boundresource
 from management.permission.model import PermissionValue
+from migration_tool.models import V2boundresource
 
 
 class Scope(IntEnum):
