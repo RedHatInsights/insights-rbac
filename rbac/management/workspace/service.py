@@ -33,6 +33,12 @@ from rest_framework import serializers
 
 from api.models import Tenant
 
+# Module-level constants for performance optimization
+logger = logging.getLogger(__name__)
+READ_YOUR_WRITES_CHANNEL = settings.READ_YOUR_WRITES_CHANNEL
+LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
+UNLISTEN_SQL = sql.SQL("UNLISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
+
 
 class WorkspaceService:
     """Workspace service."""
@@ -64,9 +70,7 @@ class WorkspaceService:
 
                 # After the outbox message is created & committed, LISTEN for a NOTIFY
 
-                if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and getattr(
-                    settings, "REPLICATION_TO_RELATION_ENABLED", False
-                ):
+                if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
                     transaction.on_commit(lambda: self._wait_for_notify_post_commit(workspace.id))
 
                 return workspace
@@ -208,28 +212,26 @@ class WorkspaceService:
 
         Intended for use as a transaction.on_commit callback.
         """
-        logger = logging.getLogger(__name__)
-        channel = getattr(settings, "READ_YOUR_WRITES_CHANNEL", "test")
         try:
             connection.ensure_connection()
             conn = connection.connection
-            timeout_seconds = getattr(settings, "READ_YOUR_WRITES_TIMEOUT_SECONDS", 0)
+            timeout_seconds = settings.READ_YOUR_WRITES_TIMEOUT_SECONDS
 
             # Early exit if misconfigured
             if timeout_seconds is None or timeout_seconds <= 0:
                 logger.debug(
                     "[Service] RYW skipped waiting due to non-positive timeout for channel='%s' workspace_id='%s'",
-                    channel,
+                    READ_YOUR_WRITES_CHANNEL,
                     str(workspace_id),
                 )
                 return
 
             with connection.cursor() as cursor:
-                cursor.execute(sql.SQL("LISTEN {};").format(sql.Identifier(channel)))
+                cursor.execute(LISTEN_SQL)
 
             logger.info(
                 "[Service] RYW waiting for NOTIFY channel='%s' workspace_id='%s' timeout=%ss",
-                channel,
+                READ_YOUR_WRITES_CHANNEL,
                 str(workspace_id),
                 timeout_seconds,
             )
@@ -266,7 +268,7 @@ class WorkspaceService:
                     while q:
                         n = q.popleft()
                         payload = (getattr(n, "payload", "") or "").strip()
-                        if n.channel == channel and payload == workspace_id_str:
+                        if n.channel == READ_YOUR_WRITES_CHANNEL and payload == workspace_id_str:
                             logger.info(
                                 "[Service] RYW received NOTIFY channel='%s' workspace_id='%s' after %.3fs",
                                 n.channel,
@@ -277,7 +279,7 @@ class WorkspaceService:
 
             logger.warning(
                 "[Service] RYW timed out waiting for NOTIFY channel='%s' workspace_id='%s' after %ss",
-                channel,
+                READ_YOUR_WRITES_CHANNEL,
                 str(workspace_id),
                 timeout_seconds,
             )
@@ -286,7 +288,7 @@ class WorkspaceService:
         finally:
             try:
                 with connection.cursor() as cursor:
-                    cursor.execute(sql.SQL("UNLISTEN {};").format(sql.Identifier(channel)))
+                    cursor.execute(UNLISTEN_SQL)
             except Exception:
                 # Best-effort cleanup
                 pass
