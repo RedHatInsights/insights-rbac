@@ -32,8 +32,7 @@ class Scope(IntEnum):
     * ROOT, for the root workspace of a tenant.
     * TENANT, for the tenant itself.
 
-    Later scopes are said to be "higher" than earlier scopes, as they encompass
-    more resources.
+    Later scopes are said to be "higher" than earlier scopes, as they encompass more resources.
     """
 
     DEFAULT = 1
@@ -53,8 +52,8 @@ class ImplicitResourceService:
         root_scope_permissions is a set of permissions assigned to the root workspace scope.
         tenant_scope_permissions is a set of permissions assigned to tenant scope.
 
-        Both sets of permissions are represented as V1 permission strings (valid for
-        _PermissionDescriptor.parse_v1). Both sets may contain wildcards.
+        Both sets of permissions are represented as V1 permission strings (valid for _PermissionDescriptor.parse_v1).
+        Both sets may contain wildcards.
         """
         self._permissions_map = {}
 
@@ -80,13 +79,12 @@ class ImplicitResourceService:
         """
         Create an ImplicitResourceService from the configuration in settings.
 
-        Root workspace permissions are determined from the ROOT_SCOPE_PERMISSIONS setting.
-        Tenant permissions are determined from the TENANT_SCOPE_PERMISSIONS setting.
+        Root workspace permissions are determined from the ROOT_SCOPE_PERMISSIONS setting. Tenant permissions are
+        determined from the TENANT_SCOPE_PERMISSIONS setting.
 
         Each setting must be a comma-separated list of V1 permissions strings (as if for
-        _PermissionDescriptor.parse_v1); spaces are trimmed from the start and each of
-        each permission. An empty (or blank) string is acceptable and will be parsed to
-        the empty list.
+        _PermissionDescriptor.parse_v1); spaces are trimmed from the start and each of each permission. An empty (or
+        blank) string is acceptable and will be parsed to the empty list.
         """
 
         def parse_setting(value: str) -> list[str]:
@@ -114,9 +112,8 @@ class ImplicitResourceService:
         4. Wildcard app:*:* match.
         5. Finally, if no match exists, the DEFAULT scope.
 
-        Note that, if the permission is a wildcard, some of these steps will be redundant.
-        For instance, if the permission is app:*:verb, there are only two possible matches:
-        app:*:verb and app:*:*.
+        Note that, if the permission is a wildcard, some of these steps will be redundant. For instance,
+        if the permission is app:*:verb, there are only two possible matches: app:*:verb and app:*:*.
         """
         parsed = PermissionValue.parse_v1(permission)
 
@@ -160,8 +157,8 @@ class ImplicitResourceService:
         """
         Return a V2boundresource corresponding the highest scope for any permission in permissions.
 
-        The appropriate scope is determined as if by highest_scope_for_permissions. A
-        V2boundresource is then returned, bound to the appropriate provided resource.
+        The appropriate scope is determined as if by highest_scope_for_permissions. A V2boundresource is then
+        returned, bound to the appropriate provided resource.
         """
         scope = self.highest_scope_for_permissions(permissions)
 

@@ -29,12 +29,10 @@ class PermissionValue:
 
     A permission consists of an app name, a resource type name, and a verb.
 
-    The resource type and verb may either be normal strings or the wildcard '*'.
-    If either component contains a wildcard, it must be the entire component.
-    (That is, 'foo*' is not a glob.) The app name may not be a wildcard.
+    The resource type and verb may either be normal strings or the wildcard '*'. If either component contains a
+    wildcard, it must be the entire component. (That is, 'foo*' is not a glob.) The app name may not be a wildcard.
 
-    No component may contain a colon; this ensures that the V1 string
-    representation remains unambiguous.
+    No component may contain a colon; this ensures that the V1 string representation remains unambiguous.
     """
 
     application: str
