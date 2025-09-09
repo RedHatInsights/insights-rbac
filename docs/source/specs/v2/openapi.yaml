@@ -34,6 +34,13 @@ paths:
           schema:
             type: string
           explode: false
+        - name: resource_type
+          in: query
+          required: false
+          description: Filter by resource type
+          schema:
+            type: string
+          explode: false
         - name: subject_type
           in: query
           required: false
@@ -94,7 +101,7 @@ paths:
             **resource object:**
             - id (UUID) - always included
             - name (string) - resource name
-            - url (string) - link to the resource
+            - type (string) - resource type
 
             **root level:**
             - last_modified (datetime) - timestamp of last modification
@@ -104,12 +111,12 @@ paths:
             - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
             - `subject(user.username)` - Include username (only for user subjects)
             - `role(name)` - Include role name
-            - `resource(name,url)` - Include resource name and URL
+            - `resource(name,type)` - Include resource name and type
             - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
             - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
             - `last_modified` - Include only modification timestamp (plus required fields)
-            - `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields
-            - `inherited_from(name,url)` - Include inherited resource name and URL (only relevant when parent_role_bindings=true)
+            - `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields
+            - `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)
           schema:
             type: string
           explode: false
@@ -150,11 +157,11 @@ paths:
                         resource:
                           id: 550e8400-e29b-41d4-a716-446655440003
                           name: Child Workspace
-                          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003
+                          type: workspace
                         inherited_from:
                           id: 550e8400-e29b-41d4-a716-446655440001
                           name: Parent Workspace
-                          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
+                          type: workspace
                 example1:
                   value:
                     meta:
@@ -177,7 +184,7 @@ paths:
                         resource:
                           id: 550e8400-e29b-41d4-a716-446655440001
                           name: Engineering Workspace
-                          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
+                          type: workspace
         '401':
           description: Access is unauthorized.
           content:
@@ -1065,11 +1072,10 @@ components:
         name:
           type: string
           description: Resource name
-        url:
+        type:
           type: string
-          format: uri
-          description: Link to the resource
-          example: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
+          description: Resource type
+          example: workspace
     RoleBindings.Role:
       type: object
       properties:
@@ -1120,11 +1126,11 @@ components:
         resource:
           id: 550e8400-e29b-41d4-a716-446655440003
           name: Child Workspace
-          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003
+          type: workspace
         inherited_from:
           id: 550e8400-e29b-41d4-a716-446655440001
           name: Parent Workspace
-          url: https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001
+          type: workspace
     RoleBindings.RoleBindingBySubjectListResponse:
       type: object
       required:

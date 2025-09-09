@@ -588,10 +588,9 @@ namespace RoleBindings {
         id?: UUID;
         @doc("Resource name")
         name?: string;
-        @doc("Link to the resource")
-        @example("https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001")
-        @format("uri")
-        url?: string;
+        @doc("Resource type")
+        @example("workspace")
+        type?: string;
     }
 
     model Role {
@@ -621,7 +620,7 @@ namespace RoleBindings {
         resource: #{
             id: "550e8400-e29b-41d4-a716-446655440001",
             name: "Engineering Workspace",
-            url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+            type: "workspace"
         }
     })
     @example(#{
@@ -644,12 +643,12 @@ namespace RoleBindings {
         resource: #{
             id: "550e8400-e29b-41d4-a716-446655440003",
             name: "Child Workspace",
-            url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003"
+            type: "workspace"
         },
         inherited_from: #{
             id: "550e8400-e29b-41d4-a716-446655440001",
             name: "Parent Workspace",
-            url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+            type: "workspace"
         }
     })
     model RoleBindingBySubject {
@@ -711,7 +710,7 @@ namespace RoleBindings {
                     resource: #{
                         id: "550e8400-e29b-41d4-a716-446655440001",
                         name: "Engineering Workspace",
-                        url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+                        type: "workspace"
                     }
                 }
             ]
@@ -751,12 +750,12 @@ namespace RoleBindings {
                     resource: #{
                         id: "550e8400-e29b-41d4-a716-446655440003",
                         name: "Child Workspace",
-                        url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440003"
+                        type: "workspace"
                     },
                     inherited_from: #{
                         id: "550e8400-e29b-41d4-a716-446655440001",
                         name: "Parent Workspace",
-                        url: "https://console.redhat.com/api/rbac/v2/workspaces/550e8400-e29b-41d4-a716-446655440001"
+                        type: "workspace"
                     }
                 }
             ]
@@ -771,6 +770,9 @@ namespace RoleBindings {
         @doc("Filter by resource ID")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id?: string;
+        @doc("Filter by resource type")
+        @example("workspace")
+        @query resource_type?: string;
         @doc("Filter by subject type")
         @example("group")
         @query subject_type?: string;
@@ -816,7 +818,7 @@ namespace RoleBindings {
         **resource object:**
         - id (UUID) - always included
         - name (string) - resource name
-        - url (string) - link to the resource
+        - type (string) - resource type
 
         **root level:**
         - last_modified (datetime) - timestamp of last modification
@@ -826,14 +828,14 @@ namespace RoleBindings {
         - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
         - `subject(user.username)` - Include username (only for user subjects)
         - `role(name)` - Include role name
-        - `resource(name,url)` - Include resource name and URL
+        - `resource(name,type)` - Include resource name and type
         - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
         - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
         - `last_modified` - Include only modification timestamp (plus required fields)
-        - `subject(group.name,group.user_count),resource(name,url)` - Mix group and resource specific fields
-        - `inherited_from(name,url)` - Include inherited resource name and URL (only relevant when parent_role_bindings=true)
+        - `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields
+        - `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)
         """)
-        @example("subject(group.name,group.user_count),role(name),resource(name,url),last_modified")
+        @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
         @query fields?: string;
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
