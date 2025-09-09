@@ -467,8 +467,6 @@ objects:
             value: ${INVENTORY_API_SERVER}
           - name: INVENTORY_API_TOKEN_URL
             value: ${INVENTORY_API_TOKEN_URL}
-          - name: INVENTORY_API_LOCAL
-            value: ${INVENTORY_API_LOCAL}
           - name: SCOPES
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
@@ -1475,9 +1473,6 @@ parameters:
 - name: INVENTORY_API_TOKEN_URL
   description: The SSO token url to use for inventory api
   value: "https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
-- name: INVENTORY_API_LOCAL
-  description: The flag to enable local inventory development
-  value: "True"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
   value: "False"
