@@ -15,12 +15,12 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper for determining workspace/tenant binding levels for permissions."""
-import dataclasses
 from enum import IntEnum
 from typing import Iterable
 
 from django.conf import settings
 from migration_tool.models import V2boundresource
+from management.permission.model import _PermissionDescriptor
 
 
 class Scope(IntEnum):
@@ -39,89 +39,6 @@ class Scope(IntEnum):
     DEFAULT = 1
     ROOT = 2
     TENANT = 3
-
-
-@dataclasses.dataclass(frozen=True)
-class _PermissionDescriptor:
-    """
-    Represents the value of a single permission.
-
-    A permission consists of an app name, a resource type name, and a verb.
-
-    The resource type and verb may either be normal strings or the wildcard '*'.
-    If either component contains a wildcard, it must be the entire component.
-    (That is, 'foo*' is not a glob.) The app name may not be a wildcard.
-
-    No component may contain a colon in order to ensure the string representation
-    remains unambiguous.
-    """
-
-    app: str
-    resource: str
-    verb: str
-
-    @staticmethod
-    def _check_valid_component(name: str, value: str):
-        """
-        Check that the component is valid in a permission.
-
-        Name is used for producing error messages.
-        """
-        if value is None:
-            raise ValueError(f"{name} cannot be None")
-
-        if ":" in value:
-            raise ValueError(f"Portions of a permission cannot contain colons, but got {name}: {value}")
-
-        if (value != "*") and ("*" in value):
-            raise ValueError(f"Wildcard portions of a permission must be only an asterisk, but got {name}: {value}")
-
-    def __post_init__(self):
-        """Verify that this permission is valid."""
-        if "*" in self.app:
-            raise ValueError("Wildcards are not permitted in the app portion of permissions.")
-
-        self._check_valid_component("app", self.app)
-        self._check_valid_component("resource", self.resource)
-        self._check_valid_component("action", self.verb)
-
-    @classmethod
-    def parse_v1(cls, permission_str: str) -> "_PermissionDescriptor":
-        """Parse a V1 permission string, e.g. app:resource:verb."""
-        parts = permission_str.split(":")
-
-        if len(parts) != 3:
-            raise ValueError(f"Permission string must contain three colon-separated parts: {permission_str}")
-
-        return cls(app=parts[0], resource=parts[1], verb=parts[2])
-
-    def with_unconstrained_resource(self) -> "_PermissionDescriptor":
-        """Return a new permission with a wildcard resource."""
-        return _PermissionDescriptor(
-            app=self.app,
-            resource="*",
-            verb=self.verb,
-        )
-
-    def with_unconstrained_verb(self) -> "_PermissionDescriptor":
-        """Return a new permission with a wildcard verb."""
-        return _PermissionDescriptor(
-            app=self.app,
-            resource=self.resource,
-            verb="*",
-        )
-
-    def with_app_only(self) -> "_PermissionDescriptor":
-        """Return a new permission with a wildcard resource and verb."""
-        return _PermissionDescriptor(
-            app=self.app,
-            resource="*",
-            verb="*",
-        )
-
-    def v1_string(self) -> str:
-        """Return the V1 representation of this permission: app:resource:verb."""
-        return f"{self.app}:{self.resource}:{self.verb}"
 
 
 class ImplicitResourceService:
