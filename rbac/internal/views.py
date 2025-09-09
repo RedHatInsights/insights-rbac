@@ -36,8 +36,6 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
-    create_client_channel,
-    create_client_channel_inventory,
     delete_bindings,
     get_or_create_ungrouped_workspace,
     load_request_body,
@@ -86,6 +84,8 @@ from management.tasks import (
 )
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import (
+    create_client_channel,
+    create_client_channel_inventory,
     get_principal,
     groups_for_principal,
 )

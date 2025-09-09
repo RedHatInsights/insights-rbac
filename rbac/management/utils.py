@@ -63,6 +63,13 @@ call_credentials = oauth2_call_credentials(inventory_auth_credentials)
 
 
 @contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests for relations api."""
+    secure_channel = grpc.insecure_channel(addr)
+    yield secure_channel
+
+
+@contextmanager
 def create_client_channel_inventory(addr):
     """Create secure channel for grpc requests for inventory api."""
     if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)

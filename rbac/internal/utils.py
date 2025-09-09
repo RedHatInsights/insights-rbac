@@ -18,17 +18,12 @@
 """Utilities for Internal RBAC use."""
 import json
 import logging
-from contextlib import contextmanager
 
-import grpc
 import jsonschema
-from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
-from kessel.auth import OAuth2ClientCredentials
-from kessel.grpc import oauth2_call_credentials
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -39,36 +34,6 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
-
-# Configure OAuth credentials with direct token URL
-inventory_auth_credentials = OAuth2ClientCredentials(
-    client_id=settings.INVENTORY_API_CLIENT_ID,
-    client_secret=settings.INVENTORY_API_CLIENT_SECRET,
-    token_endpoint=settings.INVENTORY_API_TOKEN_URL,  # Direct token endpoint
-)
-
-call_credentials = oauth2_call_credentials(inventory_auth_credentials)
-
-
-@contextmanager
-def create_client_channel(addr):
-    """Create secure channel for grpc requests for relations api."""
-    secure_channel = grpc.insecure_channel(addr)
-    yield secure_channel
-
-
-@contextmanager
-def create_client_channel_inventory(addr):
-    """Create secure channel for grpc requests for inventory api."""
-    if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)
-        channel = grpc.insecure_channel(addr)
-        yield channel
-    else:
-        # Combine with TLS for secure channel
-        ssl_credentials = grpc.ssl_channel_credentials()
-        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
-        secure_channel = grpc.secure_channel(addr, channel_credentials)
-        yield secure_channel
 
 
 def build_internal_user(request, json_rh_auth):
