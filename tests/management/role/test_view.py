@@ -2789,12 +2789,12 @@ class RoleWorkspaceValidationTests(IdentityRequest):
     def setUp(self):
         """Set up the workspace validation tests."""
         super().setUp()
-        
+
         # Create 2 separate tenants to test with
         self.tenant1 = Tenant.objects.create(
             tenant_name="tenant1", account_id="tenant1_acc_id", org_id="tenant1_org_id"
         )
-        
+
         self.tenant2 = Tenant.objects.create(
             tenant_name="tenant2", account_id="tenant2_acc_id", org_id="tenant2_org_id"
         )
@@ -2816,7 +2816,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.tenant1_workspace = Workspace.objects.create(
             name="Tenant 1 Workspace", description="Workspace in same tenant", tenant=self.tenant1
         )
-        
+
         self.root_workspace_t2 = Workspace.objects.create(
             name="root",
             description="Root workspace",
@@ -2836,7 +2836,11 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         # Create a permission for testing
         self.test_permission = Permission.objects.create(
-            application="inventory", resource_type="groups", verb="read", permission="inventory:groups:read", tenant=self.tenant1
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            permission="inventory:groups:read",
+            tenant=self.tenant1,
         )
 
         # Mock user with org_id
@@ -2893,7 +2897,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
                             "attributeFilter": {
                                 "key": "group.id",
                                 "operation": "in",
-                                "value": [str(uuid4()), str(self.tenant1_workspace.id)]
+                                "value": [str(uuid4()), str(self.tenant1_workspace.id)],
                             }
                         }
                     ],

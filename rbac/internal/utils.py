@@ -184,10 +184,11 @@ def is_resource_a_workspace(application: str, resource_type: str, attributeFilte
 def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[str]:
     """Get workspace id from a resource definition."""
     operation = attributeFilter.get("operation")
-    value = attributeFilter.get("value")
     if operation == "in":
-        return list(value)
+        value = attributeFilter.get("value", [])
+        return [str(val) for val in value if val is not None]
     elif operation == "equal":
-        return [value]
+        value = attributeFilter.get("value", "")
+        return [str(value)]
     else:
-        return ""
+        return []
