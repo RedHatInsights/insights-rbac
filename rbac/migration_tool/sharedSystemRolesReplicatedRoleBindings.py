@@ -93,7 +93,7 @@ def v1_role_to_v2_bindings(
     """Convert a V1 role to a set of V2 role bindings."""
     from internal.utils import (
         get_or_create_ungrouped_workspace,
-        get_workspace_id_from_resource_definition,
+        get_workspace_ids_from_resource_definition,
         is_resource_a_workspace,
     )
 
@@ -124,8 +124,8 @@ def v1_role_to_v2_bindings(
 
             # validate permission was not added to workspace out of users org for v1 (RHCLOUD-35481)
             if is_resource_a_workspace(v1_perm.application, v1_perm.resource_type, attri_filter):
-                workspace_id = get_workspace_id_from_resource_definition(attri_filter)
-                is_same_tenant = Workspace.objects.filter(id=workspace_id, tenant=v1_role.tenant)
+                workspace_ids = get_workspace_ids_from_resource_definition(attri_filter)
+                is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=v1_role.tenant).exists()
                 if not is_same_tenant:
                     logger.info(
                         f"""skipping migrating permission '{v1_perm}' from v1 role '{v1_role.name}'
