@@ -679,7 +679,9 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             limit: 10,
-            cursor: "cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw"
+            cursor: "cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace"
         },
         returnType: #{
             meta: #{
@@ -719,7 +721,9 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             limit: 10,
-            parent_role_bindings: true
+            parent_role_bindings: true,
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace"
         },
         returnType: #{
             meta: #{
@@ -769,10 +773,10 @@ namespace RoleBindings {
 
         @doc("Filter by resource ID")
         @example("550e8400-e29b-41d4-a716-446655440001")
-        @query resource_id?: string;
+        @query resource_id: string;
         @doc("Filter by resource type")
         @example("workspace")
-        @query resource_type?: string;
+        @query resource_type: string;
         @doc("Filter by subject type")
         @example("group")
         @query subject_type?: string;

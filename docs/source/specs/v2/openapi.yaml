@@ -29,14 +29,14 @@ paths:
           explode: false
         - name: resource_id
           in: query
-          required: false
+          required: true
           description: Filter by resource ID
           schema:
             type: string
           explode: false
         - name: resource_type
           in: query
-          required: false
+          required: true
           description: Filter by resource type
           schema:
             type: string
