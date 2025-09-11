@@ -2950,9 +2950,10 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         error_dict = context.exception.detail
         self.assertIn("role", error_dict)
-        self.assertIn("cannot add permission", str(error_dict["role"][0]))
-        self.assertIn("to workspace outside their org", str(error_dict["role"][0]))
-        self.assertIn("tenant1_org_id", str(error_dict["role"][0]))
+        self.assertEqual(
+            "user from org 'tenant1_org_id' cannot add permission 'inventory:groups:read' to workspace outside their org",
+            str(error_dict["role"][0]),
+        )
 
     def test_workspace_validation_different_tenant_fails_in_operation(self):
         """Test that workspace validation fails when workspace belongs to different tenant using the in operation."""

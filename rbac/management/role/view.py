@@ -651,8 +651,8 @@ class RoleViewSet(
                         is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=request.tenant).exists()
                         if not is_same_tenant:
                             key = "role"
-                            message = f"""user from org '{request.user.org_id}' cannot add permission
-                                '{permission}' to workspace outside their org"""
+                            message = (f"user from org '{request.user.org_id}' cannot add "
+                                f"permission '{permission}' to workspace outside their org")
                             error = {key: [_(message)]}
                             raise serializers.ValidationError(error)
 
