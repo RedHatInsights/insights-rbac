@@ -22,6 +22,7 @@ from contextlib import contextmanager
 
 import grpc
 import jsonschema
+from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
@@ -170,3 +171,24 @@ def load_request_body(request) -> dict:
     request_decoded = request.body.decode("utf-8")
     req_data = json.loads(request_decoded)
     return req_data
+
+
+def is_resource_a_workspace(application: str, resource_type: str, attributeFilter: dict) -> bool:
+    """Check if a given ResourceDefinition is a Workspace."""
+    is_workspace_application = application == settings.WORKSPACE_APPLICATION_NAME
+    is_workspace_resource_type = resource_type in settings.WORKSPACE_RESOURCE_TYPE
+    is_workspace_group_filter = attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
+    return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
+
+
+def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[str]:
+    """Get workspace id from a resource definition."""
+    operation = attributeFilter.get("operation")
+    if operation == "in":
+        value = attributeFilter.get("value", [])
+        return [str(val) for val in value if val is not None]
+    elif operation == "equal":
+        value = attributeFilter.get("value", "")
+        return [str(value)]
+    else:
+        return []
