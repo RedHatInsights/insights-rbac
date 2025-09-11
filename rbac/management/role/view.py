@@ -615,7 +615,8 @@ class RoleViewSet(
         if access_list:
             sent_permissions = [access["permission"] for access in access_list]
             for perm in access_list:
-                app, resource_type, verb = perm.get("permission").split(":")
+                permission = perm.get("permission")
+                app, resource_type, verb = permission.split(":")
                 if app not in settings.ROLE_CREATE_ALLOW_LIST:
                     key = "role"
                     message = "Custom roles cannot be created for {}".format(app)
@@ -628,7 +629,7 @@ class RoleViewSet(
 
                 if not db_permission:
                     key = "role"
-                    message = f"Permission does not exist: {perm.get('permission')}"
+                    message = f"Permission does not exist: {permission}"
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
 
@@ -651,7 +652,7 @@ class RoleViewSet(
                         if not is_same_tenant:
                             key = "role"
                             message = f"""user from org '{request.user.org_id}' cannot add permission
-                                '{perm.get("permission")}' to workspace outside their org"""
+                                '{permission}' to workspace outside their org"""
                             error = {key: [_(message)]}
                             raise serializers.ValidationError(error)
 
