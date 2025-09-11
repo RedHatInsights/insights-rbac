@@ -41,20 +41,20 @@
             "explode": false
           },
           {
-            "name": "resource_type",
+            "name": "resource_id",
             "in": "query",
-            "required": false,
-            "description": "Filter by resource type",
+            "required": true,
+            "description": "Filter by resource ID",
             "schema": {
               "type": "string"
             },
             "explode": false
           },
           {
-            "name": "resource_id",
+            "name": "resource_type",
             "in": "query",
-            "required": false,
-            "description": "Filter by resource ID",
+            "required": true,
+            "description": "Filter by resource type",
             "schema": {
               "type": "string"
             },
@@ -81,10 +81,21 @@
             "explode": false
           },
           {
+            "name": "parent_role_bindings",
+            "in": "query",
+            "required": false,
+            "description": "Include role bindings inherited from parent resources",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "explode": false
+          },
+          {
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Type fields (subject.type, resource.type) are always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"workspace\":*\n- workspace.name (string) - name of the workspace\n- workspace.type (string) - type of workspace (e.g., \"default\", \"standard\")\n- workspace.description (string) - description of the workspace\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(workspace.name,workspace.description)` - Include workspace name and description (only for workspace resources)\n- `subject(group.name),role(name),resource(workspace.name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(workspace.type)` - Mix group and workspace specific fields",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.id\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n- inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(name,type)` - Include resource name and type\n- `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields\n- `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)",
             "schema": {
               "type": "string"
             },
@@ -109,43 +120,84 @@
                 "schema": {
                   "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubjectListResponse"
                 },
-                "example": {
-                  "meta": {
-                    "limit": 10
-                  },
-                  "links": {
-                    "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
-                    "previous": null
-                  },
-                  "data": [
-                    {
-                      "last_modified": "2024-08-04T12:00:00Z",
-                      "subject": {
-                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                        "type": "group",
-                        "group": {
-                          "name": "Engineering Team",
-                          "description": "Development and engineering team",
-                          "user_count": 25
-                        }
+                "examples": {
+                  "example0": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
                       },
-                      "roles": [
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "previous": null
+                      },
+                      "data": [
                         {
-                          "id": "550e8400-e29b-41d4-a716-446655440002",
-                          "name": "Workspace Admin"
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "subject": {
+                            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            "type": "group",
+                            "group": {
+                              "name": "Engineering Team",
+                              "description": "Development and engineering team",
+                              "user_count": 25
+                            }
+                          },
+                          "roles": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440002",
+                              "name": "Workspace Admin"
+                            }
+                          ],
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440003",
+                            "name": "Child Workspace",
+                            "type": "workspace"
+                          },
+                          "inherited_from": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Parent Workspace",
+                            "type": "workspace"
+                          }
                         }
-                      ],
-                      "resource": {
-                        "id": "550e8400-e29b-41d4-a716-446655440001",
-                        "type": "workspace",
-                        "workspace": {
-                          "name": "Engineering Workspace",
-                          "type": "default",
-                          "description": "Main workspace for engineering team"
-                        }
-                      }
+                      ]
                     }
-                  ]
+                  },
+                  "example1": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "subject": {
+                            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            "type": "group",
+                            "group": {
+                              "name": "Engineering Team",
+                              "description": "Development and engineering team",
+                              "user_count": 25
+                            }
+                          },
+                          "roles": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440002",
+                              "name": "Workspace Admin"
+                            }
+                          ],
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Engineering Workspace",
+                            "type": "workspace"
+                          }
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -246,21 +298,10 @@
             "explode": false
           },
           {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "default": 0
-            },
-            "explode": false
-          },
-          {
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor for cursor-based pagination. When provided, offset parameter is ignored.",
+            "description": "Cursor for cursor-based pagination.",
             "schema": {
               "type": "string"
             },
@@ -298,17 +339,11 @@
                 },
                 "example": {
                   "meta": {
-                    "type": "offset",
-                    "count": 1,
-                    "limit": 10,
-                    "offset": 0
+                    "limit": 10
                   },
                   "links": {
-                    "type": "offset",
-                    "first": "/api/rbac/v2/workspaces/?limit=10&offset=0",
-                    "next": "/api/rbac/v2/workspaces/?limit=10&offset=10",
-                    "previous": null,
-                    "last": "/api/rbac/v2/workspaces/?limit=10&offset=20"
+                    "next": "/api/rbac/v2/workspaces/?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9",
+                    "previous": null
                   },
                   "data": [
                     {
@@ -1228,6 +1263,44 @@
   },
   "components": {
     "schemas": {
+      "CursorPaginationLinks": {
+        "type": "object",
+        "required": [
+          "next",
+          "previous"
+        ],
+        "properties": {
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The next link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The previous link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9"
+          }
+        }
+      },
+      "CursorPaginationMeta": {
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Limit of returned objects",
+            "example": 10,
+            "default": 10
+          }
+        }
+      },
       "Problems.Problem400": {
         "type": "object",
         "required": [
@@ -1411,31 +1484,6 @@
           }
         ]
       },
-      "RoleBindings.BaseResource": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "Resource identifier"
-          },
-          "type": {
-            "type": "string",
-            "description": "Type of resource",
-            "example": "workspace"
-          }
-        },
-        "discriminator": {
-          "propertyName": "type",
-          "mapping": {}
-        }
-      },
       "RoleBindings.BaseSubject": {
         "type": "object",
         "required": [
@@ -1508,6 +1556,28 @@
           }
         ]
       },
+      "RoleBindings.Resource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Resource identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Resource name"
+          },
+          "type": {
+            "type": "string",
+            "description": "Resource type",
+            "example": "workspace"
+          }
+        }
+      },
       "RoleBindings.Role": {
         "type": "object",
         "properties": {
@@ -1554,10 +1624,18 @@
           "resource": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/RoleBindings.WorkspaceResource"
+                "$ref": "#/components/schemas/RoleBindings.Resource"
               }
             ],
             "description": "Resource the roles apply to"
+          },
+          "inherited_from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
           }
         },
         "example": {
@@ -1578,13 +1656,14 @@
             }
           ],
           "resource": {
+            "id": "550e8400-e29b-41d4-a716-446655440003",
+            "name": "Child Workspace",
+            "type": "workspace"
+          },
+          "inherited_from": {
             "id": "550e8400-e29b-41d4-a716-446655440001",
-            "type": "workspace",
-            "workspace": {
-              "name": "Engineering Workspace",
-              "type": "default",
-              "description": "Main workspace for engineering team"
-            }
+            "name": "Parent Workspace",
+            "type": "workspace"
           }
         }
       },
@@ -1599,7 +1678,7 @@
           "meta": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.CursorPaginationMeta"
+                "$ref": "#/components/schemas/CursorPaginationMeta"
               }
             ],
             "description": "Pagination metadata"
@@ -1607,7 +1686,7 @@
           "links": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.CursorPaginationLinks"
+                "$ref": "#/components/schemas/CursorPaginationLinks"
               }
             ],
             "description": "Pagination links"
@@ -1658,52 +1737,6 @@
           }
         ]
       },
-      "RoleBindings.WorkspaceDetails": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Name of the workspace",
-            "example": "Workspace A"
-          },
-          "type": {
-            "type": "string",
-            "example": "default"
-          },
-          "description": {
-            "type": "string",
-            "description": "Description of the workspace"
-          }
-        }
-      },
-      "RoleBindings.WorkspaceResource": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "workspace"
-            ],
-            "description": "Type of resource"
-          },
-          "workspace": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.WorkspaceDetails"
-              }
-            ],
-            "description": "Workspace details"
-          }
-        },
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/RoleBindings.BaseResource"
-          }
-        ]
-      },
       "Timestamps": {
         "type": "object",
         "required": [
@@ -1732,46 +1765,6 @@
         "enum": [
           "v2"
         ]
-      },
-      "Workspaces.BasePaginationLinks": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "description": "Pagination type"
-          }
-        },
-        "discriminator": {
-          "propertyName": "type",
-          "mapping": {}
-        }
-      },
-      "Workspaces.BasePaginationMeta": {
-        "type": "object",
-        "required": [
-          "type",
-          "limit"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "description": "Pagination type"
-          },
-          "limit": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Limit of returned objects",
-            "example": 1000,
-            "default": 1000
-          }
-        },
-        "discriminator": {
-          "propertyName": "type",
-          "mapping": {}
-        }
       },
       "Workspaces.BasicWorkspace": {
         "type": "object",
@@ -1837,49 +1830,6 @@
           "modified": "2024-08-04T12:00:00Z"
         }
       },
-      "Workspaces.CursorPaginationLinks": {
-        "type": "object",
-        "required": [
-          "next",
-          "previous"
-        ],
-        "properties": {
-          "next": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "description": "The next link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9"
-          },
-          "previous": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "description": "The previous link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9"
-          }
-        }
-      },
-      "Workspaces.CursorPaginationMeta": {
-        "type": "object",
-        "required": [
-          "limit"
-        ],
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Limit of returned objects",
-            "example": 10,
-            "default": 10
-          },
-          "cursor": {
-            "type": "string",
-            "description": "Cursor for the current page",
-            "example": "eyJpZCI6IjEyMyIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEyOjAwOjAwWiJ9"
-          }
-        }
-      },
       "Workspaces.MoveWorkspaceRequest": {
         "type": "object",
         "required": [
@@ -1930,90 +1880,6 @@
           "parent_id": "f0e1d2c3-b4a5-4678-9a1b-c2d3e4f5a6b7"
         }
       },
-      "Workspaces.OffsetPaginationLinks": {
-        "type": "object",
-        "required": [
-          "type",
-          "first",
-          "next",
-          "previous",
-          "last"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "offset"
-            ],
-            "description": "Pagination type"
-          },
-          "first": {
-            "type": "string",
-            "format": "uri",
-            "description": "The first link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
-          },
-          "next": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "description": "The next link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=10"
-          },
-          "previous": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "description": "The previous link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
-          },
-          "last": {
-            "type": "string",
-            "format": "uri",
-            "description": "The last link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=20"
-          }
-        },
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Workspaces.BasePaginationLinks"
-          }
-        ]
-      },
-      "Workspaces.OffsetPaginationMeta": {
-        "type": "object",
-        "required": [
-          "type",
-          "count",
-          "offset"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "offset"
-            ],
-            "description": "Pagination type"
-          },
-          "count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Total count of objects",
-            "example": 10
-          },
-          "offset": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Offset of returned objects",
-            "example": 10
-          }
-        },
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Workspaces.BasePaginationMeta"
-          }
-        ]
-      },
       "Workspaces.Pagination": {
         "type": "object",
         "required": [
@@ -2022,23 +1888,17 @@
         ],
         "properties": {
           "meta": {
-            "anyOf": [
+            "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.OffsetPaginationMeta"
-              },
-              {
-                "$ref": "#/components/schemas/Workspaces.CursorPaginationMeta"
+                "$ref": "#/components/schemas/CursorPaginationMeta"
               }
             ],
             "description": "Pagination metadata"
           },
           "links": {
-            "anyOf": [
+            "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.OffsetPaginationLinks"
-              },
-              {
-                "$ref": "#/components/schemas/Workspaces.CursorPaginationLinks"
+                "$ref": "#/components/schemas/CursorPaginationLinks"
               }
             ],
             "description": "Pagination links"
@@ -2265,23 +2125,17 @@
         ],
         "properties": {
           "meta": {
-            "anyOf": [
+            "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.OffsetPaginationMeta"
-              },
-              {
-                "$ref": "#/components/schemas/Workspaces.CursorPaginationMeta"
+                "$ref": "#/components/schemas/CursorPaginationMeta"
               }
             ],
             "description": "Pagination metadata"
           },
           "links": {
-            "anyOf": [
+            "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.OffsetPaginationLinks"
-              },
-              {
-                "$ref": "#/components/schemas/Workspaces.CursorPaginationLinks"
+                "$ref": "#/components/schemas/CursorPaginationLinks"
               }
             ],
             "description": "Pagination links"
@@ -2296,8 +2150,7 @@
         },
         "example": {
           "meta": {
-            "limit": 10,
-            "cursor": "eyJpZCI6IjEyMyIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEyOjAwOjAwWiJ9"
+            "limit": 10
           },
           "links": {
             "next": "/api/rbac/v2/workspaces?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9",
