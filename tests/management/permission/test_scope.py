@@ -21,6 +21,7 @@ from django.test import override_settings
 from typing import Tuple
 from unittest import TestCase
 from management.permission.scope import ImplicitResourceService, Scope
+from .test_model import INVALID_PERMISSIONS_V1
 
 DEFAULT_APPS = [
     "advisor",
@@ -28,22 +29,11 @@ DEFAULT_APPS = [
     "rbac",
 ]
 
-INVALID_PERMISSIONS = [
-    "",
-    "app",
-    "app:resource",
-    "app:resource:verb:extra",
-    "*:resource:verb",
-    "app:resource:verb*",
-    "app:resource*:verb",
-    "app*:resource:verb",
-]
-
 
 class ConstructTest(TestCase):
     def test_construct_invalid_permission(self):
         """Test that ImplicitResourceService cannot be constructed with invalid permissions."""
-        for permission in INVALID_PERMISSIONS:
+        for permission in INVALID_PERMISSIONS_V1:
             with self.subTest(permission=permission):
                 self.assertRaises(
                     ValueError,
@@ -127,7 +117,7 @@ class SinglePermissionTest(TestCase):
         """Test that scope_for_permission rejects invalid permissions."""
         service = ImplicitResourceService(root_scope_permissions=[], tenant_scope_permissions=[])
 
-        for permission in INVALID_PERMISSIONS:
+        for permission in INVALID_PERMISSIONS_V1:
             with self.subTest(permission=permission):
                 self.assertRaises(ValueError, service.scope_for_permission, permission)
 
@@ -250,7 +240,7 @@ class MaxPermissionTest(TestCase):
         """Test that invalid permissions are correctly rejected."""
         service = ImplicitResourceService(root_scope_permissions=[], tenant_scope_permissions=["tenant_app:*:*"])
 
-        for permission in INVALID_PERMISSIONS:
+        for permission in INVALID_PERMISSIONS_V1:
             with self.subTest(permission=permission):
                 self.assertRaises(
                     ValueError,
@@ -389,7 +379,7 @@ class ResourceTest(TestCase):
 
     def test_invalid(self):
         """Test that invalid permissions are correctly rejected."""
-        for permission in INVALID_PERMISSIONS:
+        for permission in INVALID_PERMISSIONS_V1:
             with self.subTest(permission=permission):
                 self.assertRaises(
                     ValueError,
@@ -449,18 +439,7 @@ class SettingsTest(TestCase):
     def test_settings_invalid(self):
         """Test that invalid settings are correctly rejected."""
         # The empty string is a valid setting, but no other invalid permission is.
-        invalid_settings = [
-            setting
-            for setting in (
-                INVALID_PERMISSIONS
-                + [
-                    "app:resource:verb;app:resource:verb",
-                    "app:resource:verb,",
-                    ",app:resource:verb",
-                ]
-            )
-            if setting != ""
-        ]
+        invalid_settings = set(INVALID_PERMISSIONS_V1) - {""}
 
         for setting in invalid_settings:
             with self.subTest(setting=setting):
