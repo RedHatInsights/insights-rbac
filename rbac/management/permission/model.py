@@ -58,12 +58,12 @@ class PermissionValue:
 
     def __post_init__(self):
         """Verify that this permission is valid."""
-        if "*" in self.application:
-            raise ValueError("Wildcards are not permitted in the app portion of permissions.")
-
         self._check_valid_component("app", self.application)
         self._check_valid_component("resource", self.resource_type)
         self._check_valid_component("action", self.verb)
+
+        if "*" in self.application:
+            raise ValueError("Wildcards are not permitted in the app portion of permissions.")
 
     @classmethod
     def parse_v1(cls, permission_str: str) -> "PermissionValue":
