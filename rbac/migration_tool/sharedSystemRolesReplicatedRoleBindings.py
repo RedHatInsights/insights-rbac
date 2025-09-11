@@ -125,13 +125,14 @@ def v1_role_to_v2_bindings(
             # validate permission was not added to workspace out of users org for v1 (RHCLOUD-35481)
             if is_resource_a_workspace(v1_perm.application, v1_perm.resource_type, attri_filter):
                 workspace_ids = get_workspace_ids_from_resource_definition(attri_filter)
-                is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=v1_role.tenant).exists()
-                if not is_same_tenant:
-                    logger.info(
-                        f"""skipping migrating permission '{v1_perm}' from v1 role '{v1_role.name}'
-                            -- it was added to workspace outside of users org"""
-                    )
-                    continue
+                if len(workspace_ids) >= 1:
+                    is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=v1_role.tenant).exists()
+                    if not is_same_tenant:
+                        logger.info(
+                            f"""skipping migrating permission '{v1_perm}' from v1 role '{v1_role.name}'
+                                -- it was added to workspace outside of users org"""
+                        )
+                        continue
 
             resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])
             if resource_type is None:

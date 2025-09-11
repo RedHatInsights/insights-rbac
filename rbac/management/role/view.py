@@ -648,13 +648,18 @@ class RoleViewSet(
                     attributeFilter = resourceDefinition.get("attributeFilter")
                     if is_resource_a_workspace(app, resource_type, attributeFilter):
                         workspace_ids = get_workspace_ids_from_resource_definition(attributeFilter)
-                        is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=request.tenant).exists()
-                        if not is_same_tenant:
-                            key = "role"
-                            message = (f"user from org '{request.user.org_id}' cannot add "
-                                f"permission '{permission}' to workspace outside their org")
-                            error = {key: [_(message)]}
-                            raise serializers.ValidationError(error)
+                        if len(workspace_ids) >= 1:
+                            is_same_tenant = Workspace.objects.filter(
+                                id__in=workspace_ids, tenant=request.tenant
+                            ).exists()
+                            if not is_same_tenant:
+                                key = "role"
+                                message = (
+                                    f"user from org '{request.user.org_id}' cannot add "
+                                    f"permission '{permission}' to workspace outside their org"
+                                )
+                                error = {key: [_(message)]}
+                                raise serializers.ValidationError(error)
 
     def delete_policies_if_no_role_attached(self, role):
         """Delete policy if there is no role attached to it."""
