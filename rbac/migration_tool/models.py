@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Iterable, Tuple, Union
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
+from management.permission.model import Permission
 from management.principal.model import Principal
 from migration_tool.utils import create_relationship
 
@@ -210,3 +211,10 @@ def split_v2_perm(perm: str):
 def cleanNameForV2SchemaCompatibility(name: str):
     """Clean a name for compatibility with the v2 schema."""
     return name.lower().replace("-", "_").replace(".", "_").replace(":", "_").replace(" ", "_").replace("*", "all")
+
+
+def v1_perm_to_v2_perm(v1_permission: Permission):
+    """Convert a V1 permission to a V2 permission."""
+    return cleanNameForV2SchemaCompatibility(
+        v1_permission.application + "_" + v1_permission.resource_type + "_" + v1_permission.verb
+    )
