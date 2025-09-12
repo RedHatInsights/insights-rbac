@@ -1899,8 +1899,8 @@ def check_role(request, role_uuid):
         return JsonResponse(
             {
                 "V2_role_checks": {
-                    "role_uuid": role.uuid,
-                    "role_name": role.name,
+                    "v1_role_uuid": role.uuid,
+                    "v1_role_name": role.name,
                     "V2_role_relations_correct": role_correct,
                 },
             }
@@ -1911,8 +1911,9 @@ def check_role(request, role_uuid):
             status=400,
         )
     except Exception as e:
-        logger.error(f"Error in check_role: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+        return JsonResponse(
+            {"detail": "Unexpected error occurred during inventory role relation check", "error": str(e)}, status=500
+        )
 
 
 @require_http_methods(["GET", "DELETE"])

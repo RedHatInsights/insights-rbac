@@ -257,7 +257,6 @@ class RoleRelationInventoryChecker(InventoryApiBaseChecker):
                 ),
             )
             check_requests.append(check_request)
-
         role_check = self.check_inventory_core(check_requests)
         if not role_check:
             logger.warning(f"Role: {role_uuid} does not have the expected V2 relations.")
