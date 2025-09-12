@@ -28,7 +28,7 @@ objects:
     - topicName: ${EXTERNAL_CHROME_TOPIC}
       partitions: 1
       replicas: 3
-    - topicName: ${RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC}
+    - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
     deployments:
@@ -605,7 +605,8 @@ objects:
             value: ${REMOVE_NULL_VALUE}
 
     - name: rbac-kafka-consumer
-      minReplicas: ${{RBAC_KAFKA_CONSUMER_MIN_REPLICAS}}
+      minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
+      maxReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         command: ["/opt/rbac/rbac/manage.py", "launch-rbac-kafka-consumer"]
@@ -630,13 +631,32 @@ objects:
             value: ${ENV_NAME}
           - name: KAFKA_ENABLED
             value: ${KAFKA_ENABLED}
-          - name: RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC
-            value: ${RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC}
+          - name: RBAC_KAFKA_CONSUMER_TOPIC
+            value: ${RBAC_KAFKA_CONSUMER_TOPIC}
+          - name: RBAC_KAFKA_CONSUMER_GROUP_ID
+            value: ${RBAC_KAFKA_CONSUMER_GROUP_ID}
+          - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
+            value: ${RBAC_KAFKA_CUSTOM_CONSUMER_BROKER}
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
         livenessProbe:
           exec:
-            command: ["cat", "/tmp/kubernetes-liveness"]
-          initialDelaySeconds: 20
+            command: ["test", "-f", "/tmp/kubernetes-liveness"]
+          initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          exec:
+            command: ["test", "-f", "/tmp/kubernetes-readiness"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
         resources:
           limits:
             cpu: ${RBAC_KAFKA_CONSUMER_CPU_LIMIT}
@@ -1576,9 +1596,15 @@ parameters:
 - name: RBAC_KAFKA_CONSUMER_MEMORY_REQUEST
   description:
   value: 300Mi
-- name: RBAC_KAFKA_CONSUMER_MIN_REPLICAS
-  description: The minimum number of replicas for the RBAC Kafka consumer
+- name: RBAC_KAFKA_CONSUMER_TOPIC
+  description: The name of the topic for the RBAC Kafka consumer
+  value: 'outbox.event.rbac-consumer-replication-event'
+- name: RBAC_KAFKA_CONSUMER_GROUP_ID
+  description: The consumer group ID for the RBAC Kafka consumer
+  value: 'rbac-consumer-group'
+- name: RBAC_KAFKA_CONSUMER_REPLICAS
+  description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
   value: '1'
-- name: RBAC_KAFKA_CONSUMER_READ_AFTER_WRITE_TOPIC
-  description: The name of the topic for the Kafka "read-after-write" topic
-  value: 'platform.rbac.read-after-write'
+- name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
+  description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
+  value: ''
