@@ -20,7 +20,7 @@ Tests for permission scope functionality.
 from django.test import override_settings
 from typing import Tuple
 from unittest import TestCase
-from management.permission.scope import ImplicitResourceService, Scope
+from management.permission.scope_service import ImplicitResourceService, Scope
 from .test_model import INVALID_PERMISSIONS_V1
 
 DEFAULT_APPS = [
