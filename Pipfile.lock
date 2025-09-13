@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "c5435101b5406b675362701dd1257647efbcf3ff42231d5a62008c642f0564ea"
+            "sha256": "dee0582883222088f1002456f0bb5116bfcd34b2ac6c924db6cf260d8f3092c7"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -75,11 +75,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:c3e89787b1a360d0fd30f9066864415df02d54b07691cabc34a6b1a01c3d2549",
-                "sha256:f8f46b3978b7c324f4c0bef03505870c4c5240c736bfb63318da091942a29710"
+                "sha256:1d87874ad81234bec3e83f9de13618f67ccdfefd08d6b8babc041cd45007447e",
+                "sha256:8a74f77cfe5c519826d22f7613f89544cbb8491a1a49d965031bd997f89a8e3f"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.26"
+            "version": "==1.40.30"
         },
         "cachetools": {
             "hashes": [
@@ -748,11 +748,11 @@
                 "auth"
             ],
             "hashes": [
-                "sha256:af8eab7b1ba515a5c802c690d540e2490305065ffdd03962f6947d2e97ec434e",
-                "sha256:bab0e65f69f0ed2d014b5bfdeb376dac450d45fc8b1de1da878f0cf24cebf7fc"
+                "sha256:657f16254d149b7e2aa91118a364adbd668b4fc1af0c99dc8259145207ecb838",
+                "sha256:a51b245cf4e9978834c4613f98d924905e4176fc5cab3e62d60435d8e9071c4c"
             ],
             "markers": "python_version >= '3.11'",
-            "version": "==1.2.2"
+            "version": "==1.2.3"
         },
         "kombu": {
             "hashes": [
@@ -1030,11 +1030,11 @@
         },
         "protovalidate": {
             "hashes": [
-                "sha256:521d94b3586f36ac52cb26ad1e36cbfcb660b60c4215849f72375cb532da59da",
-                "sha256:d85d0dfac0e416ea9b88d586efa72ff944c1ae4c8cece21c46a5ece1e8ec1286"
+                "sha256:926f7a212fed9190d00cc076fa24ef5e48a404b5577465028697f4dea8c4a507",
+                "sha256:933818942700c85d4a47f1030e61f59d7bd9a8c1572e9dc822f98eef45a39d9e"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.15.0"
+            "version": "==1.0.0"
         },
         "psycopg2": {
             "hashes": [
@@ -2064,12 +2064,12 @@
         },
         "faker": {
             "hashes": [
-                "sha256:801d1a2d71f1fc54d332de2ab19de7452454309937233ea2f7485402882d67b3",
-                "sha256:84bcf92bb725dd7341336eea4685df9a364f16f2470c4d29c1d7e6c5fd5a457d"
+                "sha256:0f8cc34f30095184adf87c3c24c45b38b33ad81c35ef6eb0a3118f301143012c",
+                "sha256:3c5209b23d7049d596a51db5d76403a0ccfea6fc294ffa2ecfef6a8843b1e6a7"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.7'",
-            "version": "==18.13.0"
+            "markers": "python_version >= '3.9'",
+            "version": "==37.6.0"
         },
         "filelock": {
             "hashes": [
@@ -2445,15 +2445,6 @@
             "markers": "python_version >= '3.9'",
             "version": "==1.9.1"
         },
-        "python-dateutil": {
-            "hashes": [
-                "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3",
-                "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"
-            ],
-            "index": "pypi",
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
-            "version": "==2.9.0.post0"
-        },
         "pyyaml": {
             "hashes": [
                 "sha256:01179a4a8559ab5de078078f37e5c1a30d76bb88519906844fd7bdea1b7729ff",
@@ -2529,14 +2520,6 @@
             ],
             "markers": "python_version >= '3.9'",
             "version": "==80.9.0"
-        },
-        "six": {
-            "hashes": [
-                "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
-                "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"
-            ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
-            "version": "==1.17.0"
         },
         "snowballstemmer": {
             "hashes": [
@@ -2653,6 +2636,14 @@
             ],
             "markers": "python_version >= '3.9'",
             "version": "==4.15.0"
+        },
+        "tzdata": {
+            "hashes": [
+                "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8",
+                "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"
+            ],
+            "markers": "python_version >= '2'",
+            "version": "==2025.2"
         },
         "urllib3": {
             "hashes": [
