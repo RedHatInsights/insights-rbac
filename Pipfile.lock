@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "c5435101b5406b675362701dd1257647efbcf3ff42231d5a62008c642f0564ea"
+            "sha256": "a1b9547d6cebed7d326e6b49bae2794149137450ab76d8b3193e77e3d37e5e08"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -75,11 +75,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:c3e89787b1a360d0fd30f9066864415df02d54b07691cabc34a6b1a01c3d2549",
-                "sha256:f8f46b3978b7c324f4c0bef03505870c4c5240c736bfb63318da091942a29710"
+                "sha256:1d87874ad81234bec3e83f9de13618f67ccdfefd08d6b8babc041cd45007447e",
+                "sha256:8a74f77cfe5c519826d22f7613f89544cbb8491a1a49d965031bd997f89a8e3f"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.26"
+            "version": "==1.40.30"
         },
         "cachetools": {
             "hashes": [
@@ -365,12 +365,12 @@
         },
         "django": {
             "hashes": [
-                "sha256:40cd7d3f53bc6cd1902eadce23c337e97200888df41e4a73b42d682f23e71d80",
-                "sha256:a6527112c58821a0dfc5ab73013f0bdd906539790a17196658e36e66af43c350"
+                "sha256:60549579b1174a304b77e24a93d8d9fafe6b6c03ac16311f3e25918ea5a20058",
+                "sha256:da5e00372763193d73cecbf71084a3848458cecf4cee36b9a1e8d318d114a87b"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==4.2.24"
+            "markers": "python_version >= '3.10'",
+            "version": "==5.2.6"
         },
         "django-cors-headers": {
             "hashes": [
@@ -748,11 +748,11 @@
                 "auth"
             ],
             "hashes": [
-                "sha256:af8eab7b1ba515a5c802c690d540e2490305065ffdd03962f6947d2e97ec434e",
-                "sha256:bab0e65f69f0ed2d014b5bfdeb376dac450d45fc8b1de1da878f0cf24cebf7fc"
+                "sha256:657f16254d149b7e2aa91118a364adbd668b4fc1af0c99dc8259145207ecb838",
+                "sha256:a51b245cf4e9978834c4613f98d924905e4176fc5cab3e62d60435d8e9071c4c"
             ],
             "markers": "python_version >= '3.11'",
-            "version": "==1.2.2"
+            "version": "==1.2.3"
         },
         "kombu": {
             "hashes": [
@@ -1030,11 +1030,11 @@
         },
         "protovalidate": {
             "hashes": [
-                "sha256:521d94b3586f36ac52cb26ad1e36cbfcb660b60c4215849f72375cb532da59da",
-                "sha256:d85d0dfac0e416ea9b88d586efa72ff944c1ae4c8cece21c46a5ece1e8ec1286"
+                "sha256:926f7a212fed9190d00cc076fa24ef5e48a404b5577465028697f4dea8c4a507",
+                "sha256:933818942700c85d4a47f1030e61f59d7bd9a8c1572e9dc822f98eef45a39d9e"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.15.0"
+            "version": "==1.0.0"
         },
         "psycopg2": {
             "hashes": [
