@@ -7,6 +7,7 @@ from django.conf import settings
 from django.db.models import Prefetch, Q
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.role.model import Role
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     PartitionKey,
@@ -436,6 +437,62 @@ class V2TenantBootstrapService:
             )
         )
         return bootstrapped_tenants
+
+    def _get_or_create_parent_roles_for_org_level_permissions(self):
+        """Create or retrieve the three parent roles necessary for each binding of
+        - Root
+        - Default
+        - Org
+        for the expected org level permissions for all tenants
+        """
+        expected_parent_roles = [
+            {
+                "uuid": settings.PLATFORM_ROOT_ROLE_UUID,
+                "name": "Workspace Root Role",
+                "display_name": "Workspace Root Role",
+                "description": "Top-level platform root role with full access",
+                "system": True,
+                "platform_default": True,
+                "admin_default": False,
+            },
+            {
+                "uuid": settings.PLATFORM_DEFAULT_ROLE_UUID,
+                "name": "Workspace Default Role",
+                "display_name": "Workspace Default Role",
+                "description": "Default platform-level role",
+                "system": True,
+                "platform_default": True,
+                "admin_default": False,
+            },
+            {
+                "uuid": settings.PLATFORM_ORG_ROLE_UUID,
+                "name": "Default Org Role",
+                "display_name": "Default Org Role",
+                "description": "Organization-level base role for org level permissions",
+                "system": True,
+                "platform_default": True,
+                "admin_default": False,
+            },
+        ]
+
+        parent_roles = {}
+
+        for role_data in expected_parent_roles:
+            role_uuid = UUID(role_data["uuid"])
+            role, created = Role.objects.get_or_create(
+                uuid=role_uuid,
+                defaults={
+                    "name": role_data["name"],
+                    "display_name": role_data["display_name"],
+                    "description": role_data["description"],
+                    "system": role_data["system"],
+                    "platform_default": role_data["platform_default"],
+                    "admin_default": role_data["admin_default"],
+                },
+            )
+            parent_roles[role_data["name"]] = role
+
+        return parent_roles
 
     def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[Relationship], list[Relationship]]:
         """Get the tuples to add and remove for a user."""
