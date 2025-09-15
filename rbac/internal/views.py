@@ -1823,7 +1823,7 @@ def check_workspace_relation(request, workspace_uuid):
         try:
             for workspace in workspace_descendants:
                 workspace_uuid = str(workspace.id)
-                workspace_parent = str(workspace.parent.id)
+                workspace_parent = str(workspace.parent.id) if workspace.parent else None
                 workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent)
                 responses.append(
                     {
