@@ -22,3 +22,6 @@
 # remove any static files
 rbac/static/**
 !rbac/static/README
+
+# Can be removed after this will be fixed https://issues.redhat.com/browse/STONEBLD-3768
+!labels.json
