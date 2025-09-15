@@ -1848,7 +1848,7 @@ def check_workspace_relation(request, workspace_uuid):
                 status=500,
             )
     elif workspace:
-        workspace_parent_id = str(workspace.parent.id)
+        workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
         workspace_uuid_str = str(workspace_uuid)
         try:
             workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
