@@ -17,7 +17,7 @@
 """Test tuple changes for RBAC operations."""
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, Iterable
 from django.test import TestCase, override_settings
 from django.db.models import Q
 from management.group.definer import seed_group, set_system_flag_before_update
@@ -29,11 +29,12 @@ from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
-from management.role.model import Access, BindingMapping, ResourceDefinition, Role, SourceKey
+from management.role.model import Access, BindingMapping, ResourceDefinition, Role, SourceKey, RoleV2
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -50,11 +51,15 @@ from migration_tool.in_memory_tuples import (
     subject_type,
 )
 
-from api.cross_access.model import CrossAccountRequest
+from api.cross_access.model import CrossAccountRequest, CrossAccountRequestV2
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.cross_access.util import create_cross_principal
 from api.models import Tenant
 from unittest.mock import patch
+
+from migration_tool.models import v1_perm_to_v2_perm
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_custom_role_models
+from tests.management.role.v2_utils import expect_v2_representation_invariants
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -74,6 +79,11 @@ class DualWriteTestCase(TestCase):
         self.fixture = RbacFixture()
         self.tenant = self.fixture.new_tenant(org_id="1234567").tenant
         self.test_tenant = self.tenant
+
+    def tearDown(self):
+        """Tear down the dual write tests."""
+        expect_v2_representation_invariants(test=self, tuples=self.tuples)
+        super().tearDown()
 
     def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
         """Switch to a new tenant with the given name and org_id."""
@@ -148,6 +158,13 @@ class DualWriteTestCase(TestCase):
         return group, principals
 
     def given_car(self, user_id: str, roles: list[Role], old_format=True):
+        source_tenant = Tenant.objects.filter(org_id="9876543").first()
+
+        if source_tenant is None:
+            source_tenant = self.fixture.new_tenant("9876543").tenant
+
+        self.fixture.new_principals_in_tenant([user_id], tenant=source_tenant)
+
         create_cross_principal(user_id, target_org=self.tenant.org_id)
         car = self.fixture.new_car(self.tenant, user_id)
         car.roles.add(*roles)
@@ -164,6 +181,15 @@ class DualWriteTestCase(TestCase):
                 if "users" in mapping.mappings and isinstance(mapping.mappings["users"], dict):
                     mapping.mappings["users"] = list(mapping.mappings["users"].values())
                     mapping.save()
+
+            car_v2 = CrossAccountRequestV2.objects.filter(request_id=car.request_id).get()
+
+            for role in car_v2.roles.all():
+                for binding in role.bindings.all():
+                    binding.principal_entries.all().update(source=None)
+
+        expect_v2_representation_invariants(test=self, tuples=self.tuples)
+
         return car
 
     def given_additional_group_members(
@@ -1264,7 +1290,15 @@ class RbacFixture:
             # Nothing to do if not using V2 bootstrapping
             return None
 
-    def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
+    def new_system_role(
+        self,
+        name: str,
+        permissions: list[str],
+        platform_default=False,
+        admin_default=False,
+        include_v2=False,
+        **kwargs,
+    ) -> Role:
         """Create a new system role with the given name and permissions."""
         role = Role.objects.create(
             name=name,
@@ -1272,31 +1306,60 @@ class RbacFixture:
             platform_default=platform_default,
             admin_default=admin_default,
             tenant=self.public_tenant,
+            **kwargs,
         )
+
+        created_permissions = [
+            Permission.objects.get_or_create(permission=permission, tenant=self.public_tenant)[0]
+            for permission in permissions
+        ]
 
         access_list = [
             Access(
-                permission=Permission.objects.get_or_create(permission=permission, tenant=self.public_tenant)[0],
+                permission=permission,
                 role=role,
                 tenant=self.public_tenant,
             )
-            for permission in permissions
+            for permission in created_permissions
         ]
 
         Access.objects.bulk_create(access_list)
 
+        if include_v2:
+            role_v2 = RoleV2.objects.create(
+                uuid=str(role.uuid),
+                name=name,
+                display_name=name,
+                type=RoleV2.Types.SEEDED,
+                tenant=self.public_tenant,
+                v1_source=role,
+                **kwargs,
+            )
+
+            role_v2.permissions.set(created_permissions)
+
+            if platform_default:
+                role_v2.parents.add(RoleV2.objects.platform_default_users())
+
+            if admin_default:
+                role_v2.parents.add(RoleV2.objects.platform_default_admins())
+
         return role
 
-    def new_custom_role(self, name: str, resource_access: list[tuple[list[str], dict]], tenant: Tenant) -> Role:
+    def new_custom_role(
+        self, name: str, resource_access: list[tuple[list[str], dict]], tenant: Tenant, include_v2: bool = False
+    ) -> Role:
         """
         Create a new custom role.
 
         [resource_access] is a list of tuples of the form (permissions, attribute_filter).
         """
         role = Role.objects.create(name=name, system=False, tenant=tenant)
-        return self.update_custom_role(role, resource_access)
+        return self.update_custom_role(role, resource_access, include_v2=include_v2)
 
-    def update_custom_role(self, role: Role, resource_access: list[tuple[list[str], dict]]) -> Role:
+    def update_custom_role(
+        self, role: Role, resource_access: list[tuple[list[str], dict]], include_v2: bool = False
+    ) -> Role:
         """
         Update a custom role.
 
@@ -1321,6 +1384,13 @@ class RbacFixture:
                     ResourceDefinition.objects.create(
                         attributeFilter=attribute_filter, access=access, tenant=role.tenant
                     )
+
+        if include_v2:
+            migrate_custom_role_models(
+                v1_role=role,
+                default_workspace=Workspace.objects.default(tenant=role.tenant),
+                role_bindings=role.binding_mappings.all(),
+            )
 
         return role
 

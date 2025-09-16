@@ -83,3 +83,21 @@ class RequestsRoles(models.Model):
     role = models.ForeignKey(
         "management.Role", on_delete=models.CASCADE, to_field="uuid", related_name="cross_account_requests"
     )
+
+
+class CrossAccountRequestV2(models.Model):
+    """Cross account access request in the version 2 API."""
+
+    request_id = models.UUIDField(default=uuid4, editable=False, unique=True, null=False, primary_key=True)
+    target_account = models.CharField(max_length=36, default=None, null=True)
+    target_org = models.CharField(max_length=36, default=None)
+    target_resource_type_namespace = models.CharField(max_length=256, null=False)
+    target_resource_type_name = models.CharField(max_length=256, null=False)
+    target_resource_id = models.CharField(max_length=256, null=False)
+    user_id = models.CharField(max_length=15, default=None)
+    created = models.DateTimeField(default=timezone.now)
+    start_date = models.DateTimeField(default=timezone.now)
+    end_date = models.DateTimeField(null=False, blank=False, default=None)
+    modified = AutoDateTimeField(default=timezone.now)
+    status = models.CharField(max_length=10, default="pending")
+    roles = models.ManyToManyField("management.RoleV2")
