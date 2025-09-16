@@ -1823,7 +1823,7 @@ def check_workspace_relation(request, workspace_uuid):
         try:
             for workspace in workspace_descendants:
                 workspace_uuid = str(workspace.id)
-                workspace_parent = str(workspace.parent.id)
+                workspace_parent = str(workspace.parent.id) if workspace.parent else None
                 workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent)
                 responses.append(
                     {
@@ -1848,8 +1848,18 @@ def check_workspace_relation(request, workspace_uuid):
                 status=500,
             )
     elif workspace:
-        workspace_parent_id = str(workspace.parent.id)
+        workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
         workspace_uuid_str = str(workspace_uuid)
+        if workspace.type == Workspace.Types.ROOT:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Root workspace provided — this is not a valid input as it does not have a parent "
+                        "workspace. Request skipped."
+                    )
+                },
+                status=400,
+            )
         try:
             workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
             workspace_check_response = {
