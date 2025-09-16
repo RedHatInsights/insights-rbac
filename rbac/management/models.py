@@ -28,6 +28,7 @@ from management.role.model import (
     Role,
     BindingMapping,
 )
+from management.role.v2_model import RoleV2
 from management.policy.model import Policy
 from management.audit_log.model import AuditLog
 from management.workspace.model import Workspace
