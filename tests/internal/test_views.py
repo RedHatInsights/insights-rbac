@@ -4376,7 +4376,9 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
     @patch("management.utils.create_client_channel")
-    @patch("management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
     @patch("internal.views.check_workspace_relation")
     def test_inventory_workspace_descendants_relation(
         self, mock_workspace_view, mock_check_workspace_relation, mock_create_channel, mock_get_token
@@ -4571,7 +4573,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         )
 
     @patch(
-        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace",
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants",
         side_effect=RpcError("Simulated GRPC error"),
     )
     def test_inventory_workspace_descendants_relation_grpc_error(self, mock_check_workspace):
@@ -4615,7 +4617,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["error"], "Simulated GRPC error")
 
     @patch(
-        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace",
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants",
         side_effect=Exception("Simulated internal error"),
     )
     def test_inventory_workspace_descendants_relation_error(self, mock_check_workspace):
