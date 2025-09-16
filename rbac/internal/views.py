@@ -1851,13 +1851,24 @@ def check_workspace_relation(request, workspace_uuid):
         workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
         workspace_uuid_str = str(workspace_uuid)
         try:
-            workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
-            workspace_check_response = {
-                "org_id": workspace.tenant.org_id,
-                "workspace_id": workspace_uuid_str,
-                "workspace_parent_id": workspace_parent_id,
-                "workspace_relation_correct": workspace_correct,
-            }
+            if workspace.type != Workspace.Types.ROOT:
+                workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
+                workspace_check_response = {
+                    "org_id": workspace.tenant.org_id,
+                    "workspace_id": workspace_uuid_str,
+                    "workspace_parent_id": workspace_parent_id,
+                    "workspace_relation_correct": workspace_correct,
+                }
+            else:
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "Root workspace provided — this is not a valid input as it does not have a parent "
+                            "workspace. Request skipped."
+                        )
+                    },
+                    status=400,
+                )
         except RpcError as e:
             return JsonResponse(
                 {"detail": "gRPC error occurred during inventory workspace relation check", "error": str(e)},
