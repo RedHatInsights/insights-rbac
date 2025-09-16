@@ -4555,6 +4555,49 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
 
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace",
+        side_effect=Exception("Simulated internal error"),
+    )
+    def test_inventory_workspace_root_error(self, mock_check_workspace):
+        """Test the expected error is returned in cases of a root workspace uuid being provided for workspace relation check"""
+        # Create the required objects for this test
+        TenantMapping.objects.create(tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.test_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            name="Test Workspace",
+            description="Default Description",
+            parent_id=self.default_workspace.id,
+        )
+
+        response = self.client.get(
+            f"/_private/api/inventory/check_workspace/{str(self.root_workspace.id)}/",
+            format="json",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertEqual(
+            response_body["detail"],
+            "Root workspace provided — this is not a valid input as it does not have a parent workspace. Request skipped.",
+        )
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace",
         side_effect=RpcError("Simulated GRPC error"),
     )
     def test_inventory_workspace_descendants_relation_grpc_error(self, mock_check_workspace):
