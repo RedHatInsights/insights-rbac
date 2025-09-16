@@ -1816,6 +1816,16 @@ def check_workspace_relation(request, workspace_uuid):
     """
     workspace = get_object_or_404(Workspace, id=workspace_uuid)
     query_params = request.GET
+    if workspace.type == Workspace.Types.ROOT:
+        return JsonResponse(
+            {
+                "detail": (
+                    "Root workspace provided — this is not a valid input as it does not have a parent "
+                    "workspace. Request skipped."
+                )
+            },
+            status=400,
+        )
     # Check workspaces descendants
     if workspace and query_params.get("descendants") == "true":
         workspace_descendants = workspace.descendants()
@@ -1851,24 +1861,13 @@ def check_workspace_relation(request, workspace_uuid):
         workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
         workspace_uuid_str = str(workspace_uuid)
         try:
-            if workspace.type != Workspace.Types.ROOT:
-                workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
-                workspace_check_response = {
-                    "org_id": workspace.tenant.org_id,
-                    "workspace_id": workspace_uuid_str,
-                    "workspace_parent_id": workspace_parent_id,
-                    "workspace_relation_correct": workspace_correct,
-                }
-            else:
-                return JsonResponse(
-                    {
-                        "detail": (
-                            "Root workspace provided — this is not a valid input as it does not have a parent "
-                            "workspace. Request skipped."
-                        )
-                    },
-                    status=400,
-                )
+            workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
+            workspace_check_response = {
+                "org_id": workspace.tenant.org_id,
+                "workspace_id": workspace_uuid_str,
+                "workspace_parent_id": workspace_parent_id,
+                "workspace_relation_correct": workspace_correct,
+            }
         except RpcError as e:
             return JsonResponse(
                 {"detail": "gRPC error occurred during inventory workspace relation check", "error": str(e)},
