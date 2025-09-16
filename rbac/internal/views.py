@@ -1819,21 +1819,17 @@ def check_workspace_relation(request, workspace_uuid):
     # Check workspaces descendants
     if workspace and query_params.get("descendants") == "true":
         workspace_descendants = workspace.descendants()
-        responses = []
+        workspace_pairs = [(str(w.id), str(w.parent.id)) for w in workspace_descendants]
         try:
-            for workspace in workspace_descendants:
-                workspace_uuid = str(workspace.id)
-                workspace_parent = str(workspace.parent.id) if workspace.parent else None
-                workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent)
-                responses.append(
-                    {
-                        "org_id": workspace.tenant.org_id,
-                        "workspace_id": workspace_uuid,
-                        "workspace_parent_id": workspace_parent,
-                        "workspace_relation_correct": workspace_correct,
-                    }
-                )
-            workspace_check_response = responses
+            if workspace_pairs:
+                workspace_uuid = str(workspace_uuid)
+                workspace_descendants_correct = WorkspaceRelationChecker.check_workspace(workspace_pairs)
+                response = {
+                    "org_id": workspace.tenant.org_id,
+                    "workspace_id": workspace_uuid,
+                    "workspace_descendants_correct": workspace_descendants_correct,
+                }
+                return JsonResponse(response, safe=False)
         except RpcError as e:
             return JsonResponse(
                 {

@@ -4415,26 +4415,14 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         mock_stub.Check.return_value = "true"
 
         mock_check_workspace_relation.return_value = mock_stub.Check.return_value
-        mock_workspace_view.return_value = [
+        mock_workspace_view.return_value = (
             {
-                "org_id": self.default_workspace.tenant.org_id,
-                "workspace_id": str(self.default_workspace.id),
-                "workspace_parent_id": str(self.default_workspace.parent.id),
+                "org_id": self.root_workspace.tenant.org_id,
+                "workspace_id": str(self.root_workspace.id),
                 "workspace_relation_correct": mock_stub.Check.return_value,
             },
-            {
-                "org_id": self.test_workspace.tenant.org_id,
-                "workspace_id": str(self.test_workspace.id),
-                "workspace_parent_id": str(self.test_workspace.parent.id),
-                "workspace_relation_correct": mock_stub.Check.return_value,
-            },
-            {
-                "org_id": self.descendant_workspace.tenant.org_id,
-                "workspace_id": str(self.descendant_workspace.id),
-                "workspace_parent_id": str(self.descendant_workspace.parent.id),
-                "workspace_relation_correct": mock_stub.Check.return_value,
-            },
-        ]
+        )
+
         with patch(
             "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
@@ -4448,26 +4436,12 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         # Parse and validate response
         self.assertEqual(response.status_code, 200)
         response_body = response.json()
-        self.assertIsInstance(response_body, list)
-        self.assertEqual(len(response_body), 3)
+        self.assertIsInstance(response_body, dict)
 
-        # Check Default Workspace
-        self.assertEqual(response_body[0]["org_id"], self.default_workspace.tenant.org_id)
-        self.assertEqual(response_body[0]["workspace_id"], str(self.default_workspace.id))
-        self.assertEqual(response_body[0]["workspace_parent_id"], str(self.root_workspace.id))
-        self.assertEqual(response_body[0]["workspace_relation_correct"], "true")
-
-        # Check Test Workspace
-        self.assertEqual(response_body[1]["org_id"], self.test_workspace.tenant.org_id)
-        self.assertEqual(response_body[1]["workspace_id"], str(self.test_workspace.id))
-        self.assertEqual(response_body[1]["workspace_parent_id"], str(self.default_workspace.id))
-        self.assertEqual(response_body[1]["workspace_relation_correct"], "true")
-
-        # Check Descendant Workspace
-        self.assertEqual(response_body[2]["org_id"], self.descendant_workspace.tenant.org_id)
-        self.assertEqual(response_body[2]["workspace_id"], str(self.descendant_workspace.id))
-        self.assertEqual(response_body[2]["workspace_parent_id"], str(self.default_workspace.id))
-        self.assertEqual(response_body[2]["workspace_relation_correct"], "true")
+        # Check response
+        self.assertEqual(response_body["org_id"], self.root_workspace.tenant.org_id)
+        self.assertEqual(response_body["workspace_id"], str(self.root_workspace.id))
+        self.assertEqual(response_body["workspace_descendants_correct"], "true")
 
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace",
