@@ -1044,6 +1044,41 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_default_group_bootstrap(self, replicate):
+        """Test that we can bootstrap a tenant."""
+        org_id = "12345"
+
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        fixture = RbacFixture(V2TenantBootstrapService(replicator))
+        tuples.clear()
+
+        tenant = fixture.new_unbootstrapped_tenant(org_id)
+        default_group = fixture.custom_default_group(tenant)
+
+        bootstrap_payload = {"org_ids": [org_id]}
+
+        bootstrap_response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=bootstrap_payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        self.assertEqual(bootstrap_response.status_code, status.HTTP_200_OK)
+
+        tenant_mapping = TenantMapping.objects.get(tenant=tenant)
+
+        # 3 for workspaces, 3 for admin default access
+        # No tuples for default user access because of the custom default group.
+        print(f"Custom default group: {str(default_group.uuid)}")
+        print(f"Standard default group: {str(tenant_mapping.default_group_uuid)}")
+        print(f"Admin default group: {str(tenant_mapping.default_admin_group_uuid)}")
+        print(f"Tuples: {tuples}")
+        self.assertEqual(len(tuples), 6)
+
     def test_listing_migration_resources(self):
         """Test that we can list migration resources."""
         org_id = "12345678"
