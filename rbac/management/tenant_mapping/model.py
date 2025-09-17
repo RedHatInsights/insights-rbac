@@ -40,7 +40,3 @@ class TenantMapping(models.Model):
     default_admin_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    # Parent role uuid fields for org level permissions
-    root_workspace_role_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    default_workspace_role_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    org_role_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
