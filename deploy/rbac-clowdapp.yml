@@ -512,12 +512,12 @@ objects:
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
-          - name: DEFAULT_WORKSPACE_ROLE_UUID
-            value: ${DEFAULT_WORKSPACE_ROLE_UUID}
-          - name: ROOT_WORKSPACE_ROLE_UUID
-            value: ${ROOT_WORKSPACE_ROLE_UUID}
-          - name: ORG_ROLE_UUID
-            value: ${ORG_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ORG_ROLE_UUID
+            value: ${SYSTEM_ORG_ROLE_UUID}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -1537,13 +1537,13 @@ parameters:
 - name: REDHAT_SSO
   description: The SSO url for rbac environment
   value: 'sso.stage.redhat.com'
-- name: DEFAULT_WORKSPACE_ROLE_UUID
+- name: SYSTEM_DEFAULT_WORKSPACE_ROLE_UUID
   description: The UUID for the role for default workspace level
   value: ''
-- name: ROOT_WORKSPACE_ROLE_UUID
+- name: SYSTEM_ROOT_WORKSPACE_ROLE_UUID
   description: The UUID for the role for root workspace level
   value: ''
-- name: ORG_ROLE_UUID
+- name: SYSTEM_ORG_ROLE_UUID
   description: The UUID for the role for org level
   value: ''
 - name: FEATURE_FLAGS_CACHE_DIR

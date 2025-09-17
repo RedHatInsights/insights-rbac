@@ -225,9 +225,9 @@ def _get_or_create_parent_roles_for_org_level_permissions():
     public_tenant = Tenant._get_public_tenant()
     expected_parent_roles = [
         {
-            "uuid": settings.DEFAULT_WORKSPACE_ROLE_UUID,
-            "name": "Workspace Root Role",
-            "display_name": "Workspace Root Role",
+            "uuid": settings.SYSTEM_DEFAULT_WORKSPACE_ROLE_UUID,
+            "name": "Root Workspace System Role",
+            "display_name": "Root Workspace Role",
             "description": "Root workspace role",
             "system": True,
             "platform_default": True,
@@ -235,9 +235,9 @@ def _get_or_create_parent_roles_for_org_level_permissions():
             "tenant": public_tenant,
         },
         {
-            "uuid": settings.ROOT_WORKSPACE_ROLE_UUID,
-            "name": "Workspace Default Role",
-            "display_name": "Workspace Default Role",
+            "uuid": settings.SYSTEM_ROOT_WORKSPACE_ROLE_UUID,
+            "name": "Default Workspace System Role",
+            "display_name": "Default Workspace System Role",
             "description": "Default workspace role",
             "system": True,
             "platform_default": True,
@@ -245,9 +245,9 @@ def _get_or_create_parent_roles_for_org_level_permissions():
             "tenant": public_tenant,
         },
         {
-            "uuid": settings.ORG_ROLE_UUID,
-            "name": "Default Org Role",
-            "display_name": "Default Org Role",
+            "uuid": settings.SYSTEM_ORG_ROLE_UUID,
+            "name": "Default Org System Role",
+            "display_name": "Default Org System Role",
             "description": "Organization-level base role for org level permissions",
             "system": True,
             "platform_default": True,
