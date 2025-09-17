@@ -1819,21 +1819,17 @@ def check_workspace_relation(request, workspace_uuid):
     # Check workspaces descendants
     if workspace and query_params.get("descendants") == "true":
         workspace_descendants = workspace.descendants()
-        responses = []
+        workspace_pairs = [(str(w.id), str(w.parent.id)) for w in workspace_descendants]
         try:
-            for workspace in workspace_descendants:
-                workspace_uuid = str(workspace.id)
-                workspace_parent = str(workspace.parent.id)
-                workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent)
-                responses.append(
-                    {
-                        "org_id": workspace.tenant.org_id,
-                        "workspace_id": workspace_uuid,
-                        "workspace_parent_id": workspace_parent,
-                        "workspace_relation_correct": workspace_correct,
-                    }
-                )
-            workspace_check_response = responses
+            if workspace_pairs:
+                workspace_uuid = str(workspace_uuid)
+                workspace_descendants_correct = WorkspaceRelationChecker.check_workspace_descendants(workspace_pairs)
+                response = {
+                    "org_id": workspace.tenant.org_id,
+                    "workspace_id": workspace_uuid,
+                    "workspace_descendants_correct": workspace_descendants_correct,
+                }
+                return JsonResponse(response, safe=False)
         except RpcError as e:
             return JsonResponse(
                 {
@@ -1848,8 +1844,18 @@ def check_workspace_relation(request, workspace_uuid):
                 status=500,
             )
     elif workspace:
-        workspace_parent_id = str(workspace.parent.id)
+        workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
         workspace_uuid_str = str(workspace_uuid)
+        if workspace.type == Workspace.Types.ROOT:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Root workspace provided — this is not a valid input as it does not have a parent "
+                        "workspace. Request skipped."
+                    )
+                },
+                status=400,
+            )
         try:
             workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
             workspace_check_response = {
