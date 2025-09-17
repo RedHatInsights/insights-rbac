@@ -869,19 +869,19 @@ objects:
               name: default-role-config
             - mountPath: /opt/rbac/rbac/management/role/permissions
               name: model-access-permissions
-      - name: org-level-parent-roles-populator  
-        podSpec:  
-          image: quay.io/cloudservices/rbac:latest  
-          command:  
-            - /opt/rbac/rbac/manage.py  
-            - org_level_parent_roles  
-          env: *job_common_env_vars  
-          resources:  
-            limits:  
-              cpu: 300m  
-              memory: 1Gi  
-            requests:  
-              cpu: 50m  
+      - name: org-level-parent-roles-populator
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - org_level_parent_roles
+          env: *job_common_env_vars
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
               memory: 512Mi
       - name: sa-id-populator
         podSpec:
