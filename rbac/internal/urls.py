@@ -105,6 +105,7 @@ urlpatterns = [
     path("api/inventory/check_workspace/<workspace_uuid>/", views.check_workspace_relation),
     path("api/inventory/check/", views.check_inventory),
     path("api/utils/workspace/", views.workspace_removal),
+    path("api/utils/kafka_test_message/", views.send_kafka_test_message),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
