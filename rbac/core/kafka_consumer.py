@@ -277,12 +277,33 @@ class RBACKafkaConsumer:
 
         try:
             if kafka_auth:
+                # Filter out producer-specific configurations that are not valid for consumers
+                # Producer-only configs: retries, max_in_flight_requests_per_connection, acks, etc.
+                producer_only_configs = {
+                    "retries",
+                    "max_in_flight_requests_per_connection",
+                    "acks",
+                    "enable_idempotence",
+                    "transactional_id",
+                    "transaction_timeout_ms",
+                    "compression_type",
+                    "batch_size",
+                    "linger_ms",
+                    "buffer_memory",
+                    "max_block_ms",
+                    "delivery_timeout_ms",
+                }
+                consumer_auth = {k: v for k, v in kafka_auth.items() if k not in producer_only_configs}
+                # Log if any producer-specific configs were filtered out
+                filtered_configs = set(kafka_auth.keys()) & producer_only_configs
+                if filtered_configs:
+                    logger.info(f"Filtered out producer-specific configs for consumer: {filtered_configs}")
                 consumer = KafkaConsumer(
                     self.topic,
                     auto_offset_reset="latest",
                     enable_auto_commit=False,  # Manual commit for exactly-once processing
                     group_id=settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
-                    **kafka_auth,
+                    **consumer_auth,
                 )
                 logger.info(f"Kafka consumer created with auth for topic: {self.topic}")
             else:
