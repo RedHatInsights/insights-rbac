@@ -22,6 +22,7 @@ from uuid import UUID
 import boto3
 from botocore.exceptions import ClientError
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from management.principal.model import Principal
 from management.role.model import Role
@@ -259,19 +260,27 @@ def _get_or_create_parent_roles_for_org_level_permissions():
     parent_roles = {}
 
     for role_data in expected_parent_roles:
-        role_uuid = UUID(role_data["uuid"])
-        role, created = Role.objects.get_or_create(
-            uuid=role_uuid,
-            defaults={
-                "name": role_data["name"],
-                "display_name": role_data["display_name"],
-                "description": role_data["description"],
-                "system": role_data["system"],
-                "platform_default": role_data["platform_default"],
-                "admin_default": role_data["admin_default"],
-                "tenant": role_data["tenant"],
-            },
-        )
-        parent_roles[role_data["name"]] = role
+        try:
+            role_uuid = UUID(role_data["uuid"])
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid UUID for role '{role_data['name']}'")
+            raise ValidationError(f"Invalid UUID for role '{role_data['name']}': {e}")
 
+        try:
+            role, created = Role.objects.get_or_create(
+                uuid=role_uuid,
+                defaults={
+                    "name": role_data["name"],
+                    "display_name": role_data["display_name"],
+                    "description": role_data["description"],
+                    "system": role_data["system"],
+                    "platform_default": role_data["platform_default"],
+                    "admin_default": role_data["admin_default"],
+                    "tenant": role_data["tenant"],
+                },
+            )
+            parent_roles[role_data["name"]] = role
+        except Exception as e:
+            logger.exception(f"Failed to get or create role '{role_data['name']}': {e}")
+            raise
     return parent_roles
