@@ -247,12 +247,14 @@ paths:
             format: int64
             default: 10
           explode: false
-        - name: cursor
+        - name: offset
           in: query
           required: false
-          description: Cursor for cursor-based pagination.
+          description: Offset for offset-based pagination.
           schema:
-            type: string
+            type: integer
+            format: int64
+            default: 0
           explode: false
         - name: type
           in: query
@@ -278,10 +280,14 @@ paths:
                 $ref: '#/components/schemas/Workspaces.WorkspaceListResponse'
               example:
                 meta:
+                  count: 100
                   limit: 10
+                  offset: 0
                 links:
-                  next: /api/rbac/v2/workspaces/?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9
+                  first: /api/rbac/v2/workspaces/?limit=10&offset=0
+                  next: /api/rbac/v2/workspaces/?limit=10&offset=10
                   previous: null
+                  last: /api/rbac/v2/workspaces/?limit=10&offset=90
                 data:
                   - id: e4277742-b91c-43f1-a185-b827e8574345
                     parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
@@ -900,6 +906,62 @@ components:
           description: Limit of returned objects
           example: 10
           default: 10
+    OffsetPaginationLinks:
+      type: object
+      required:
+        - first
+        - next
+        - previous
+        - last
+      properties:
+        first:
+          type: string
+          nullable: true
+          format: uri
+          description: The first link in pagination
+          example: /api/rbac/v2/workspaces/?limit=10&offset=0
+        next:
+          type: string
+          nullable: true
+          format: uri
+          description: The next link in pagination
+          example: /api/rbac/v2/workspaces/?limit=10&offset=10
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          description: The previous link in pagination
+          example: /api/rbac/v2/workspaces/?limit=10&offset=0
+        last:
+          type: string
+          nullable: true
+          format: uri
+          description: The last link in pagination
+          example: /api/rbac/v2/workspaces/?limit=10&offset=90
+    OffsetPaginationMeta:
+      type: object
+      required:
+        - count
+        - limit
+        - offset
+      properties:
+        count:
+          type: integer
+          format: int64
+          description: Total count of objects
+          example: 10
+        limit:
+          type: integer
+          format: int64
+          description: Limit of returned objects
+          example: 10
+          default: 10
+        offset:
+          type: integer
+          format: int64
+          description: Offset of returned objects
+          example: 0
+          default: 0
     Problems.Problem400:
       type: object
       required:
@@ -1275,11 +1337,11 @@ components:
       properties:
         meta:
           allOf:
-            - $ref: '#/components/schemas/CursorPaginationMeta'
+            - $ref: '#/components/schemas/OffsetPaginationMeta'
           description: Pagination metadata
         links:
           allOf:
-            - $ref: '#/components/schemas/CursorPaginationLinks'
+            - $ref: '#/components/schemas/OffsetPaginationLinks'
           description: Pagination links
     Workspaces.PatchWorkspaceRequest:
       type: object
@@ -1442,11 +1504,11 @@ components:
       properties:
         meta:
           allOf:
-            - $ref: '#/components/schemas/CursorPaginationMeta'
+            - $ref: '#/components/schemas/OffsetPaginationMeta'
           description: Pagination metadata
         links:
           allOf:
-            - $ref: '#/components/schemas/CursorPaginationLinks'
+            - $ref: '#/components/schemas/OffsetPaginationLinks'
           description: Pagination links
         data:
           type: array
@@ -1455,10 +1517,14 @@ components:
           description: List of workspaces
       example:
         meta:
+          count: 100
           limit: 10
+          offset: 0
         links:
-          next: /api/rbac/v2/workspaces?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9
+          first: /api/rbac/v2/workspaces/?limit=10&offset=0
+          next: /api/rbac/v2/workspaces/?limit=10&offset=10
           previous: null
+          last: /api/rbac/v2/workspaces/?limit=10&offset=90
         data:
           - id: e4277742-b91c-43f1-a185-b827e8574345
             parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
