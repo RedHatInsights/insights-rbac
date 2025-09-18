@@ -1331,7 +1331,7 @@ class GroupViewSet(
                     remove_roles(group, role_ids, request.tenant, request.user)
 
                 # Save the information to audit logs
-                roles = _roles_by_query_or_ids(role_ids)
+                roles = _roles_by_query_or_ids(role_ids, request.tenant)
                 for role_info in roles:
                     auditlog = AuditLog()
                     auditlog.log_group_remove(
