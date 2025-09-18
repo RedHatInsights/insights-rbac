@@ -1974,3 +1974,87 @@ def workspace_removal(request):
     except Exception as e:
         logger.exception(f"Bulk workspace deletion failed: {e}")
         return HttpResponse(str(e), status=500)
+
+
+def send_kafka_test_message(request):
+    """Send a test Debezium message to the Kafka consumer topic.
+
+    GET /_private/api/utils/kafka_test_message/
+
+    Sends a predefined test message with sample relations.
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    if not settings.KAFKA_ENABLED:
+        return HttpResponse("Kafka is not enabled", status=400)
+
+    try:
+        from core.kafka import RBACProducer
+        import uuid
+
+        # Create sample test data
+        relations_to_add = [
+            {
+                "resource": {
+                    "type": {"namespace": "rbac", "name": "workspace"},
+                    "id": f"test-workspace-{uuid.uuid4()}",
+                },
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": f"test-principal-{uuid.uuid4()}",
+                    }
+                },
+                "relation": "member",
+            }
+        ]
+        relations_to_remove = []
+
+        # Create the payload for the relations message
+        test_payload = {
+            "relations_to_add": relations_to_add,
+            "relations_to_remove": relations_to_remove,
+        }
+
+        # Create a Debezium-format message
+        debezium_message = {
+            "schema": {
+                "type": "string",
+                "optional": False,
+                "name": "io.debezium.data.Json",
+                "version": 1,
+            },
+            "payload": json.dumps(test_payload),
+        }
+
+        # Send the message
+        producer = RBACProducer()
+        topic = settings.RBAC_KAFKA_CONSUMER_TOPIC
+
+        if not topic:
+            return HttpResponse("RBAC_KAFKA_CONSUMER_TOPIC is not configured", status=400)
+
+        producer.send_kafka_message(topic, debezium_message)
+
+        logger.info(f"Test Kafka message sent to topic '{topic}' by user '{request.user.username}'")
+
+        response_data = {
+            "message": "Test message sent successfully",
+            "topic": topic,
+            "message_format": "debezium",
+            "payload_summary": {
+                "relations_to_add_count": len(relations_to_add),
+                "relations_to_remove_count": len(relations_to_remove),
+            },
+            "sample_data": {
+                "relations_to_add": relations_to_add,
+                "relations_to_remove": relations_to_remove,
+            },
+        }
+
+        return JsonResponse(response_data, status=200)
+
+    except Exception as e:
+        logger.error(f"Error sending test Kafka message: {e}")
+        return JsonResponse({"error": "Error sending test message", "detail": str(e)}, status=500)

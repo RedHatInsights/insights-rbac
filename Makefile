@@ -35,6 +35,8 @@ Please use `make <target>` where <target> is one of:
 --- Commands using local services ---
   create-test-db-file      create a Postgres DB dump file for RBAC
   collect-static           collect static files to host
+  kafka-consumer           run the RBAC Kafka consumer with validation
+  kafka-consumer-debug     run the RBAC Kafka consumer with debug logging
   make-migrations          make migrations for the database
   reinitdb                 drop and recreate the database
   run-migrations           run migrations against database
@@ -124,6 +126,12 @@ show-migrations:
 
 urls:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py show_urls
+
+kafka-consumer:
+	KAFKA_ENABLED=true RBAC_KAFKA_CONSUMER_TOPIC=outbox.event.rbac-consumer-replication-event RBAC_KAFKA_CONSUMER_GROUP_ID=rbac-consumer-group pipenv run python $(PYDIR)/manage.py launch-rbac-kafka-consumer
+
+kafka-consumer-debug:
+	KAFKA_ENABLED=true RBAC_KAFKA_CONSUMER_TOPIC=outbox.event.rbac-consumer-replication-event RBAC_KAFKA_CONSUMER_GROUP_ID=rbac-consumer-group DJANGO_LOG_LEVEL=DEBUG pipenv run python $(PYDIR)/manage.py launch-rbac-kafka-consumer
 
 
 create-test-db-file: run-migrations
