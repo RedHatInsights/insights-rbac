@@ -30,6 +30,7 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from internal.utils import get_workspace_ids_from_resource_definition, is_resource_a_workspace
 from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
@@ -41,6 +42,7 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
+from management.workspace.model import Workspace
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -613,7 +615,8 @@ class RoleViewSet(
         if access_list:
             sent_permissions = [access["permission"] for access in access_list]
             for perm in access_list:
-                app, resource_type, verb = perm.get("permission").split(":")
+                permission = perm.get("permission")
+                app, resource_type, verb = permission.split(":")
                 if app not in settings.ROLE_CREATE_ALLOW_LIST:
                     key = "role"
                     message = "Custom roles cannot be created for {}".format(app)
@@ -626,7 +629,7 @@ class RoleViewSet(
 
                 if not db_permission:
                     key = "role"
-                    message = f"Permission does not exist: {perm.get('permission')}"
+                    message = f"Permission does not exist: {permission}"
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
 
@@ -638,6 +641,25 @@ class RoleViewSet(
                         message = f"Permission '{db_permission.permission}' requires: '{required_permissions}'"
                         error = {key: [_(message)]}
                         raise serializers.ValidationError(error)
+
+                # validate permission not being added to workspace out of users org for v1 (RHCLOUD-35481)
+                resourceDefinitions = perm.get("resourceDefinitions", [])
+                for resourceDefinition in resourceDefinitions:
+                    attributeFilter = resourceDefinition.get("attributeFilter")
+                    if is_resource_a_workspace(app, resource_type, attributeFilter):
+                        workspace_ids = get_workspace_ids_from_resource_definition(attributeFilter)
+                        if len(workspace_ids) >= 1:
+                            is_same_tenant = Workspace.objects.filter(
+                                id__in=workspace_ids, tenant=request.tenant
+                            ).exists()
+                            if not is_same_tenant:
+                                key = "role"
+                                message = (
+                                    f"user from org '{request.user.org_id}' cannot add "
+                                    f"permission '{permission}' to workspace outside their org"
+                                )
+                                error = {key: [_(message)]}
+                                raise serializers.ValidationError(error)
 
     def delete_policies_if_no_role_attached(self, role):
         """Delete policy if there is no role attached to it."""
