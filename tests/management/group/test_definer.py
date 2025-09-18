@@ -19,11 +19,17 @@ from unittest.mock import ANY, call, patch
 from api.models import Tenant
 
 from django.conf import settings
-from management.group.definer import seed_group, add_roles, clone_default_group_in_public_schema
+from management.group.definer import (
+    seed_group,
+    add_roles,
+    clone_default_group_in_public_schema,
+    remove_roles,
+    _roles_by_query_or_ids,
+)
 from management.role.definer import seed_roles
 from tests.identity_request import IdentityRequest
 from tests.core.test_kafka import copy_call_args
-from management.models import Group, Role, Workspace
+from management.models import Group, Role, Policy
 
 
 class GroupDefinerTests(IdentityRequest):
@@ -189,3 +195,137 @@ class GroupDefinerTests(IdentityRequest):
         self.assertEqual(Group.objects.filter(platform_default=True, tenant=self.tenant).count(), 1)
         custom_default_group = Group.objects.filter(platform_default=True, tenant=self.tenant).last()
         self.assertTrue(invalid_role not in list(custom_default_group.roles()))
+
+    def test_roles_by_query_or_ids_with_tenant_filtering(self):
+        """Test that _roles_by_query_or_ids properly filters roles by tenant."""
+        # Create roles in different tenants with the same name
+        tenant_a = Tenant.objects.create(tenant_name="tenant_a", org_id="111111")
+        tenant_b = Tenant.objects.create(tenant_name="tenant_b", org_id="222222")
+
+        role_name = "shared_role_name"
+        role_a = Role.objects.create(name=role_name, tenant=tenant_a)
+        role_b = Role.objects.create(name=role_name, tenant=tenant_b)
+
+        # Create a queryset with both roles
+        roles_queryset = Role.objects.filter(name=role_name)
+        self.assertEqual(roles_queryset.count(), 2)
+
+        # Test filtering by tenant_a - should only return role_a
+        filtered_roles_a = _roles_by_query_or_ids(roles_queryset, tenant_a)
+        self.assertEqual(filtered_roles_a.count(), 1)
+        self.assertEqual(filtered_roles_a.first(), role_a)
+        self.assertNotIn(role_b, filtered_roles_a)
+
+        # Test filtering by tenant_b - should only return role_b
+        filtered_roles_b = _roles_by_query_or_ids(roles_queryset, tenant_b)
+        self.assertEqual(filtered_roles_b.count(), 1)
+        self.assertEqual(filtered_roles_b.first(), role_b)
+        self.assertNotIn(role_a, filtered_roles_b)
+
+    def test_roles_by_query_or_ids_with_uuid_list(self):
+        """Test that _roles_by_query_or_ids works with UUID list."""
+        tenant_a = Tenant.objects.create(tenant_name="tenant_a", org_id="111111")
+        role = Role.objects.create(name="test_role", tenant=tenant_a)
+
+        # Test with UUID list
+        role_uuids = [str(role.uuid)]
+        filtered_roles = _roles_by_query_or_ids(role_uuids, tenant_a)
+
+        self.assertEqual(filtered_roles.count(), 1)
+        self.assertEqual(filtered_roles.first(), role)
+
+    def test_roles_by_query_or_ids_nonexistent_roles(self):
+        """Test that _roles_by_query_or_ids returns an empty queryset for nonexistent roles."""
+        tenant_a = Tenant.objects.create(tenant_name="tenant_a", org_id="111111")
+
+        # Create queryset with no matching roles for this tenant
+        empty_queryset = Role.objects.filter(name="nonexistent_role")
+
+        filtered_roles = _roles_by_query_or_ids(empty_queryset, tenant_a)
+        self.assertEqual(filtered_roles.count(), 0)
+
+    @patch("management.group.definer.settings.REPLICATION_TO_RELATION_ENABLED", False)
+    def test_add_roles_tenant_isolation(self):
+        """Test that add_roles only adds roles from the specified tenant."""
+
+        tenant_a = Tenant.objects.create(tenant_name="tenant_a", org_id="111111")
+        tenant_b = Tenant.objects.create(tenant_name="tenant_b", org_id="222222")
+
+        # Create roles with same name in different tenants
+        role_name = "test_role"
+        role_a = Role.objects.create(name=role_name, tenant=tenant_a)
+        role_b = Role.objects.create(name=role_name, tenant=tenant_b)
+
+        # Create group in tenant_a
+        group_a = Group.objects.create(name="test_group", tenant=tenant_a)
+
+        # Create queryset with both roles
+        roles_queryset = Role.objects.filter(name=role_name)
+        self.assertEqual(roles_queryset.count(), 2)
+
+        # Add roles to group in tenant_a - should only add role_a
+        add_roles(group_a, roles_queryset, tenant_a)
+
+        group_roles = list(group_a.roles())
+        self.assertEqual(len(group_roles), 1)
+        self.assertIn(role_a, group_roles)
+        self.assertNotIn(role_b, group_roles)
+
+    @patch("management.group.definer.settings.REPLICATION_TO_RELATION_ENABLED", False)
+    def test_remove_roles_tenant_isolation(self):
+        """Test that remove_roles only removes roles from the specified tenant."""
+
+        tenant_a = Tenant.objects.create(tenant_name="tenant_a", org_id="111111")
+        tenant_b = Tenant.objects.create(tenant_name="tenant_b", org_id="222222")
+
+        # Create roles with same name in different tenants
+        role_name = "test_role"
+        role_a = Role.objects.create(name=role_name, tenant=tenant_a)
+        role_b = Role.objects.create(name=role_name, tenant=tenant_b)
+
+        # Create group in tenant_a and add the role
+        group_a = Group.objects.create(name="test_group", tenant=tenant_a)
+        roles_queryset = Role.objects.filter(name=role_name)
+        add_roles(group_a, roles_queryset, tenant_a)
+
+        # Verify the role from tenant_a is in the group initially
+        initial_roles = list(group_a.roles())
+        self.assertEqual(len(initial_roles), 1)
+        self.assertIn(role_a, initial_roles)
+        self.assertNotIn(role_b, initial_roles)
+
+        # Try to remove roles by queryset - should remove role_a
+        roles_queryset = Role.objects.filter(name=role_name)
+        self.assertEqual(roles_queryset.count(), 2)
+        self.assertIn(role_a, roles_queryset)
+        self.assertIn(role_b, roles_queryset)
+
+        remove_roles(group_a, roles_queryset, tenant_a)
+
+        remaining_roles = list(group_a.roles())
+        self.assertEqual(len(remaining_roles), 0)
+        self.assertNotIn(role_a, remaining_roles)  # role_a was removed
+        self.assertNotIn(role_b, remaining_roles)  # role_b was never added
+
+    @patch("management.group.definer.settings.REPLICATION_TO_RELATION_ENABLED", False)
+    def test_add_and_remove_roles_by_uuid(self):
+        """Test that UUID-based operations still work (backward compatibility)."""
+
+        tenant_a = Tenant.objects.create(tenant_name="tenant_a", org_id="111111")
+
+        # Create role
+        role = Role.objects.create(name="test_role", tenant=tenant_a)
+        group = Group.objects.create(name="test_group", tenant=tenant_a)
+
+        # Add role by UUID
+        add_roles(group, [str(role.uuid)], tenant_a)
+
+        group_roles = list(group.roles())
+        self.assertEqual(len(group_roles), 1)
+        self.assertIn(role, group_roles)
+
+        # Remove role by UUID
+        remove_roles(group, [str(role.uuid)], tenant_a)
+
+        remaining_roles = list(group.roles())
+        self.assertEqual(len(remaining_roles), 0)
