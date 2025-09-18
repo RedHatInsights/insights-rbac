@@ -1604,7 +1604,7 @@ parameters:
   value: 'rbac-consumer-group'
 - name: RBAC_KAFKA_CONSUMER_REPLICAS
   description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
-  value: '1'
+  value: '0'
 - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
   description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
   value: ''
