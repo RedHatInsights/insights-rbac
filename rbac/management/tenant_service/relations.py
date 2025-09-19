@@ -117,6 +117,7 @@ def default_role_binding_tuples(
         )
     ]
 
+    # Only add the remaining relationships if requested.
     if not resource_binding_only:
         relationships.extend(
             [
