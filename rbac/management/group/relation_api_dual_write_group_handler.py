@@ -33,7 +33,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.model import BindingMapping, Role
 from management.tenant_mapping.model import TenantMapping
-from migration_tool.utils import create_relationship
+from management.tenant_service.relations import DefaultRoleBindingType, default_role_binding_tuples
 
 from api.models import Tenant
 
@@ -155,8 +155,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             )
 
         if remove_default_access_from is not None:
-            default_binding = self._default_binding(mapping=remove_default_access_from)
-            self.relations_to_remove.append(default_binding)
+            self.relations_to_remove.extend(
+                self._default_binding(resource_binding_only=True, mapping=remove_default_access_from)
+            )
 
     def generate_relations_reset_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
@@ -196,8 +197,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             )
 
         if remove_default_access_from is not None:
-            default_binding = self._default_binding(mapping=remove_default_access_from)
-            self.relations_to_remove.append(default_binding)
+            self.relations_to_remove.extend(
+                self._default_binding(resource_binding_only=True, mapping=remove_default_access_from)
+            )
 
     def replicate(self):
         """Replicate generated relations."""
@@ -245,24 +247,37 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             custom_ids.append(role.id)
 
         if self.group.platform_default:
-            self.relations_to_add.append(self._default_binding())
+            # If we are restoring the default role binding, we need to handle the case where *none* of the
+            # relationships exist. This can happen if we bootstrapped a tenant that already had a custom default
+            # group (in which case V2TenantBootstrapService will indeed refuse to create a default role binding at all),
+            # and now we are removing that custom default group.
+            self.relations_to_add.extend(self._default_binding(resource_binding_only=False))
         else:
             self.principals = self.group.principals.all()
             self.relations_to_remove.extend(self._generate_member_relations())
 
-    def _default_binding(self, mapping: Optional[TenantMapping] = None) -> Relationship:
-        """Calculate default bindings from tenant mapping."""
+    def _default_binding(
+        self,
+        resource_binding_only: bool,
+        mapping: Optional[TenantMapping] = None,
+    ) -> list[Relationship]:
+        """
+        Calculate default bindings from tenant mapping.
+
+        resource_binding_only has the same meaning as in default_role_binding_tuples. It should be set to True when
+        calculating the tuples to remove. (Note that this occurs when handling the *addition* of a custom default group,
+        since that is when the default role binding is unbound.)
+        """
         if mapping is None:
             mapping = TenantMapping.objects.get(tenant=self.group.tenant)
         else:
             assert mapping.tenant.id == self.group.tenant_id, "Tenant mapping does not match group tenant."
 
-        return create_relationship(
-            ("rbac", "workspace"),
-            str(self.default_workspace.id),
-            ("rbac", "role_binding"),
-            str(mapping.default_role_binding_uuid),
-            "binding",
+        return default_role_binding_tuples(
+            tenant_mapping=mapping,
+            target_workspace_uuid=str(self.default_workspace.id),
+            role_type=DefaultRoleBindingType.USER,
+            resource_binding_only=resource_binding_only,
         )
 
     def set_expected_empty_relation_reason(self, reason):

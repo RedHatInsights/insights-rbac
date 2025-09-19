@@ -34,6 +34,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -662,6 +663,48 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         )
 
         self.assertEqual(len(tuples), 1)
+
+    def test_custom_default_group_before_bootstrap(self):
+        replicator = InMemoryRelationReplicator(self.tuples)
+        bootstrap_service = V2TenantBootstrapService(replicator=replicator)
+
+        self.switch_tenant(self.fixture.new_unbootstrapped_tenant(org_id="56789"))
+
+        # Hypothesis: a custom default access group is created before the tenant is bootstrapped (e.g. before V2
+        # existed).
+        default_group = Group.objects.create(
+            tenant=self.tenant,
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+        )
+
+        bootstrap_service.bootstrap_tenant(self.tenant)
+
+        mapping: TenantMapping = self.tenant.tenant_mapping
+        platform_default_policy: Policy = Policy.objects.get(
+            group=Group.objects.get(tenant=self.fixture.public_tenant, platform_default=True)
+        )
+
+        # Ensure that we actually use the correct default group UUID.
+        self.assertEqual(default_group.uuid, mapping.default_group_uuid)
+
+        # After bootstrap, no default role binding should exist, since a custom default access group exists.
+        self.expect_role_bindings_to_workspace(
+            num=0,
+            workspace=self.default_workspace(self.tenant),
+            for_v2_roles=[str(platform_default_policy.uuid)],
+            for_groups=[mapping.default_group_uuid],
+        )
+
+        self.given_group_removed(default_group)
+
+        # Once we have removed the default group, the default role binding should be restored.
+        self.expect_1_role_binding_to_workspace(
+            workspace=self.default_workspace(self.tenant),
+            for_v2_roles=[str(platform_default_policy.uuid)],
+            for_groups=[mapping.default_group_uuid],
+        )
 
 
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
