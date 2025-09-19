@@ -689,11 +689,6 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         # Ensure that we actually use the correct default group UUID.
         self.assertEqual(default_group.uuid, mapping.default_group_uuid)
 
-        print()
-        print(f"Default role binding: {str(mapping.default_role_binding_uuid)}")
-        print(f"Default group: {str(mapping.default_group_uuid)}")
-        print(f"After bootstrap: {self.tuples}")
-
         self.expect_role_bindings_to_workspace(
             num=0,
             workspace=self.default_workspace(self.tenant),
@@ -701,11 +696,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             for_groups=[mapping.default_group_uuid],
         )
 
-        print(f"Before removal: {self.tuples}")
-
         self.given_group_removed(default_group)
-
-        print(f"After removal: {self.tuples}")
 
         # Ensure that, once we have removed the default group, the default role binding is restored.
         self.expect_1_role_binding_to_workspace(
