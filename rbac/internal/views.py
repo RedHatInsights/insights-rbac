@@ -59,6 +59,7 @@ from management.group.relation_api_dual_write_group_handler import RelationApiDu
 from management.inventory_checker.inventory_api_check import (
     BootstrappedTenantInventoryChecker,
     GroupPrincipalInventoryChecker,
+    RoleRelationInventoryChecker,
     WorkspaceRelationInventoryChecker,
 )
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
@@ -76,6 +77,7 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
 from management.role.model import Access
+from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -114,6 +116,7 @@ jwt_manager = JWTManager(jwt_provider, jwt_cache)
 BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
 GroupPrincipalChecker = GroupPrincipalInventoryChecker()
 WorkspaceRelationChecker = WorkspaceRelationInventoryChecker()
+RoleRelationChecker = RoleRelationInventoryChecker()
 
 
 @contextmanager
@@ -1875,6 +1878,48 @@ def check_workspace_relation(request, workspace_uuid):
                 status=500,
             )
     return JsonResponse(workspace_check_response, safe=False)
+
+
+def check_role(request, role_uuid):
+    """POST to check a role has correct V2 relations and bindings are correct on Inventory API."""
+    try:
+        role = get_object_or_404(Role, uuid=role_uuid)
+        bindings = role.binding_mappings.all()
+        relations_dual_write_handler = RelationApiDualWriteHandler(
+            role=role, event_type=ReplicationEventType.UPDATE_SYSTEM_ROLE, tenant=role.tenant
+        )
+
+        if bindings:
+            with transaction.atomic():
+                relations_dual_write_handler.prepare_for_update()
+                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+        else:
+            with transaction.atomic():
+                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+
+        role_relations = relations_dual_write_handler.role_relations
+
+        serialized_relations = [json_format.MessageToDict(rel) for rel in role_relations]
+
+        role_correct = RoleRelationChecker.check_role(serialized_relations, role.uuid)
+        return JsonResponse(
+            {
+                "V2_role_checks": {
+                    "v1_role_uuid": role.uuid,
+                    "v1_role_name": role.name,
+                    "V2_role_relations_correct": role_correct,
+                },
+            }
+        )
+    except RpcError as e:
+        return JsonResponse(
+            {"detail": "gRPC error occurred during inventory role relation check", "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"detail": "Unexpected error occurred during inventory role relation check", "error": str(e)}, status=500
+        )
 
 
 @require_http_methods(["GET", "DELETE"])
