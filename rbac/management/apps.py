@@ -22,7 +22,15 @@ from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
 from management.seeds import group_seeding, permission_seeding, role_seeding
 
-from rbac.settings import GROUP_SEEDING_ENABLED, PERMISSION_SEEDING_ENABLED, ROLE_SEEDING_ENABLED
+from rbac.settings import (
+    GROUP_SEEDING_ENABLED,
+    PERMISSION_SEEDING_ENABLED,
+    ROLE_SEEDING_ENABLED,
+    SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID,
+    SYSTEM_ADMIN_TENANT_ROLE_UUID,
+    SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID,
+    SYSTEM_DEFAULT_TENANT_ROLE_UUID,
+)
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -51,3 +59,15 @@ class ManagementConfig(AppConfig):
                 return
             else:
                 logger.error("Error: %s.", op_error)
+
+        required_vars = {
+            "SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID": SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID,
+            "SYSTEM_DEFAULT_TENANT_ROLE_UUID": SYSTEM_DEFAULT_TENANT_ROLE_UUID,
+            "SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID": SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID,
+            "SYSTEM_ADMIN_TENANT_ROLE_UUID": SYSTEM_ADMIN_TENANT_ROLE_UUID,
+        }
+
+        missing = [key for key, value in required_vars.items() if not value]
+
+        if missing:
+            logger.error("[Startup Config] Missing required environment variables: %s", ", ".join(missing))
