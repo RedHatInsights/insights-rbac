@@ -99,16 +99,10 @@ def default_role_binding_tuples(
         role_binding_uuid = str(tenant_mapping.default_role_binding_uuid)
         default_group_uuid = str(tenant_mapping.default_group_uuid)
         default_role_uuid = policy_cache.platform_default_policy_uuid()
-
-        if default_role_uuid is None:
-            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
     elif role_type == DefaultRoleBindingType.ADMIN:
         role_binding_uuid = str(tenant_mapping.default_admin_role_binding_uuid)
         default_group_uuid = str(tenant_mapping.default_admin_group_uuid)
         default_role_uuid = policy_cache.admin_default_policy_uuid()
-
-        if default_role_uuid is None:
-            logger.warning("No admin default role found for public tenant. Default access will not be set up.")
     else:
         raise ValueError(f"Unexpected role type: {role_type}")
 
