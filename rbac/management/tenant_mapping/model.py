@@ -38,5 +38,13 @@ class TenantMapping(models.Model):
     default_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     # The admin default group UUID, for the same purpose as above, except for admin users.
     default_admin_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+
+    # UUIDs for the role bindings that bind the user default and admin default groups to the appropriate platform
+    # groups. One such role binding exists for each of the scopes that has default roles: the tenant itself, the
+    # tenant's root workspace, and the tenant's default workspace.
     default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    root_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    root_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    tenant_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    tenant_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
