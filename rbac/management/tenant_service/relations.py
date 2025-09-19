@@ -20,7 +20,6 @@ import logging
 from typing import Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
-
 from management.models import Group
 from management.tenant_mapping.model import TenantMapping
 from migration_tool.utils import create_relationship
@@ -72,6 +71,8 @@ class GlobalPolicyIdCache:
 
 
 class DefaultRoleBindingType(enum.StrEnum):
+    """Represents the types of default role binding. This mirrors the split in TenantMapping."""
+
     USER = "user"
     ADMIN = "admin"
 

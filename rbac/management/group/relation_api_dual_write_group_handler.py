@@ -33,7 +33,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.model import BindingMapping, Role
 from management.tenant_mapping.model import TenantMapping
-from management.tenant_service.relations import default_role_binding_tuples, DefaultRoleBindingType
+from management.tenant_service.relations import DefaultRoleBindingType, default_role_binding_tuples
 
 from api.models import Tenant
 
@@ -263,6 +263,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     ) -> list[Relationship]:
         """
         Calculate default bindings from tenant mapping.
+
+        resource_binding_only has the same meaning as in default_role_binding_tuples. It should be set to True when
+        calculating the tuples to remove. (Note that this occurs when handling the *addition* of a custom default group,
+        since that is when the default role binding is unbound.)
         """
         if mapping is None:
             mapping = TenantMapping.objects.get(tenant=self.group.tenant)
