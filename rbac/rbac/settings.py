@@ -38,7 +38,7 @@ from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
 from feature_flags import FEATURE_FLAGS
-from django.core.exceptions import ImproperlyConfigured
+
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -552,22 +552,11 @@ WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_
 ROOT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("ROOT_SCOPE_PERMISSIONS", default="")
 TENANT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("TENANT_SCOPE_PERMISSIONS", default="")
 
-# Org level permissions parent role UUIDs
-SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID = os.getenv("SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID", "")
-if SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID == "":
-    raise ImproperlyConfigured("Missing required environment variable: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID")
-
-SYSTEM_DEFAULT_TENANT_ROLE_UUID = os.getenv("SYSTEM_DEFAULT_TENANT_ROLE_UUID", "")
-if SYSTEM_DEFAULT_TENANT_ROLE_UUID == "":
-    raise ImproperlyConfigured("Missing required environment variable: SYSTEM_DEFAULT_TENANT_ROLE_UUID")
-
-SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID = os.getenv("SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID", "")
-if SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID == "":
-    raise ImproperlyConfigured("Missing required environment variable: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID")
-
-SYSTEM_ADMIN_TENANT_ROLE_UUID = os.getenv("SYSTEM_ADMIN_TENANT_ROLE_UUID", "")
-if SYSTEM_ADMIN_TENANT_ROLE_UUID == "":
-    raise ImproperlyConfigured("Missing required environment variable: SYSTEM_ADMIN_TENANT_ROLE_UUID")
+# Org level permissons parent role uuids
+SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID", default="")
+SYSTEM_DEFAULT_TENANT_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_DEFAULT_TENANT_ROLE_UUID", default="")
+SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID", default="")
+SYSTEM_ADMIN_TENANT_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_ADMIN_TENANT_ROLE_UUID", default="")
 
 # Manipulation of response to include ungrouped hosts id
 ADD_UNGROUPED_HOSTS_ID = ENVIRONMENT.bool("ADD_UNGROUPED_HOSTS_ID", default=False)
