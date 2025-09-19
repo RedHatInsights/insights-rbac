@@ -689,6 +689,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         # Ensure that we actually use the correct default group UUID.
         self.assertEqual(default_group.uuid, mapping.default_group_uuid)
 
+        # After bootstrap, no default role binding should exist, since a custom default access group exists.
         self.expect_role_bindings_to_workspace(
             num=0,
             workspace=self.default_workspace(self.tenant),
@@ -698,7 +699,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.given_group_removed(default_group)
 
-        # Ensure that, once we have removed the default group, the default role binding is restored.
+        # Once we have removed the default group, the default role binding should be restored.
         self.expect_1_role_binding_to_workspace(
             workspace=self.default_workspace(self.tenant),
             for_v2_roles=[str(platform_default_policy.uuid)],
