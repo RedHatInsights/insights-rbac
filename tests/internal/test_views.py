@@ -3972,7 +3972,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     """Test the /_private/api/inventory/ endpoints from internal viewset."""
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
-    @patch("internal.views.create_client_channel")
+    @patch("management.utils.create_client_channel")
     def test_check_inventory(self, mock_create_channel, mock_get_token):
         """Test a request to check inventory endpoint returns the correct response."""
 
@@ -4003,7 +4003,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
             self.assertEqual(response_body["allowed"], True)
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
-    @patch("internal.views.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
+    @patch("management.utils.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
     def test_check_inventory_grpc_error(self, mock_channel, mock_token):
         """Test a request to check inventory endpoint returns the correct response in case of grpc error."""
 
@@ -4029,7 +4029,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
         self.assertEqual(response_body["error"], "Simulated GRPC error")
 
-    @patch("internal.views.create_client_channel", side_effect=Exception("Simulated internal error"))
+    @patch("internal.utils.create_client_channel", side_effect=Exception("Simulated internal error"))
     def test_check_inventory_error(self, mock_channel):
         """Test a request to check inventory endpoint returns the correct response in case of an error."""
 
@@ -4055,7 +4055,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["error"], "Simulated internal error")
 
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
-    @patch("internal.views.create_client_channel")
+    @patch("management.utils.create_client_channel")
     def test_check_inventory_invalid_body(self, mock_create_channel, mock_get_token):
         """Test a request to check inventory endpoint returns the correct response in case of input validation failure."""
 
