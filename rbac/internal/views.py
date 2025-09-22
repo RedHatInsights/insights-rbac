@@ -1822,21 +1822,17 @@ def check_workspace_relation(request, workspace_uuid):
     # Check workspaces descendants
     if workspace and query_params.get("descendants") == "true":
         workspace_descendants = workspace.descendants()
-        responses = []
+        workspace_pairs = [(str(w.id), str(w.parent.id)) for w in workspace_descendants]
         try:
-            for workspace in workspace_descendants:
-                workspace_uuid = str(workspace.id)
-                workspace_parent = str(workspace.parent.id)
-                workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent)
-                responses.append(
-                    {
-                        "org_id": workspace.tenant.org_id,
-                        "workspace_id": workspace_uuid,
-                        "workspace_parent_id": workspace_parent,
-                        "workspace_relation_correct": workspace_correct,
-                    }
-                )
-            workspace_check_response = responses
+            if workspace_pairs:
+                workspace_uuid = str(workspace_uuid)
+                workspace_descendants_correct = WorkspaceRelationChecker.check_workspace_descendants(workspace_pairs)
+                response = {
+                    "org_id": workspace.tenant.org_id,
+                    "workspace_id": workspace_uuid,
+                    "workspace_descendants_correct": workspace_descendants_correct,
+                }
+                return JsonResponse(response, safe=False)
         except RpcError as e:
             return JsonResponse(
                 {
@@ -1851,8 +1847,18 @@ def check_workspace_relation(request, workspace_uuid):
                 status=500,
             )
     elif workspace:
-        workspace_parent_id = str(workspace.parent.id)
+        workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
         workspace_uuid_str = str(workspace_uuid)
+        if workspace.type == Workspace.Types.ROOT:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Root workspace provided — this is not a valid input as it does not have a parent "
+                        "workspace. Request skipped."
+                    )
+                },
+                status=400,
+            )
         try:
             workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
             workspace_check_response = {
@@ -2013,3 +2019,87 @@ def workspace_removal(request):
     except Exception as e:
         logger.exception(f"Bulk workspace deletion failed: {e}")
         return HttpResponse(str(e), status=500)
+
+
+def send_kafka_test_message(request):
+    """Send a test Debezium message to the Kafka consumer topic.
+
+    GET /_private/api/utils/kafka_test_message/
+
+    Sends a predefined test message with sample relations.
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    if not settings.KAFKA_ENABLED:
+        return HttpResponse("Kafka is not enabled", status=400)
+
+    try:
+        from core.kafka import RBACProducer
+        import uuid
+
+        # Create sample test data
+        relations_to_add = [
+            {
+                "resource": {
+                    "type": {"namespace": "rbac", "name": "workspace"},
+                    "id": f"test-workspace-{uuid.uuid4()}",
+                },
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": f"test-principal-{uuid.uuid4()}",
+                    }
+                },
+                "relation": "member",
+            }
+        ]
+        relations_to_remove = []
+
+        # Create the payload for the relations message
+        test_payload = {
+            "relations_to_add": relations_to_add,
+            "relations_to_remove": relations_to_remove,
+        }
+
+        # Create a Debezium-format message
+        debezium_message = {
+            "schema": {
+                "type": "string",
+                "optional": False,
+                "name": "io.debezium.data.Json",
+                "version": 1,
+            },
+            "payload": json.dumps(test_payload),
+        }
+
+        # Send the message
+        producer = RBACProducer()
+        topic = settings.RBAC_KAFKA_CONSUMER_TOPIC
+
+        if not topic:
+            return HttpResponse("RBAC_KAFKA_CONSUMER_TOPIC is not configured", status=400)
+
+        producer.send_kafka_message(topic, debezium_message)
+
+        logger.info(f"Test Kafka message sent to topic '{topic}' by user '{request.user.username}'")
+
+        response_data = {
+            "message": "Test message sent successfully",
+            "topic": topic,
+            "message_format": "debezium",
+            "payload_summary": {
+                "relations_to_add_count": len(relations_to_add),
+                "relations_to_remove_count": len(relations_to_remove),
+            },
+            "sample_data": {
+                "relations_to_add": relations_to_add,
+                "relations_to_remove": relations_to_remove,
+            },
+        }
+
+        return JsonResponse(response_data, status=200)
+
+    except Exception as e:
+        logger.error(f"Error sending test Kafka message: {e}")
+        return JsonResponse({"error": "Error sending test message", "detail": str(e)}, status=500)

@@ -202,6 +202,34 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
 class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
     """Subclass to check workspace parent relations are correct on inventory api."""
 
+    def check_workspace_descendants(self, workspace_pairs):
+        """Core logic to check workspace descendant relations on inventory api."""
+        checks = []
+        # Build the check requests for checking parent-child workspace relationship
+        for workspace_uuid, workspace_parent_uuid in workspace_pairs:
+            check_request = CheckRequest(
+                object=resource_reference_pb2.ResourceReference(
+                    resource_id=workspace_parent_uuid,
+                    resource_type="workspace",
+                    reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                ),
+                relation="parent",
+                subject=subject_reference_pb2.SubjectReference(
+                    resource=resource_reference_pb2.ResourceReference(
+                        resource_id=workspace_uuid,
+                        resource_type="workspace",
+                        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                    )
+                ),
+            )
+            checks.append(check_request)
+        workspace_check = self.check_inventory_core(checks)
+        if not workspace_check:
+            logger.warning(f"{workspace_uuid} does not have the expected parent workspace.")
+        else:
+            logger.info(f"{workspace_uuid} has the correct parent workspace.")
+        return workspace_check
+
     def check_workspace(self, workspace_id, workspace_parent_id):
         """Core logic to check workspace relation on inventory api."""
         # Build the check request for checking parent-child workspace relationship
@@ -220,7 +248,6 @@ class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
                 )
             ),
         )
-
         workspace_check = self.check_inventory_core(check_request)
         if not workspace_check:
             logger.warning(f"{workspace_id} does not have the expected parent workspace.")
