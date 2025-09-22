@@ -15,12 +15,109 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the permission model."""
-# from django.test import TestCase
-
-# from unittest.mock import Mock
+from unittest import TestCase
 
 from management.models import Permission
+from management.permission.model import PermissionValue
 from tests.identity_request import IdentityRequest
+
+INVALID_PERMISSION_TUPLES = [
+    # Invalid due to None.
+    (None, None, None),
+    (None, "resource", "verb"),
+    ("app", None, "verb"),
+    ("app", "resource", None),
+    # Invalid due to app wildcard.
+    ("a*", "resource", "verb"),
+    ("*", "resource", "verb"),
+    # Invalid due to partial wildcard.
+    ("app", "r*", "verb"),
+    ("app", "resource", "v*"),
+    # Invalid due to colons.
+    ("app:extra", "resource", "verb"),
+    ("app", "resource:extra", "verb"),
+    ("app", "resource", "verb:extra"),
+]
+
+VALID_PERMISSION_TUPLES = [
+    ("app", "resource", "verb"),
+    ("app", "resource", "*"),
+    ("app", "*", "verb"),
+    ("app", "*", "*"),
+]
+
+INVALID_PERMISSIONS_V1 = [
+    "",
+    "app",
+    "app:resource",
+    "app:resource:verb:extra",
+    "*:resource:verb",
+    "app:resource:verb*",
+    "app:resource*:verb",
+    "app*:resource:verb",
+]
+
+VALID_PERMISSIONS_V1 = [
+    ("app:resource:verb", ("app", "resource", "verb")),
+    ("app:resource:*", ("app", "resource", "*")),
+    ("app:*:verb", ("app", "*", "verb")),
+    ("app:*:*", ("app", "*", "*")),
+]
+
+
+class PermissionValueTests(TestCase):
+    """Test the PermissionValue class."""
+
+    def test_construct_valid(self):
+        """Test that valid PermissionValues can be constructed."""
+        for permission_args in VALID_PERMISSION_TUPLES:
+            with self.subTest(permission=permission_args):
+                value = PermissionValue(*permission_args)
+                self.assertEqual(permission_args[0], value.application)
+                self.assertEqual(permission_args[1], value.resource_type)
+                self.assertEqual(permission_args[2], value.verb)
+
+    def test_construct_invalid(self):
+        """Test that invalid PermissionValues cannot be constructed."""
+        for permission_args in INVALID_PERMISSION_TUPLES:
+            with self.subTest(permission=permission_args):
+                self.assertRaises(ValueError, PermissionValue, *permission_args)
+
+    def test_parse_valid(self):
+        """Test that parse_v1 accepts valid V1 permission strings."""
+        for v1_string, expected in VALID_PERMISSIONS_V1:
+            with self.subTest(v1_string=v1_string, expected_permission=expected):
+                value = PermissionValue.parse_v1(v1_string)
+                self.assertEqual(PermissionValue(*expected), value)
+
+    def test_parse_invalid(self):
+        """Test that parse_v1 does not accept invalid V1 permission strings."""
+        for v1_string in INVALID_PERMISSIONS_V1:
+            with self.subTest(v1_string=v1_string):
+                self.assertRaises(ValueError, PermissionValue.parse_v1, v1_string)
+
+    def test_v1_string_invariant(self):
+        """Test that v1_string returns the appropriate V1 permission string."""
+        for v1_string, _ in VALID_PERMISSIONS_V1:
+            with self.subTest(v1_string=v1_string):
+                value = PermissionValue.parse_v1(v1_string)
+                self.assertEqual(v1_string, value.v1_string())
+
+    def test_with_wildcard(self):
+        """Test applying with_* wildcard methods works on a non-wildcard permission."""
+        base = PermissionValue("app", "resource", "verb")
+
+        self.assertEqual(PermissionValue("app", "resource", "*"), base.with_unconstrained_verb())
+        self.assertEqual(PermissionValue("app", "*", "verb"), base.with_unconstrained_resource_type())
+        self.assertEqual(PermissionValue("app", "*", "*"), base.with_application_only())
+
+    def test_with_wildcard_duplicate(self):
+        """Test applying with_* wildcard methods works leaves wildcards intact."""
+        app_only = PermissionValue("app", "*", "*")
+
+        self.assertEqual(app_only, app_only.with_unconstrained_verb())
+        self.assertEqual(app_only, app_only.with_unconstrained_resource_type())
+        self.assertEqual(app_only, app_only.with_application_only())
 
 
 class PermissionModelTests(IdentityRequest):

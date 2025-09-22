@@ -2929,6 +2929,110 @@
           }
         }
       }
+    },
+    "/utils/kafka_test_message/": {
+      "get": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Send test Kafka message",
+        "description": "Send a test Debezium message to the Kafka consumer topic for testing purposes. This endpoint generates and sends a predefined test message with sample relations.",
+        "operationId": "sendKafkaTestMessage",
+        "responses": {
+          "200": {
+            "description": "Test message sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KafkaTestMessageResponse"
+                },
+                "examples": {
+                  "Success": {
+                    "value": {
+                      "message": "Test message sent successfully",
+                      "topic": "outbox.event.rbac-consumer-replication-event",
+                      "message_format": "debezium",
+                      "payload_summary": {
+                        "relations_to_add_count": 1,
+                        "relations_to_remove_count": 0
+                      },
+                      "sample_data": {
+                        "relations_to_add": [
+                          {
+                            "resource": {
+                              "type": {
+                                "namespace": "rbac",
+                                "name": "workspace"
+                              },
+                              "id": "test-workspace-f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                            },
+                            "subject": {
+                              "subject": {
+                                "type": {
+                                  "namespace": "rbac",
+                                  "name": "principal"
+                                },
+                                "id": "test-principal-6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                              }
+                            },
+                            "relation": "member"
+                          }
+                        ],
+                        "relations_to_remove": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - Kafka not enabled or topic not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "KafkaDisabled": {
+                    "value": "Kafka is not enabled"
+                  },
+                  "TopicNotConfigured": {
+                    "value": "RBAC_KAFKA_CONSUMER_TOPIC is not configured"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed - only GET is allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "SendError": {
+                    "value": {
+                      "detail": "Error sending test message: Connection failed"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 },
@@ -3603,6 +3707,126 @@
           "modified",
           "type",
           "tenant_id"
+        ]
+      },
+      "KafkaTestMessageResponse": {
+        "type": "object",
+        "description": "Response from sending test Kafka message",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Test message sent successfully"
+          },
+          "topic": {
+            "type": "string",
+            "example": "outbox.event.rbac-consumer-replication-event"
+          },
+          "message_format": {
+            "type": "string",
+            "example": "debezium"
+          },
+          "payload_summary": {
+            "type": "object",
+            "properties": {
+              "relations_to_add_count": {
+                "type": "integer",
+                "example": 1
+              },
+              "relations_to_remove_count": {
+                "type": "integer",
+                "example": 0
+              }
+            }
+          },
+          "sample_data": {
+            "type": "object",
+            "description": "The sample data that was sent in the test message",
+            "properties": {
+              "relations_to_add": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Relation"
+                }
+              },
+              "relations_to_remove": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Relation"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "message",
+          "topic",
+          "message_format",
+          "payload_summary",
+          "sample_data"
+        ]
+      },
+      "Relation": {
+        "type": "object",
+        "description": "A relation between a resource and a subject",
+        "properties": {
+          "resource": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "object",
+                "properties": {
+                  "namespace": {
+                    "type": "string",
+                    "example": "rbac"
+                  },
+                  "name": {
+                    "type": "string",
+                    "example": "workspace"
+                  }
+                }
+              },
+              "id": {
+                "type": "string",
+                "example": "workspace-123"
+              }
+            }
+          },
+          "subject": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "object",
+                    "properties": {
+                      "namespace": {
+                        "type": "string",
+                        "example": "rbac"
+                      },
+                      "name": {
+                        "type": "string",
+                        "example": "principal"
+                      }
+                    }
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "principal-456"
+                  }
+                }
+              }
+            }
+          },
+          "relation": {
+            "type": "string",
+            "example": "member"
+          }
+        },
+        "required": [
+          "resource",
+          "subject",
+          "relation"
         ]
       }
     }
