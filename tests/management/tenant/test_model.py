@@ -190,7 +190,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         )
 
     def test_will_reuse_default_access_when_already_customized(self):
-        """Test just to confirm behavior but this is not a valid state and this scenario should never happen."""
+        """Test that bootstrapping a single tenant with a custom default group will use that group."""
         tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
         self.fixture.custom_default_group(tenant)
 
