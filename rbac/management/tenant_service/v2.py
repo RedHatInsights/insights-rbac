@@ -316,8 +316,6 @@ class V2TenantBootstrapService:
             return bootstrap
 
     def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
-        tenant = self._tenant_with_default_groups(tenant)
-
         if tenant.tenant_name == "public":
             raise ValueError("Cannot bootstrap public tenant.")
 
@@ -326,9 +324,11 @@ class V2TenantBootstrapService:
         root_workspace.save(force_insert=True)
         default_workspace.save(force_insert=True)
 
+        platform_default_groups = self._tenant_default_groups(tenant)
+
         kwargs = {"tenant": tenant}
-        if tenant.platform_default_groups:
-            group_uuid = tenant.platform_default_groups[0].uuid
+        if platform_default_groups:
+            group_uuid = platform_default_groups[0].uuid
             logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
             kwargs["default_group_uuid"] = group_uuid
 
@@ -369,18 +369,11 @@ class V2TenantBootstrapService:
             Prefetch(
                 "group_set",
                 queryset=Group.objects.filter(platform_default=True).order_by(),
-                to_attr="platform_default_groups",
+                to_attr="_v2_bootstrap_cached_default_groups",
             )
         )
 
-    def _tenant_with_default_groups(self, tenant: Tenant) -> Tenant:
-        """Retrieve a new tenant with cached platform_default_groups if the provided Tenant lacks that attribute."""
-        if hasattr(tenant, "platform_default_groups"):
-            return tenant
-
-        return self._query_with_default_groups(Tenant.objects.filter(pk=tenant.pk)).get()
-
-    def _tenants_with_default_groups(self, tenants: list[Tenant]) -> list[Tenant]:
+    def _fresh_tenants_with_default_groups(self, tenants: list[Tenant]) -> list[Tenant]:
         loaded = list(self._query_with_default_groups(Tenant.objects.filter(pk__in=(tenant.pk for tenant in tenants))))
 
         if len(loaded) != len(tenants):
@@ -390,14 +383,21 @@ class V2TenantBootstrapService:
 
         return loaded
 
+    def _tenant_default_groups(self, tenant: Tenant) -> list[Group]:
+        default_groups = getattr(tenant, "_v2_bootstrap_cached_default_groups", None)
+
+        if default_groups is None:
+            default_groups = list(Group.objects.filter(tenant=tenant, platform_default=True).order_by())
+            tenant._v2_bootstrap_cached_default_groups = default_groups
+
+        return default_groups
+
     def _get_or_bootstrap_tenants(self, org_ids: set, ready: bool) -> list[BootstrappedTenant]:
         """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
         existing_tenants = {
             tenant.org_id: tenant
-            for tenant in self._query_with_default_groups(
-                Tenant.objects.filter(org_id__in=org_ids).select_related("tenant_mapping")
-            )
+            for tenant in Tenant.objects.filter(org_id__in=org_ids).select_related("tenant_mapping")
         }
 
         # An existing tenant might have been bootstrapped and already has mapping and workspaces
@@ -424,15 +424,16 @@ class V2TenantBootstrapService:
 
     def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
         # Set up workspace hierarchy for Tenant.
-        tenants = self._tenants_with_default_groups(tenants)
+        tenants = self._fresh_tenants_with_default_groups(tenants)
         workspaces: list[Workspace] = []
         relationships: list[Relationship] = []
         mappings_to_create: list[TenantMapping] = []
         default_workspace_ids: list[UUID] = []
         for tenant in tenants:
+            platform_default_groups = self._tenant_default_groups(tenant)
             kwargs = {"tenant": tenant}
-            if tenant.platform_default_groups:
-                group_uuid = tenant.platform_default_groups[0].uuid
+            if platform_default_groups:
+                group_uuid = platform_default_groups[0].uuid
                 logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
                 kwargs["default_group_uuid"] = group_uuid
             mappings_to_create.append(TenantMapping(**kwargs))
@@ -549,8 +550,6 @@ class V2TenantBootstrapService:
         platform_default_role_uuid = self._get_platform_default_policy_uuid()
         admin_default_role_uuid = self._get_admin_default_policy_uuid()
 
-        tenant = self._tenant_with_default_groups(tenant)
-
         if platform_default_role_uuid is None:
             logger.warning("No platform default role found for public tenant. Default access will not be set up.")
 
@@ -572,7 +571,7 @@ class V2TenantBootstrapService:
         # 2. If tenant mapping does not exist, create it via this same bootstrap process.
         #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
         #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role_uuid and not tenant.platform_default_groups:
+        if platform_default_role_uuid and not self._tenant_default_groups(tenant):
             tuples_to_add.extend(
                 self._default_binding_tuples(
                     default_workspace_id,
