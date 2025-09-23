@@ -64,3 +64,12 @@ class TenantMapping(models.Model):
             return self.default_admin_group_uuid
         else:
             raise ValueError(f"Unexpected access type: {access_type}")
+
+    def default_role_binding_uuid_for(self, access_type: DefaultAccessType) -> uuid.UUID:
+        """Get the UUID for the tenant's default role binding (in the default workspace) of the provided access type."""
+        if access_type == DefaultAccessType.USER:
+            return self.default_role_binding_uuid
+        elif access_type == DefaultAccessType.ADMIN:
+            return self.default_admin_role_binding_uuid
+        else:
+            raise ValueError(f"Unexpected access type: {access_type}")
