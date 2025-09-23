@@ -33,7 +33,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.model import BindingMapping, Role
 from management.tenant_mapping.model import TenantMapping
-from management.tenant_service.relations import DefaultRoleBindingType, default_role_binding_tuples
+from management.tenant_service.relations import DefaultAccessType, default_role_binding_tuples
 
 from api.models import Tenant
 
@@ -276,7 +276,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         return default_role_binding_tuples(
             tenant_mapping=mapping,
             target_workspace_uuid=str(self.default_workspace.id),
-            role_type=DefaultRoleBindingType.USER,
+            access_type=DefaultAccessType.USER,
             resource_binding_only=resource_binding_only,
         )
 

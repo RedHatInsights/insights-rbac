@@ -27,8 +27,8 @@ from migration_tool.utils import create_relationship
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class DefaultRoleBindingType(enum.StrEnum):
-    """Represents the types of default role binding. This mirrors the split in TenantMapping."""
+class DefaultAccessType(enum.StrEnum):
+    """Represents the two types of default access resources. This mirrors the split in TenantMapping."""
 
     USER = "user"
     ADMIN = "admin"
@@ -37,7 +37,7 @@ class DefaultRoleBindingType(enum.StrEnum):
 def default_role_binding_tuples(
     tenant_mapping: TenantMapping,
     target_workspace_uuid: str,
-    role_type: DefaultRoleBindingType,
+    access_type: DefaultAccessType,
     resource_binding_only: bool = False,
     policy_cache: Optional[GlobalPolicyIdCache] = None,
 ) -> list[Relationship]:
@@ -53,16 +53,16 @@ def default_role_binding_tuples(
     if policy_cache is None:
         policy_cache = GlobalPolicyIdCache()
 
-    if role_type == DefaultRoleBindingType.USER:
+    if access_type == DefaultAccessType.USER:
         role_binding_uuid = str(tenant_mapping.default_role_binding_uuid)
         default_group_uuid = str(tenant_mapping.default_group_uuid)
         default_role_uuid = str(policy_cache.platform_default_policy_uuid())
-    elif role_type == DefaultRoleBindingType.ADMIN:
+    elif access_type == DefaultAccessType.ADMIN:
         role_binding_uuid = str(tenant_mapping.default_admin_role_binding_uuid)
         default_group_uuid = str(tenant_mapping.default_admin_group_uuid)
         default_role_uuid = str(policy_cache.admin_default_policy_uuid())
     else:
-        raise ValueError(f"Unexpected role type: {role_type}")
+        raise ValueError(f"Unexpected access type: {access_type}")
 
     # Always add the relationship from the role binding to the target resource.
     relationships = [

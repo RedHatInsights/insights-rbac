@@ -16,7 +16,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.platform import DefaultGroupNotAvailableError, GlobalPolicyIdCache
 from management.tenant_mapping.model import TenantMapping, logger
-from management.tenant_service.relations import DefaultRoleBindingType, default_role_binding_tuples
+from management.tenant_service.relations import DefaultAccessType, default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
 from management.workspace.model import Workspace
@@ -533,7 +533,7 @@ class V2TenantBootstrapService:
                     default_role_binding_tuples(
                         tenant_mapping=mapping,
                         target_workspace_uuid=default_workspace_id,
-                        role_type=DefaultRoleBindingType.USER,
+                        access_type=DefaultAccessType.USER,
                         policy_cache=self._policy_cache,
                     )
                 )
@@ -550,7 +550,7 @@ class V2TenantBootstrapService:
                 default_role_binding_tuples(
                     tenant_mapping=mapping,
                     target_workspace_uuid=default_workspace_id,
-                    role_type=DefaultRoleBindingType.ADMIN,
+                    access_type=DefaultAccessType.ADMIN,
                     policy_cache=self._policy_cache,
                 )
             )
