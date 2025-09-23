@@ -39,3 +39,14 @@ class TenantMappingTests(TestCase):
             self.tenant_mapping.default_admin_group_uuid,
             self.tenant_mapping.group_uuid_for(DefaultAccessType.ADMIN),
         )
+
+    def test_default_role_binding_uuid_for(self):
+        self.assertEqual(
+            self.tenant_mapping.default_role_binding_uuid,
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.USER),
+        )
+
+        self.assertEqual(
+            self.tenant_mapping.default_admin_role_binding_uuid,
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.ADMIN),
+        )
