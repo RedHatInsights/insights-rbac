@@ -15,11 +15,7 @@ ENV PYTHON_VERSION=3.12 \
     APP_HOME=/opt/rbac/rbac \
     APP_MODULE=rbac.wsgi \
     APP_NAMESPACE=rbac \
-    PLATFORM="el8" \
-    SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="root-workspace-uuid" \
-    SYSTEM_DEFAULT_TENANT_ROLE_UUID="default-tenant-uuid" \
-    SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="admin-root-workspace-uuid" \
-    SYSTEM_ADMIN_TENANT_ROLE_UUID="default-admin-tenant-uuid"
+    PLATFORM="el8"
 
 
 ENV SUMMARY="Insights RBAC is a role based access control web server" \
