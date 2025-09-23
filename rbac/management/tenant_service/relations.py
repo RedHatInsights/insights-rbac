@@ -26,6 +26,15 @@ from migration_tool.utils import create_relationship
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
+def _role_uuid_for(access_type: DefaultAccessType, policy_cache: GlobalPolicyIdCache) -> str:
+    if access_type == DefaultAccessType.USER:
+        return str(policy_cache.platform_default_policy_uuid())
+    elif access_type == DefaultAccessType.ADMIN:
+        return str(policy_cache.admin_default_policy_uuid())
+    else:
+        raise AssertionError(f"Access type should already have been validated: {access_type}")
+
+
 def default_role_binding_tuples(
     tenant_mapping: TenantMapping,
     target_workspace_uuid: str,
@@ -48,13 +57,13 @@ def default_role_binding_tuples(
     if access_type == DefaultAccessType.USER:
         role_binding_uuid = str(tenant_mapping.default_role_binding_uuid)
         default_group_uuid = str(tenant_mapping.default_group_uuid)
-        default_role_uuid = str(policy_cache.platform_default_policy_uuid())
     elif access_type == DefaultAccessType.ADMIN:
         role_binding_uuid = str(tenant_mapping.default_admin_role_binding_uuid)
         default_group_uuid = str(tenant_mapping.default_admin_group_uuid)
-        default_role_uuid = str(policy_cache.admin_default_policy_uuid())
     else:
         raise ValueError(f"Unexpected access type: {access_type}")
+
+    default_role_uuid = _role_uuid_for(access_type, policy_cache)
 
     # Always add the relationship from the role binding to the target resource.
     relationships = [
