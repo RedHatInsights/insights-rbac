@@ -55,3 +55,12 @@ class TenantMapping(models.Model):
     root_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     tenant_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     tenant_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+
+    def group_uuid_for(self, access_type: DefaultAccessType) -> uuid.UUID:
+        """Get the UUID for the tenant's default group for the appropriate access type."""
+        if access_type == DefaultAccessType.USER:
+            return self.default_group_uuid
+        elif access_type == DefaultAccessType.ADMIN:
+            return self.default_admin_group_uuid
+        else:
+            raise ValueError(f"Unexpected access type: {access_type}")

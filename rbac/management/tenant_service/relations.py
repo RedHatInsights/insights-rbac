@@ -56,12 +56,12 @@ def default_role_binding_tuples(
 
     if access_type == DefaultAccessType.USER:
         role_binding_uuid = str(tenant_mapping.default_role_binding_uuid)
-        default_group_uuid = str(tenant_mapping.default_group_uuid)
     elif access_type == DefaultAccessType.ADMIN:
         role_binding_uuid = str(tenant_mapping.default_admin_role_binding_uuid)
-        default_group_uuid = str(tenant_mapping.default_admin_group_uuid)
     else:
         raise ValueError(f"Unexpected access type: {access_type}")
+
+    default_group_uuid = str(tenant_mapping.group_uuid_for(access_type))
 
     # Always add the relationship from the role binding to the target resource.
     relationships = [
