@@ -63,8 +63,6 @@ def default_role_binding_tuples(
     else:
         raise ValueError(f"Unexpected access type: {access_type}")
 
-    default_role_uuid = _role_uuid_for(access_type, policy_cache)
-
     # Always add the relationship from the role binding to the target resource.
     relationships = [
         create_relationship(
@@ -78,6 +76,9 @@ def default_role_binding_tuples(
 
     # Only add the remaining relationships if requested.
     if not resource_binding_only:
+        # Since computing the role UUID can throw, only do it if necessary.
+        default_role_uuid = _role_uuid_for(access_type, policy_cache)
+
         relationships.extend(
             [
                 create_relationship(
