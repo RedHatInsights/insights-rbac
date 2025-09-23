@@ -15,8 +15,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.platform import DefaultGroupNotAvailableError, GlobalPolicyIdCache
-from management.tenant_mapping.model import TenantMapping, logger
-from management.tenant_service.relations import DefaultAccessType, default_role_binding_tuples
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
+from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
 from management.workspace.model import Workspace

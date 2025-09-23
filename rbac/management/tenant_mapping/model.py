@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """TenantMapping model."""
-
+import enum
 import logging
 import uuid
 
@@ -25,6 +25,13 @@ from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+class DefaultAccessType(enum.StrEnum):
+    """Represents the two types of default access resources. This mirrors the split in TenantMapping."""
+
+    USER = "user"
+    ADMIN = "admin"
 
 
 class TenantMapping(models.Model):

@@ -32,8 +32,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.model import BindingMapping, Role
-from management.tenant_mapping.model import TenantMapping
-from management.tenant_service.relations import DefaultAccessType, default_role_binding_tuples
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_service.relations import default_role_binding_tuples
 
 from api.models import Tenant
 

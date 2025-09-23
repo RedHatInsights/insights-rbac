@@ -15,23 +15,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Provide common helpers for V2 tenant relationships."""
-import enum
 import logging
 from typing import Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.role.platform import GlobalPolicyIdCache
-from management.tenant_mapping.model import TenantMapping
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-class DefaultAccessType(enum.StrEnum):
-    """Represents the two types of default access resources. This mirrors the split in TenantMapping."""
-
-    USER = "user"
-    ADMIN = "admin"
 
 
 def default_role_binding_tuples(
