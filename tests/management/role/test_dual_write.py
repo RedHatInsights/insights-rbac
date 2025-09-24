@@ -17,7 +17,7 @@
 """Test tuple changes for RBAC operations."""
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
 from management.group.definer import seed_group, set_system_flag_before_update
@@ -54,7 +54,7 @@ from migration_tool.in_memory_tuples import (
 from api.cross_access.model import CrossAccountRequest
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.cross_access.util import create_cross_principal
-from api.models import Tenant
+from api.models import Tenant, User
 from unittest.mock import patch
 
 
@@ -664,7 +664,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.assertEqual(len(tuples), 1)
 
-    def test_custom_default_group_before_bootstrap(self):
+    def _assert_custom_default_group_before_bootstrap(
+        self, do_boostrap: Callable[[V2TenantBootstrapService, Tenant], None]
+    ):
         replicator = InMemoryRelationReplicator(self.tuples)
         bootstrap_service = V2TenantBootstrapService(replicator=replicator)
 
@@ -679,7 +681,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             system=False,
         )
 
-        bootstrap_service.bootstrap_tenant(self.tenant)
+        do_boostrap(bootstrap_service, self.tenant)
 
         mapping: TenantMapping = self.tenant.tenant_mapping
         platform_default_policy: Policy = Policy.objects.get(
@@ -705,6 +707,28 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             for_v2_roles=[str(platform_default_policy.uuid)],
             for_groups=[mapping.default_group_uuid],
         )
+
+    def test_custom_default_group_before_single_bootstrap(self):
+        def do_bootstrap(bootstrap_service: V2TenantBootstrapService, tenant: Tenant):
+            bootstrap_service.bootstrap_tenant(tenant)
+
+        self._assert_custom_default_group_before_bootstrap(do_bootstrap)
+
+    def test_custom_default_group_before_bulk_bootstrap(self):
+        def do_bootstrap(bootstrap_service: V2TenantBootstrapService, tenant: Tenant):
+            # Import a single user in order to exercise the bulk import path.
+            bootstrap_service.import_bulk_users(
+                [
+                    User(
+                        username="test_user",
+                        user_id=f"{self.tenant.org_id}-user",
+                        org_id=self.tenant.org_id,
+                        is_active=True,
+                    )
+                ]
+            )
+
+        self._assert_custom_default_group_before_bootstrap(do_bootstrap)
 
 
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
