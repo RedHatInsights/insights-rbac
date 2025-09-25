@@ -214,7 +214,7 @@ spec:
             value: $(params.POSTGRESQL_PASSWORD)
           - name: POSTGRESQL_PORT
             value: $(params.POSTGRESQL_PORT)
-          image: quay.io/cloudservices/postgresql-rds:14
+          image: quay.io/cloudservices/postgresql-rds:16
           name: rbac-db
         spec:
         stepTemplate:
