@@ -32,7 +32,7 @@ from kessel.inventory.v1beta2 import (
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from management.cache import JWTCache
-from management.utils import create_client_channel_inventory
+from management.utils import create_client_channel
 
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
@@ -49,13 +49,16 @@ class InventoryApiBaseChecker:
 
         Accepts either a single check request or list of check requests.
         """
+        token = jwt_manager.get_jwt_from_redis()
+
         if isinstance(checks, CheckRequest):
             checks = [checks]
 
-            with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+            with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
                 stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
+                metadata = [("authorization", f"Bearer {token}")]
 
-                responses = [stub.Check(req) for req in checks]
+                responses = [stub.Check(req, metadata=metadata) for req in checks]
                 return all(self._is_allowed(res) for res in responses)
         return False
 
