@@ -251,3 +251,39 @@ class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
         else:
             logger.info(f"{workspace_id} has the correct parent workspace.")
         return workspace_check
+
+
+class RoleRelationInventoryChecker(InventoryApiBaseChecker):
+    """Subclass to check role relations are correct on inventory api."""
+
+    def check_role(self, role_relations, role_uuid):
+        """Core logic to check role V2 relation on inventory api."""
+        check_requests = []
+        for role_relation in role_relations:
+            # Build the check request for each of the relations generated for the role
+            check_request = CheckRequest(
+                object=resource_reference_pb2.ResourceReference(
+                    resource_id=role_relation["resource"]["id"],
+                    resource_type=role_relation["resource"]["type"]["name"],
+                    reporter=reporter_reference_pb2.ReporterReference(
+                        type=role_relation["resource"]["type"]["namespace"]
+                    ),
+                ),
+                relation=role_relation["relation"],
+                subject=subject_reference_pb2.SubjectReference(
+                    resource=resource_reference_pb2.ResourceReference(
+                        resource_id=role_relation["subject"]["subject"]["id"],
+                        resource_type=role_relation["subject"]["subject"]["type"]["name"],
+                        reporter=reporter_reference_pb2.ReporterReference(
+                            type=role_relation["subject"]["subject"]["type"]["namespace"]
+                        ),
+                    )
+                ),
+            )
+            check_requests.append(check_request)
+        role_check = self.check_inventory_core(check_requests)
+        if not role_check:
+            logger.warning(f"Role: {role_uuid} does not have the expected V2 relations.")
+        else:
+            logger.info(f"Role: {role_uuid} has the correct V2 relations.")
+        return role_check

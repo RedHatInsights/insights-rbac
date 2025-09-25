@@ -4659,3 +4659,124 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
             response_body["detail"], "Unexpected error during inventory workspace descendants relation check"
         )
         self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("management.utils.create_client_channel")
+    @patch("management.inventory_checker.inventory_api_check.RoleRelationInventoryChecker.check_role")
+    @patch("internal.views.check_role")
+    def test_inventory_check_role(self, mock_bootstrapped_view, mock_check_role, mock_create_channel, mock_get_token):
+        """Test a request to check role endpoint on inventory returns correct response."""
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        mock_stub = MagicMock()
+        mock_stub.Check.return_value = True
+
+        mock_check_role.return_value = mock_stub.Check.return_value
+        mock_bootstrapped_view.return_value = {
+            "V2_role_checks": {
+                "v1_role_uuid": self.role.uuid,
+                "v1_role_name": self.role.name,
+                "V2_role_relations_correct": mock_check_role.return_value,
+            }
+        }
+        with patch(
+            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            response = self.client.get(
+                f"/_private/api/inventory/check_role/{self.role.uuid}/",
+                format="json",
+                **self.request.META,
+            )
+
+        # Parse and validate response
+        self.assertEqual(response.status_code, 200)
+        response_body = response.json()
+        self.assertIn("V2_role_checks", response_body)
+        self.assertEqual(response_body["V2_role_checks"]["v1_role_uuid"], str(self.role.uuid))
+        self.assertEqual(response_body["V2_role_checks"]["v1_role_name"], str(self.role.name))
+        self.assertEqual(response_body["V2_role_checks"]["V2_role_relations_correct"], True)
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.RoleRelationInventoryChecker.check_role",
+        side_effect=RpcError("Simulated GRPC error"),
+    )
+    def test_inventory_check_role_grpc_error(self, mock_check_role):
+        """Test a request to check role endpoint on inventory returns correct response in case of grpc error."""
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        with patch(
+            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub"
+        ):
+            response = self.client.get(
+                f"/_private/api/inventory/check_role/{self.role.uuid}/",
+                format="json",
+                **self.request.META,
+            )
+
+        # Parse and validate response
+        self.assertEqual(response.status_code, 400)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "gRPC error occurred during inventory role relation check")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch(
+        "management.inventory_checker.inventory_api_check.RoleRelationInventoryChecker.check_role",
+        side_effect=Exception("Simulated internal error"),
+    )
+    def test_inventory_check_role_error(self, mock_check_role):
+        """Test a request to check role endpoint on inventory returns correct response in case of generic error."""
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        with patch(
+            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub"
+        ):
+            response = self.client.get(
+                f"/_private/api/inventory/check_role/{self.role.uuid}/",
+                format="json",
+                **self.request.META,
+            )
+
+        # Parse and validate response
+        self.assertEqual(response.status_code, 500)
+        response_body = response.json()
+
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Unexpected error occurred during inventory role relation check")
+        self.assertEqual(response_body["error"], "Simulated internal error")
