@@ -59,6 +59,7 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import migrate_system_role_models
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
@@ -175,11 +176,10 @@ class GroupViewsetTests(IdentityRequest):
         self.principalC.save()
         self.group = Group(name="groupA", tenant=self.tenant)
         self.group.save()
-        self.role = Role.objects.create(
+        self.role = self._create_system_role(
             name="roleA",
             description="A role for a group.",
-            system=True,
-            tenant=self.tenant,
+            tenant=self.public_tenant,
         )
         self.ext_tenant = ExtTenant.objects.create(name="foo")
         self.ext_role_relation = ExtRoleRelation.objects.create(role=self.role, ext_tenant=self.ext_tenant)
@@ -273,6 +273,12 @@ class GroupViewsetTests(IdentityRequest):
         Policy.objects.all().delete()
         Workspace.objects.filter(parent__isnull=False).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
+
+    def _create_system_role(self, *args, **kwargs) -> Role:
+        role = Role.objects.create(*args, **kwargs, system=True)
+        migrate_system_role_models(role)
+
+        return role
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1440,11 +1446,10 @@ class GroupViewsetTests(IdentityRequest):
 
             org_id = self.customer_data["org_id"]
 
-            default_role = Role.objects.create(
+            default_role = self._create_system_role(
                 name="default_role",
                 description="A default role for a group.",
                 platform_default=True,
-                system=True,
                 tenant=self.public_tenant,
             )
             self.defGroup.policies.first().roles.add(default_role)
@@ -1572,18 +1577,16 @@ class GroupViewsetTests(IdentityRequest):
         """Test that removing a role from a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
-            default_role = Role.objects.create(
+            default_role = self._create_system_role(
                 name="default_role",
                 description="A default role for a group.",
                 platform_default=True,
-                system=True,
                 tenant=self.public_tenant,
             )
-            default_role_to_keep_in_group = Role.objects.create(
+            default_role_to_keep_in_group = self._create_system_role(
                 name="default_role_to_keep_in_group",
                 description="A default role for a group that is kept within the group.",
                 platform_default=True,
-                system=True,
                 tenant=self.public_tenant,
             )
             self.defGroup.policies.first().roles.add(default_role)
@@ -1717,11 +1720,10 @@ class GroupViewsetTests(IdentityRequest):
         """Test that removing a role from a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
-            default_role = Role.objects.create(
+            default_role = self._create_system_role(
                 name="default_role",
                 description="A default role for a group.",
                 platform_default=True,
-                system=True,
                 tenant=self.public_tenant,
             )
             self.defGroup.policies.first().roles.add(default_role)
@@ -4450,6 +4452,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role.version = 3
         user_access_admin_role.save()
 
+        migrate_system_role_models(user_access_admin_role)
+
         # Associate the role and the permission.
         access = Access()
         access.permission = rbac_user_access_admin_permission
@@ -7061,11 +7065,16 @@ class GroupReplicationTests(IdentityRequest):
 
         self.fixture.bootstrap_tenant(self.tenant)
 
+        # We use this user_id for creating cross-account requests below, and a Principal with that user ID must
+        # actually exist in order to create the request.
+        self.car_tenant = self.fixture.new_tenant(org_id="car-source")
+        self.fixture.new_principals_in_tenant(["2222222"], self.car_tenant.tenant)
+
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_remove_role_does_not_remove_binding_if_cross_account_granted(self, replicate):
         replicate.side_effect = self.in_memory_replicator.replicate
 
-        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"], include_v2=True)
 
         # Create a group and give it the system role
         test_group = Group(name="test group", tenant=self.tenant)
@@ -7172,7 +7181,7 @@ class GroupReplicationTests(IdentityRequest):
     def test_expire_cross_account_does_not_remove_binding_if_role_granted_to_group(self, replicate):
         replicate.side_effect = self.in_memory_replicator.replicate
 
-        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"], include_v2=True)
 
         # Create a group and give it the system role
         test_group = Group(name="test group", tenant=self.tenant)
@@ -7277,7 +7286,7 @@ class GroupReplicationTests(IdentityRequest):
     def test_add_role_already_added_is_noop(self, replicate):
         replicate.side_effect = self.in_memory_replicator.replicate
 
-        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"], include_v2=True)
 
         groupC = Group.objects.create(name="groupC", tenant=self.tenant)
         url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
@@ -7304,7 +7313,7 @@ class GroupReplicationTests(IdentityRequest):
     def test_remove_role_added_twice_removes_role(self, replicate):
         replicate.side_effect = self.in_memory_replicator.replicate
 
-        sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+        sr1 = self.fixture.new_system_role("sr1", ["app:*:*"], include_v2=True)
 
         group = Group.objects.create(name="groupC", tenant=self.tenant)
         url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
