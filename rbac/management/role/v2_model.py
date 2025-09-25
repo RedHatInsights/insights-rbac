@@ -18,7 +18,6 @@
 """Model for role V2 management."""
 
 import uuid_utils.compat as uuid
-
 from django.db import models
 from django.utils import timezone
 from management.models import Permission, Role
