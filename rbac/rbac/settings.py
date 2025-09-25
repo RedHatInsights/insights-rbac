@@ -419,6 +419,12 @@ NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
 EXTERNAL_SYNC_TOPIC = ENVIRONMENT.get_value("EXTERNAL_SYNC_TOPIC", default=None)
 EXTERNAL_CHROME_TOPIC = ENVIRONMENT.get_value("EXTERNAL_CHROME_TOPIC", default=None)
 
+RBAC_KAFKA_CONSUMER_TOPIC = ENVIRONMENT.get_value("RBAC_KAFKA_CONSUMER_TOPIC", default=None)
+
+RBAC_KAFKA_CONSUMER_GROUP_ID = ENVIRONMENT.get_value("RBAC_KAFKA_CONSUMER_GROUP_ID", default="rbac-consumer-group")
+
+RBAC_KAFKA_CUSTOM_CONSUMER_BROKER = ENVIRONMENT.get_value("RBAC_KAFKA_CUSTOM_CONSUMER_BROKER", default="")
+
 # if we don't enable KAFKA we can't use the notifications
 if not KAFKA_ENABLED:
     NOTIFICATIONS_ENABLED = False
@@ -480,6 +486,10 @@ if KAFKA_ENABLED:
     if clowder_chrome_topic:
         EXTERNAL_CHROME_TOPIC = clowder_chrome_topic.name
 
+    clowder_rbac_consumer_topic = KafkaTopics.get(RBAC_KAFKA_CONSUMER_TOPIC)
+    if clowder_rbac_consumer_topic:
+        RBAC_KAFKA_CONSUMER_TOPIC = clowder_rbac_consumer_topic.name
+
 # BOP TLS settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):
     BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
@@ -536,6 +546,11 @@ WORKSPACE_HIERARCHY_ENABLED = ENVIRONMENT.bool("WORKSPACE_HIERARCHY_ENABLED", Fa
 WORKSPACE_ORG_CREATION_LIMIT = ENVIRONMENT.get_value("WORKSPACE_ORG_CREATION_LIMIT", default=3000)
 WORKSPACE_HIERARCHY_DEPTH_LIMIT = ENVIRONMENT.int("WORKSPACE_HIERARCHY_DEPTH_LIMIT", default=5)
 WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_PEERS", default=False)
+
+# Permission scope configuration used by permission_scope.ImiplicitResourceService.
+# These can include wildcard patterns (e.g. "rbac:*:read" or "advisor:*:*").
+ROOT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("ROOT_SCOPE_PERMISSIONS", default="")
+TENANT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("TENANT_SCOPE_PERMISSIONS", default="")
 
 # Manipulation of response to include ungrouped hosts id
 ADD_UNGROUPED_HOSTS_ID = ENVIRONMENT.bool("ADD_UNGROUPED_HOSTS_ID", default=False)

@@ -100,9 +100,13 @@ urlpatterns = [
     path("api/relations/lookup_resource/", views.lookup_resource),
     path("api/relations/check_relation/", views.check_relation),
     path("api/relations/read_tuples/", views.read_tuples),
-    path("api/group_assignments/<group_uuid>/", views.group_assignments),
+    path("api/inventory/bootstrap_tenants/<org_id>/", views.check_bootstrapped_tenants),
+    path("api/inventory/group_assignments/<group_uuid>/", views.group_assignments),
+    path("api/inventory/check_workspace/<workspace_uuid>/", views.check_workspace_relation),
+    path("api/inventory/check_role/<role_uuid>/", views.check_role),
     path("api/inventory/check/", views.check_inventory),
     path("api/utils/workspace/", views.workspace_removal),
+    path("api/utils/kafka_test_message/", views.send_kafka_test_message),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

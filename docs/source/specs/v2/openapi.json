@@ -7,9 +7,279 @@
   "tags": [
     {
       "name": "Workspaces"
+    },
+    {
+      "name": "Role Bindings"
     }
   ],
   "paths": {
+    "/role-bindings/by-subject": {
+      "get": {
+        "operationId": "RoleBindings_listBySubject",
+        "summary": "List role bindings grouped by subject",
+        "description": "List role bindings grouped by subject",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 10
+            },
+            "explode": false
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor for cursor-based pagination.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": true,
+            "description": "Filter by resource ID",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": true,
+            "description": "Filter by resource type",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "subject_type",
+            "in": "query",
+            "required": false,
+            "description": "Filter by subject type",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter by subject ID",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "parent_role_bindings",
+            "in": "query",
+            "required": false,
+            "description": "Include role bindings inherited from parent resources",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "explode": false
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.id\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n- inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(name,type)` - Include resource name and type\n- `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields\n- `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "description": "Sort by specified field(s), prefix with '-' for descending order",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubjectListResponse"
+                },
+                "examples": {
+                  "example0": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "subject": {
+                            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            "type": "group",
+                            "group": {
+                              "name": "Engineering Team",
+                              "description": "Development and engineering team",
+                              "user_count": 25
+                            }
+                          },
+                          "roles": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440002",
+                              "name": "Workspace Admin"
+                            }
+                          ],
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440003",
+                            "name": "Child Workspace",
+                            "type": "workspace"
+                          },
+                          "inherited_from": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Parent Workspace",
+                            "type": "workspace"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "example1": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "subject": {
+                            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            "type": "group",
+                            "group": {
+                              "name": "Engineering Team",
+                              "description": "Development and engineering team",
+                              "user_count": 25
+                            }
+                          },
+                          "roles": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440002",
+                              "name": "Workspace Admin"
+                            }
+                          ],
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Engineering Workspace",
+                            "type": "workspace"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Role Bindings"
+        ]
+      }
+    },
     "/workspaces/": {
       "get": {
         "operationId": "Workspaces_list",
@@ -31,6 +301,7 @@
             "name": "offset",
             "in": "query",
             "required": false,
+            "description": "Offset for offset-based pagination.",
             "schema": {
               "type": "integer",
               "format": "int64",
@@ -70,7 +341,7 @@
                 },
                 "example": {
                   "meta": {
-                    "count": 1,
+                    "count": 100,
                     "limit": 10,
                     "offset": 0
                   },
@@ -78,7 +349,7 @@
                     "first": "/api/rbac/v2/workspaces/?limit=10&offset=0",
                     "next": "/api/rbac/v2/workspaces/?limit=10&offset=10",
                     "previous": null,
-                    "last": "/api/rbac/v2/workspaces/?limit=10&offset=20"
+                    "last": "/api/rbac/v2/workspaces/?limit=10&offset=90"
                   },
                   "data": [
                     {
@@ -998,6 +1269,113 @@
   },
   "components": {
     "schemas": {
+      "CursorPaginationLinks": {
+        "type": "object",
+        "required": [
+          "next",
+          "previous"
+        ],
+        "properties": {
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The next link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The previous link in pagination",
+            "example": "/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9"
+          }
+        }
+      },
+      "CursorPaginationMeta": {
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Limit of returned objects",
+            "example": 10,
+            "default": 10
+          }
+        }
+      },
+      "OffsetPaginationLinks": {
+        "type": "object",
+        "required": [
+          "first",
+          "next",
+          "previous",
+          "last"
+        ],
+        "properties": {
+          "first": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The first link in pagination",
+            "example": "/api/rbac/v2/workspaces/?limit=10&offset=0"
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The next link in pagination",
+            "example": "/api/rbac/v2/workspaces/?limit=10&offset=10"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The previous link in pagination",
+            "example": "/api/rbac/v2/workspaces/?limit=10&offset=0"
+          },
+          "last": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "The last link in pagination",
+            "example": "/api/rbac/v2/workspaces/?limit=10&offset=90"
+          }
+        }
+      },
+      "OffsetPaginationMeta": {
+        "type": "object",
+        "required": [
+          "count",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total count of objects",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Limit of returned objects",
+            "example": 10,
+            "default": 10
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Offset of returned objects",
+            "example": 0,
+            "default": 0
+          }
+        }
+      },
       "Problems.Problem400": {
         "type": "object",
         "required": [
@@ -1181,6 +1559,259 @@
           }
         ]
       },
+      "RoleBindings.BaseSubject": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Subject identifier"
+          },
+          "type": {
+            "type": "string",
+            "description": "Type of subject"
+          }
+        },
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "group": "#/components/schemas/RoleBindings.GroupSubject"
+          }
+        }
+      },
+      "RoleBindings.GroupDetails": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the group"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the group"
+          },
+          "user_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of users in the group"
+          }
+        }
+      },
+      "RoleBindings.GroupSubject": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "group"
+            ],
+            "description": "Type of subject"
+          },
+          "group": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.GroupDetails"
+              }
+            ],
+            "description": "Group details"
+          }
+        },
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RoleBindings.BaseSubject"
+          }
+        ]
+      },
+      "RoleBindings.Resource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Resource identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Resource name"
+          },
+          "type": {
+            "type": "string",
+            "description": "Resource type",
+            "example": "workspace"
+          }
+        }
+      },
+      "RoleBindings.Role": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Role identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the role"
+          }
+        }
+      },
+      "RoleBindings.RoleBindingBySubject": {
+        "type": "object",
+        "properties": {
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of last modification"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.UserSubject"
+              },
+              {
+                "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+              }
+            ],
+            "description": "Subject of the role binding"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Role"
+            },
+            "description": "Roles assigned to the subject"
+          },
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource the roles apply to"
+          },
+          "inherited_from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
+          }
+        },
+        "example": {
+          "last_modified": "2024-08-04T12:00:00Z",
+          "subject": {
+            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "type": "group",
+            "group": {
+              "name": "Engineering Team",
+              "description": "Development and engineering team",
+              "user_count": 25
+            }
+          },
+          "roles": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440002",
+              "name": "Workspace Admin"
+            }
+          ],
+          "resource": {
+            "id": "550e8400-e29b-41d4-a716-446655440003",
+            "name": "Child Workspace",
+            "type": "workspace"
+          },
+          "inherited_from": {
+            "id": "550e8400-e29b-41d4-a716-446655440001",
+            "name": "Parent Workspace",
+            "type": "workspace"
+          }
+        }
+      },
+      "RoleBindings.RoleBindingBySubjectListResponse": {
+        "type": "object",
+        "required": [
+          "meta",
+          "links",
+          "data"
+        ],
+        "properties": {
+          "meta": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CursorPaginationMeta"
+              }
+            ],
+            "description": "Pagination metadata"
+          },
+          "links": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CursorPaginationLinks"
+              }
+            ],
+            "description": "Pagination links"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
+            },
+            "description": "List of role bindings grouped by subject"
+          }
+        }
+      },
+      "RoleBindings.UserDetails": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Name of the user"
+          }
+        }
+      },
+      "RoleBindings.UserSubject": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "user"
+            ],
+            "description": "Type of subject"
+          },
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.UserDetails"
+              }
+            ],
+            "description": "User details"
+          }
+        },
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RoleBindings.BaseSubject"
+          }
+        ]
+      },
       "Timestamps": {
         "type": "object",
         "required": [
@@ -1334,7 +1965,7 @@
           "meta": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.PaginationMeta"
+                "$ref": "#/components/schemas/OffsetPaginationMeta"
               }
             ],
             "description": "Pagination metadata"
@@ -1342,76 +1973,10 @@
           "links": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.PaginationLinks"
+                "$ref": "#/components/schemas/OffsetPaginationLinks"
               }
             ],
             "description": "Pagination links"
-          }
-        }
-      },
-      "Workspaces.PaginationLinks": {
-        "type": "object",
-        "required": [
-          "first",
-          "next",
-          "previous",
-          "last"
-        ],
-        "properties": {
-          "first": {
-            "type": "string",
-            "format": "uri",
-            "description": "The first link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
-          },
-          "next": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "description": "The next link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=10"
-          },
-          "previous": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "description": "The previous link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=0"
-          },
-          "last": {
-            "type": "string",
-            "format": "uri",
-            "description": "The last link in pagination",
-            "example": "/api/rbac/v2/(resource)/?limit=10&offset=20"
-          }
-        }
-      },
-      "Workspaces.PaginationMeta": {
-        "type": "object",
-        "required": [
-          "count",
-          "limit",
-          "offset"
-        ],
-        "properties": {
-          "count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Total count of objects",
-            "example": 10
-          },
-          "limit": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Limit of returned objects",
-            "example": 10,
-            "default": 10
-          },
-          "offset": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Offset of returned objects",
-            "example": 10
           }
         }
       },
@@ -1637,7 +2202,7 @@
           "meta": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.PaginationMeta"
+                "$ref": "#/components/schemas/OffsetPaginationMeta"
               }
             ],
             "description": "Pagination metadata"
@@ -1645,7 +2210,7 @@
           "links": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Workspaces.PaginationLinks"
+                "$ref": "#/components/schemas/OffsetPaginationLinks"
               }
             ],
             "description": "Pagination links"
@@ -1660,15 +2225,15 @@
         },
         "example": {
           "meta": {
-            "count": 50,
+            "count": 100,
             "limit": 10,
             "offset": 0
           },
           "links": {
-            "first": "/api/rbac/v2/workspaces?limit=10&offset=0",
-            "next": "/api/rbac/v2/workspaces?limit=10&offset=10",
+            "first": "/api/rbac/v2/workspaces/?limit=10&offset=0",
+            "next": "/api/rbac/v2/workspaces/?limit=10&offset=10",
             "previous": null,
-            "last": "/api/rbac/v2/workspaces?limit=10&offset=40"
+            "last": "/api/rbac/v2/workspaces/?limit=10&offset=90"
           },
           "data": [
             {

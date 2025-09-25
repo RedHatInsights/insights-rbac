@@ -7,7 +7,7 @@ using TypeSpec.Http;
 using TypeSpec.Rest;
 using TypeSpec.Versioning;
 
-@service({title:"Role Based Access Control for Kessel Project"})
+@service(#{title:"Role Based Access Control for Kessel Project"})
 
 @server("https://localhost:{port}/{basePath}", "Development Server", { basePath: string="api/rbac/v2", port: string="8000" })
 @server("https://console.stage.redhat.com/{basePath}", "Stage Server", { basePath: string="api/rbac/v2" })
@@ -29,6 +29,60 @@ model Timestamps {
 
 @format("uuid")
 scalar UUID extends string;
+
+model CursorPaginationMeta {
+    @doc("Limit of returned objects")
+    @example(10)
+    limit: int64 = 10;
+}
+
+model CursorPaginationLinks {
+    @doc("The next link in pagination")
+    @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEyMyJ9")
+    @format("uri")
+    next: string | null;
+
+    @doc("The previous link in pagination")
+    @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9")
+    @format("uri")
+    previous: string | null;
+}
+
+model OffsetPaginationMeta {
+    @doc("Total count of objects")
+    @example(10)
+    count: int64;
+
+    @doc("Limit of returned objects")
+    @example(10)
+    limit: int64 = 10;
+
+    @doc("Offset of returned objects")
+    @example(0)
+    offset: int64 = 0;
+}
+
+model OffsetPaginationLinks {
+    @doc("The first link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=0")
+    @format("uri")
+    first: string | null;
+
+    @doc("The next link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=10")
+    @format("uri")
+    next: string | null;
+
+    @doc("The previous link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=0")
+    @format("uri")
+    previous: string | null;
+
+    @doc("The last link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=90")
+    @format("uri")
+    last: string | null;
+}
 
 namespace Problems {
     enum ProblemType {
@@ -261,61 +315,30 @@ namespace Workspaces {
         parent_id: UUID = "New parent ID of moved workspace";
     }
 
-    model PaginationMeta {
-        @doc("Total count of objects")
-        @example(10)
-        count: int64;
 
-        @doc("Limit of returned objects")
-        @example(10)
-        limit: int64 = 10;
 
-        @doc("Offset of returned objects")
-        @example(10)
-        offset: int64;
-    }
 
-    model PaginationLinks {
-        @doc("The first link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
-        @format("uri")
-        first: string;
-
-        @doc("The next link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=10")
-        @format("uri")
-        next: string | null;
-
-        @doc("The previous link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
-        @format("uri")
-        previous: string | null;
-
-        @doc("The last link in pagination")
-        @example("/api/rbac/v2/(resource)/?limit=10&offset=20")
-        @format("uri")
-        last: string;
-    }
 
     model Pagination {
         @doc("Pagination metadata")
-        meta: PaginationMeta;
+        meta: OffsetPaginationMeta;
 
         @doc("Pagination links")
-        links: PaginationLinks;
+        links: OffsetPaginationLinks;
     }
+
 
     @example(#{
         meta: #{
-            count: 50,
+            count: 100,
             limit: 10,
             offset: 0
         },
         links: #{
-            first: "/api/rbac/v2/workspaces?limit=10&offset=0",
-            next: "/api/rbac/v2/workspaces?limit=10&offset=10",
+            first: "/api/rbac/v2/workspaces/?limit=10&offset=0",
+            next: "/api/rbac/v2/workspaces/?limit=10&offset=10",
             previous: null,
-            last: "/api/rbac/v2/workspaces?limit=10&offset=40"
+            last: "/api/rbac/v2/workspaces/?limit=10&offset=90"
         },
         data: #[
             #{
@@ -347,7 +370,7 @@ namespace Workspaces {
         },
         returnType: #{
           meta: #{
-            count: 1,
+            count: 100,
             limit: 10,
             offset: 0
           },
@@ -355,7 +378,7 @@ namespace Workspaces {
             first: "/api/rbac/v2/workspaces/?limit=10&offset=0",
             next: "/api/rbac/v2/workspaces/?limit=10&offset=10",
             previous: null,
-            last: "/api/rbac/v2/workspaces/?limit=10&offset=20"
+            last: "/api/rbac/v2/workspaces/?limit=10&offset=90"
           },
           data: #[
             #{
@@ -373,6 +396,8 @@ namespace Workspaces {
     )
     @get op list(
         @query limit?: int64 = 10;
+
+        @doc("Offset for offset-based pagination.")
         @query offset?: int64 = 0;
 
         @doc("Defaults to all when param is not supplied.")
@@ -556,4 +581,313 @@ namespace Workspaces {
       | Problems.CommonProblems
       | Problems.Problem400
       | Problems.Problem404;
+}
+
+@route("/role-bindings/")
+@tag("Role Bindings")
+@doc("Operations about role bindings")
+namespace RoleBindings {
+    @discriminator("type")
+    model BaseSubject {
+        @doc("Subject identifier")
+        id?: UUID;
+        @doc("Type of subject")
+        type: string;
+    }
+
+    model UserDetails {
+        @doc("Name of the user")
+        username?: string;
+    }
+
+    model UserSubject extends BaseSubject {
+        @doc("Type of subject")
+        type: "user";
+        @doc("User details")
+        user?: UserDetails;
+    }
+
+    model GroupDetails {
+        @doc("Name of the group")
+        name?: string;
+        @doc("Description of the group")
+        description?: string;
+        @doc("Number of users in the group")
+        user_count?: int64;
+    }
+
+    model GroupSubject extends BaseSubject {
+        @doc("Type of subject")
+        type: "group";
+        @doc("Group details")
+        group?: GroupDetails;
+    }
+
+    alias Subject = UserSubject | GroupSubject;
+
+
+
+    model Resource {
+        @doc("Resource identifier")
+        id?: UUID;
+        @doc("Resource name")
+        name?: string;
+        @doc("Resource type")
+        @example("workspace")
+        type?: string;
+    }
+
+    model Role {
+        @doc("Role identifier")
+        id?: UUID;
+        @doc("Name of the role")
+        name?: string;
+    }
+
+    @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        subject: #{
+            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            type: "group",
+            group: #{
+                name: "Engineering Team",
+                description: "Development and engineering team",
+                user_count: 25
+            }
+        },
+        roles: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                name: "Workspace Admin"
+            }
+        ],
+        resource: #{
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            name: "Engineering Workspace",
+            type: "workspace"
+        }
+    })
+    @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        subject: #{
+            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            type: "group",
+            group: #{
+                name: "Engineering Team",
+                description: "Development and engineering team",
+                user_count: 25
+            }
+        },
+        roles: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                name: "Workspace Admin"
+            }
+        ],
+        resource: #{
+            id: "550e8400-e29b-41d4-a716-446655440003",
+            name: "Child Workspace",
+            type: "workspace"
+        },
+        inherited_from: #{
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            name: "Parent Workspace",
+            type: "workspace"
+        }
+    })
+    model RoleBindingBySubject {
+        @doc("Timestamp of last modification")
+        last_modified?: offsetDateTime;
+        @doc("Subject of the role binding")
+        subject?: Subject;
+        @doc("Roles assigned to the subject")
+        roles?: Role[];
+        @doc("Resource the roles apply to")
+        resource?: Resource;
+        @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
+        inherited_from?: Resource;
+    }
+
+    model RoleBindingBySubjectListResponse {
+        @doc("Pagination metadata")
+        meta: CursorPaginationMeta;
+        @doc("Pagination links")
+        links: CursorPaginationLinks;
+        @doc("List of role bindings grouped by subject")
+        data: RoleBindingBySubject[];
+    }
+
+    @doc("List role bindings grouped by subject")
+    @summary("List role bindings grouped by subject")
+    @route("by-subject")
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            cursor: "cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace"
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+                previous: null
+            },
+            data: #[
+                #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                    subject: #{
+                        id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        type: "group",
+                        group: #{
+                            name: "Engineering Team",
+                            description: "Development and engineering team",
+                            user_count: 25
+                        }
+                    },
+                    roles: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440002",
+                            name: "Workspace Admin"
+                        }
+                    ],
+                    resource: #{
+                        id: "550e8400-e29b-41d4-a716-446655440001",
+                        name: "Engineering Workspace",
+                        type: "workspace"
+                    }
+                }
+            ]
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            parent_role_bindings: true,
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace"
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                previous: null
+            },
+            data: #[
+                #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                    subject: #{
+                        id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        type: "group",
+                        group: #{
+                            name: "Engineering Team",
+                            description: "Development and engineering team",
+                            user_count: 25
+                        }
+                    },
+                    roles: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440002",
+                            name: "Workspace Admin"
+                        }
+                    ],
+                    resource: #{
+                        id: "550e8400-e29b-41d4-a716-446655440003",
+                        name: "Child Workspace",
+                        type: "workspace"
+                    },
+                    inherited_from: #{
+                        id: "550e8400-e29b-41d4-a716-446655440001",
+                        name: "Parent Workspace",
+                        type: "workspace"
+                    }
+                }
+            ]
+        }
+    })
+    @get op listBySubject(
+        @query limit?: int64 = 10;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: string;
+
+        @doc("Filter by resource ID")
+        @example("550e8400-e29b-41d4-a716-446655440001")
+        @query resource_id: string;
+        @doc("Filter by resource type")
+        @example("workspace")
+        @query resource_type: string;
+        @doc("Filter by subject type")
+        @example("group")
+        @query subject_type?: string;
+        @doc("Filter by subject ID")
+        @example("550e8400-e29b-41d4-a716-446655440004")
+        @query subject_id?: string;
+
+        @doc("Include role bindings inherited from parent resources")
+        @query parent_role_bindings?: boolean = false;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size and improve performance.
+
+        **Default Behavior (no fields parameter):**
+        Basic required fields are always included: subject.id, subject.type, role.id, resource.id
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.
+
+        **Syntax:**
+        - Use parentheses to specify fields for nested objects: `object(field1,field2)`
+        - Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`
+        - Fields not in parentheses apply to the root level
+
+        **Available Fields:**
+
+        **subject object (polymorphic - available fields depend on type):**
+        - id (UUID) - always included
+        - type (string) - always included, cannot be excluded (determines which additional fields are available)
+
+        *When type = "user":*
+        - user.username (string) - username of the user
+
+        *When type = "group":*
+        - group.name (string) - name of the group
+        - group.description (string) - description of the group
+        - group.user_count (integer) - number of users in the group
+
+        **role object:**
+        - id (UUID) - always included
+        - name (string) - role display name
+
+        **resource object:**
+        - id (UUID) - always included
+        - name (string) - resource name
+        - type (string) - resource type
+
+        **root level:**
+        - last_modified (datetime) - timestamp of last modification
+        - inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)
+
+        **Examples:**
+        - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
+        - `subject(user.username)` - Include username (only for user subjects)
+        - `role(name)` - Include role name
+        - `resource(name,type)` - Include resource name and type
+        - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
+        - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
+        - `last_modified` - Include only modification timestamp (plus required fields)
+        - `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields
+        - `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)
+        """)
+        @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
+        @query fields?: string;
+        @doc("Sort by specified field(s), prefix with '-' for descending order")
+        @example("subject_name,-subject_type")
+        @query order_by?: string;
+
+    ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
 }

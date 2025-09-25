@@ -40,21 +40,28 @@ from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     delete_bindings,
     get_or_create_ungrouped_workspace,
+    load_request_body,
     validate_inventory_input,
     validate_relations_input,
 )
 from kessel.inventory.v1beta2 import (
     check_request_pb2,
+    inventory_service_pb2_grpc,
     reporter_reference_pb2,
     resource_reference_pb2,
     subject_reference_pb2,
 )
-from kessel.inventory.v1beta2 import inventory_service_pb2_grpc
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
 from management.cache import JWTCache, TenantCache
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.inventory_checker.inventory_api_check import (
+    BootstrappedTenantInventoryChecker,
+    GroupPrincipalInventoryChecker,
+    RoleRelationInventoryChecker,
+    WorkspaceRelationInventoryChecker,
+)
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
@@ -68,9 +75,9 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from management.relation_replicator.relations_api_check import RelationsApiRelationChecker
 from management.role.definer import delete_permission
 from management.role.model import Access
+from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -106,6 +113,10 @@ PROXY = PrincipalProxy()
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
+BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
+GroupPrincipalChecker = GroupPrincipalInventoryChecker()
+WorkspaceRelationChecker = WorkspaceRelationInventoryChecker()
+RoleRelationChecker = RoleRelationInventoryChecker()
 
 
 @contextmanager
@@ -1478,24 +1489,45 @@ def retrieve_ungrouped_workspace(request):
         return HttpResponse("Invalid request method, only GET is allowed.", status=405)
 
     org_id = request.user.org_id
-
     if not org_id:
         return HttpResponse("No org_id found for the user.", status=400)
-
+    logger.info(f"Retrieving ungrouped workspace for org_id: {org_id}")
     try:
         with transaction.atomic():
-            tenant = Tenant.objects.get(org_id=org_id)
+            tenant, created = Tenant.objects.get_or_create(org_id=org_id)
+            # Some tenants are misssing due to no users, hence no sync into RBAC
+            # or org type is not correctly set in IT, no events sent to RBAC.
+            if created:
+                tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+                tenant_bootstrap_service.bootstrap_tenant(tenant)
+                logger.info(f"[Tenant Bootstrap]Retrieving ungrouped workspace for org_id: {org_id}")
             ungrouped_hosts = get_or_create_ungrouped_workspace(tenant)
             data = WorkspaceSerializer(ungrouped_hosts).data
-            return HttpResponse(json.dumps(data), content_type="application/json", status=201)
+        return HttpResponse(json.dumps(data, cls=DjangoJSONEncoder), content_type="application/json", status=201)
     except Exception as e:
-        return HttpResponse(str(e), status=500)
+        error_details = {
+            "function": "retrieve_ungrouped_workspace",
+            "org_id": org_id,
+            "user_id": getattr(request.user, "user_id", "unknown"),
+            "username": getattr(request.user, "username", "unknown"),
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+        }
+        logger.exception(
+            "retrieve_ungrouped_workspace: Unexpected error occurred. "
+            "org_id=%(org_id)s, user_id=%(user_id)s, username=%(username)s, "
+            "error_type=%(error_type)s, error_message=%(error_message)s",
+            error_details,
+            extra={"error_context": error_details},
+        )
+        return HttpResponse("An unexpected error occurred", status=500)
 
 
 def lookup_resource(request):
     """POST to retrieve resource details from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
+
     if not validate_relations_input("lookup_resources", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to lookup_resources."}, status=500)
 
@@ -1549,7 +1581,7 @@ def lookup_resource(request):
 def read_tuples(request):
     """POST read tuples from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_relations_input("read_tuples", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to read_tuples."}, status=500)
@@ -1607,7 +1639,7 @@ def read_tuples(request):
 def check_relation(request):
     """POST to check relationship from relations api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_relations_input("check_relation", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check_relation."}, status=500)
@@ -1665,29 +1697,30 @@ def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
     principals = list(group.principals.all())
-    relations_assignment_checker = RelationsApiRelationChecker()
     relations_dual_write_handler = RelationApiDualWriteGroupHandler(
-        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, relations_assignment_checker
+        group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, GroupPrincipalChecker
     )
     relations_dual_write_handler.generate_relations_to_add_principals(principals)
     relationships = relations_dual_write_handler.relations_to_add
-    relation_assignments = relations_dual_write_handler._replicator.replicate(
-        ReplicationEvent(
-            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
-            info={
-                "detail": "Check user-group relations are correct",
-            },
-            partition_key=PartitionKey.byEnvironment(),
-            add=relationships,
-        ),
-    )
+    try:
+        relation_assignments = relations_dual_write_handler._replicator.check_relationships(relationships)
+    except RpcError as e:
+        return JsonResponse(
+            {"detail": "gRPC error occurred during inventory group assignment check", "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"detail": "Unexpected error during inventory group assignment check", "error": str(e)},
+            status=500,
+        )
     return JsonResponse(relation_assignments, safe=False)
 
 
 def check_inventory(request):
     """POST to check relationship from inventory api."""
     # Parse JSON data from the POST request body
-    req_data = json.loads(request.body)
+    req_data = load_request_body(request)
 
     if not validate_inventory_input("check", req_data):
         return JsonResponse({"detail": "Invalid request body provided in request to check inventory."}, status=500)
@@ -1742,6 +1775,150 @@ def check_inventory(request):
         logger.error(f"Unexpected error: {str(e)}")
         return JsonResponse(
             {"detail": "Error occurred in call to check inventory endpoint", "error": str(e)}, status=500
+        )
+
+
+def check_bootstrapped_tenants(request, org_id):
+    """POST to check if bootstrapped tenant is correct on inventory api."""
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+    if tenant and tenant.tenant_mapping:
+        default_workspace = Workspace.objects.default(tenant=tenant)
+        root_workspace = Workspace.objects.root(tenant=tenant)
+        mapping = {
+            "org_id": tenant.org_id,
+            "root_workspace": str(root_workspace.id),
+            "default_workspace": str(default_workspace.id),
+            "tenant_mapping": {
+                "default_group_uuid": str(tenant.tenant_mapping.default_group_uuid),
+                "default_admin_group_uuid": str(tenant.tenant_mapping.default_admin_group_uuid),
+                "default_role_binding_uuid": str(tenant.tenant_mapping.default_role_binding_uuid),
+                "default_admin_role_binding_uuid": str(tenant.tenant_mapping.default_admin_role_binding_uuid),
+            },
+        }
+        try:
+            bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
+            bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+        except RpcError as e:
+            return JsonResponse(
+                {"detail": "gRPC error occurred during inventory bootstrapped tenant check", "error": str(e)},
+                status=400,
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"detail": "Unexpected error during inventory bootstrapped tenant check", "error": str(e)},
+                status=500,
+            )
+    return JsonResponse(bootstrapped_tenant_response, safe=False)
+
+
+def check_workspace_relation(request, workspace_uuid):
+    """Post to check a workspace has the correct parent relation on inventory api.
+
+    query param 'descendants=true' to check descendant workspace relations on the workspace uuid provided.
+    default is single workspace parent relationship check.
+    """
+    workspace = get_object_or_404(Workspace, id=workspace_uuid)
+    query_params = request.GET
+    # Check workspaces descendants
+    if workspace and query_params.get("descendants") == "true":
+        workspace_descendants = workspace.descendants()
+        workspace_pairs = [(str(w.id), str(w.parent.id)) for w in workspace_descendants]
+        try:
+            if workspace_pairs:
+                workspace_uuid = str(workspace_uuid)
+                workspace_descendants_correct = WorkspaceRelationChecker.check_workspace_descendants(workspace_pairs)
+                response = {
+                    "org_id": workspace.tenant.org_id,
+                    "workspace_id": workspace_uuid,
+                    "workspace_descendants_correct": workspace_descendants_correct,
+                }
+                return JsonResponse(response, safe=False)
+        except RpcError as e:
+            return JsonResponse(
+                {
+                    "detail": "gRPC error occurred during inventory workspace descendants relation check",
+                    "error": str(e),
+                },
+                status=400,
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"detail": "Unexpected error during inventory workspace descendants relation check", "error": str(e)},
+                status=500,
+            )
+    elif workspace:
+        workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
+        workspace_uuid_str = str(workspace_uuid)
+        if workspace.type == Workspace.Types.ROOT:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Root workspace provided — this is not a valid input as it does not have a parent "
+                        "workspace. Request skipped."
+                    )
+                },
+                status=400,
+            )
+        try:
+            workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
+            workspace_check_response = {
+                "org_id": workspace.tenant.org_id,
+                "workspace_id": workspace_uuid_str,
+                "workspace_parent_id": workspace_parent_id,
+                "workspace_relation_correct": workspace_correct,
+            }
+        except RpcError as e:
+            return JsonResponse(
+                {"detail": "gRPC error occurred during inventory workspace relation check", "error": str(e)},
+                status=400,
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"detail": "Unexpected error during inventory workspace relation check", "error": str(e)},
+                status=500,
+            )
+    return JsonResponse(workspace_check_response, safe=False)
+
+
+def check_role(request, role_uuid):
+    """POST to check a role has correct V2 relations and bindings are correct on Inventory API."""
+    try:
+        role = get_object_or_404(Role, uuid=role_uuid)
+        bindings = role.binding_mappings.all()
+        relations_dual_write_handler = RelationApiDualWriteHandler(
+            role=role, event_type=ReplicationEventType.UPDATE_SYSTEM_ROLE, tenant=role.tenant
+        )
+
+        if bindings:
+            with transaction.atomic():
+                relations_dual_write_handler.prepare_for_update()
+                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+        else:
+            with transaction.atomic():
+                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+
+        role_relations = relations_dual_write_handler.role_relations
+
+        serialized_relations = [json_format.MessageToDict(rel) for rel in role_relations]
+
+        role_correct = RoleRelationChecker.check_role(serialized_relations, role.uuid)
+        return JsonResponse(
+            {
+                "V2_role_checks": {
+                    "v1_role_uuid": role.uuid,
+                    "v1_role_name": role.name,
+                    "V2_role_relations_correct": role_correct,
+                },
+            }
+        )
+    except RpcError as e:
+        return JsonResponse(
+            {"detail": "gRPC error occurred during inventory role relation check", "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"detail": "Unexpected error occurred during inventory role relation check", "error": str(e)}, status=500
         )
 
 
@@ -1842,3 +2019,87 @@ def workspace_removal(request):
     except Exception as e:
         logger.exception(f"Bulk workspace deletion failed: {e}")
         return HttpResponse(str(e), status=500)
+
+
+def send_kafka_test_message(request):
+    """Send a test Debezium message to the Kafka consumer topic.
+
+    GET /_private/api/utils/kafka_test_message/
+
+    Sends a predefined test message with sample relations.
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    if not settings.KAFKA_ENABLED:
+        return HttpResponse("Kafka is not enabled", status=400)
+
+    try:
+        from core.kafka import RBACProducer
+        import uuid
+
+        # Create sample test data
+        relations_to_add = [
+            {
+                "resource": {
+                    "type": {"namespace": "rbac", "name": "workspace"},
+                    "id": f"test-workspace-{uuid.uuid4()}",
+                },
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": f"test-principal-{uuid.uuid4()}",
+                    }
+                },
+                "relation": "member",
+            }
+        ]
+        relations_to_remove = []
+
+        # Create the payload for the relations message
+        test_payload = {
+            "relations_to_add": relations_to_add,
+            "relations_to_remove": relations_to_remove,
+        }
+
+        # Create a Debezium-format message
+        debezium_message = {
+            "schema": {
+                "type": "string",
+                "optional": False,
+                "name": "io.debezium.data.Json",
+                "version": 1,
+            },
+            "payload": json.dumps(test_payload),
+        }
+
+        # Send the message
+        producer = RBACProducer()
+        topic = settings.RBAC_KAFKA_CONSUMER_TOPIC
+
+        if not topic:
+            return HttpResponse("RBAC_KAFKA_CONSUMER_TOPIC is not configured", status=400)
+
+        producer.send_kafka_message(topic, debezium_message)
+
+        logger.info(f"Test Kafka message sent to topic '{topic}' by user '{request.user.username}'")
+
+        response_data = {
+            "message": "Test message sent successfully",
+            "topic": topic,
+            "message_format": "debezium",
+            "payload_summary": {
+                "relations_to_add_count": len(relations_to_add),
+                "relations_to_remove_count": len(relations_to_remove),
+            },
+            "sample_data": {
+                "relations_to_add": relations_to_add,
+                "relations_to_remove": relations_to_remove,
+            },
+        }
+
+        return JsonResponse(response_data, status=200)
+
+    except Exception as e:
+        logger.error(f"Error sending test Kafka message: {e}")
+        return JsonResponse({"error": "Error sending test message", "detail": str(e)}, status=500)

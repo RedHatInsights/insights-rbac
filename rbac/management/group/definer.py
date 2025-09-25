@@ -23,6 +23,8 @@ from uuid import uuid4
 from django.conf import settings
 from django.db import transaction
 from django.db.models.query import QuerySet
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
@@ -49,13 +51,14 @@ def seed_group() -> Tuple[Group, Group]:
     """Create or update default group."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     with transaction.atomic():
+        # 'Default access' group
         name = "Default access"
         group_description = (
             "This group contains the roles that all users inherit by default. "
             "Adding or removing roles in this group will affect permissions for all users in your organization."
         )
 
-        group, group_created = Group.objects.get_or_create(
+        group, _ = Group.objects.get_or_create(
             platform_default=True,
             defaults={"description": group_description, "name": name, "system": True},
             tenant=public_tenant,
@@ -65,13 +68,13 @@ def seed_group() -> Tuple[Group, Group]:
         update_group_roles(group, platform_roles, public_tenant)
         logger.info("Finished seeding default group %s.", name)
 
-        # Default admin group
+        # 'Default admin access' group
         admin_name = "Default admin access"
         admin_group_description = (
             "This group contains the roles that all org admin users inherit by default. "
             "Adding or removing roles in this group will affect permissions for all org admin users in your org."
         )
-        admin_group, admin_group_created = Group.objects.get_or_create(
+        admin_group, _ = Group.objects.get_or_create(
             admin_default=True,
             defaults={"description": admin_group_description, "name": admin_name, "system": True},
             tenant=public_tenant,
@@ -137,9 +140,25 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
 
 def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
-    roles = _roles_by_query_or_ids(roles_or_role_ids)
+    roles = _roles_by_query_or_ids(roles_or_role_ids, tenant)
     group_name = group.name
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
+    if created:
+        logger.info(f"Created new group {group_name} for tenant {tenant.org_id}.")
+    else:
+        if tenant.tenant_name == "public":
+            logger.info(f"Group {group_name} already exists for public tenant.")
+        else:
+            logger.info(f"Group {group_name} already exists for tenant {tenant.org_id}.")
+
+    # check if role exists for the specific tenant
+    for role in roles:
+        role_object = get_object_or_404(Role, uuid=role.uuid)
+        if role_object.tenant != tenant and role_object.tenant.tenant_name != "public":
+            key = "roles"
+            message = f"Role with id {role} does not exist."
+            raise serializers.ValidationError({key: _(message)})
+
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.update_or_create(
         system=True, group=group, name=system_policy_name, defaults={"tenant": tenant}
@@ -176,6 +195,11 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         # Only add the role if it was not attached
         if system_policy.roles.filter(pk=role.pk).exists():
+            logger.debug(
+                "Skipped adding role to group: role_id=%s, group_id=%s (role already exists in group)",
+                getattr(role, "pk", repr(role)),
+                getattr(system_policy, "pk", repr(system_policy)),
+            )
             continue
 
         system_policy.roles.add(role)
@@ -192,7 +216,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
-    roles = _roles_by_query_or_ids(roles_or_role_ids)
+    roles = _roles_by_query_or_ids(roles_or_role_ids, tenant)
     group = Group.objects.get(name=group.name, tenant=tenant)
     system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
 
@@ -228,17 +252,24 @@ def update_group_roles(group, roleset, tenant):
     # Remove roles not in roleset from group.
     role_ids = list(roleset.values_list("uuid", flat=True))
     roles_to_remove = group.roles().exclude(uuid__in=role_ids)
-    remove_roles(group, roles_to_remove, tenant)
+    if roles_to_remove.exists():
+        remove_roles(group, roles_to_remove, tenant)
 
 
-def _roles_by_query_or_ids(roles_or_role_ids: Union[QuerySet[Role], list[str]]) -> QuerySet[Role]:
+def _roles_by_query_or_ids(roles_or_role_ids: Union[QuerySet[Role], list[str]], tenant: Tenant) -> QuerySet[Role]:
     if not isinstance(roles_or_role_ids, QuerySet):
         # If given an iterable of UUIDs, get the corresponding objects
-        return Role.objects.filter(uuid__in=roles_or_role_ids)
+        filtered_roles = Role.objects.filter(uuid__in=roles_or_role_ids)
+        if filtered_roles.count() == 0:
+            raise Http404("This role is nonexistent/nonvalid and cannot be added to the group")
+        return filtered_roles
     else:
         # Given a queryset, so because it may not be efficient (e.g. query on non indexed field)
         # keep prior behavior of querying once to get names, then use names (indexed) as base query
         # for further queries.
         # It MAY be faster to avoid this extra query, but this maintains prior behavior.
         role_names = list(roles_or_role_ids.values_list("name", flat=True))
-        return Role.objects.filter(name__in=role_names)
+        filtered_roles_name = Role.objects.filter(name__in=role_names, tenant_id=tenant.id)
+        if not filtered_roles_name.exists():
+            logger.warning("The roles may be nonexistent/nonvalid.")
+        return filtered_roles_name
