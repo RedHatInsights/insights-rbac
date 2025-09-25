@@ -247,7 +247,7 @@ class WorkspaceService:
                 if getattr(conn, "notifies", None):
                     conn.notifies.clear()
             except Exception:
-                pass
+                logger.debug("Failed to clear stale notifications before LISTEN, continuing anyway")
 
             fd = conn.fileno() if hasattr(conn, "fileno") else conn
 
