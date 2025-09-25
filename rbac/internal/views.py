@@ -19,7 +19,9 @@
 import json
 import logging
 import uuid
+from contextlib import contextmanager
 
+import grpc
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
@@ -86,8 +88,6 @@ from management.tasks import (
 )
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import (
-    create_client_channel,
-    create_client_channel_inventory,
     get_principal,
     groups_for_principal,
 )
@@ -117,6 +117,13 @@ BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
 GroupPrincipalChecker = GroupPrincipalInventoryChecker()
 WorkspaceRelationChecker = WorkspaceRelationInventoryChecker()
 RoleRelationChecker = RoleRelationInventoryChecker()
+
+
+@contextmanager
+def create_client_channel(addr):
+    """Create secure channel for grpc requests."""
+    secure_channel = grpc.insecure_channel(addr)
+    yield secure_channel
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -1726,9 +1733,10 @@ def check_inventory(request):
     subject_resource_id = req_data["subject"]["resource"]["resource_id"]
     subject_resource_type = req_data["subject"]["resource"]["resource_type"]
     subject_resource_reporter_type = req_data["subject"]["resource"]["reporter"]["type"]
+    token = jwt_manager.get_jwt_from_redis()
 
     try:
-        with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+        with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
             resource_ref = resource_reference_pb2.ResourceReference(
@@ -1750,7 +1758,9 @@ def check_inventory(request):
             relation=resource_relation,
             object=resource_ref,
         )
-        response = stub.Check(request)
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        response = stub.Check(request, metadata=metadata)
 
         if response:
             response_to_dict = json_format.MessageToDict(response)
