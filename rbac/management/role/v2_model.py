@@ -78,7 +78,34 @@ class TypedRoleV2Manager(models.Manager):
         return super().get_queryset().filter(type=self._role_type)
 
 
-class CustomRoleV2(RoleV2):
+class TypeValidatedRoleV2Mixin:
+    """Mixin for role types that validates type on init and save."""
+
+    _expected_type: str
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the model with type validation."""
+        super().__init__(*args, **kwargs)
+        if not self.pk:
+            self.type = self._expected_type
+        elif self.type != self._expected_type:
+            raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
+
+    def save(self, **kwargs):
+        """Save the model with type validation."""
+        if self.type:
+            if self.type != self._expected_type:
+                raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
+        else:
+            self.type = self._expected_type
+
+        if (update_fields := kwargs.get("update_fields")) is not None:
+            kwargs["update_fields"] = {"type", *update_fields}
+
+        super().save(**kwargs)
+
+
+class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
     """V2 Custom role model."""
 
     class Meta:
@@ -87,35 +114,14 @@ class CustomRoleV2(RoleV2):
     _expected_type = RoleV2.Types.CUSTOM
     objects = TypedRoleV2Manager(role_type=_expected_type)
 
-    def __init__(self, *args, **kwargs):
-        """Initialize the model."""
-        super().__init__(*args, **kwargs)
-        if not self.pk:
-            self.type = self._expected_type
-        elif self.type != self._expected_type:
-            raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
-
     def clean(self):
         """Validate the model."""
         super().clean()
         if self.children.exists():
             raise serializers.ValidationError({"children": "Custom roles cannot have children."})
 
-    def save(self, **kwargs):
-        """Save the model."""
-        if self.type:
-            if self.type != self._expected_type:
-                raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
-        else:
-            self.type = self._expected_type
 
-        if (update_fields := kwargs.get("update_fields")) is not None:
-            kwargs["update_fields"] = {"type", *update_fields}
-
-        super().save(**kwargs)
-
-
-class SeededRoleV2(RoleV2):
+class SeededRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
     """V2 Seeded role model."""
 
     class Meta:
@@ -124,35 +130,14 @@ class SeededRoleV2(RoleV2):
     _expected_type = RoleV2.Types.SEEDED
     objects = TypedRoleV2Manager(role_type=_expected_type)
 
-    def __init__(self, *args, **kwargs):
-        """Initialize the model."""
-        super().__init__(*args, **kwargs)
-        if not self.pk:
-            self.type = self._expected_type
-        elif self.type != self._expected_type:
-            raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
-
     def clean(self):
         """Validate the model."""
         super().clean()
         if self.children.exists():
             raise serializers.ValidationError({"children": "Seeded roles cannot have children."})
 
-    def save(self, **kwargs):
-        """Save the model."""
-        if self.type:
-            if self.type != self._expected_type:
-                raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
-        else:
-            self.type = self._expected_type
 
-        if (update_fields := kwargs.get("update_fields")) is not None:
-            kwargs["update_fields"] = {"type", *update_fields}
-
-        super().save(**kwargs)
-
-
-class PlatformRoleV2(RoleV2):
+class PlatformRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
     """V2 Platform role model."""
 
     class Meta:
@@ -160,14 +145,6 @@ class PlatformRoleV2(RoleV2):
 
     _expected_type = RoleV2.Types.PLATFORM
     objects = TypedRoleV2Manager(role_type=_expected_type)
-
-    def __init__(self, *args, **kwargs):
-        """Initialize the model."""
-        super().__init__(*args, **kwargs)
-        if not self.pk:
-            self.type = self._expected_type
-        elif self.type != self._expected_type:
-            raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
 
     def clean(self):
         """Validate the model."""
@@ -178,16 +155,3 @@ class PlatformRoleV2(RoleV2):
                 raise serializers.ValidationError(
                     {"children": "Platform roles can only have seeded roles as children."}
                 )
-
-    def save(self, **kwargs):
-        """Save the model."""
-        if self.type:
-            if self.type != self._expected_type:
-                raise ValueError(f"Expected role to have type {self._expected_type}, but found {self.type}")
-        else:
-            self.type = self._expected_type
-
-        if (update_fields := kwargs.get("update_fields")) is not None:
-            kwargs["update_fields"] = {"type", *update_fields}
-
-        super().save(**kwargs)
