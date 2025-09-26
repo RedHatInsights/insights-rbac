@@ -530,6 +530,14 @@ objects:
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -1599,6 +1607,18 @@ parameters:
 - name: REDHAT_SSO
   description: The SSO url for rbac environment
   value: 'sso.stage.redhat.com'
+- name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+  description: The UUID for the role for default root workspace level
+  value: ''
+- name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+  description: The UUID for the role for admin root workspace level
+  value: ''
+- name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+  description: The UUID for the role for default tenant level
+  value: ''
+- name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+  description: The UUID for the role for admin tenant level
+  value: ''
 - name: FEATURE_FLAGS_CACHE_DIR
   description: The cache dir for unleash
   value: '/tmp/unleash_cache'
