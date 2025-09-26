@@ -749,12 +749,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/PrincipalPagination"
-                    },
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrincipalPagination"
                     },
                     {
                       "$ref": "#/components/schemas/AllPrincipalsPagination"
@@ -2979,6 +2979,16 @@
             "type": "integer",
             "format": "int64",
             "example": 30
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "example": 10
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "example": 0
           }
         }
       },
@@ -3286,13 +3296,20 @@
                   "serviceAccounts": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/ServiceAccount"
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ServiceAccount"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
                     }
                   },
                   "users": {
                     "type": "array",
                     "items": {
-                      "oneOf": [
+                      "anyOf": [
                         {
                           "$ref": "#/components/schemas/Principal"
                         },
