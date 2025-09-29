@@ -66,8 +66,15 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._tenant_mapping = None
             self._policy_service = GlobalPolicyIdService.shared()
 
-            default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
-            super().__init__(default_workspace, event_type, replicator)
+            tenant = Tenant.objects.get(id=self.group.tenant_id)
+
+            super().__init__(
+                tenant=tenant,
+                root_workspace=Workspace.objects.root(tenant=tenant),
+                default_workspace=Workspace.objects.default(tenant=tenant),
+                event_type=event_type,
+                replicator=replicator,
+            )
         except Exception as e:
             logger.error(f"Initialization of RelationApiDualWriteGroupHandler failed: {e}")
             raise DualWriteException(e)
@@ -152,8 +159,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role(
                 role,
                 update_mapping=add_group_to_binding,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, groups=frozenset([str(self.group.uuid)])
+                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
+                    system_role=role,
+                    resource=resource,
+                    groups=frozenset([str(self.group.uuid)]),
                 ),
             )
 
@@ -194,8 +203,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role(
                 role,
                 update_mapping=reset_mapping,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, groups=frozenset([str(self.group.uuid)])
+                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
+                    system_role=role,
+                    resource=resource,
+                    groups=frozenset([str(self.group.uuid)]),
                 ),
             )
 
