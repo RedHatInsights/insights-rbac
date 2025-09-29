@@ -67,10 +67,12 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._tenant_mapping = None
             self._policy_service = GlobalPolicyIdService.shared()
 
-            default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
-            root_workspace = Workspace.objects.root(tenant_id=self.group.tenant_id)
+            tenant = Tenant.objects.get(id=self.group.tenant_id)
+            default_workspace = Workspace.objects.default(tenant=tenant)
+            root_workspace = Workspace.objects.root(tenant=tenant)
 
             super().__init__(
+                tenant=tenant,
                 default_workspace=default_workspace,
                 root_workspace=root_workspace,
                 event_type=event_type,
@@ -160,8 +162,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role(
                 role,
                 update_mapping=add_group_to_binding,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, groups=frozenset([str(self.group.uuid)])
+                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
+                    system_role=role,
+                    resource=resource,
+                    groups=frozenset([str(self.group.uuid)]),
                 ),
             )
 
@@ -202,8 +206,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role(
                 role,
                 update_mapping=reset_mapping,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, groups=frozenset([str(self.group.uuid)])
+                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
+                    system_role=role,
+                    resource=resource,
+                    groups=frozenset([str(self.group.uuid)]),
                 ),
             )
 
