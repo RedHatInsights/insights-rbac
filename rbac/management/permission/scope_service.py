@@ -20,7 +20,10 @@ from typing import Iterable
 
 from django.conf import settings
 from management.permission.model import PermissionValue
+from management.workspace.model import Workspace
 from migration_tool.models import V2boundresource
+
+from api.models import Tenant
 
 
 class Scope(IntEnum):
@@ -38,6 +41,30 @@ class Scope(IntEnum):
     DEFAULT = 1
     ROOT = 2
     TENANT = 3
+
+
+def bound_model_for_scope(
+    scope: Scope,
+    tenant: Tenant,
+    root_workspace: Workspace,
+    default_workspace: Workspace,
+) -> Tenant | Workspace:
+    """Get the model corresponding the provided scope."""
+    # TODO: we could retrieve the default and root workspaces from the tenant here (or only do so if None is passed).
+    # This is not done here because no current use case requires it.
+    assert root_workspace.tenant == tenant
+    assert default_workspace.tenant == tenant
+
+    if scope == Scope.TENANT:
+        return tenant
+
+    if scope == Scope.ROOT:
+        return root_workspace
+
+    if scope == Scope.DEFAULT:
+        return default_workspace
+
+    raise ValueError(f"Unexpected scope: {scope}")
 
 
 class ImplicitResourceService:
