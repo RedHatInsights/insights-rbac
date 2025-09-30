@@ -14,7 +14,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.platform import DefaultGroupNotAvailableError, GlobalPolicyIdCache
+from management.role.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
 from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
@@ -39,7 +39,7 @@ class V2TenantBootstrapService:
     _replicator: RelationReplicator
     _user_domain = settings.PRINCIPAL_USER_DOMAIN
     _public_tenant: Optional[Tenant]
-    _policy_cache: GlobalPolicyIdCache
+    _policy_service: GlobalPolicyIdService
 
     def __init__(
         self,
@@ -51,7 +51,7 @@ class V2TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
         self._get_user_id = get_user_id if get_user_id else default_get_user_id
-        self._policy_cache = GlobalPolicyIdCache()
+        self._policy_service = GlobalPolicyIdService()
 
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
@@ -534,7 +534,7 @@ class V2TenantBootstrapService:
                         tenant_mapping=mapping,
                         target_workspace_uuid=default_workspace_id,
                         access_type=DefaultAccessType.USER,
-                        policy_cache=self._policy_cache,
+                        policy_service=self._policy_service,
                     )
                 )
             except DefaultGroupNotAvailableError:
@@ -551,7 +551,7 @@ class V2TenantBootstrapService:
                     tenant_mapping=mapping,
                     target_workspace_uuid=default_workspace_id,
                     access_type=DefaultAccessType.ADMIN,
-                    policy_cache=self._policy_cache,
+                    policy_service=self._policy_service,
                 )
             )
         except DefaultGroupNotAvailableError:

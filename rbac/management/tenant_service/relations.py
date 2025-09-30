@@ -19,14 +19,14 @@ import logging
 from typing import Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
-from management.role.platform import GlobalPolicyIdCache
+from management.role.platform import GlobalPolicyIdService
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _role_uuid_for(access_type: DefaultAccessType, policy_cache: GlobalPolicyIdCache) -> str:
+def _role_uuid_for(access_type: DefaultAccessType, policy_cache: GlobalPolicyIdService) -> str:
     if access_type == DefaultAccessType.USER:
         return str(policy_cache.platform_default_policy_uuid())
     elif access_type == DefaultAccessType.ADMIN:
@@ -40,7 +40,7 @@ def default_role_binding_tuples(
     target_workspace_uuid: str,
     access_type: DefaultAccessType,
     resource_binding_only: bool = False,
-    policy_cache: Optional[GlobalPolicyIdCache] = None,
+    policy_service: Optional[GlobalPolicyIdService] = None,
 ) -> list[Relationship]:
     """
     Create the tuples used to bootstrap default access for a Workspace.
@@ -51,8 +51,8 @@ def default_role_binding_tuples(
 
     The optional policy_cache argument can be used to prevent redundant policy UUID lookups across calls.
     """
-    if policy_cache is None:
-        policy_cache = GlobalPolicyIdCache()
+    if policy_service is None:
+        policy_service = GlobalPolicyIdService()
 
     default_group_uuid = str(tenant_mapping.group_uuid_for(access_type))
     role_binding_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type))
@@ -71,7 +71,7 @@ def default_role_binding_tuples(
     # Only add the remaining relationships if requested.
     if not resource_binding_only:
         # Since computing the role UUID can throw, only do it if necessary.
-        default_role_uuid = _role_uuid_for(access_type, policy_cache)
+        default_role_uuid = _role_uuid_for(access_type, policy_service)
 
         relationships.extend(
             [

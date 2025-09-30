@@ -28,14 +28,14 @@ class DefaultGroupNotAvailableError(Exception):
     pass
 
 
-class GlobalPolicyIdCache:
+class GlobalPolicyIdService:
     """Caches the platform and admin default policy UUIDs (used as default role IDs in V2)."""
 
     _platform_default_uuid: Optional[UUID]
     _admin_default_uuid: Optional[UUID]
 
     def __init__(self):
-        """Initialize an empty GlobalPolicyIdCache."""
+        """Initialize an empty GlobalPolicyIdService."""
         self._platform_default_uuid = None
         self._admin_default_uuid = None
 
@@ -45,7 +45,7 @@ class GlobalPolicyIdCache:
 
         Raises DefaultGroupNotAvailableError if no such group exists. Note that the return value of this method may be
         cached, so the behavior is unspecified if the platform default group changes while the same
-        GlobalPolicyIdCache object exists.
+        GlobalPolicyIdService object exists.
         """
         try:
             if self._platform_default_uuid is None:
@@ -60,7 +60,7 @@ class GlobalPolicyIdCache:
         Return the policy UUID of the global admin default group.
 
         Raises DefaultGroupNotAvailableError if no such group exists. Note that the return value of this method may be
-        cached, so the behavior is unspecified if the admin default group changes while the same GlobalPolicyIdCache
+        cached, so the behavior is unspecified if the admin default group changes while the same GlobalPolicyIdService
         object exists.
         """
         try:
