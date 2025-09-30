@@ -530,6 +530,8 @@ objects:
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
+          - name: RBAC_KAFKA_CONSUMER_TOPIC
+            value: ${RBAC_KAFKA_CONSUMER_TOPIC}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
