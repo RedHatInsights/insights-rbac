@@ -50,43 +50,45 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def seed_group() -> Tuple[Group, Group]:
     """Create or update default group."""
-    GlobalPolicyIdService.clear_shared()
+    try:
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        with transaction.atomic():
+            # 'Default access' group
+            name = "Default access"
+            group_description = (
+                "This group contains the roles that all users inherit by default. "
+                "Adding or removing roles in this group will affect permissions for all users in your organization."
+            )
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
-    with transaction.atomic():
-        # 'Default access' group
-        name = "Default access"
-        group_description = (
-            "This group contains the roles that all users inherit by default. "
-            "Adding or removing roles in this group will affect permissions for all users in your organization."
-        )
+            group, _ = Group.objects.get_or_create(
+                platform_default=True,
+                defaults={"description": group_description, "name": name, "system": True},
+                tenant=public_tenant,
+            )
 
-        group, _ = Group.objects.get_or_create(
-            platform_default=True,
-            defaults={"description": group_description, "name": name, "system": True},
-            tenant=public_tenant,
-        )
+            platform_roles = Role.objects.filter(platform_default=True).public_tenant_only()
+            update_group_roles(group, platform_roles, public_tenant)
+            logger.info("Finished seeding default group %s.", name)
 
-        platform_roles = Role.objects.filter(platform_default=True).public_tenant_only()
-        update_group_roles(group, platform_roles, public_tenant)
-        logger.info("Finished seeding default group %s.", name)
+            # 'Default admin access' group
+            admin_name = "Default admin access"
+            admin_group_description = (
+                "This group contains the roles that all org admin users inherit by default. "
+                "Adding or removing roles in this group will affect permissions for all org admin users in your org."
+            )
+            admin_group, _ = Group.objects.get_or_create(
+                admin_default=True,
+                defaults={"description": admin_group_description, "name": admin_name, "system": True},
+                tenant=public_tenant,
+            )
+            admin_roles = Role.objects.filter(admin_default=True).public_tenant_only()
+            update_group_roles(admin_group, admin_roles, public_tenant)
+            logger.info("Finished seeding default org admin group %s.", name)
 
-        # 'Default admin access' group
-        admin_name = "Default admin access"
-        admin_group_description = (
-            "This group contains the roles that all org admin users inherit by default. "
-            "Adding or removing roles in this group will affect permissions for all org admin users in your org."
-        )
-        admin_group, _ = Group.objects.get_or_create(
-            admin_default=True,
-            defaults={"description": admin_group_description, "name": admin_name, "system": True},
-            tenant=public_tenant,
-        )
-        admin_roles = Role.objects.filter(admin_default=True).public_tenant_only()
-        update_group_roles(admin_group, admin_roles, public_tenant)
-        logger.info("Finished seeding default org admin group %s.", name)
-
-    return group, admin_group
+        return group, admin_group
+    finally:
+        # Do this after updating the groups to ensure that any subsequent calls receive the correct value.
+        GlobalPolicyIdService.clear_shared()
 
 
 def set_system_flag_before_update(group: Group, tenant, user) -> Optional[Group]:
