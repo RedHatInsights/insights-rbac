@@ -64,7 +64,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._platform_default_policy_uuid: Optional[str] = None
             self._public_tenant: Optional[Tenant] = None
             self._tenant_mapping = None
-            self._policy_service = GlobalPolicyIdService()
+            self._policy_service = GlobalPolicyIdService.shared()
 
             default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
             super().__init__(default_workspace, event_type, replicator)

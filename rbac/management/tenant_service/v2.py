@@ -51,7 +51,7 @@ class V2TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
         self._get_user_id = get_user_id if get_user_id else default_get_user_id
-        self._policy_service = GlobalPolicyIdService()
+        self._policy_service = GlobalPolicyIdService.shared()
 
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
