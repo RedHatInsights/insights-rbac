@@ -32,7 +32,7 @@ from kessel.inventory.v1beta2 import (
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from management.cache import JWTCache
-from management.utils import create_client_channel
+from management.utils import create_client_channel_inventory
 
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
@@ -49,16 +49,13 @@ class InventoryApiBaseChecker:
 
         Accepts either a single check request or list of check requests.
         """
-        token = jwt_manager.get_jwt_from_redis()
-
         if isinstance(checks, CheckRequest):
             checks = [checks]
 
-            with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
+            with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
                 stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
-                metadata = [("authorization", f"Bearer {token}")]
 
-                responses = [stub.Check(req, metadata=metadata) for req in checks]
+                responses = [stub.Check(req) for req in checks]
                 return all(self._is_allowed(res) for res in responses)
         return False
 
@@ -254,3 +251,39 @@ class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
         else:
             logger.info(f"{workspace_id} has the correct parent workspace.")
         return workspace_check
+
+
+class RoleRelationInventoryChecker(InventoryApiBaseChecker):
+    """Subclass to check role relations are correct on inventory api."""
+
+    def check_role(self, role_relations, role_uuid):
+        """Core logic to check role V2 relation on inventory api."""
+        check_requests = []
+        for role_relation in role_relations:
+            # Build the check request for each of the relations generated for the role
+            check_request = CheckRequest(
+                object=resource_reference_pb2.ResourceReference(
+                    resource_id=role_relation["resource"]["id"],
+                    resource_type=role_relation["resource"]["type"]["name"],
+                    reporter=reporter_reference_pb2.ReporterReference(
+                        type=role_relation["resource"]["type"]["namespace"]
+                    ),
+                ),
+                relation=role_relation["relation"],
+                subject=subject_reference_pb2.SubjectReference(
+                    resource=resource_reference_pb2.ResourceReference(
+                        resource_id=role_relation["subject"]["subject"]["id"],
+                        resource_type=role_relation["subject"]["subject"]["type"]["name"],
+                        reporter=reporter_reference_pb2.ReporterReference(
+                            type=role_relation["subject"]["subject"]["type"]["namespace"]
+                        ),
+                    )
+                ),
+            )
+            check_requests.append(check_request)
+        role_check = self.check_inventory_core(check_requests)
+        if not role_check:
+            logger.warning(f"Role: {role_uuid} does not have the expected V2 relations.")
+        else:
+            logger.info(f"Role: {role_uuid} has the correct V2 relations.")
+        return role_check
