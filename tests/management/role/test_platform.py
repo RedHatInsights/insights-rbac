@@ -1,4 +1,3 @@
-from api.models import Tenant
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.models import Group
@@ -70,3 +69,31 @@ class GlobalPolicyIdServiceTests(TestCase):
 
         self.admin_default.delete()
         self.assertEqual(original, self.policy_service.admin_default_policy_uuid())
+
+    def test_shared(self):
+        """Test the cache used in shared() is appropriately reused and cleared."""
+        shared = GlobalPolicyIdService.shared()
+
+        # Two values from shared() without an intervening clear_shared() should be equal to each other.
+        self.assertEqual(shared, GlobalPolicyIdService.shared())
+
+        original_platform = shared.platform_default_policy_uuid()
+        original_admin = shared.admin_default_policy_uuid()
+
+        self.platform_default.delete()
+        self.admin_default.delete()
+
+        shared = GlobalPolicyIdService.shared()
+
+        # The new instance from shared() should use the same cache, even after the underlying groups are deleted.
+        self.assertEqual(original_platform, shared.platform_default_policy_uuid())
+        self.assertEqual(original_admin, shared.admin_default_policy_uuid())
+
+        GlobalPolicyIdService.clear_shared()
+        after_clear = GlobalPolicyIdService.shared()
+
+        self.assertNotEqual(shared, after_clear)
+
+        # The new instance should not share the previous instance's cache.
+        self.assertRaises(DefaultGroupNotAvailableError, after_clear.platform_default_policy_uuid)
+        self.assertRaises(DefaultGroupNotAvailableError, after_clear.admin_default_policy_uuid)

@@ -15,8 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Contains helpers for handling platform roles (i.e. those built-in to RBAC)."""
-
-from typing import Optional
+import threading
+from typing import ClassVar, Optional
 from uuid import UUID
 
 from management.models import Group
@@ -38,6 +38,31 @@ class GlobalPolicyIdService:
         """Initialize an empty GlobalPolicyIdService."""
         self._platform_default_uuid = None
         self._admin_default_uuid = None
+
+    _shared: ClassVar[Optional["GlobalPolicyIdService"]] = None
+    _shared_lock = threading.Lock()
+
+    @classmethod
+    def shared(cls) -> "GlobalPolicyIdService":
+        """Get a global cached instance of GlobalPolicyIdService."""
+        with cls._shared_lock:
+            instance = cls._shared
+
+            if instance is None:
+                instance = GlobalPolicyIdService()
+                cls._shared = instance
+
+            return instance
+
+    @classmethod
+    def clear_shared(cls):
+        """
+        Clear the cached instance used by shared().
+
+        shared() will return a new instance after this returns.
+        """
+        with cls._shared_lock:
+            cls._shared = None
 
     def platform_default_policy_uuid(self) -> UUID:
         """
