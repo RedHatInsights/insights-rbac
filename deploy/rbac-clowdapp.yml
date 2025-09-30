@@ -453,8 +453,23 @@ objects:
                 optional: true
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+            # Inventory API variables
+          - name: INVENTORY_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
+          - name: INVENTORY_API_TOKEN_URL
+            value: ${INVENTORY_API_TOKEN_URL}
           - name: SCOPES
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
@@ -1521,6 +1536,9 @@ parameters:
 - name: INVENTORY_API_SERVER
   description: The gRPC API server to use for inventory api
   value: "localhost:9000"
+- name: INVENTORY_API_TOKEN_URL
+  description: The SSO token url to use for inventory api
+  value: "https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
   value: "False"
