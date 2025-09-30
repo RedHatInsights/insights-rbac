@@ -21,6 +21,7 @@ from typing import Iterable, Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
 from management.principal.model import Principal
@@ -45,6 +46,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
     group: Group
     _expected_empty_relation_reason = None
+    _policy_service: GlobalPolicyIdService
 
     def __init__(
         self,
@@ -62,6 +64,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._platform_default_policy_uuid: Optional[str] = None
             self._public_tenant: Optional[Tenant] = None
             self._tenant_mapping = None
+            self._policy_service = GlobalPolicyIdService()
 
             default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
             super().__init__(default_workspace, event_type, replicator)
@@ -278,6 +281,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             target_workspace_uuid=str(self.default_workspace.id),
             access_type=DefaultAccessType.USER,
             resource_binding_only=resource_binding_only,
+            policy_service=self._policy_service,
         )
 
     def set_expected_empty_relation_reason(self, reason):
