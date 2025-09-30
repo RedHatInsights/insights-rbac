@@ -15,7 +15,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Contains helpers for handling platform groups (i.e. those built-in to RBAC)."""
-import threading
 from typing import ClassVar, Optional
 from uuid import UUID
 
@@ -40,19 +39,17 @@ class GlobalPolicyIdService:
         self._admin_default_uuid = None
 
     _shared: ClassVar[Optional["GlobalPolicyIdService"]] = None
-    _shared_lock = threading.Lock()
 
     @classmethod
     def shared(cls) -> "GlobalPolicyIdService":
         """Get a global cached instance of GlobalPolicyIdService."""
-        with cls._shared_lock:
-            instance = cls._shared
+        instance = cls._shared
 
-            if instance is None:
-                instance = GlobalPolicyIdService()
-                cls._shared = instance
+        if instance is None:
+            instance = GlobalPolicyIdService()
+            cls._shared = instance
 
-            return instance
+        return instance
 
     @classmethod
     def clear_shared(cls):
@@ -61,8 +58,7 @@ class GlobalPolicyIdService:
 
         shared() will return a new instance after this returns.
         """
-        with cls._shared_lock:
-            cls._shared = None
+        cls._shared = None
 
     def platform_default_policy_uuid(self) -> UUID:
         """
