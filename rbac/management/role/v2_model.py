@@ -148,6 +148,7 @@ class PlatformRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 def validate_role_children_on_m2m_change(sender, instance, action, pk_set, **kwargs):
     """
     Signal handler to validate role children relationships on M2M changes.
+
     This validates BEFORE the M2M relationship is written to the database.
     """
     if action != "pre_add":
