@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Contains helpers for handling platform roles (i.e. those built-in to RBAC)."""
+"""Contains helpers for handling platform groups (i.e. those built-in to RBAC)."""
 import threading
 from typing import ClassVar, Optional
 from uuid import UUID

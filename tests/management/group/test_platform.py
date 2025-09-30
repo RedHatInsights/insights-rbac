@@ -1,7 +1,7 @@
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.models import Group
-from management.role.platform import GlobalPolicyIdService, DefaultGroupNotAvailableError
+from management.group.platform import GlobalPolicyIdService, DefaultGroupNotAvailableError
 from uuid import UUID
 
 

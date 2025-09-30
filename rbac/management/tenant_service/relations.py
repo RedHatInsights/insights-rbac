@@ -19,7 +19,7 @@ import logging
 from typing import Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
-from management.role.platform import GlobalPolicyIdService
+from management.group.platform import GlobalPolicyIdService
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from migration_tool.utils import create_relationship
 

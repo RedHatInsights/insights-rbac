@@ -7,6 +7,7 @@ from django.conf import settings
 from django.db.models import Prefetch, Q, QuerySet
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     PartitionKey,
@@ -14,7 +15,6 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
 from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
