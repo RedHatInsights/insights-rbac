@@ -27,6 +27,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from management.group.model import Group
+from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
 )
@@ -49,6 +50,8 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def seed_group() -> Tuple[Group, Group]:
     """Create or update default group."""
+    GlobalPolicyIdService.clear_shared()
+
     public_tenant = Tenant.objects.get(tenant_name="public")
     with transaction.atomic():
         # 'Default access' group
