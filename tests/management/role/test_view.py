@@ -2781,3 +2781,475 @@ class RoleViewNonAdminTests(IdentityRequest):
             response.data.get("errors")[0].get("detail"),
             "Custom roles cannot be created for rbac",
         )
+
+
+class RoleWorkspaceValidationTests(IdentityRequest):
+    """Test the v1 role workspace validation logic"""
+
+    def setUp(self):
+        """Set up the workspace validation tests."""
+        super().setUp()
+
+        # Create 2 separate tenants to test with
+        self.tenant1 = Tenant.objects.create(
+            tenant_name="tenant1", account_id="tenant1_acc_id", org_id="tenant1_org_id"
+        )
+
+        self.tenant2 = Tenant.objects.create(
+            tenant_name="tenant2", account_id="tenant2_acc_id", org_id="tenant2_org_id"
+        )
+
+        # Create workspaces in different tenants
+        self.root_workspace_t1 = Workspace.objects.create(
+            name="root",
+            description="Root workspace",
+            tenant=self.tenant1,
+            type="root",
+        )
+        self.default_workspace_t1 = Workspace.objects.create(
+            name="default",
+            description="Default workspace",
+            tenant=self.tenant1,
+            parent=self.root_workspace_t1,
+            type="default",
+        )
+        self.tenant1_workspace = Workspace.objects.create(
+            name="Tenant 1 Workspace", description="Workspace in same tenant", tenant=self.tenant1
+        )
+
+        self.root_workspace_t2 = Workspace.objects.create(
+            name="root",
+            description="Root workspace",
+            tenant=self.tenant2,
+            type="root",
+        )
+        self.default_workspace_t2 = Workspace.objects.create(
+            name="default",
+            description="Default workspace",
+            tenant=self.tenant2,
+            parent=self.root_workspace_t2,
+            type="default",
+        )
+        self.tenant2_workspace = Workspace.objects.create(
+            name="Tenant 2 Workspace", description="Workspace in different tenant", tenant=self.tenant2
+        )
+
+        # Create a permission for testing
+        self.test_permission = Permission.objects.create(
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            permission="inventory:groups:read",
+            tenant=self.tenant1,
+        )
+
+        # Mock user with org_id
+        self.request_user_mock = Mock()
+        self.request_user_mock.org_id = "tenant1_org_id"
+
+        # Mock request object
+        self.request_mock = Mock()
+        self.request_mock.tenant = self.tenant1
+        self.request_mock.user = self.request_user_mock
+
+    def test_workspace_validation_same_tenant_passes_with_equal_operation(self):
+        """Test that workspace validation passes when workspace belongs to same tenant."""
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.tenant1_workspace.id),
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        # Create viewset instance and call validate_role
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should not raise any exception
+        try:
+            viewset.validate_role(self.request_mock)
+        except Exception as e:
+            self.fail(f"validate_role raised an unexpected exception: {e}")
+
+    def test_workspace_validation_same_tenant_passes_with_in_operation(self):
+        """Test that workspace validation passes when workspace belongs to same tenant."""
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "in",
+                                "value": [str(uuid4()), str(self.tenant1_workspace.id)],
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        # Create viewset instance and call validate_role
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should not raise any exception
+        try:
+            viewset.validate_role(self.request_mock)
+        except Exception as e:
+            self.fail(f"validate_role raised an unexpected exception: {e}")
+
+    def test_workspace_validation_different_tenant_fails_equal_operation(self):
+        """Test that workspace validation fails when workspace belongs to different tenant using the equal operation."""
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.tenant2_workspace.id),
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from rest_framework import serializers
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        with self.assertRaises(serializers.ValidationError) as context:
+            viewset.validate_role(self.request_mock)
+
+        error_dict = context.exception.detail
+        self.assertIn("role", error_dict)
+        self.assertEqual(
+            "user from org 'tenant1_org_id' cannot add permission 'inventory:groups:read' to workspace outside their org",
+            str(error_dict["role"][0]),
+        )
+
+    def test_workspace_validation_different_tenant_fails_in_operation(self):
+        """Test that workspace validation fails when workspace belongs to different tenant using the in operation."""
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "in",
+                                "value": [str(self.tenant2_workspace.id), str(uuid4())],
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from rest_framework import serializers
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        with self.assertRaises(serializers.ValidationError) as context:
+            viewset.validate_role(self.request_mock)
+
+        error_dict = context.exception.detail
+        self.assertIn("role", error_dict)
+        self.assertIn("cannot add permission", str(error_dict["role"][0]))
+
+    def test_workspace_validation_non_workspace_resource_skipped(self):
+        """Test that non-workspace resources skip validation."""
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "other.id",  # Not group.id
+                                "operation": "equal",
+                                "value": str(self.tenant2_workspace.id),
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should not raise any exception since it's not a workspace resource
+        try:
+            viewset.validate_role(self.request_mock)
+        except Exception as e:
+            self.fail(f"validate_role raised an unexpected exception: {e}")
+
+    def test_workspace_validation_non_inventory_app_skipped(self):
+        """Test that non-inventory applications skip workspace validation."""
+        # Create permission for different app
+        Permission.objects.create(
+            application="app", resource_type="groups", verb="read", permission="app:groups:read", tenant=self.tenant1
+        )
+
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "app:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.tenant2_workspace.id),
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should not raise exception since app is not inventory
+        try:
+            viewset.validate_role(self.request_mock)
+        except Exception as e:
+            self.fail(f"validate_role raised an unexpected exception: {e}")
+
+    def test_workspace_validation_multiple_resource_definitions(self):
+        """Test validation with multiple resourceDefinitions, some valid, some invalid."""
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.tenant1_workspace.id),  # Valid
+                            }
+                        },
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.tenant2_workspace.id),  # Invalid
+                            }
+                        },
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from rest_framework import serializers
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should fail because one of the resourceDefinitions is invalid
+        with self.assertRaises(serializers.ValidationError) as context:
+            viewset.validate_role(self.request_mock)
+
+        error_dict = context.exception.detail
+        self.assertIn("role", error_dict)
+        self.assertIn("cannot add permission", str(error_dict["role"][0]))
+
+    def test_workspace_validation_empty_resource_definitions(self):
+        """Test validation with empty resourceDefinitions."""
+        request_data = {
+            "name": "test_role",
+            "access": [{"permission": "inventory:groups:read", "resourceDefinitions": []}],
+        }
+
+        self.request_mock.data = request_data
+
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should not raise exception with empty resourceDefinitions
+        try:
+            viewset.validate_role(self.request_mock)
+        except Exception as e:
+            self.fail(f"validate_role raised an unexpected exception: {e}")
+
+    def test_workspace_validation_missing_attribute_filter(self):
+        """Test validation when resourceDefinition lacks attributeFilter."""
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            # Missing attributeFilter
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from rest_framework import serializers
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should raise exception when attributeFilter is missing
+        with self.assertRaises(serializers.ValidationError) as context:
+            viewset.validate_role(self.request_mock)
+
+        error_dict = context.exception.detail
+        self.assertIn("resourceDefinitions", error_dict)
+        self.assertIn("attributeFilter", error_dict["resourceDefinitions"][0])
+        self.assertIn("This field is required.", error_dict["resourceDefinitions"][0]["attributeFilter"][0])
+
+    @patch("management.role.view.is_resource_a_workspace")
+    def test_workspace_validation_is_resource_workspace_called(self, mock_is_resource_workspace):
+        """Test that is_resource_a_workspace is called with correct parameters."""
+        mock_is_resource_workspace.return_value = False  # Make it return False to skip validation
+
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.tenant1_workspace.id),
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+        viewset.validate_role(self.request_mock)
+
+        # Verify is_resource_a_workspace was called with correct parameters
+        mock_is_resource_workspace.assert_called_once_with(
+            "inventory",
+            "groups",
+            {"key": "group.id", "operation": "equal", "value": str(self.tenant1_workspace.id)},
+        )
+
+    @patch("management.role.view.get_workspace_ids_from_resource_definition")
+    def test_workspace_validation_get_workspace_id_called(self, mock_get_workspace_ids):
+        """Test that get_workspace_ids_from_resource_definition is called with correct parameters."""
+        mock_get_workspace_ids.return_value = [self.tenant1_workspace.id]
+
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": str(self.tenant1_workspace.id),
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+        viewset.validate_role(self.request_mock)
+
+        # Verify get_workspace_ids_from_resource_definition was called
+        mock_get_workspace_ids.assert_called_once_with(
+            {"key": "group.id", "operation": "equal", "value": str(self.tenant1_workspace.id)}
+        )
+
+    def test_workspace_validation_nonexistent_workspace_id(self):
+        """Test validation when workspace ID doesn't exist in any tenant."""
+        fake_workspace_id = str(uuid4())
+
+        request_data = {
+            "name": "test_role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {"attributeFilter": {"key": "group.id", "operation": "equal", "value": fake_workspace_id}}
+                    ],
+                }
+            ],
+        }
+
+        self.request_mock.data = request_data
+
+        from rest_framework import serializers
+        from management.role.view import RoleViewSet
+
+        viewset = RoleViewSet()
+
+        # Should fail because workspace doesn't exist in any tenant
+        with self.assertRaises(serializers.ValidationError) as context:
+            viewset.validate_role(self.request_mock)
+
+        error_dict = context.exception.detail
+        self.assertIn("role", error_dict)
+        self.assertIn("cannot add permission", str(error_dict["role"][0]))
