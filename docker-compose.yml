@@ -35,6 +35,12 @@ services:
         - PRINCIPAL_PROXY_SERVICE_SSL_VERIFY=${PRINCIPAL_PROXY_SERVICE_SSL_VERIFY-False}
         - RBAC_DESTRUCTIVE_API_ENABLED_UNTIL=${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
         - RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL=${RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL}
+        - KAFKA_ENABLED=true
+        - RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=insights_rbac-kafka-1:9092
+        - RBAC_KAFKA_CONSUMER_TOPIC=outbox.event.rbac-consumer-replication-event
+        - RBAC_KAFKA_CONSUMER_GROUP_ID=rbac-consumer-group
+        - REPLICATION_TO_RELATION_ENABLED=true
+        - PRINCIPAL_USER_DOMAIN=redhat
       privileged: true
       ports:
           - 9080:8080

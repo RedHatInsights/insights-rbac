@@ -122,6 +122,97 @@ To run the migrator tool to convert RBAC data into [Kessel relations](https://gi
 
     DJANGO_READ_DOT_ENV_FILE=True ./rbac/manage.py migrate_relations [--org-list ORG_LIST [ORG_LIST ...]] [--exclude-apps EXCLUDE_APPS [EXCLUDE_APPS ...]] [--write-to-db]
 
+Kafka and Debezium Change Data Capture Setup
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The Debezium setup script provides a complete automated solution for setting up Change Data Capture (CDC) with Kafka for RBAC event streaming. This enables real-time replication of RBAC operations to external systems.
+
+**Quick Setup (Recommended)**
+
+To set up the complete Debezium infrastructure automatically: ::
+
+    ./scripts/setup_debezium.sh
+
+This script will:
+
+1. Create required Docker networks
+2. Start and configure PostgreSQL with logical replication
+3. Launch Kafka, Zookeeper, Kafka Connect, and Kafdrop services
+4. Create and configure the Debezium PostgreSQL connector
+5. Set up Kafka topics and consumer groups
+6. Verify the complete setup
+
+**Running the Kafka Consumer**
+
+After setup, you can run the RBAC Kafka consumer to process replication events:
+
+For interactive mode (shows logs in real-time): ::
+
+    ./scripts/setup_debezium.sh --consumer
+
+For background mode: ::
+
+    ./scripts/setup_debezium.sh --consumer-bg
+
+For a custom topic: ::
+
+    ./scripts/setup_debezium.sh --consumer my-custom-topic
+
+**Testing the Setup**
+
+Send a test replication message: ::
+
+    ./scripts/send_test_relations_message.sh
+
+**Monitoring and Management**
+
+* **Kafdrop UI**: http://localhost:9001 - Browse Kafka topics and messages
+* **Kafka Connect API**: http://localhost:8083 - Monitor connectors and status
+* **PostgreSQL**: localhost:15432 - Direct database access
+
+**Useful Commands**
+
+Check connector status: ::
+
+    curl http://localhost:8083/connectors/rbac-postgres-connector/status
+
+List Kafka topics: ::
+
+    docker exec insights_rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list
+
+View messages in the replication topic: ::
+
+    docker exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000
+
+Check message count in topic: ::
+
+    docker exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event
+
+Stop Debezium services: ::
+
+    docker-compose -f docker-compose.debezium.yml down
+
+**Help and Options**
+
+View all available options: ::
+
+    ./scripts/setup_debezium.sh --help
+
+**Prerequisites**
+
+* Docker and docker-compose installed and running
+* Ports 8083, 9001, 9092, 15432 available
+* docker-compose.yml and docker-compose.debezium.yml present
+
+**Event Flow**
+
+When RBAC operations occur (like adding users to groups), they generate outbox events that flow through:
+
+1. PostgreSQL outbox table (management_outbox)
+2. Debezium Change Data Capture
+3. Kafka topic (outbox.event.rbac-consumer-replication-event)
+4. RBAC Kafka consumer for downstream processing
+
 
 Making Requests
 ---------------
