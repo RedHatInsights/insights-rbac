@@ -27,7 +27,6 @@ from management.tenant_mapping.model import logger
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 
-
 from api.models import Tenant, User
 
 
