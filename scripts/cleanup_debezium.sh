@@ -5,6 +5,18 @@
 
 set -e  # Exit on any error
 
+# Detect container runtime (docker or podman)
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+    COMPOSE_CMD="docker-compose"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+    COMPOSE_CMD="podman compose"
+else
+    echo "Error: Neither Docker nor Podman is available or running"
+    exit 1
+fi
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,8 +45,8 @@ print_error() {
 stop_debezium_services() {
     print_status "Stopping Debezium services..."
 
-    if docker-compose -f docker-compose.debezium.yml ps | grep -q "Up"; then
-        docker-compose -f docker-compose.debezium.yml down
+    if $COMPOSE_CMD -f docker-compose.debezium.yml ps | grep -q "Up"; then
+        $COMPOSE_CMD -f docker-compose.debezium.yml down
         print_success "Debezium services stopped"
     else
         print_warning "Debezium services are not running"
@@ -58,20 +70,20 @@ remove_connector() {
 cleanup_postgres_replication() {
     print_status "Cleaning up PostgreSQL replication..."
 
-    if docker ps | grep -q rbac_db; then
+    if $CONTAINER_RUNTIME ps | grep -q rbac_db; then
         # Drop replication slot if it exists
-        docker exec rbac_db psql -U postgres -c "SELECT pg_drop_replication_slot('debezium_slot');" 2>/dev/null || print_warning "Replication slot 'debezium_slot' not found"
+        $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "SELECT pg_drop_replication_slot('debezium_slot');" 2>/dev/null || print_warning "Replication slot 'debezium_slot' not found"
 
         # Reset PostgreSQL configuration (optional)
         if [ "${1:-}" = "--reset-postgres" ]; then
             print_status "Resetting PostgreSQL configuration..."
-            docker exec rbac_db psql -U postgres -c "ALTER SYSTEM RESET wal_level;" > /dev/null
-            docker exec rbac_db psql -U postgres -c "ALTER SYSTEM RESET max_replication_slots;" > /dev/null
-            docker exec rbac_db psql -U postgres -c "ALTER SYSTEM RESET max_wal_senders;" > /dev/null
+            $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "ALTER SYSTEM RESET wal_level;" > /dev/null
+            $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "ALTER SYSTEM RESET max_replication_slots;" > /dev/null
+            $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "ALTER SYSTEM RESET max_wal_senders;" > /dev/null
             print_success "PostgreSQL configuration reset"
 
             print_status "Restarting PostgreSQL..."
-            docker-compose restart db > /dev/null 2>&1
+            $COMPOSE_CMD restart db > /dev/null 2>&1
             print_success "PostgreSQL restarted"
         fi
     else
@@ -79,15 +91,15 @@ cleanup_postgres_replication() {
     fi
 }
 
-# Function to remove Docker network
+# Function to remove container network
 remove_network() {
-    print_status "Removing Docker network..."
+    print_status "Removing container network..."
 
-    if docker network ls | grep -q rbac-network; then
+    if $CONTAINER_RUNTIME network ls | grep -q rbac-network; then
         # Check if network is in use
-        if docker network inspect rbac-network | grep -q '"Containers": {}'; then
-            docker network rm rbac-network
-            print_success "Docker network removed"
+        if $CONTAINER_RUNTIME network inspect rbac-network | grep -q '"Containers": {}'; then
+            $CONTAINER_RUNTIME network rm rbac-network
+            print_success "Container network removed"
         else
             print_warning "Network 'rbac-network' is still in use by containers"
         fi
@@ -98,10 +110,10 @@ remove_network() {
 
 # Function to clean up volumes (optional)
 cleanup_volumes() {
-    print_status "Cleaning up Docker volumes..."
+    print_status "Cleaning up container volumes..."
 
     # List and optionally remove Kafka/Debezium related volumes
-    local volumes=$(docker volume ls | grep -E "(kafka|debezium|zookeeper)" | awk '{print $2}' || true)
+    local volumes=$($CONTAINER_RUNTIME volume ls | grep -E "(kafka|debezium|zookeeper)" | awk '{print $2}' || true)
 
     if [ -n "$volumes" ]; then
         echo "Found the following volumes:"
@@ -110,7 +122,7 @@ cleanup_volumes() {
         read -p "Do you want to remove these volumes? (y/N): " -n 1 -r
         echo ""
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo "$volumes" | xargs docker volume rm
+            echo "$volumes" | xargs $CONTAINER_RUNTIME volume rm
             print_success "Volumes removed"
         else
             print_warning "Volumes preserved"
@@ -128,21 +140,21 @@ show_status() {
     echo "========================================"
     echo ""
 
-    echo "🐳 Docker Containers:"
-    docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "(kafka|zookeeper|connect|kafdrop|rbac_db)" || echo "No related containers running"
+    echo "🐳 Containers:"
+    $CONTAINER_RUNTIME ps --format "table {{.Names}}\t{{.Status}}" | grep -E "(kafka|zookeeper|connect|kafdrop|rbac_db)" || echo "No related containers running"
     echo ""
 
-    echo "🌐 Docker Networks:"
-    docker network ls | grep rbac || echo "No rbac networks found"
+    echo "🌐 Networks:"
+    $CONTAINER_RUNTIME network ls | grep rbac || echo "No rbac networks found"
     echo ""
 
-    echo "💾 Docker Volumes:"
-    docker volume ls | grep -E "(kafka|debezium|zookeeper)" || echo "No related volumes found"
+    echo "💾 Volumes:"
+    $CONTAINER_RUNTIME volume ls | grep -E "(kafka|debezium|zookeeper)" || echo "No related volumes found"
     echo ""
 
-    if docker ps | grep -q rbac_db; then
+    if $CONTAINER_RUNTIME ps | grep -q rbac_db; then
         echo "🔄 PostgreSQL Replication Slots:"
-        docker exec rbac_db psql -U postgres -c "SELECT slot_name, plugin, slot_type, active FROM pg_replication_slots;" || true
+        $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "SELECT slot_name, plugin, slot_type, active FROM pg_replication_slots;" || true
     fi
 }
 

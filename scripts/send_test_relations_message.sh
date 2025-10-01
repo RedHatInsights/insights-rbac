@@ -3,6 +3,16 @@
 # Script to send test relations message to Kafka
 # Usage: ./send_test_relations_message.sh [topic_name]
 
+# Detect container runtime (docker or podman)
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+else
+    echo "Error: Neither Docker nor Podman is available or running"
+    exit 1
+fi
+
 TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
 
 # Create test message in the format expected by RBAC Kafka consumer
@@ -27,7 +37,7 @@ EOL
 echo "Sending test relations message to topic: $TOPIC"
 
 # Send message to Kafka
-docker exec -i insights_rbac-kafka-1 kafka-console-producer \
+$CONTAINER_RUNTIME exec -i insights-rbac-kafka-1 kafka-console-producer \
   --bootstrap-server localhost:9092 \
   --topic "$TOPIC" < /tmp/test_relations_message.json
 

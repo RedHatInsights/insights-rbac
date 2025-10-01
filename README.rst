@@ -62,7 +62,9 @@ Modify as you see fit.
 Database
 ^^^^^^^^
 
-PostgreSQL is used as the database backend for Insights-rbac. A docker-compose file is provided for creating a local database container. If modifications were made to the .env file the docker-compose file will need to be modified to ensure matching database credentials. Several commands are available for interacting with the database. ::
+PostgreSQL is used as the database backend for Insights-rbac. A docker-compose file is provided for creating a local database container. The scripts automatically detect and support both Docker and Podman as container runtimes.
+
+If modifications were made to the .env file the docker-compose file will need to be modified to ensure matching database credentials. Several commands are available for interacting with the database. ::
 
     # This will launch a Postgres container
     make start-db
@@ -81,7 +83,7 @@ There is a known limitation with docker-compose and Linux environments with SELi
 
     "mkdir: cannot create directory '/var/lib/pgsql/data/userdata': Permission denied" can be resolved by granting ./pg_data ownership permissions to uid:26 (postgres user in centos/postgresql-96-centos7)
 
-If a docker container running Postgres is not feasible, it is possible to run Postgres locally as documented in the Postgres tutorial_. The default port for local Postgres installations is `5432`. Make sure to modify the `.env` file accordingly. To initialize the database run ::
+If a container running Postgres is not feasible, it is possible to run Postgres locally as documented in the Postgres tutorial_. The default port for local Postgres installations is `5432`. Make sure to modify the `.env` file accordingly. To initialize the database run ::
 
     make run-migrations
 
@@ -127,6 +129,10 @@ Kafka and Debezium Change Data Capture Setup
 
 The Debezium setup script provides a complete automated solution for setting up Change Data Capture (CDC) with Kafka for RBAC event streaming. This enables real-time replication of RBAC operations to external systems.
 
+**Container Runtime Support**
+
+The scripts automatically detect and support both Docker and Podman as container runtimes. The scripts will use whichever is available and running on your system.
+
 **Quick Setup (Recommended)**
 
 To set up the complete Debezium infrastructure automatically: ::
@@ -135,7 +141,7 @@ To set up the complete Debezium infrastructure automatically: ::
 
 This script will:
 
-1. Create required Docker networks
+1. Create required container networks
 2. Start and configure PostgreSQL with logical replication
 3. Launch Kafka, Zookeeper, Kafka Connect, and Kafdrop services
 4. Create and configure the Debezium PostgreSQL connector
@@ -176,21 +182,37 @@ Check connector status: ::
 
     curl http://localhost:8083/connectors/rbac-postgres-connector/status
 
-List Kafka topics: ::
+List Kafka topics (Docker): ::
 
     docker exec insights_rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list
 
-View messages in the replication topic: ::
+List Kafka topics (Podman): ::
+
+    podman exec insights_rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list
+
+View messages in the replication topic (Docker): ::
 
     docker exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000
 
-Check message count in topic: ::
+View messages in the replication topic (Podman): ::
+
+    podman exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000
+
+Check message count in topic (Docker): ::
 
     docker exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event
 
-Stop Debezium services: ::
+Check message count in topic (Podman): ::
+
+    podman exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event
+
+Stop Debezium services (Docker): ::
 
     docker-compose -f docker-compose.debezium.yml down
+
+Stop Debezium services (Podman): ::
+
+    podman-compose -f docker-compose.debezium.yml down
 
 **Help and Options**
 
@@ -200,7 +222,7 @@ View all available options: ::
 
 **Prerequisites**
 
-* Docker and docker-compose installed and running
+* Docker/Podman and docker-compose/podman-compose installed and running
 * Ports 8083, 9001, 9092, 15432 available
 * docker-compose.yml and docker-compose.debezium.yml present
 

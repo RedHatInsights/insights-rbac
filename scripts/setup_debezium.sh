@@ -5,6 +5,18 @@
 
 set -e  # Exit on any error
 
+# Detect container runtime (docker or podman)
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+    COMPOSE_CMD="docker-compose"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+    COMPOSE_CMD="podman compose"
+else
+    echo "Error: Neither Docker nor Podman is available or running"
+    exit 1
+fi
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -53,24 +65,20 @@ wait_for_service() {
     return 1
 }
 
-# Function to check if Docker is running
-check_docker() {
-    if ! docker info > /dev/null 2>&1; then
-        print_error "Docker is not running. Please start Docker and try again."
-        exit 1
-    fi
-    print_success "Docker is running"
+# Function to check if container runtime is running
+check_container_runtime() {
+    print_success "Using $CONTAINER_RUNTIME as container runtime"
 }
 
-# Function to create Docker network
+# Function to create container network
 create_network() {
-    print_status "Creating Docker network 'rbac-network'..."
+    print_status "Creating container network 'rbac-network'..."
 
-    if docker network ls | grep -q rbac-network; then
+    if $CONTAINER_RUNTIME network ls | grep -q rbac-network; then
         print_warning "Network 'rbac-network' already exists"
     else
-        docker network create rbac-network
-        print_success "Created Docker network 'rbac-network'"
+        $CONTAINER_RUNTIME network create rbac-network
+        print_success "Created container network 'rbac-network'"
     fi
 }
 
@@ -79,20 +87,36 @@ start_database() {
     print_status "Starting PostgreSQL database..."
 
     # Check if database is already running
-    if docker ps | grep -q rbac_db; then
+    if $CONTAINER_RUNTIME ps | grep -q rbac_db; then
         print_warning "PostgreSQL database is already running"
     else
-        docker-compose up -d db
-        print_success "PostgreSQL database started"11
+        $COMPOSE_CMD up -d db
+        print_success "PostgreSQL database started"
     fi
 
     # Wait for database to be ready
     print_status "Waiting for PostgreSQL to be ready..."
-    while ! docker exec rbac_db pg_isready -U postgres > /dev/null 2>&1; do
+    while ! $CONTAINER_RUNTIME exec rbac_db pg_isready -U postgres > /dev/null 2>&1; do
         echo -n "."
         sleep 2
     done
     print_success "PostgreSQL is ready"
+}
+
+# Function to run database migrations
+run_migrations() {
+    print_status "Running database migrations..."
+
+    # Check if rbac_server container exists and is running
+    if ! $CONTAINER_RUNTIME ps | grep -q rbac_server; then
+        print_status "Starting rbac_server container..."
+        $COMPOSE_CMD up -d rbac-server
+        sleep 5
+    fi
+
+    # Run migrations
+    $CONTAINER_RUNTIME exec rbac_server python rbac/manage.py migrate > /dev/null 2>&1
+    print_success "Database migrations completed"
 }
 
 # Function to configure PostgreSQL for logical replication
@@ -100,24 +124,24 @@ configure_postgres_replication() {
     print_status "Configuring PostgreSQL for logical replication..."
 
     # Set required parameters for logical replication
-    docker exec rbac_db psql -U postgres -c "ALTER SYSTEM SET wal_level = logical;" > /dev/null
-    docker exec rbac_db psql -U postgres -c "ALTER SYSTEM SET max_replication_slots = 4;" > /dev/null
-    docker exec rbac_db psql -U postgres -c "ALTER SYSTEM SET max_wal_senders = 4;" > /dev/null
+    $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "ALTER SYSTEM SET wal_level = logical;" > /dev/null
+    $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "ALTER SYSTEM SET max_replication_slots = 4;" > /dev/null
+    $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "ALTER SYSTEM SET max_wal_senders = 4;" > /dev/null
 
     print_success "PostgreSQL replication configuration updated"
 
     # Restart PostgreSQL to apply changes
     print_status "Restarting PostgreSQL to apply replication settings..."
-    docker-compose restart db > /dev/null 2>&1
+    $COMPOSE_CMD restart db > /dev/null 2>&1
 
     # Wait for database to be ready again
-    while ! docker exec rbac_db pg_isready -U postgres > /dev/null 2>&1; do
+    while ! $CONTAINER_RUNTIME exec rbac_db pg_isready -U postgres > /dev/null 2>&1; do
         echo -n "."
         sleep 2
     done
 
     # Verify configuration
-    wal_level=$(docker exec rbac_db psql -U postgres -t -c "SHOW wal_level;" | xargs)
+    wal_level=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c "SHOW wal_level;" | xargs)
     if [ "$wal_level" = "logical" ]; then
         print_success "PostgreSQL logical replication configured successfully"
     else
@@ -131,7 +155,7 @@ start_debezium_services() {
     print_status "Starting Debezium services (Kafka, Zookeeper, Kafka Connect, Kafdrop)..."
 
     # Start all Debezium services
-    docker-compose -f docker-compose.debezium.yml up -d
+    $COMPOSE_CMD -f docker-compose.debezium.yml up -d
 
     print_success "Debezium services started"
 
@@ -146,11 +170,11 @@ create_rbac_topic() {
     local topic_name="outbox.event.rbac-consumer-replication-event"
 
     # Check if topic already exists
-    if docker exec insights_rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list | grep -q "$topic_name"; then
+    if $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list | grep -q "$topic_name"; then
         print_warning "Topic '$topic_name' already exists"
     else
         # Create the topic
-        docker exec insights_rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --create \
+        $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --create \
             --topic "$topic_name" \
             --partitions 3 \
             --replication-factor 1
@@ -169,7 +193,7 @@ create_consumer_group() {
     print_status "Initializing consumer group '$group_id' and setting offset to beginning..."
 
     # Start a temporary consumer that will read from beginning and exit quickly
-    docker exec insights_rbac-kafka-1 timeout 5s kafka-console-consumer \
+    $CONTAINER_RUNTIME exec insights-rbac-kafka-1 timeout 5s kafka-console-consumer \
         --bootstrap-server kafka:9092 \
         --topic "$topic_name" \
         --group "$group_id" \
@@ -177,7 +201,7 @@ create_consumer_group() {
         --timeout-ms 2000 > /dev/null 2>&1 || true
 
     # Reset consumer group offset to earliest (beginning of topic)
-    docker exec insights_rbac-kafka-1 kafka-consumer-groups \
+    $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-consumer-groups \
         --bootstrap-server kafka:9092 \
         --group "$group_id" \
         --topic "$topic_name" \
@@ -285,11 +309,11 @@ EOF
 EOF
 
     # Send test messages to the topic
-    docker exec -i insights_rbac-kafka-1 kafka-console-producer \
+    $CONTAINER_RUNTIME exec -i insights-rbac-kafka-1 kafka-console-producer \
         --bootstrap-server localhost:9092 \
         --topic "$topic_name" < /tmp/test_relations_message_1.json > /dev/null 2>&1 || true
 
-    docker exec -i insights_rbac-kafka-1 kafka-console-producer \
+    $CONTAINER_RUNTIME exec -i insights-rbac-kafka-1 kafka-console-producer \
         --bootstrap-server localhost:9092 \
         --topic "$topic_name" < /tmp/test_relations_message_2.json > /dev/null 2>&1 || true
 
@@ -304,24 +328,24 @@ verify_outbox_table() {
     print_status "Verifying outbox table structure..."
 
     # Check if management_outbox table exists
-    local table_exists=$(docker exec rbac_db psql -U postgres -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'management_outbox';" | xargs)
+    local table_exists=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'management_outbox';" | xargs)
     if [ "$table_exists" = "1" ]; then
         print_success "management_outbox table exists"
     else
         print_error "management_outbox table not found"
         echo "Available tables:"
-        docker exec rbac_db psql -U postgres -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE '%outbox%';"
+        $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE '%outbox%';"
         exit 1
     fi
 
     # Verify table has required columns
-    local type_column=$(docker exec rbac_db psql -U postgres -t -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'management_outbox' AND column_name = 'type';" | xargs)
+    local type_column=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'management_outbox' AND column_name = 'type';" | xargs)
     if [ "$type_column" = "1" ]; then
         print_success "Required 'type' column found in outbox table"
     else
         print_error "Missing 'type' column in outbox table"
         echo "Table structure:"
-        docker exec rbac_db psql -U postgres -c "\d management_outbox"
+        $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c "\d management_outbox"
         exit 1
     fi
 }
@@ -346,7 +370,7 @@ verify_setup() {
             print_error "Connector task has failed"
             echo "Status: $status"
             print_status "Checking connector logs for errors..."
-            docker logs insights_rbac-kafka-connect-1 --tail 20
+            $CONTAINER_RUNTIME logs insights-rbac-kafka-connect-1 --tail 20
             exit 1
         fi
     else
@@ -356,7 +380,7 @@ verify_setup() {
     fi
 
     # Check replication slot
-    local slot_check=$(docker exec rbac_db psql -U postgres -t -c "SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'debezium_slot';" | xargs)
+    local slot_check=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c "SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'debezium_slot';" | xargs)
     if [ "$slot_check" = "1" ]; then
         print_success "Replication slot created successfully"
     else
@@ -366,7 +390,7 @@ verify_setup() {
 
     # List topics
     print_status "Available Kafka topics:"
-    docker exec insights_rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list | grep -E "(rbac|outbox)" || true
+    $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list | grep -E "(rbac|outbox)" || true
 }
 
 # Function to setup RBAC Kafka consumer
@@ -388,7 +412,7 @@ echo "Testing RBAC Kafka consumer with topic: $TOPIC in $MODE mode"
 if [ "$MODE" = "background" ]; then
     # Start consumer in background (detached)
     echo "Starting RBAC Kafka consumer in background..."
-    CONTAINER_ID=$(docker run -d \
+    CONTAINER_ID=$($CONTAINER_RUNTIME run -d \
       --network rbac-network \
       -e KAFKA_ENABLED=true \
       -e RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=kafka:9092 \
@@ -399,13 +423,13 @@ if [ "$MODE" = "background" ]; then
       rbac_server python rbac/manage.py launch-rbac-kafka-consumer)
 
     echo "Consumer started with container ID: $CONTAINER_ID"
-    echo "Check logs with: docker logs rbac-kafka-consumer-test -f"
+    echo "Check logs with: $CONTAINER_RUNTIME logs rbac-kafka-consumer-test -f"
     echo "To stop consumer: docker stop rbac-kafka-consumer-test"
 else
     # Start consumer in interactive mode
     echo "Starting RBAC Kafka consumer in interactive mode..."
     echo "Press Ctrl+C to stop the consumer"
-    docker run -it \
+    $CONTAINER_RUNTIME run -it \
       --network rbac-network \
       -e KAFKA_ENABLED=true \
       -e RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=kafka:9092 \
@@ -433,7 +457,7 @@ echo "Topic: $TOPIC"
 echo "Press Ctrl+C to stop the consumer"
 
 # Run consumer in existing rbac_server container
-docker exec -it \
+$CONTAINER_RUNTIME exec -it \
   -e KAFKA_ENABLED=true \
   -e RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=kafka:9092 \
   -e RBAC_KAFKA_CONSUMER_TOPIC="$TOPIC" \
@@ -475,7 +499,7 @@ EOL
 echo "Sending test relations message to topic: $TOPIC"
 
 # Send message to Kafka
-docker exec -i insights_rbac-kafka-1 kafka-console-producer \
+$CONTAINER_RUNTIME exec -i insights-rbac-kafka-1 kafka-console-producer \
   --bootstrap-server localhost:9092 \
   --topic "$TOPIC" < /tmp/test_relations_message.json
 
@@ -495,9 +519,9 @@ test_kafka_consumer_setup() {
     print_status "Testing Kafka consumer setup..."
 
     # Check if RBAC server container is running
-    if ! docker ps | grep -q rbac_server; then
+    if ! $CONTAINER_RUNTIME ps | grep -q rbac_server; then
         print_warning "RBAC server container not running. Starting it..."
-        docker-compose up -d rbac-server
+        $COMPOSE_CMD up -d rbac-server
         sleep 10
     fi
 
@@ -515,9 +539,9 @@ run_kafka_consumer() {
     print_status "Starting RBAC Kafka consumer..."
 
     # Check if RBAC server container is running
-    if ! docker ps | grep -q rbac_server; then
+    if ! $CONTAINER_RUNTIME ps | grep -q rbac_server; then
         print_warning "RBAC server container not running. Starting it..."
-        docker-compose up -d rbac-server
+        $COMPOSE_CMD up -d rbac-server
         sleep 10
     fi
 
@@ -525,27 +549,31 @@ run_kafka_consumer() {
         print_status "Starting Kafka consumer in background mode..."
         echo "Topic: $topic"
 
-        # Run consumer in background
-        docker exec -d \
+        # Run consumer in background with console logging and writable log file path
+        $CONTAINER_RUNTIME exec -d \
           -e KAFKA_ENABLED=true \
           -e RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=kafka:9092 \
           -e RBAC_KAFKA_CONSUMER_TOPIC="$topic" \
           -e RBAC_KAFKA_CONSUMER_GROUP_ID=rbac-consumer-group \
+          -e DJANGO_LOG_HANDLERS=console \
+          -e DJANGO_LOG_FILE=/tmp/app.log \
           rbac_server python rbac/manage.py launch-rbac-kafka-consumer
 
         print_success "Kafka consumer started in background"
-        echo "Check logs with: docker logs rbac_server -f"
+        echo "Check logs with: $CONTAINER_RUNTIME logs rbac_server -f"
     else
         print_status "Starting Kafka consumer in interactive mode..."
         echo "Topic: $topic"
         echo "Press Ctrl+C to stop the consumer"
 
-        # Run consumer interactively
-        docker exec -it \
+        # Run consumer interactively with console logging and writable log file path
+        $CONTAINER_RUNTIME exec -it \
           -e KAFKA_ENABLED=true \
           -e RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=kafka:9092 \
           -e RBAC_KAFKA_CONSUMER_TOPIC="$topic" \
           -e RBAC_KAFKA_CONSUMER_GROUP_ID=rbac-consumer-group \
+          -e DJANGO_LOG_HANDLERS=console \
+          -e DJANGO_LOG_FILE=/tmp/app.log \
           rbac_server python rbac/manage.py launch-rbac-kafka-consumer
     fi
 }
@@ -577,10 +605,10 @@ show_connection_info() {
     echo ""
     echo "🔗 Useful Commands:"
     echo "   • Check connector:        curl http://localhost:8083/connectors/rbac-postgres-connector/status"
-    echo "   • List topics:                docker exec insights_rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list"
-    echo "   • View messages in topic:     docker exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000"
-    echo "   • Check message count:        docker exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event"
-    echo "   • Stop services:              docker-compose -f docker-compose.debezium.yml down"
+    echo "   • List topics:                $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list"
+    echo "   • View messages in topic:     $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000"
+    echo "   • Check message count:        $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event"
+    echo "   • Stop services:              $COMPOSE_CMD -f docker-compose.debezium.yml down"
     echo ""
     echo "📝 Next Steps:"
     echo "   1. Run the consumer:          $0 --consumer"
@@ -592,7 +620,7 @@ show_connection_info() {
 # Function to cleanup on failure
 cleanup_on_failure() {
     print_error "Setup failed. Cleaning up..."
-    docker-compose -f docker-compose.debezium.yml down > /dev/null 2>&1 || true
+    $COMPOSE_CMD -f docker-compose.debezium.yml down > /dev/null 2>&1 || true
     exit 1
 }
 
@@ -607,7 +635,7 @@ main() {
     trap cleanup_on_failure ERR
 
     # Step 1: Check prerequisites
-    check_docker
+    check_container_runtime
 
     # Step 2: Create network
     create_network
@@ -616,24 +644,27 @@ main() {
     start_database
     configure_postgres_replication
 
-    # Step 4: Start Debezium services
+    # Step 4: Run database migrations to create outbox table
+    run_migrations
+
+    # Step 5: Start Debezium services
     start_debezium_services
 
-    # Step 5: Create topics and connectors
+    # Step 6: Create topics and connectors
     create_rbac_topic
     create_consumer_group
     create_debezium_connector
 
-    # Step 6: Setup Kafka consumer
+    # Step 7: Setup Kafka consumer
     setup_kafka_consumer
 
-    # Step 7: Verify setup
+    # Step 8: Verify setup
     verify_setup
 
-    # Step 8: Test Kafka consumer
+    # Step 9: Test Kafka consumer
     test_kafka_consumer_setup
 
-    # Step 9: Show connection information
+    # Step 10: Show connection information
     show_connection_info
 }
 
@@ -643,7 +674,7 @@ case "${1:-}" in
         echo "Usage: $0 [OPTIONS]"
         echo ""
         echo "This script sets up Debezium Change Data Capture for RBAC:"
-        echo "  1. Creates Docker network"
+        echo "  1. Creates container network"
         echo "  2. Starts and configures PostgreSQL with logical replication"
         echo "  3. Starts Kafka, Zookeeper, Kafka Connect, and Kafdrop"
         echo "  4. Creates and configures Debezium PostgreSQL connector"
@@ -656,7 +687,7 @@ case "${1:-}" in
         echo "  --consumer [topic]      Run Kafka consumer with custom topic"
         echo ""
         echo "Prerequisites:"
-        echo "  • Docker and docker-compose installed and running"
+        echo "  • Docker/Podman and docker-compose/podman-compose installed and running"
         echo "  • Ports 8083, 9000, 9092, 15432 available"
         echo "  • docker-compose.yml and docker-compose.debezium.yml present"
         exit 0

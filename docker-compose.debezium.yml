@@ -1,3 +1,5 @@
+# This docker-compose file is compatible with both Docker and Podman
+# Use 'docker-compose' or 'podman-compose' to run
 version: '3.8'
 services:
   zookeeper:
