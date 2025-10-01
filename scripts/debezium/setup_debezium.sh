@@ -232,29 +232,17 @@ create_debezium_connector() {
         fi
     fi
 
-    # Create the connector with correct outbox configuration
+    # Check if connector config file exists
+    local connector_config="scripts/debezium/debezium-connector-config.json"
+    if [ ! -f "$connector_config" ]; then
+        print_error "Connector configuration file not found: $connector_config"
+        exit 1
+    fi
+
+    # Create the connector using the configuration file
     local response=$(curl -s -X POST http://localhost:8083/connectors \
         -H "Content-Type: application/json" \
-        -d '{
-            "name": "rbac-postgres-connector",
-            "config": {
-                "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
-                "database.hostname": "rbac_db",
-                "database.port": "5432",
-                "database.user": "postgres",
-                "database.password": "postgres",
-                "database.dbname": "postgres",
-                "topic.prefix": "rbac",
-                "plugin.name": "pgoutput",
-                "slot.name": "debezium_slot",
-                "table.include.list": "public.management_outbox",
-                "publication.autocreate.mode": "filtered",
-                "transforms": "outbox",
-                "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
-                "transforms.outbox.table.field.event.type": "type",
-                "transforms.outbox.route.topic.replacement": "outbox.event.rbac-consumer-replication-event"
-            }
-        }')
+        -d @"$connector_config")
 
     if echo "$response" | grep -q '"name":"rbac-postgres-connector"'; then
         print_success "Debezium connector created successfully"
@@ -398,7 +386,7 @@ setup_kafka_consumer() {
     print_status "Setting up RBAC Kafka consumer test environment..."
 
     # Create consumer test script that runs inside Docker container
-    cat > scripts/test_kafka_consumer.sh << 'EOF'
+    cat > scripts/debezium/test_kafka_consumer.sh << 'EOF'
 #!/bin/bash
 
 # Test script for RBAC Kafka Consumer
@@ -449,11 +437,11 @@ else
 fi
 EOF
 
-    chmod +x scripts/test_kafka_consumer.sh
-    print_success "Consumer test script created at scripts/test_kafka_consumer.sh"
+    chmod +x scripts/debezium/test_kafka_consumer.sh
+    print_success "Consumer test script created at scripts/debezium/test_kafka_consumer.sh"
 
     # Create a simple consumer runner script for existing RBAC server container
-    cat > scripts/run_kafka_consumer.sh << 'EOF'
+    cat > scripts/debezium/run_kafka_consumer.sh << 'EOF'
 #!/bin/bash
 
 # Script to run RBAC Kafka consumer in existing rbac_server container
@@ -483,11 +471,11 @@ $CONTAINER_RUNTIME exec -it \
   rbac_server python rbac/manage.py launch-rbac-kafka-consumer
 EOF
 
-    chmod +x scripts/run_kafka_consumer.sh
-    print_success "Consumer runner script created at scripts/run_kafka_consumer.sh"
+    chmod +x scripts/debezium/run_kafka_consumer.sh
+    print_success "Consumer runner script created at scripts/debezium/run_kafka_consumer.sh"
 
     # Create message sender script
-    cat > scripts/send_test_relations_message.sh << 'EOF'
+    cat > scripts/debezium/send_test_relations_message.sh << 'EOF'
 #!/bin/bash
 
 # Script to send test relations message to Kafka
@@ -537,8 +525,8 @@ echo "Check consumer logs to see if it was processed."
 rm -f /tmp/test_relations_message.json
 EOF
 
-    chmod +x scripts/send_test_relations_message.sh
-    print_success "Message sender script created at scripts/send_test_relations_message.sh"
+    chmod +x scripts/debezium/send_test_relations_message.sh
+    print_success "Message sender script created at scripts/debezium/send_test_relations_message.sh"
 }
 
 # Function to test kafka consumer setup
@@ -553,7 +541,7 @@ test_kafka_consumer_setup() {
     fi
 
     print_status "Sending test message to verify consumer can process messages..."
-    ./scripts/send_test_relations_message.sh outbox.event.rbac-consumer-replication-event
+    ./scripts/debezium/send_test_relations_message.sh outbox.event.rbac-consumer-replication-event
 
     print_success "Test message sent. Consumer setup is ready!"
 }
@@ -628,7 +616,7 @@ show_connection_info() {
     echo "   • Run consumer (interactive):     $0 --consumer"
     echo "   • Run consumer (background):      $0 --consumer-bg"
     echo "   • Run consumer (custom topic):    $0 --consumer [topic_name]"
-    echo "   • Send test message:              ./scripts/send_test_relations_message.sh"
+    echo "   • Send test message:              ./scripts/debezium/send_test_relations_message.sh"
     echo ""
     echo "🔗 Useful Commands:"
     echo "   • Check connector:        curl http://localhost:8083/connectors/rbac-postgres-connector/status"
@@ -639,7 +627,7 @@ show_connection_info() {
     echo ""
     echo "📝 Next Steps:"
     echo "   1. Run the consumer:          $0 --consumer"
-    echo "   2. Send a test message:       ./scripts/send_test_relations_message.sh"
+    echo "   2. Send a test message:       ./scripts/debezium/send_test_relations_message.sh"
     echo "   3. Test with RBAC operations: Add users to groups via API"
     echo ""
 }

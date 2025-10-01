@@ -1,0 +1,20 @@
+{
+  "name": "rbac-postgres-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "rbac_db",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "postgres",
+    "topic.prefix": "rbac",
+    "plugin.name": "pgoutput",
+    "slot.name": "debezium_slot",
+    "table.include.list": "public.management_outbox",
+    "publication.autocreate.mode": "filtered",
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.type": "type",
+    "transforms.outbox.route.topic.replacement": "outbox.event.rbac-consumer-replication-event"
+  }
+}
