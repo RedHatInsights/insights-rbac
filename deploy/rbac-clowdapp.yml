@@ -249,6 +249,14 @@ objects:
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
