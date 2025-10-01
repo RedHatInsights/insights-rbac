@@ -41,12 +41,53 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to remove old/orphaned containers
+remove_old_containers() {
+    print_status "Removing old/orphaned RBAC containers..."
+
+    # Stop all docker-compose services first to free up ports
+    print_status "Stopping all docker-compose services..."
+    $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+    $COMPOSE_CMD -f docker-compose.debezium.yml down --remove-orphans 2>/dev/null || true
+
+    # List of potential container names to clean up
+    local containers=(
+        "rbac_db"
+        "rbac_server"
+        "rbac_redis"
+        "rbac_worker"
+        "rbac_scheduler"
+        "kafdrop"
+        "kafka-connect"
+        "kafka"
+        "zookeeper"
+        "insights-rbac-kafka-1"
+        "insights-rbac-zookeeper-1"
+        "insights-rbac-kafka-connect-1"
+        "insights-rbac-kafdrop-1"
+    )
+
+    local removed_count=0
+    for container in "${containers[@]}"; do
+        if $CONTAINER_RUNTIME ps -a --format "{{.Names}}" | grep -q "^${container}$"; then
+            print_status "Removing container: $container"
+            $CONTAINER_RUNTIME rm -f "$container" 2>/dev/null && removed_count=$((removed_count + 1))
+        fi
+    done
+
+    if [ $removed_count -gt 0 ]; then
+        print_success "Removed $removed_count old container(s)"
+    else
+        print_warning "No old containers found"
+    fi
+}
+
 # Function to stop Debezium services
 stop_debezium_services() {
     print_status "Stopping Debezium services..."
 
     if $COMPOSE_CMD -f docker-compose.debezium.yml ps | grep -q "Up"; then
-        $COMPOSE_CMD -f docker-compose.debezium.yml down
+        $COMPOSE_CMD -f docker-compose.debezium.yml down --remove-orphans
         print_success "Debezium services stopped"
     else
         print_warning "Debezium services are not running"
@@ -219,20 +260,20 @@ main() {
     # Step 1: Remove connector (if Kafka Connect is running)
     remove_connector
 
-    # Step 2: Stop Debezium services
-    stop_debezium_services
+    # Step 2: Remove old/orphaned containers (this stops all services first)
+    remove_old_containers
 
-    # Step 3: Clean up PostgreSQL replication
+    # Step 4: Clean up PostgreSQL replication
     if [ "$reset_postgres" = true ]; then
         cleanup_postgres_replication --reset-postgres
     else
         cleanup_postgres_replication
     fi
 
-    # Step 4: Remove network (only if not in use)
+    # Step 5: Remove network (only if not in use)
     remove_network
 
-    # Step 5: Clean up volumes (if requested)
+    # Step 6: Clean up volumes (if requested)
     if [ "$cleanup_vols" = true ]; then
         cleanup_volumes
     fi

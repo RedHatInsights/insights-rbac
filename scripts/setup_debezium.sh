@@ -404,6 +404,15 @@ setup_kafka_consumer() {
 # Test script for RBAC Kafka Consumer
 # Usage: ./test_kafka_consumer.sh [topic_name] [interactive|background]
 
+# Detect container runtime (docker or podman)
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+else
+    CONTAINER_RUNTIME="docker"  # fallback default
+fi
+
 TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
 MODE=${2:-"interactive"}
 
@@ -450,6 +459,15 @@ EOF
 # Script to run RBAC Kafka consumer in existing rbac_server container
 # Usage: ./run_kafka_consumer.sh [topic_name]
 
+# Detect container runtime (docker or podman)
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+else
+    CONTAINER_RUNTIME="docker"  # fallback default
+fi
+
 TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
 
 echo "Starting RBAC Kafka consumer in existing rbac_server container..."
@@ -474,6 +492,15 @@ EOF
 
 # Script to send test relations message to Kafka
 # Usage: ./send_test_relations_message.sh [topic_name]
+
+# Detect container runtime (docker or podman)
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+else
+    CONTAINER_RUNTIME="docker"  # fallback default
+fi
 
 TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
 

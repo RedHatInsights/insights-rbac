@@ -9,8 +9,7 @@ if command -v docker &> /dev/null && docker info &> /dev/null; then
 elif command -v podman &> /dev/null; then
     CONTAINER_RUNTIME="podman"
 else
-    echo "Error: Neither Docker nor Podman is available or running"
-    exit 1
+    CONTAINER_RUNTIME="docker"  # fallback default
 fi
 
 TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}

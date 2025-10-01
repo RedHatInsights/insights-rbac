@@ -3,6 +3,15 @@
 # Script to run RBAC Kafka consumer in existing rbac_server container
 # Usage: ./run_kafka_consumer.sh [topic_name]
 
+# Detect container runtime (docker or podman)
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+else
+    CONTAINER_RUNTIME="docker"  # fallback default
+fi
+
 TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
 
 echo "Starting RBAC Kafka consumer in existing rbac_server container..."

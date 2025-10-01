@@ -3,12 +3,14 @@
 version: '3.8'
 services:
   zookeeper:
+    container_name: insights-rbac-zookeeper-1
     image: confluentinc/cp-zookeeper:latest
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
 
   kafka:
+    container_name: insights-rbac-kafka-1
     image: confluentinc/cp-kafka:7.4.0
     depends_on:
       - zookeeper
@@ -24,6 +26,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 
   kafka-connect:
+    container_name: insights-rbac-kafka-connect-1
     image: debezium/connect:2.4
     depends_on:
       - kafka
@@ -42,6 +45,7 @@ services:
       - /tmp/debezium:/tmp/debezium
 
   kafdrop:
+    container_name: insights-rbac-kafdrop-1
     image: obsidiandynamics/kafdrop:3.30.0
     depends_on:
       - kafka
