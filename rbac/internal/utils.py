@@ -26,12 +26,15 @@ from typing import Optional
 import jsonschema
 from django.conf import settings
 from django.db import transaction
+from django.http import HttpResponse, JsonResponse
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.models import BindingMapping, Group, Role, Workspace
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.models import BindingMapping, Group, Principal, Role, Workspace
 from management.permission.scope_service import TenantScopeResources
+from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -52,6 +55,7 @@ from api.models import Tenant, User
 
 
 logger = logging.getLogger(__name__)
+PROXY = PrincipalProxy()
 
 
 def get_replicator(write_relationships: str) -> RelationReplicator:
@@ -1267,6 +1271,7 @@ def is_str_valid_uuid(uuid_str: str) -> bool:
         return False
 
 
+<<<<<<< HEAD
 def fix_admin_default_bindings(org_id: str) -> dict:
     """
     Fix missing admin default bindings for a tenant.
@@ -1340,3 +1345,290 @@ def fix_admin_default_bindings(org_id: str) -> dict:
     except Exception as e:
         logger.error(f"Error fixing admin default bindings for tenant {org_id}: {str(e)}", exc_info=True)
         return {"org_id": org_id, "error": str(e)}
+
+
+def _query_bop_for_usernames(proxy, user_ids):
+    """Query BOP for correct usernames for given user_ids.
+
+    Args:
+        proxy: PrincipalProxy instance to use for BOP queries
+        user_ids (list): List of user IDs to query
+
+    Returns:
+        tuple: (user_id_to_username dict, error_response or None)
+            - user_id_to_username: Mapping of user_id (str) -> username (str, lowercase)
+            - error_response: JsonResponse object if error occurred, None otherwise
+    """
+    user_id_to_username = {}
+
+    logger.info(f"Querying BOP for {len(user_ids)} user IDs to verify correct usernames")
+
+    try:
+        resp = proxy.request_filtered_principals(
+            user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
+        )
+
+        if resp.get("status_code") != 200:
+            error_msg = f"BOP query failed with status {resp.get('status_code')}: {resp.get('errors')}"
+            logger.error(error_msg)
+            error_response = JsonResponse(
+                {
+                    "error": "BOP query failed. Cannot proceed without verification.",
+                    "details": error_msg,
+                    "status_code": resp.get("status_code"),
+                },
+                status=500,
+            )
+            return None, error_response
+
+        for item in resp.get("data", []):
+            bop_user_id = str(item.get("user_id"))
+            bop_username = item.get("username")
+            if bop_user_id and bop_username:
+                user_id_to_username[bop_user_id] = bop_username.lower()
+        logger.info(f"Successfully fetched {len(user_id_to_username)} usernames from BOP")
+
+        return user_id_to_username, None
+
+    except Exception as e:
+        error_msg = f"Failed to query BOP for usernames: {e}"
+        logger.error(error_msg)
+        error_response = JsonResponse(
+            {"error": "BOP query failed. Cannot proceed without verification.", "details": error_msg}, status=500
+        )
+        return None, error_response
+
+
+def _parse_user_ids(request):
+    """Parse the comma-separated list of user_ids from the request."""
+    user_ids_param = request.GET.get("user_ids")
+
+    if not user_ids_param:
+        return HttpResponse(
+            'Missing required parameter "user_ids". Provide a comma-separated list of user IDs.', status=400
+        )
+
+    # Parse the comma-separated list of user_ids
+    user_ids = [uid.strip() for uid in user_ids_param.split(",") if uid.strip()]
+
+    if not user_ids:
+        return HttpResponse('Invalid "user_ids" parameter. Provide at least one user ID.', status=400)
+
+    return user_ids
+
+
+def _fetch_bop_usernames(user_ids, fail_on_error, proxy):
+    """Fetch BOP usernames with error handling.
+
+    Args:
+        user_ids (list): List of user IDs to query
+        fail_on_error (bool): Whether to return error response on BOP failure
+        proxy: PrincipalProxy instance
+
+    Returns:
+        tuple: (user_id_to_username dict, error_response or None)
+    """
+    names, err = _query_bop_for_usernames(proxy, user_ids)
+    if err:
+        if fail_on_error:
+            return None, err
+        logger.warning("BOP lookup failed, continuing without verification")
+        return {}, None
+    return names, None
+
+
+def _get_duplicate_principals(request, user_ids):
+    """GET method logic: Return information about duplicate principals.
+
+    Args:
+        request: HTTP request object
+        user_ids (list): List of user IDs to check
+
+    Returns:
+        JsonResponse: Response with duplicate information
+    """
+    # Query BOP for correct usernames (don't fail on error for GET)
+    user_id_to_username, _ = _fetch_bop_usernames(user_ids, fail_on_error=False, proxy=PROXY)
+
+    # Return information about duplicates
+    duplicates_info = []
+
+    # Check each user_id individually
+    for user_id in user_ids:
+        # Get principals if duplicates exist
+        principals = list(Principal.objects.filter(user_id=user_id, type=Principal.Types.USER))
+        if len(principals) <= 1:
+            continue
+
+        correct_username = user_id_to_username.get(user_id)
+
+        principal_details = []
+        for p in principals:
+            is_correct_username = p.username.lower() == correct_username if correct_username else None
+            principal_details.append(
+                {
+                    "id": p.id,
+                    "uuid": str(p.uuid),
+                    "username": p.username,
+                    "type": p.type,
+                    "group_count": p.group.count(),
+                    "groups": list(p.group.values_list("uuid", "name")),
+                    "is_correct_username": is_correct_username,
+                    "will_be_kept": is_correct_username if is_correct_username is not None else False,
+                }
+            )
+
+        duplicates_info.append(
+            {
+                "user_id": user_id,
+                "duplicate_count": len(principals),
+                "bop_username": correct_username,
+                "bop_verified": correct_username is not None,
+                "principals": principal_details,
+            }
+        )
+
+    response_data = {
+        "total_duplicate_sets": len(duplicates_info),
+        "duplicates": duplicates_info,
+    }
+    return JsonResponse(response_data, safe=False)
+
+
+def _remove_duplicate_principals(request, user_ids):
+    """POST method logic: Remove duplicate principals based on BOP verification.
+
+    Args:
+        request: HTTP request object
+        user_ids (list): List of user IDs to process
+
+    Returns:
+        JsonResponse: Response with removal statistics
+    """
+    removed_principals = []
+    kept_principals = []
+    affected_groups = set()
+    total_removed = 0
+    user_ids_not_found_in_bop = []
+
+    # Query BOP for correct usernames (fail on error for POST)
+    user_id_to_username, error_response = _fetch_bop_usernames(user_ids, fail_on_error=True, proxy=PROXY)
+    if error_response:
+        return error_response
+
+    # Check each user_id individually
+    for user_id in user_ids:
+        with transaction.atomic():
+            # Lock the principals for update
+            principals = list(Principal.objects.filter(user_id=user_id, type=Principal.Types.USER).select_for_update())
+
+            # Only process if there are duplicates (count > 1)
+            if len(principals) <= 1:
+                continue
+
+            # Check if user_id exists in BOP
+            correct_username = user_id_to_username.get(user_id)
+
+            if not correct_username:
+                # User ID not found in BOP -> delete ALL principals
+                logger.warning(f"User ID {user_id} not found in BOP. Deleting all {len(principals)} principal(s).")
+                user_ids_not_found_in_bop.append(user_id)
+
+            # First pass: identify principal to keep (if any)
+            principal_to_keep = None
+            principals_to_delete = []
+
+            for principal in principals:
+                if correct_username and principal.username.lower() == correct_username:
+                    # Username matches BOP -> keep
+                    principal_to_keep = principal
+                    logger.info(
+                        f"Principal username '{principal.username}' matches BOP. Keeping principal "
+                        f"(user_id={user_id}, uuid={principal.uuid})"
+                    )
+                    kept_principals.append(
+                        {
+                            "uuid": str(principal.uuid),
+                            "username": principal.username,
+                            "user_id": principal.user_id,
+                            "verified_with_bop": True,
+                            "bop_username": correct_username,
+                            "username_matches_bop": True,
+                        }
+                    )
+                else:
+                    # No BOP username OR username doesn't match -> delete
+                    principals_to_delete.append(principal)
+                    if correct_username:
+                        logger.info(
+                            f"Principal username '{principal.username}' does not match "
+                            f"BOP username '{correct_username}'. "
+                            f"Will delete principal (user_id={user_id}, uuid={principal.uuid})"
+                        )
+
+            # Second pass: migrate group memberships and delete incorrect principals
+            for principal in principals_to_delete:
+                # Get all groups this principal is in
+                groups = list(principal.group.all().prefetch_related("principals"))
+
+                for group in groups:
+                    # If we have a correct principal, migrate the group membership
+                    if principal_to_keep and principal_to_keep not in group.principals.all():
+                        group.principals.add(principal_to_keep)
+                        logger.info(
+                            f"Migrated group membership: Added principal {principal_to_keep.username} "
+                            f"(uuid={principal_to_keep.uuid}) to group {group.name} (uuid={group.uuid})"
+                        )
+
+                    # Remove the incorrect principal from the group
+                    group.principals.remove(principal)
+                    affected_groups.add(str(group.uuid))
+                    logger.info(
+                        f"Removed principal {principal.username} (uuid={principal.uuid}) "
+                        f"from group {group.name} (uuid={group.uuid})"
+                    )
+
+                # Replicate the changes
+                if groups:
+                    for group in groups:
+                        try:
+                            # Replicate the removal
+                            dual_write_handler = RelationApiDualWriteGroupHandler(
+                                group, ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP
+                            )
+                            dual_write_handler.replicate_removed_principals([principal])
+
+                            # If we migrated to the keeper, replicate the addition
+                            if principal_to_keep and principal_to_keep in group.principals.all():
+                                dual_write_handler_add = RelationApiDualWriteGroupHandler(
+                                    group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
+                                )
+                                dual_write_handler_add.replicate_new_principals([principal_to_keep])
+                                logger.info(f"Replicated addition of keeper principal to group {group.uuid}")
+
+                            logger.info(f"Replicated removal of principal from group {group.uuid}")
+                        except Exception as e:
+                            logger.error(f"Failed to replicate for group {group.uuid}: {e}")
+
+                # Delete the principal
+                removed_principals.append(
+                    {
+                        "uuid": str(principal.uuid),
+                        "username": principal.username,
+                        "user_id": principal.user_id,
+                        "had_groups": len(groups),
+                    }
+                )
+                principal.delete()
+                total_removed += 1
+                logger.info(f"Deleted principal {principal.username} (uuid={principal.uuid})")
+
+    response_data = {
+        "total_removed": total_removed,
+        "total_kept": len(kept_principals),
+        "affected_groups_count": len(affected_groups),
+        "user_ids_not_found_in_bop": user_ids_not_found_in_bop,
+        "removed_principals": removed_principals,
+        "kept_principals": kept_principals,
+    }
+    return JsonResponse(response_data, safe=False, status=200)
