@@ -137,6 +137,8 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
                 # This also locks binding mapping if exists for passed system roles.
                 dual_write_handler.generate_relations_reset_roles(cross_account_request.roles.all())
                 dual_write_handler.replicate()
+                
+                # V2 models are created in _create_default_mapping_for_system_role during migration
         # End of transaction for approved cross account request and its add role operation
         # Locks on cross account request and eventually on default workspace are released.
         # Default workspace is locked when related binding mapping did not exist yet
