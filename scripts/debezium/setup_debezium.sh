@@ -239,10 +239,27 @@ run_migrations() {
             fi
         fi
 
+        # Set required environment variables for RBAC
+        export WORKSPACE_HIERARCHY_DEPTH_LIMIT=5
+        export WORKSPACE_ORG_CREATION_LIMIT=20000000
+        export V2_APIS_ENABLED="True"
+        export V2_READ_ONLY_API_MODE="False"
+        export V2_BOOTSTRAP_TENANT="True"
+
         # Start all services, scaling redis to 0 if we started it manually
         if [ -n "${REDIS_PORT}" ] && [ "${REDIS_PORT}" != "6379" ]; then
+            WORKSPACE_HIERARCHY_DEPTH_LIMIT=5 \
+            WORKSPACE_ORG_CREATION_LIMIT=20000000 \
+            V2_APIS_ENABLED="True" \
+            V2_READ_ONLY_API_MODE="False" \
+            V2_BOOTSTRAP_TENANT="True" \
             $COMPOSE_CMD up -d --scale redis=0 rbac-server
         else
+            WORKSPACE_HIERARCHY_DEPTH_LIMIT=5 \
+            WORKSPACE_ORG_CREATION_LIMIT=20000000 \
+            V2_APIS_ENABLED="True" \
+            V2_READ_ONLY_API_MODE="False" \
+            V2_BOOTSTRAP_TENANT="True" \
             $COMPOSE_CMD up -d rbac-server
         fi
         sleep 5
