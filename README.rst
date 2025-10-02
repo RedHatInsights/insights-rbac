@@ -137,7 +137,7 @@ The scripts automatically detect and support both Docker and Podman as container
 
 To set up the complete Debezium infrastructure automatically: ::
 
-    ./scripts/setup_debezium.sh
+    ./scripts/debezium/setup_debezium.sh
 
 This script will:
 
@@ -154,21 +154,21 @@ After setup, you can run the RBAC Kafka consumer to process replication events:
 
 For interactive mode (shows logs in real-time): ::
 
-    ./scripts/setup_debezium.sh --consumer
+    ./scripts/debezium/setup_debezium.sh --consumer
 
 For background mode: ::
 
-    ./scripts/setup_debezium.sh --consumer-bg
+    ./scripts/debezium/setup_debezium.sh --consumer-bg
 
 For a custom topic: ::
 
-    ./scripts/setup_debezium.sh --consumer my-custom-topic
+    ./scripts/debezium/setup_debezium.sh --consumer my-custom-topic
 
 **Testing the Setup**
 
 Send a test replication message: ::
 
-    ./scripts/send_test_relations_message.sh
+    ./scripts/debezium/send_test_relations_message.sh
 
 **Monitoring and Management**
 
@@ -218,7 +218,7 @@ Stop Debezium services (Podman): ::
 
 View all available options: ::
 
-    ./scripts/setup_debezium.sh --help
+    ./scripts/debezium/setup_debezium.sh --help
 
 **Prerequisites**
 
