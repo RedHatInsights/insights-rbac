@@ -266,8 +266,15 @@ run_migrations() {
     fi
 
     # Run migrations
-    $CONTAINER_RUNTIME exec rbac_server python rbac/manage.py migrate > /dev/null 2>&1
-    print_success "Database migrations completed"
+    print_status "Executing migrations in rbac_server container..."
+    if $CONTAINER_RUNTIME exec -e DJANGO_LOG_HANDLERS=console -e DJANGO_LOG_FILE=/tmp/app.log rbac_server python rbac/manage.py migrate; then
+        print_success "Database migrations completed"
+    else
+        print_error "Database migrations failed"
+        print_status "Checking migration status..."
+        $CONTAINER_RUNTIME exec -e DJANGO_LOG_HANDLERS=console -e DJANGO_LOG_FILE=/tmp/app.log rbac_server python rbac/manage.py showmigrations || true
+        exit 1
+    fi
 }
 
 # Function to clean up existing Debezium artifacts
