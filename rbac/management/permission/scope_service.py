@@ -22,7 +22,6 @@ from typing import Iterable, Self
 from django.conf import settings
 from management.models import Role, Workspace
 from management.permission.model import PermissionValue
-from management.workspace.model import Workspace
 from migration_tool.models import V2boundresource
 
 from api.models import Tenant
