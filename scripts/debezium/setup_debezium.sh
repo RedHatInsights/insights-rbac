@@ -82,6 +82,107 @@ create_network() {
     fi
 }
 
+# Function to find available port
+find_available_port() {
+    local start_port=$1
+    local max_attempts=10
+    local port=$start_port
+
+    for ((i=0; i<$max_attempts; i++)); do
+        if ! port_is_in_use $port; then
+            echo $port
+            return 0
+        fi
+        port=$((port + 1))
+    done
+
+    echo ""
+    return 1
+}
+
+# Function to check if port is in use
+port_is_in_use() {
+    local port=$1
+
+    if command -v ss &> /dev/null; then
+        ss -tuln | grep -q ":$port " && return 0
+    elif command -v netstat &> /dev/null; then
+        (netstat -tuln 2>/dev/null | grep -q ":$port " || netstat -ano 2>/dev/null | grep -q ":$port.*LISTENING") && return 0
+    elif command -v lsof &> /dev/null; then
+        lsof -i ":$port" &> /dev/null && return 0
+    fi
+
+    return 1
+}
+
+# Function to check and configure port
+check_and_configure_port() {
+    local port=$1
+    local service_name=$2
+    local env_var=$3
+
+    if port_is_in_use $port; then
+        print_warning "Port $port is already in use (required for $service_name)" >&2
+
+        # Find an available port
+        local new_port=$(find_available_port $((port + 1)))
+
+        if [ -z "$new_port" ]; then
+            print_error "Could not find an available port for $service_name" >&2
+            exit 1
+        fi
+
+        print_status "Using alternate port $new_port for $service_name" >&2
+        export $env_var=$new_port
+        echo "$new_port"
+    else
+        export $env_var=$port
+        echo "$port"
+    fi
+}
+
+# Function to check all required ports
+check_required_ports() {
+    print_status "Checking if required ports are available..."
+
+    # Check and configure Redis port (6379 -> REDIS_PORT)
+    local redis_port=$(check_and_configure_port 6379 "Redis" "REDIS_PORT")
+    REDIS_PORT=$redis_port
+    if [ "$REDIS_PORT" != "6379" ]; then
+        print_status "Redis will use port $REDIS_PORT instead of 6379"
+    fi
+
+    # Check PostgreSQL port (15432)
+    if port_is_in_use 15432; then
+        print_warning "Port 15432 is already in use (required for PostgreSQL)"
+        print_error "PostgreSQL port conflict. Please free port 15432 or modify docker-compose.yml"
+        exit 1
+    fi
+
+    # Check Kafka port (9092)
+    if port_is_in_use 9092; then
+        print_warning "Port 9092 is already in use (required for Kafka)"
+        print_error "Kafka port conflict. Please free port 9092 or modify docker-compose.debezium.yml"
+        exit 1
+    fi
+
+    # Check Kafka Connect port (8083)
+    if port_is_in_use 8083; then
+        print_warning "Port 8083 is already in use (required for Kafka Connect)"
+        print_error "Kafka Connect port conflict. Please free port 8083 or modify docker-compose.debezium.yml"
+        exit 1
+    fi
+
+    # Check Kafdrop port (9001)
+    if port_is_in_use 9001; then
+        print_warning "Port 9001 is already in use (required for Kafdrop)"
+        print_error "Kafdrop port conflict. Please free port 9001 or modify docker-compose.debezium.yml"
+        exit 1
+    fi
+
+    print_success "Port check completed"
+}
+
 # Function to start PostgreSQL database
 start_database() {
     print_status "Starting PostgreSQL database..."
@@ -110,13 +211,84 @@ run_migrations() {
     # Check if rbac_server container exists and is running
     if ! $CONTAINER_RUNTIME ps | grep -q rbac_server; then
         print_status "Starting rbac_server container..."
-        $COMPOSE_CMD up -d rbac-server
+
+        # Start redis container separately with custom port if needed
+        if [ -n "${REDIS_PORT}" ] && [ "${REDIS_PORT}" != "6379" ]; then
+            if ! $CONTAINER_RUNTIME ps | grep -q rbac_redis; then
+                print_status "Starting Redis on port ${REDIS_PORT}..."
+                # Create Redis with alias so other containers can reach it
+                $CONTAINER_RUNTIME run -d \
+                    --name rbac_redis \
+                    --network rbac-network \
+                    --network-alias redis \
+                    -p ${REDIS_PORT}:6379 \
+                    --health-cmd "redis-cli ping | grep PONG" \
+                    --health-interval 1s \
+                    --health-timeout 3s \
+                    --health-retries 5 \
+                    redis:5.0.4
+                sleep 3
+
+                # Wait for Redis to be healthy
+                print_status "Waiting for Redis to be ready..."
+                while ! $CONTAINER_RUNTIME exec rbac_redis redis-cli ping | grep -q PONG; do
+                    echo -n "."
+                    sleep 1
+                done
+                print_success "Redis is ready on port ${REDIS_PORT}"
+            fi
+        fi
+
+        # Start all services, scaling redis to 0 if we started it manually
+        if [ -n "${REDIS_PORT}" ] && [ "${REDIS_PORT}" != "6379" ]; then
+            $COMPOSE_CMD up -d --scale redis=0 rbac-server
+        else
+            $COMPOSE_CMD up -d rbac-server
+        fi
         sleep 5
     fi
 
     # Run migrations
     $CONTAINER_RUNTIME exec rbac_server python rbac/manage.py migrate > /dev/null 2>&1
     print_success "Database migrations completed"
+}
+
+# Function to clean up existing Debezium artifacts
+cleanup_debezium_artifacts() {
+    print_status "Cleaning up existing Debezium artifacts..."
+
+    # List all replication slots
+    local slots=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c \
+        "SELECT slot_name FROM pg_replication_slots;" 2>/dev/null | xargs)
+
+    if [ -n "$slots" ]; then
+        print_status "Found replication slots: $slots"
+        # Drop all replication slots
+        for slot in $slots; do
+            print_status "Dropping replication slot: $slot"
+            $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c \
+                "SELECT pg_drop_replication_slot('$slot');" 2>/dev/null || \
+            $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c \
+                "SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots WHERE slot_name = '$slot' AND active = true;" 2>/dev/null || true
+            # Try again after terminating
+            $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c \
+                "SELECT pg_drop_replication_slot('$slot');" 2>/dev/null || true
+        done
+    fi
+
+    # Drop existing publication if exists
+    $CONTAINER_RUNTIME exec rbac_db psql -U postgres -c \
+        "DROP PUBLICATION IF EXISTS dbz_publication;" > /dev/null 2>&1 || true
+
+    # Verify cleanup
+    local remaining_slots=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c \
+        "SELECT COUNT(*) FROM pg_replication_slots;" 2>/dev/null | xargs)
+
+    if [ "$remaining_slots" = "0" ]; then
+        print_success "All replication slots cleaned up"
+    else
+        print_warning "Some replication slots remain: $remaining_slots"
+    fi
 }
 
 # Function to configure PostgreSQL for logical replication
@@ -148,6 +320,9 @@ configure_postgres_replication() {
         print_error "Failed to configure PostgreSQL logical replication"
         exit 1
     fi
+
+    # Clean up any existing Debezium artifacts from previous runs
+    cleanup_debezium_artifacts
 }
 
 # Function to start Debezium services
@@ -220,14 +395,21 @@ create_debezium_connector() {
     if curl -s http://localhost:8083/connectors | grep -q "rbac-postgres-connector"; then
         print_warning "Connector 'rbac-postgres-connector' already exists"
 
-        # Check if connector is running properly
+        # Check if connector or its tasks are in a failed state
         local status=$(curl -s http://localhost:8083/connectors/rbac-postgres-connector/status)
         if echo "$status" | grep -q '"state":"FAILED"'; then
-            print_warning "Existing connector has failed, recreating..."
+            print_warning "Existing connector or task has failed, deleting and recreating..."
+
+            # Delete the connector
             curl -s -X DELETE http://localhost:8083/connectors/rbac-postgres-connector > /dev/null
+            sleep 3
+
+            # Clean up Debezium artifacts in PostgreSQL
+            cleanup_debezium_artifacts
             sleep 2
             # Continue to create new connector
         else
+            print_success "Connector is already running"
             return 0
         fi
     fi
@@ -639,6 +821,27 @@ cleanup_on_failure() {
     exit 1
 }
 
+# Function to cleanup existing containers that might conflict
+cleanup_existing_containers() {
+    print_status "Checking for existing containers that might conflict..."
+
+    # Stop docker-compose services to free up ports
+    if $COMPOSE_CMD ps 2>/dev/null | grep -q "Up"; then
+        print_status "Stopping existing docker-compose services..."
+        $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+        print_success "Stopped existing services"
+    fi
+
+    # Stop Debezium services
+    if $COMPOSE_CMD -f docker-compose.debezium.yml ps 2>/dev/null | grep -q "Up"; then
+        print_status "Stopping existing Debezium services..."
+        $COMPOSE_CMD -f docker-compose.debezium.yml down --remove-orphans 2>/dev/null || true
+        print_success "Stopped Debezium services"
+    fi
+
+    print_success "Cleanup of existing containers completed"
+}
+
 # Main execution
 main() {
     echo "========================================"
@@ -652,34 +855,40 @@ main() {
     # Step 1: Check prerequisites
     check_container_runtime
 
-    # Step 2: Create network
+    # Step 2: Cleanup existing containers
+    cleanup_existing_containers
+
+    # Step 3: Check required ports
+    check_required_ports
+
+    # Step 4: Create network
     create_network
 
-    # Step 3: Start and configure PostgreSQL
+    # Step 5: Start and configure PostgreSQL
     start_database
     configure_postgres_replication
 
-    # Step 4: Run database migrations to create outbox table
+    # Step 6: Run database migrations to create outbox table
     run_migrations
 
-    # Step 5: Start Debezium services
+    # Step 7: Start Debezium services
     start_debezium_services
 
-    # Step 6: Create topics and connectors
+    # Step 8: Create topics and connectors
     create_rbac_topic
     create_consumer_group
     create_debezium_connector
 
-    # Step 7: Setup Kafka consumer
+    # Step 9: Setup Kafka consumer
     setup_kafka_consumer
 
-    # Step 8: Verify setup
+    # Step 10: Verify setup
     verify_setup
 
-    # Step 9: Test Kafka consumer
+    # Step 11: Test Kafka consumer
     test_kafka_consumer_setup
 
-    # Step 10: Show connection information
+    # Step 12: Show connection information
     show_connection_info
 }
 
