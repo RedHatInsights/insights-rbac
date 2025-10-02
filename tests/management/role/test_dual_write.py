@@ -258,7 +258,7 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.add_role_to_group(role, group)
-            dual_write_handler.generate_relations_to_add_roles([role])
+            dual_write_handler.generate_relations_reset_roles([role])
         dual_write_handler.replicate()
         return policy
 
@@ -576,6 +576,20 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.assertEqual(len(tuples), 0)
 
+    def test_system_role_mapping(self):
+        role_test = self.given_v1_system_role(
+            "rtest",
+            permissions=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        group, _ = self.given_group("g1", [])
+
+        self.given_roles_assigned_to_group(group, roles=[role_test])
+
+        # See the group bound.
+        mappings = BindingMapping.objects.filter(role=role_test).get().mappings
+        self.assertEqual(mappings["groups"], [str(group.uuid)])
+
     def test_adding_same_role_again_and_unassign_it_once(self):
         role_test = self.given_v1_role(
             "rtest",
@@ -588,9 +602,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(group, roles=[role_test])
         self.given_roles_assigned_to_group(group, roles=[role_test])
 
-        # See the group bound multiple times
+        # See the group bound.
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 2)
+        self.assertEqual(len(mappings["groups"]), 1)
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -608,7 +622,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         dual_write_handler.replicate()
 
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 1)
+        self.assertEqual(len(mappings["groups"]), 0)
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -616,7 +630,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
-        self.assertEqual(len(tuples), 1)
+        self.assertEqual(len(tuples), 0)
 
     def test_reset_called_multiple_times_when_role_added_multiple_times(self):
         role_test = self.given_v1_system_role(
@@ -630,9 +644,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(group, roles=[role_test])
         self.given_roles_assigned_to_group(group, roles=[role_test])
 
-        # See the group bound multiple times
+        # See the group bound.
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 3)
+        self.assertEqual(len(mappings["groups"]), 1)
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -647,7 +661,6 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             ReplicationEventType.UNASSIGN_ROLE,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.generate_relations_to_add_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
@@ -673,35 +686,39 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         group, _ = self.given_group("g1", [])
 
         self.given_roles_assigned_to_group(group, roles=[role_test])
-        self.given_roles_assigned_to_group(group, roles=[role_test])
-        self.given_roles_assigned_to_group(group, roles=[role_test])
 
-        # See the group bound multiple times
-        mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 3)
+        binding_mapping: BindingMapping = BindingMapping.objects.filter(role=role_test).get()
+
+        original_groups = binding_mapping.mappings["groups"]
+        self.assertEqual(len(original_groups), 1)
+
         tuples = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role_binding", mappings["id"]),
+                resource("rbac", "role_binding", binding_mapping.mappings["id"]),
                 relation("subject"),
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
         self.assertEqual(len(tuples), 1)
 
+        # In previous code, a single group could have been stored twice.
+        binding_mapping.mappings["groups"] = original_groups + original_groups
+        binding_mapping.save()
+
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.UNASSIGN_ROLE,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.generate_relations_to_add_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
         dual_write_handler.replicate()
 
-        mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 1)
+        # Retrieve the updated mapping.
+        binding_mapping = BindingMapping.objects.filter(role=role_test).get()
+        self.assertEqual(len(binding_mapping.mappings["groups"]), 1)
         tuples = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role_binding", mappings["id"]),
+                resource("rbac", "role_binding", binding_mapping.mappings["id"]),
                 relation("subject"),
                 subject("rbac", "group", str(group.uuid), "member"),
             )

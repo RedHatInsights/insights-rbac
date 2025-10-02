@@ -142,38 +142,6 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             logger.error(f"Replication event failed for group: {self.group.uuid}: {e}")
             raise DualWriteException(e)
 
-    # TODO: this can be removed after the migrator
-    def generate_relations_to_add_roles(
-        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
-    ):
-        """
-        Generate relations to add roles.
-
-        This method is **NOT** idempotent. Adding the same role multiple times adds the group multiple times to the
-        BindingMapping for the [roles].
-        """
-        if not self.replication_enabled():
-            return
-
-        def add_group_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
-
-        for role in roles:
-            self._update_mapping_for_role(
-                role,
-                update_mapping=add_group_to_binding,
-                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
-                    system_role=role,
-                    resource=resource,
-                    groups=frozenset([str(self.group.uuid)]),
-                ),
-            )
-
-        if remove_default_access_from is not None:
-            self.relations_to_remove.extend(
-                self._default_binding(resource_binding_only=True, mapping=remove_default_access_from)
-            )
-
     def generate_relations_reset_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
     ):
