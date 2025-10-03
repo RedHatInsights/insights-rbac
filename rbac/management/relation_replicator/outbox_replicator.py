@@ -20,7 +20,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Protocol, TypedDict
 
-from django.db import transaction, connection
+from django.db import connection, transaction
 from google.protobuf import json_format
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
@@ -77,7 +77,7 @@ class OutboxReplicator(RelationReplicator):
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
         # Get org_id from Django tenant context
-        org_id = connection.tenant.org_id if hasattr(connection, 'tenant') else 'unknown'
+        org_id = connection.tenant.org_id if hasattr(connection, "tenant") else "unknown"
 
         payload = self._build_replication_event(event.add, event.remove, org_id)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
