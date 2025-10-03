@@ -49,7 +49,8 @@ class RelationsApiReplicator(RelationReplicator):
                 tuples=relationships,
             )
             try:
-                stub.CreateTuples(request)
+                response = stub.CreateTuples(request)
+                return response
             except grpc.RpcError as err:
                 error = GRPCError(err)
                 logger.error(
@@ -57,6 +58,7 @@ class RelationsApiReplicator(RelationReplicator):
                     f"error code {error.code}, reason {error.reason}"
                     f"relationships: {relationships}"
                 )
+                return None
 
 
 class GRPCError:

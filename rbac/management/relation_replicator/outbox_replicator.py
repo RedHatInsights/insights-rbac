@@ -20,7 +20,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Protocol, TypedDict
 
-from django.db import transaction
+from django.db import transaction, connection
 from google.protobuf import json_format
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
@@ -55,6 +55,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+    org_id: str
 
 
 class WorkspaceEventPayload(TypedDict):
@@ -75,7 +76,10 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove)
+        # Get org_id from Django tenant context
+        org_id = connection.tenant.org_id if hasattr(connection, 'tenant') else 'unknown'
+
+        payload = self._build_replication_event(event.add, event.remove, org_id)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -89,7 +93,7 @@ class OutboxReplicator(RelationReplicator):
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
     def _build_replication_event(
-        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
+        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship], org_id: str
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
@@ -100,7 +104,7 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json}
+        return {"relations_to_add": add_json, "relations_to_remove": remove_json, "org_id": org_id}
 
     def _save_replication_event(
         self,

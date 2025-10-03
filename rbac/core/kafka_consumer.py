@@ -24,12 +24,15 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
+from django.shortcuts import get_object_or_404
+from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
+from rbac.api.models import Tenant
 from django.conf import settings
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
 from prometheus_client import Counter, Histogram
 
+relations_api_replication = RelationsApiReplicator()
 logger = logging.getLogger("rbac.core.kafka_consumer")
 
 # Metrics
@@ -633,15 +636,46 @@ class RBACKafkaConsumer:
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
 
+            # Extract org_id from payload
+            org_id = debezium_msg.payload.get('org_id')
+
+            if not org_id or org_id == 'unknown':
+                logger.error(f"Missing or invalid org_id in payload: {org_id}")
+                messages_processed_total.labels(message_type="relations", status="missing_org_id").inc()
+                return False
+
             logger.info(
-                f"Processing relations message - aggregateid: {debezium_msg.aggregateid}, "
+                f"Processing relations message - org_id: {org_id}, "
+                f"aggregateid: {debezium_msg.aggregateid}, "
                 f"event_type: {debezium_msg.event_type}, "
                 f"relations_to_add: {len(replication_msg.relations_to_add)}, "
                 f"relations_to_remove: {len(replication_msg.relations_to_remove)}"
             )
 
-            # TODO: Add actual processing logic here
-            # This is where you would integrate with the relation replication system
+            # Get tenant by org_id
+            try:
+                tenant = Tenant.objects.get(org_id=org_id)
+            except Tenant.DoesNotExist:
+                logger.error(f"Tenant not found for org_id: {org_id}")
+                messages_processed_total.labels(message_type="relations", status="tenant_not_found").inc()
+                return False
+
+            # Write relationships and get response with consistency token
+            replication_response = relations_api_replication._write_relationships(
+                relationships=replication_msg.relations_to_add
+            )
+
+            # Extract consistency token from response
+            if replication_response and hasattr(replication_response, 'consistency_token'):
+                token = replication_response.consistency_token.token
+
+                # Update tenant with consistency token
+                tenant.relations_consistency_token = token
+                tenant.save()
+
+                logger.info(f"Updated consistency token for org_id {org_id}: {token}")
+            else:
+                logger.warning(f"No consistency token in response for org_id {org_id}")
 
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True
