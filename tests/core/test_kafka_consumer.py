@@ -534,15 +534,27 @@ class RBACKafkaConsumerTests(TestCase):
 
         self.assertFalse(result)
 
-    def test_process_relations_message_success(self):
+    @patch("core.kafka_consumer.Tenant")
+    @patch("core.kafka_consumer.relations_api_replication._write_relationships")
+    def test_process_relations_message_success(self, mock_write_relationships, mock_tenant_model):
         """Test successful relations message processing."""
         consumer = RBACKafkaConsumer()
+
+        # Mock tenant
+        mock_tenant = Mock()
+        mock_tenant_model.objects.get.return_value = mock_tenant
+
+        # Mock write_relationships response with consistency token
+        mock_response = Mock()
+        mock_response.consistency_token.token = "test-token-123"
+        mock_write_relationships.return_value = mock_response
 
         debezium_msg = DebeziumMessage(
             aggregatetype="relations",
             aggregateid="test-id-123",
             event_type="create_group",
             payload={
+                "org_id": "12345",
                 "relations_to_add": [
                     {
                         "resource": {"type": "rbac", "id": "group1"},
@@ -557,6 +569,10 @@ class RBACKafkaConsumerTests(TestCase):
         result = consumer._process_relations_message(debezium_msg)
 
         self.assertTrue(result)
+        mock_tenant_model.objects.get.assert_called_once_with(org_id="12345")
+        mock_write_relationships.assert_called_once()
+        self.assertEqual(mock_tenant.relations_consistency_token, "test-token-123")
+        mock_tenant.save.assert_called_once()
 
     def test_process_relations_message_invalid_payload(self):
         """Test relations message processing with invalid payload."""

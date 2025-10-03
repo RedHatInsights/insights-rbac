@@ -643,6 +643,7 @@ class RBACKafkaConsumer:
             if not org_id or org_id == "unknown":
                 logger.error(f"Missing or invalid org_id in payload: {org_id}")
                 messages_processed_total.labels(message_type="relations", status="missing_org_id").inc()
+                return False
 
             logger.info(
                 f"Processing relations message - org_id: {org_id}, "
@@ -658,6 +659,7 @@ class RBACKafkaConsumer:
             except Tenant.DoesNotExist:
                 logger.error(f"Tenant not found for org_id: {org_id}")
                 messages_processed_total.labels(message_type="relations", status="tenant_not_found").inc()
+                return False
 
             # Write relationships and get response with consistency token
             replication_response = relations_api_replication._write_relationships(
