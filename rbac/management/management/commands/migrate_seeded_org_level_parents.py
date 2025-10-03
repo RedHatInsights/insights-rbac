@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Contains a command to update the V2 parent relations for seeded roles to match their expected scope."""
+import logging
+
 from django.conf import settings
 from django.core.management import BaseCommand
 from kessel.relations.v1beta1.common_pb2 import Relationship
@@ -28,6 +30,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from migration_tool.utils import create_relationship
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def _child_relationship(parent_uuid: str, child_uuid: str) -> Relationship:
@@ -87,7 +91,13 @@ class Command(BaseCommand):
                 [a.permission.permission for a in role.access.all()]
             )
 
+            role_desc = f"{repr(role.name)} (id={role.id})"
+
             if role.platform_default:
+                logger.info(
+                    f"Rebinding role {role_desc} to have platform-default parent role for scope {target_scope.name}."
+                )
+
                 relations_to_remove.append(
                     _child_relationship(
                         parent_uuid=platform_default_uuid,
@@ -101,6 +111,8 @@ class Command(BaseCommand):
                         child_uuid=role_uuid,
                     )
                 )
+            else:
+                logger.info(f"Role {role_desc} is not a platform-default role; not rebinding.")
 
             if role.admin_default:
                 relations_to_remove.append(
@@ -116,6 +128,12 @@ class Command(BaseCommand):
                         child_uuid=role_uuid,
                     )
                 )
+
+                logger.info(
+                    f"Rebinding role {role_desc} to have admin-default parent role for scope {target_scope.name}."
+                )
+            else:
+                logger.info(f"Role {role_desc} is not an admin-default role; not rebinding.")
 
         replicator.replicate(
             ReplicationEvent(
