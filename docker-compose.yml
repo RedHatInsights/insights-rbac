@@ -1,3 +1,5 @@
+# This docker-compose file is compatible with both Docker and Podman
+# Use 'docker-compose' or 'podman-compose' to run
 services:
   rbac-server:
       container_name: rbac_server
@@ -35,10 +37,22 @@ services:
         - PRINCIPAL_PROXY_SERVICE_SSL_VERIFY=${PRINCIPAL_PROXY_SERVICE_SSL_VERIFY-False}
         - RBAC_DESTRUCTIVE_API_ENABLED_UNTIL=${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
         - RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL=${RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL}
+        - KAFKA_ENABLED=false
+        - RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=kafka:9092
+        - RBAC_KAFKA_CONSUMER_TOPIC=outbox.event.relations-replication-event
+        - RBAC_KAFKA_CONSUMER_GROUP_ID=rbac-consumer-group
+        - REPLICATION_TO_RELATION_ENABLED=true
+        - PRINCIPAL_USER_DOMAIN=redhat
         - SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID=32dedd56-41ac-4cba-8fc1-71a45dffaf70
         - SYSTEM_DEFAULT_TENANT_ROLE_UUID=0ce39992-6931-4766-9a10-823be3bb0a42
         - SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID=3e0a2db7-4f71-4f7f-890a-aba8f4303631
         - SYSTEM_ADMIN_TENANT_ROLE_UUID=e47d12a8-d5cb-4e33-a14e-8573fa666a5a
+        - WORKSPACE_HIERARCHY_DEPTH_LIMIT=5
+        - WORKSPACE_ORG_CREATION_LIMIT=20000000
+        - V2_APIS_ENABLED=True
+        - V2_READ_ONLY_API_MODE=False
+        - V2_BOOTSTRAP_TENANT=True
+        - ROLE_CREATE_ALLOW_LIST=catalog,catalog_local_test,cost-management,remediations,inventory,drift,policies,advisor,approval,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness
       privileged: true
       ports:
           - 9080:8080
