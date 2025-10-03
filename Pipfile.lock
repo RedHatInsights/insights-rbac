@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "b32d3dfae33dc5c33c300bb91552c01acbad99621278afe1226b45a272f36f74"
+            "sha256": "d2c1d7c9fcb6a5c21936897113c60d5237af91d9932f50fd407b6f48b5e25c52"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -66,20 +66,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:d718df3591c829bcca4c498abb7b09d64d1eecc4e5a2b6cef14b476501211b8a",
-                "sha256:f4c1b01dd61e7733b453bca38b004ce030e26ee36e7a3d4a9e45a730b67bc38d"
+                "sha256:281ddf688951773a98161ccb34c54c6376b2ecc7028ab99d77483df5990b448c",
+                "sha256:84ade2a253e5445902d2cb2064f48aedf9ba83d6f863244266c2e36c2f190cec"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.35"
+            "version": "==1.40.44"
         },
         "botocore": {
             "hashes": [
-                "sha256:1639f38999fc0cf42c92c5c83c5fbe189a4857a86f55b842be868e3283c6d3bb",
-                "sha256:d87412dc1ea785df156f412627d3417c9f9eb45601fd0846d8fe96fe3c78b630"
+                "sha256:6fa7274cdb69be7c7b3ce6ff46a7c3e35e270f259dd77ee3f8ad8c584352262b",
+                "sha256:8f6f96ef053dcdfe79c14dfee303c0d381608c111696862fafc6e38402ccf8fe"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.43"
+            "version": "==1.40.44"
         },
         "cachetools": {
             "hashes": [
@@ -2049,11 +2049,11 @@
         },
         "identify": {
             "hashes": [
-                "sha256:11a073da82212c6646b1f39bb20d4483bfb9543bd5566fec60053c4bb309bf2e",
-                "sha256:663494103b4f717cb26921c52f8751363dc89db64364cd836a9bf1535f53cd6a"
+                "sha256:1181ef7608e00704db228516541eb83a88a9f94433a8c80bb9b5bd54b1d81757",
+                "sha256:e4f4864b96c6557ef2a1e1c951771838f4edc9df3a72ec7118b338801b11c7bf"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==2.6.14"
+            "version": "==2.6.15"
         },
         "idna": {
             "hashes": [
