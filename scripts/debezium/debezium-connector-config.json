@@ -18,9 +18,6 @@
     "heartbeat.interval.ms": "30000",
     "heartbeat.action.query": "INSERT INTO heartbeat (status) VALUES (1)",
     "topic.heartbeat.prefix": "__debezium-heartbeat",
-    "slot.name": "debezium_slot",
-    "publication.autocreate.mode": "filtered",
-    "transforms.outbox.table.field.event.type": "type",
-    "transforms.outbox.route.topic.replacement": "outbox.event.rbac-consumer-replication-event"
+    "transforms.outbox.table.field.event.type": "type"
   }
 }

@@ -192,19 +192,19 @@ List Kafka topics (Podman): ::
 
 View messages in the replication topic (Docker): ::
 
-    docker exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000
+    docker exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.relations-replication-event --from-beginning --timeout-ms 5000
 
 View messages in the replication topic (Podman): ::
 
-    podman exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000
+    podman exec insights_rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.relations-replication-event --from-beginning --timeout-ms 5000
 
 Check message count in topic (Docker): ::
 
-    docker exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event
+    docker exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.relations-replication-event
 
 Check message count in topic (Podman): ::
 
-    podman exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event
+    podman exec insights_rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.relations-replication-event
 
 Stop Debezium services (Docker): ::
 
@@ -232,7 +232,7 @@ When RBAC operations occur (like adding users to groups), they generate outbox e
 
 1. PostgreSQL outbox table (management_outbox)
 2. Debezium Change Data Capture
-3. Kafka topic (outbox.event.rbac-consumer-replication-event)
+3. Kafka topic (outbox.event.relations-replication-event)
 4. RBAC Kafka consumer for downstream processing
 
 

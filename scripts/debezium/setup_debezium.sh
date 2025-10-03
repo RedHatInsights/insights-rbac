@@ -366,7 +366,7 @@ start_debezium_services() {
 create_rbac_topic() {
     print_status "Creating RBAC replication topic..."
 
-    local topic_name="outbox.event.rbac-consumer-replication-event"
+    local topic_name="outbox.event.relations-replication-event"
 
     # Check if topic already exists
     if $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list | grep -q "$topic_name"; then
@@ -385,7 +385,7 @@ create_rbac_topic() {
 create_consumer_group() {
     print_status "Creating consumer group for RBAC Kafka consumer..."
 
-    local topic_name="outbox.event.rbac-consumer-replication-event"
+    local topic_name="outbox.event.relations-replication-event"
     local group_id="rbac-consumer-group"
 
     # Create a dummy consumer to initialize the consumer group and set offset to beginning
@@ -463,7 +463,7 @@ create_debezium_connector() {
 create_mock_replication_producer() {
     print_status "Creating mock replication data for testing..."
 
-    local topic_name="outbox.event.rbac-consumer-replication-event"
+    local topic_name="outbox.event.relations-replication-event"
 
     # Create sample relation replication messages in the format expected by RBAC consumer
     cat > /tmp/test_relations_message_1.json << EOF
@@ -607,7 +607,7 @@ else
     CONTAINER_RUNTIME="docker"  # fallback default
 fi
 
-TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
+TOPIC=${1:-"outbox.event.relations-replication-event"}
 MODE=${2:-"interactive"}
 
 echo "Testing RBAC Kafka consumer with topic: $TOPIC in $MODE mode"
@@ -662,7 +662,7 @@ else
     CONTAINER_RUNTIME="docker"  # fallback default
 fi
 
-TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
+TOPIC=${1:-"outbox.event.relations-replication-event"}
 
 echo "Starting RBAC Kafka consumer in existing rbac_server container..."
 echo "Topic: $TOPIC"
@@ -696,7 +696,7 @@ else
     CONTAINER_RUNTIME="docker"  # fallback default
 fi
 
-TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
+TOPIC=${1:-"outbox.event.relations-replication-event"}
 
 # Create test message in the format expected by RBAC Kafka consumer
 cat > /tmp/test_relations_message.json << EOL
@@ -747,14 +747,14 @@ test_kafka_consumer_setup() {
     fi
 
     print_status "Sending test message to verify consumer can process messages..."
-    ./scripts/debezium/send_test_relations_message.sh outbox.event.rbac-consumer-replication-event
+    ./scripts/debezium/send_test_relations_message.sh outbox.event.relations-replication-event
 
     print_success "Test message sent. Consumer setup is ready!"
 }
 
 # Function to run Kafka consumer
 run_kafka_consumer() {
-    local topic=${1:-"outbox.event.rbac-consumer-replication-event"}
+    local topic=${1:-"outbox.event.relations-replication-event"}
     local mode=${2:-"interactive"}
 
     print_status "Starting RBAC Kafka consumer..."
@@ -816,7 +816,7 @@ show_connection_info() {
     echo ""
     echo "📋 Connector Information:"
     echo "   • Replication Slot:   debezium_slot"
-    echo "   • RBAC Consumer Topic: outbox.event.rbac-consumer-replication-event"
+    echo "   • RBAC Consumer Topic: outbox.event.relations-replication-event"
     echo ""
     echo "🚀 Kafka Consumer Commands:"
     echo "   • Run consumer (interactive):     $0 --consumer"
@@ -827,8 +827,8 @@ show_connection_info() {
     echo "🔗 Useful Commands:"
     echo "   • Check connector:        curl http://localhost:8083/connectors/rbac-postgres-connector/status"
     echo "   • List topics:                $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-topics --bootstrap-server localhost:9092 --list"
-    echo "   • View messages in topic:     $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.rbac-consumer-replication-event --from-beginning --timeout-ms 5000"
-    echo "   • Check message count:        $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.rbac-consumer-replication-event"
+    echo "   • View messages in topic:     $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-console-consumer --bootstrap-server localhost:9092 --topic outbox.event.relations-replication-event --from-beginning --timeout-ms 5000"
+    echo "   • Check message count:        $CONTAINER_RUNTIME exec insights-rbac-kafka-1 kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic outbox.event.relations-replication-event"
     echo "   • Stop services:              $COMPOSE_CMD -f docker-compose.debezium.yml down"
     echo ""
     echo "📝 Next Steps:"
@@ -945,14 +945,14 @@ case "${1:-}" in
         echo "🚀 Starting RBAC Kafka Consumer"
         echo "========================================"
         echo ""
-        run_kafka_consumer "${2:-outbox.event.rbac-consumer-replication-event}" "interactive"
+        run_kafka_consumer "${2:-outbox.event.relations-replication-event}" "interactive"
         ;;
     --consumer-bg)
         echo "========================================"
         echo "🚀 Starting RBAC Kafka Consumer (Background)"
         echo "========================================"
         echo ""
-        run_kafka_consumer "${2:-outbox.event.rbac-consumer-replication-event}" "background"
+        run_kafka_consumer "${2:-outbox.event.relations-replication-event}" "background"
         ;;
     *)
         main "$@"
