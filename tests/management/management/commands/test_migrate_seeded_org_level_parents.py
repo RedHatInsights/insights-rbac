@@ -21,6 +21,7 @@ from uuid import UUID
 from django.conf import settings
 from django.test import TestCase
 from django.test.utils import override_settings
+import django.core.management
 
 from management.group.definer import seed_group
 from management.group.platform import GlobalPolicyIdService
@@ -36,8 +37,6 @@ from migration_tool.in_memory_tuples import (
     relation,
     subject,
 )
-from migration_tool.migrate_org_level import migrate_seeded_to_org_level
-from rbac.settings import TENANT_SCOPE_PERMISSIONS
 from tests.management.role.test_dual_write import RbacFixture
 
 
@@ -57,6 +56,7 @@ def _child_predicate(parent_uuid: str | UUID, child_uuid: str | UUID):
     )
 
 
+@override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS="tenant:*:*")
 class MigrateOrgLevelTests(TestCase):
     tuples: InMemoryTuples
     replicator: RelationReplicator
@@ -99,11 +99,10 @@ class MigrateOrgLevelTests(TestCase):
 
         Role.objects.all().delete()
 
-    def _do_migrate(self, resource_service: Optional[ImplicitResourceService] = None):
-        migrate_seeded_to_org_level(
-            replicator=self.replicator,
-            resource_service=resource_service if resource_service is not None else self.resource_service,
-        )
+    def _do_migrate(self):
+        with patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate") as replicate:
+            replicate.side_effect = self.replicator.replicate
+            django.core.management.call_command("migrate_seeded_org_level_parents")
 
     def _assert_child(self, parent_uuid: str | UUID, child_uuid: str | UUID):
         self.assertEqual(
@@ -227,7 +226,11 @@ class MigrateOrgLevelTests(TestCase):
 
         self.assertEqual(2, len(self.tuples))
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROOT_SCOPE_PERMISSIONS="approval:actions:create",
+        TENANT_SCOPE_PERMISSIONS="inventory:*:*",
+    )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_remove_existing_relations(self, outbox_replicate):
         """Test that migrating roles with non-default scope appropriately removes existing relations."""
@@ -247,13 +250,9 @@ class MigrateOrgLevelTests(TestCase):
         self._assert_child(parent_uuid=self.default_platform_default_uuid, child_uuid=root_role.uuid)
         self._assert_child(parent_uuid=self.default_admin_default_uuid, child_uuid=tenant_role.uuid)
 
-        # This configuration assigns root_role to root workspace scope and tenant_role to tenant scope.
-        self._do_migrate(
-            resource_service=ImplicitResourceService(
-                root_scope_permissions=["approval:actions:create"],
-                tenant_scope_permissions=["inventory:*:*"],
-            )
-        )
+        # The settings used above assign root_role to root workspace scope and tenant_role to tenant scope.
+
+        self._do_migrate()
 
         # Assert that relations for non-default-scope roles were removed.
         self._assert_not_child(parent_uuid=self.default_platform_default_uuid, child_uuid=root_role.uuid)
@@ -266,32 +265,3 @@ class MigrateOrgLevelTests(TestCase):
 
         final_count = len(self.tuples)
         self.assertEqual(initial_count, final_count, "Expected overall number of tuples not to change.")
-
-    @override_settings(
-        REPLICATION_TO_RELATION_ENABLED=True,
-        ROOT_SCOPE_PERMISSIONS="app:*:*",
-        TENANT_SCOPE_PERMISSIONS="another_app:*:*",
-    )
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_defaults(self, outbox_replicate):
-        """Test that the correct defaults are used when None arguments are passed."""
-        outbox_replicate.side_effect = self.replicator.replicate
-
-        root_role = self.fixture.new_system_role(
-            name="root role",
-            permissions=["app:resource:verb"],
-            platform_default=True,
-        )
-
-        tenant_role = self.fixture.new_system_role(
-            name="tenant role",
-            permissions=["another_app:resource:verb"],
-            admin_default=True,
-        )
-
-        migrate_seeded_to_org_level(replicator=None, resource_service=None)
-
-        self._assert_child(parent_uuid=self.root_platform_default_uuid, child_uuid=root_role.uuid)
-        self._assert_child(parent_uuid=self.tenant_admin_default_uuid, child_uuid=tenant_role.uuid)
-
-        self.assertEqual(2, len(self.tuples))
