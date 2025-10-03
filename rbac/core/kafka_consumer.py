@@ -31,7 +31,7 @@ from kafka.errors import KafkaError
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from prometheus_client import Counter, Histogram
 
-from rbac.api.models import Tenant
+from api.models import Tenant
 
 relations_api_replication = RelationsApiReplicator()
 logger = logging.getLogger("rbac.core.kafka_consumer")
