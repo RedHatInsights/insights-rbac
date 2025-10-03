@@ -1882,7 +1882,7 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        replication_event = {"relations_to_add": [], "relations_to_remove": []}
+        replication_event = {"relations_to_add": [], "relations_to_remove": [], "org_id": "unknown"}
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
@@ -2077,7 +2077,7 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        replication_event = {"relations_to_add": [], "relations_to_remove": []}
+        replication_event = {"relations_to_add": [], "relations_to_remove": [], "org_id": "unknown"}
         current_relations = relation_api_tuples_for_v1_role(role_uuid, bound_workspace_id=str(self.child_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)

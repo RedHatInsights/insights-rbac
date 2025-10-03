@@ -90,6 +90,7 @@ def replication_event(relations_to_add, relations_to_remove):
     return {
         "relations_to_add": relations_to_add,
         "relations_to_remove": relations_to_remove,
+        "org_id": "unknown",
     }
 
 
@@ -97,6 +98,7 @@ def generate_replication_event_to_add_principals(group_uuid, principal_user_id):
     return {
         "relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)],
         "relations_to_remove": [],
+        "org_id": "unknown",
     }
 
 
@@ -104,6 +106,7 @@ def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
     return {
         "relations_to_add": [],
         "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)],
+        "org_id": "unknown",
     }
 
 
