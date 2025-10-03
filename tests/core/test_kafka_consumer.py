@@ -534,9 +534,9 @@ class RBACKafkaConsumerTests(TestCase):
 
         self.assertFalse(result)
 
-    @patch("api.models.Tenant")
     @patch("core.kafka_consumer.relations_api_replication._write_relationships")
-    def test_process_relations_message_success(self, mock_write_relationships, mock_tenant_model):
+    @patch("core.kafka_consumer.Tenant")
+    def test_process_relations_message_success(self, mock_tenant_model, mock_write_relationships):
         """Test successful relations message processing."""
         consumer = RBACKafkaConsumer()
 
