@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "d0362f45b8ad84afaf01fe529690efa54705f4518eb773b647950935d11d4c66"
+            "sha256": "dc05a6c4612bb9a760e06bc121b9041303216917e0160bc80ea1dea077bd1be7"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -707,11 +707,11 @@
         },
         "kafka-python": {
             "hashes": [
-                "sha256:205953e581c0371cada35bebdacc58ac7dee6c3f9e8d95b9a6a0a7bacc054ca0",
-                "sha256:6765c25440046cdadeb9c31469566be259d50802d27d4f8aae86d9ae755b78e2"
+                "sha256:84c0993cd4f7f2f01e92d8104ea9bdf631aff72fc5e6ea62eb3bdf1d56528fc3",
+                "sha256:e0f480a45f3814cb0eb705b8b4f61069e1be61dae0d8c69d0f1f2da33eea1bd5"
             ],
             "index": "pypi",
-            "version": "==2.1.5"
+            "version": "==2.2.15"
         },
         "kessel-sdk": {
             "extras": [
