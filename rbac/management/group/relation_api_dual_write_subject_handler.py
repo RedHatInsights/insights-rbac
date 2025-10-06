@@ -22,6 +22,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from management.models import Workspace
+from management.permission.scope_service import default_implicit_resource_service, ImplicitResourceService
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -29,6 +30,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.model import BindingMapping, Role
+from management.tenant_mapping.model import TenantMapping
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -54,6 +56,11 @@ class RelationApiDualWriteSubjectHandler:
             self.event_type = event_type
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
+            
+            # Get workspace hierarchy for scope-based binding
+            self.root_workspace = default_workspace.parent
+            self.tenant = default_workspace.tenant
+            self.tenant_mapping = self.tenant.tenant_mapping
         except Exception as e:
             logger.error(f"Initialization of RelationApiDualWriteSubjectHandler failed: {e}")
             raise DualWriteException(e)
