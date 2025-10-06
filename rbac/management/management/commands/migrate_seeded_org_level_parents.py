@@ -18,6 +18,7 @@
 import logging
 
 from django.core.management import BaseCommand
+from django.db.models import Q
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.platform import GlobalPolicyIdService
 from management.models import Role
@@ -79,7 +80,7 @@ class Command(BaseCommand):
             platform_v2_role_uuid_for(DefaultAccessType.ADMIN, Scope.DEFAULT, policy_service=policy_service)
         )
 
-        for role in Role.objects.public_tenant_only():
+        for role in Role.objects.public_tenant_only().filter(Q(platform_default=True) | Q(admin_default=True)):
             role_uuid = str(role.uuid)
             target_scope = resource_service.highest_scope_for_permissions(
                 [a.permission.permission for a in role.access.all()]
@@ -109,8 +110,6 @@ class Command(BaseCommand):
                         child_uuid=role_uuid,
                     )
                 )
-            else:
-                logger.info(f"Role {role_desc} is not a platform-default role; not rebinding.")
 
             if role.admin_default:
                 relations_to_remove.append(
@@ -134,8 +133,6 @@ class Command(BaseCommand):
                 logger.info(
                     f"Rebinding role {role_desc} to have admin-default parent role for scope {target_scope.name}."
                 )
-            else:
-                logger.info(f"Role {role_desc} is not an admin-default role; not rebinding.")
 
         replicator.replicate(
             ReplicationEvent(
