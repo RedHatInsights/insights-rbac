@@ -151,6 +151,32 @@ def v1_role_to_v2_bindings(
                         continue
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
+            # TODO: handle roles with non-default scope here.
+            #
+            # This should ultimately boil down to providing different resources here as the default place to put a
+            # role binding (instead of always using the default workspace). However, currently (2025-10-08),
+            # we only support non-default scope bindings for platform-/admin-default groups. Supporting this for
+            # some, but not all, groups assigned a role opens up a big can of worms.
+            #
+            # As a simple example, consider the following:
+            # * A tenant T.
+            # * A group G in T for which scope is respected.
+            # * A group H in T for which scope is not respected.
+            # * A custom role R in T, assigned to G and H.
+            # * A permission P assigned to R with a resource definition restricting that access to T's default
+            #   workspace.
+            # * A permission Q assigned to R with implicit root workspace scope.
+            # Then, we would need the following bindings:
+            # * G in T's root workspace with permission Q.
+            # * G in T's default workspace with permission P.
+            # * H in T's default workspace with permissions P and Q (because Q's scope is not considered for group H).
+            # This is impossible with the current representation. The latter two bindings would have the same V1 role
+            # and resource but different V2 roles. BindingMappings are unique per (V1 role, resource) pair,
+            # and each BindingMapping has exactly one V2 role.
+            #
+            # This concern goes away once we respect scopes for all groups. (In the above example, G and H would both
+            # have permission P in the root workspace and have permission Q in the default workspace, so there is no
+            # conflict.)
             add_element(
                 perm_groupings,
                 V2boundresource(("rbac", "workspace"), str(default_workspace.id)),

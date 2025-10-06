@@ -17,13 +17,17 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
+from management.permission.scope_service import (
+    ImplicitResourceService,
+    Scope,
+)
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -47,12 +51,14 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     group: Group
     _expected_empty_relation_reason = None
     _policy_service: GlobalPolicyIdService
+    _resource_service: ImplicitResourceService
 
     def __init__(
         self,
         group,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
+        resource_service: Optional[ImplicitResourceService] = None,
     ):
         """Initialize RelationApiDualWriteGroupHandler."""
         if not self.replication_enabled():
@@ -65,6 +71,11 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._public_tenant: Optional[Tenant] = None
             self._tenant_mapping = None
             self._policy_service = GlobalPolicyIdService.shared()
+
+            if resource_service is not None:
+                self._resource_service = resource_service
+            else:
+                self._resource_service = ImplicitResourceService.from_settings()
 
             tenant = Tenant.objects.get(id=self.group.tenant_id)
 
@@ -139,17 +150,23 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             logger.error(f"Replication event failed for group: {self.group.uuid}: {e}")
             raise DualWriteException(e)
 
-    def generate_relations_reset_roles(
-        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
+    def _can_use_non_default_scope(self):
+        """
+        Determine whether it is acceptable to bind roles in non-default scopes for this group.
+
+        Over time, this must never be changed to return false for a group for which it has previously returned true.
+        For example, this could result in a role being bound in the tenant scope while this method returns true,
+        then later (when this method returns false) attempting to remove the role but not attempting to unbind the
+        role from tenant scope.
+        """
+        return self.group.platform_default or self.group.admin_default
+
+    def _generate_add_relations(
+        self,
+        roles: Iterable[Role],
+        scope_fn: Callable[[Role], Scope],
+        remove_default_access_from: Optional[TenantMapping] = None,
     ):
-        """
-        Reset the mapping and relationships for the group, assuming this group should only be assigned once.
-
-        This is safe if you are SURE this group should only be assigned once,
-        OR you will be re-adding the other sources of assignments.
-
-        This method **IS** idempotent. It will reset the group to the same state every time.
-        """
         if not self.replication_enabled():
             return
 
@@ -161,6 +178,8 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             if to_add:
                 self.relations_to_add.append(to_add)
 
+        allow_non_default = self._can_use_non_default_scope()
+
         # Go through current roles
         # For each binding
         # Remove all of this subject
@@ -168,8 +187,33 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         # Add back subject
         # Replicate this addition
         for role in roles:
+            # Note that we do not attempt to handle the case where the scope has changed. At time of writing
+            # (2025-10-08), this case is expected to be handled during seeding for system roles. It is unclear how
+            # custom roles should be handled.
+            scope = scope_fn(role)
+
+            # We do not currently support binding non-system roles in non-default scope. Currently (2025-10-08),
+            # only certain groups (platform-/admin-default groups) can have role bindings in non-default scope. For
+            # system roles, this isn't a problem: we can simply bind the group to the system role in the role binding
+            # for the appropriate scope.
+            #
+            # For custom roles, however, this isn't so simple. Custom roles in V1 can become multiple roles in V2 due
+            # to resource definitions, where each V2 role has a different set of permissions (based on all possible
+            # sets of permissions the V1 role could result in); each applicable resource (along with the default
+            # workspace) is then given its own role binding using the V2 role with the appropriate permissions.
+            # Various code (including this method) assumes that adding a group to each role binding for a custom V1
+            # role is sufficient to grant that role to the group, and thus each role binding for a V1 role has the
+            # same set of groups. If only *some* groups could be assigned in non-default scope, this assumption would
+            # be violated. See v1_role_to_v2_bindings for another example of what goes wrong if we try to do that.
+            # (This issue does not arise for system roles, since no such assumption is made; we can always identify a
+            # specific BindingMapping to modify given a system role, its scope, and the tenant to bind it in.)
+            if scope != Scope.DEFAULT:
+                assert allow_non_default
+                assert role.system
+
             self._update_mapping_for_role(
                 role,
+                scope=scope,
                 update_mapping=reset_mapping,
                 create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
                     system_role=role,
@@ -182,6 +226,46 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self.relations_to_remove.extend(
                 self._default_binding(resource_binding_only=True, mapping=remove_default_access_from)
             )
+
+    def generate_relations_reset_roles(
+        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
+    ):
+        """
+        Reset the mapping and relationships for the group, assuming this group should only be assigned once.
+
+        This is safe if you are SURE this group should only be assigned once,
+        OR you will be re-adding the other sources of assignments.
+
+        This method **IS** idempotent. It will reset the group to the same state every time.
+        """
+        return self._generate_add_relations(
+            roles=roles,
+            scope_fn=lambda role: Scope.DEFAULT,
+            remove_default_access_from=remove_default_access_from,
+        )
+
+    def generate_relations_scoped_reset_roles(
+        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
+    ):
+        """
+        Replicate the addition of the provided roles to the group while respecting role scope.
+
+        This functions just as generate_relations_reset_roles, except that the implicit scope of the roles is
+        considered when generating role bindings.
+        """
+        roles = list(roles)
+
+        if not self._can_use_non_default_scope():
+            raise ValueError("Non-default scopes are not supported for this group.")
+
+        if not all(role.system for role in roles):
+            raise ValueError("Adding roles in non-default scope is supported only for system roles.")
+
+        return self._generate_add_relations(
+            roles=roles,
+            scope_fn=self._resource_service.scope_for_role,
+            remove_default_access_from=remove_default_access_from,
+        )
 
     def replicate(self):
         """Replicate generated relations."""
@@ -204,9 +288,31 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             if removal is not None:
                 self.relations_to_remove.append(removal)
 
-        self._update_mapping_for_role(
-            role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=None
-        )
+        def do_update(scope: Scope):
+            self._update_mapping_for_role(
+                role,
+                scope=scope,
+                update_mapping=remove_group_from_binding,
+                create_default_mapping_for_system_role=None,
+            )
+
+        if self._can_use_non_default_scope():
+            # If the role could be bound to a non-default scope, we have to handle two cases:
+            # * An existing role binding that has not been migrated. Here, the role would still be bound to the
+            #   default workspace, and we have to remove it from there.
+            # * A role binding that has been migrated, or a role binding that was added after scope started being
+            #   respected. Here, we have ot remove it from the correct scope.
+            # We could even have both, if a new role binding is created while scope is being respected but before the
+            # old role bindings have been pruned. We have no a priori way to distinguish between these two cases,
+            # so we always have to check both.
+            #
+            # Note that this does not handle the case where a role changes from a non-default scope to a different
+            # scope. At time of writing (2025-10-06), this is expected to be handled during seeding for system roles
+            # (which are currently the only roles that can be bound in non-default scope).
+            for scope in {Scope.DEFAULT, self._resource_service.scope_for_role(role)}:
+                do_update(scope)
+        else:
+            do_update(Scope.DEFAULT)
 
     def prepare_to_delete_group(self, roles):
         """Generate relations to delete."""

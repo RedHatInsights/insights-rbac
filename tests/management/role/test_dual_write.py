@@ -29,6 +29,7 @@ from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
+from management.role.definer import seed_roles
 from management.role.model import Access, BindingMapping, ResourceDefinition, Role, SourceKey
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
@@ -56,6 +57,9 @@ from api.cross_access.relation_api_dual_write_cross_access_handler import Relati
 from api.cross_access.util import create_cross_principal
 from api.models import Tenant, User
 from unittest.mock import patch
+
+from migration_tool.models import V2boundresource
+from rbac.settings import ROOT_SCOPE_PERMISSIONS
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -93,6 +97,12 @@ class DualWriteTestCase(TestCase):
         tenant = tenant if tenant is not None else self.tenant
         default = Workspace.objects.default(tenant=tenant)
         return str(default.id)
+
+    def root_workspace(self, tenant: Optional[Tenant] = None) -> str:
+        """Return the root workspace ID."""
+        tenant = tenant if tenant is not None else self.tenant
+        root = Workspace.objects.root(tenant=tenant)
+        return str(root.id)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -275,17 +285,15 @@ class DualWriteTestCase(TestCase):
             f"Expected exactly {num} role bindings, but got {num_role_bindings}.\n" f"Role bindings: {role_bindings}",
         )
 
-    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
-        """Assert there is a role binding with the given roles and groups."""
-        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
-
-    def expect_role_bindings_to_workspace(
-        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    def expect_role_bindings_to_resource(
+        self, num: int, target: V2boundresource, for_v2_roles: list[str], for_groups: list[str]
     ):
-        """Assert there is [num] role bindings with the given roles and groups."""
+        """Assert there are [num] role bindings with the given roles and groups."""
         # Find all bindings for the given workspace
         resources = self.tuples.find_tuples_grouped(
-            all_of(resource("rbac", "workspace", workspace), relation("binding")),
+            all_of(
+                resource(target.resource_type[0], target.resource_type[1], target.resource_id), relation("binding")
+            ),
             group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
         )
 
@@ -318,14 +326,57 @@ class DualWriteTestCase(TestCase):
         self.assertEqual(
             num_role_bindings,
             num,
-            f"Expected exactly 1 role binding against workspace {workspace} "
+            f"Expected exactly 1 role binding against resource {target} "
             f"with roles {for_v2_roles} and groups {for_groups}, "
             f"but got {len(role_bindings)}.\n"
             f"Matched role bindings: {role_bindings}.\n"
             f"Unmatched role bindings: {unmatched}",
         )
 
+    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding with the given roles and groups."""
+        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
 
+    def expect_role_bindings_to_workspace(
+        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    ):
+        """Assert there are [num] role bindings for the given workspace with the given roles and groups."""
+        self.expect_role_bindings_to_resource(
+            num=num,
+            target=V2boundresource(("rbac", "workspace"), workspace),
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_1_role_binding_to_tenant(self, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding for the given workspace with the given roles and groups."""
+        self.expect_role_bindings_to_tenant(
+            num=1,
+            org_id=org_id,
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_role_bindings_to_tenant(self, num: int, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding for the given tenant with the given roles and groups."""
+        self.expect_role_bindings_to_resource(
+            num=num,
+            target=V2boundresource(("rbac", "tenant"), Tenant.org_id_to_tenant_resource_id(org_id)),
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def bound_resource_for(self, model: Workspace | Tenant):
+        if isinstance(model, Workspace):
+            return V2boundresource(("rbac", "workspace"), str(model.id))
+
+        if isinstance(model, Tenant):
+            return V2boundresource(("rbac", "tenant"), Tenant.org_id_to_tenant_resource_id(model.org_id))
+
+        raise TypeError(f"Unexpected model: {model}")
+
+
+@override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS="tenant:*:*")
 class DualWriteGroupTestCase(DualWriteTestCase):
     """Test dual write logic for group modifications."""
 
@@ -532,7 +583,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         binding_mapping: BindingMapping = BindingMapping.objects.filter(role=role_test).get()
 
         original_groups = binding_mapping.mappings["groups"]
-        self.assertEqual(len(original_groups), 1)
+        self.assertEqual(original_groups, [str(group.uuid)])
 
         tuples = self.tuples.find_tuples(
             all_of(
@@ -543,7 +594,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         )
         self.assertEqual(len(tuples), 1)
 
-        # In previous code, a single group could have been stored twice.
+        # In previous versions of RBAC, a single group could have been stored twice in the same BindingMapping. We
+        # need to ensure that calling generate_relations_reset_roles correctly handles this case and results in the
+        # group being stored only once.
         binding_mapping.mappings["groups"] = original_groups + original_groups
         binding_mapping.save()
 
@@ -557,7 +610,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         # Retrieve the updated mapping.
         binding_mapping = BindingMapping.objects.filter(role=role_test).get()
-        self.assertEqual(len(binding_mapping.mappings["groups"]), 1)
+        self.assertEqual(binding_mapping.mappings["groups"], [str(group.uuid)])
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", binding_mapping.mappings["id"]),
@@ -610,6 +663,178 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid)))
         self.assertEqual(len(tuples), 0)
+
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    def test_custom_group_scopes(self, replicate):
+        """Test that system roles assigned to a new custom default groups are bound in the appropriate scope."""
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        def expect_binding_present(target: Workspace | Tenant, role: Role, group: Group):
+            bound_resource = self.bound_resource_for(target)
+
+            self.expect_role_bindings_to_resource(
+                num=1,
+                target=bound_resource,
+                for_v2_roles=[str(platform_role.uuid)],
+                for_groups=[str(custom_group.uuid)],
+            )
+
+            mapping = BindingMapping.objects.get(
+                resource_type_namespace=bound_resource.resource_type[0],
+                resource_type_name=bound_resource.resource_type[1],
+                resource_id=bound_resource.resource_id,
+                role=role,
+            )
+
+            self.assertEqual(mapping.mappings["groups"], [str(group.uuid)])
+
+        def expect_binding_absent(resource: Workspace | Tenant, role: Role, group: Group):
+            bound_resource = self.bound_resource_for(resource)
+
+            self.expect_role_bindings_to_resource(
+                num=0,
+                target=bound_resource,
+                for_v2_roles=[str(platform_role.uuid)],
+                for_groups=[str(custom_group.uuid)],
+            )
+
+            mappings = list(
+                BindingMapping.objects.filter(
+                    resource_type_namespace=bound_resource.resource_type[0],
+                    resource_type_name=bound_resource.resource_type[1],
+                    resource_id=bound_resource.resource_id,
+                    role=role,
+                )
+            )
+
+            self.assertLessEqual(len(mappings), 1)
+
+            if len(mappings) == 0:
+                return
+
+            mapping = mappings[0]
+            self.assertEqual(mapping.mappings["groups"], [str(group.uuid)])
+
+        for index, (permissions, target_for) in enumerate(
+            [
+                ([], lambda t: self.fixture.default_workspace(t)),
+                (["default:resource:verb"], lambda t: self.fixture.default_workspace(t)),
+                (["root:resource:verb"], lambda t: self.fixture.root_workspace(t)),
+                (["default:resource:verb", "root:resource:verb"], lambda t: self.fixture.root_workspace(t)),
+                (["tenant:resource:verb"], lambda t: t),
+                (["default:resource:verb", "root:resource:verb", "tenant:resource:verb"], lambda t: t),
+            ]
+        ):
+            with self.subTest(permissions=permissions):
+                Role.objects.public_tenant_only().delete()
+                platform_role = self.given_v1_system_role("platform", permissions, platform_default=True)
+
+                seed_group()
+
+                self.switch_to_new_tenant(name=f"test-{index}", org_id=f"test-{index}")
+                custom_group = self.fixture.custom_default_group(self.tenant)
+
+                target = target_for(self.tenant)
+
+                expect_binding_present(target, platform_role, custom_group)
+
+                self.given_roles_unassigned_from_group(custom_group, [platform_role])
+                expect_binding_absent(target, platform_role, custom_group)
+
+                default_workspace = self.fixture.default_workspace(self.tenant)
+
+                # Adding the roles back later should bind them only in the default workspace scope.
+                self.given_roles_assigned_to_group(custom_group, [platform_role])
+                expect_binding_present(default_workspace, platform_role, custom_group)
+
+                if target != default_workspace:
+                    expect_binding_absent(target, platform_role, custom_group)
+
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    def test_custom_group_remove_scope_changed(self, replicate):
+        """Test that removing a role with changed scope from a custom default group works."""
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        Role.objects.public_tenant_only().delete()
+        platform_role = self.given_v1_system_role("platform", ["root:resource:verb"], platform_default=True)
+
+        # Assume that the custom default group was created before scope was considered.
+        with override_settings(ROOT_SCOPE_PERMISSIONS=""):
+            seed_group()
+            custom_group = self.fixture.custom_default_group(self.tenant)
+
+        self.default_workspace()
+
+        role_ids = [str(platform_role.uuid)]
+        group_ids = [str(custom_group.uuid)]
+
+        self.expect_1_role_binding_to_workspace(
+            workspace=self.default_workspace(),
+            for_v2_roles=role_ids,
+            for_groups=group_ids,
+        )
+
+        # A binding to the root workspace should not have been created.
+        self.expect_role_bindings_to_workspace(
+            num=0,
+            workspace=self.root_workspace(),
+            for_v2_roles=role_ids,
+            for_groups=group_ids,
+        )
+
+        # Remove the role while it has root scope.
+        with override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*"):
+            self.given_roles_unassigned_from_group(custom_group, [platform_role])
+
+        # The binding to the default workspace should have been removed.
+        self.expect_role_bindings_to_workspace(
+            num=0,
+            workspace=self.default_workspace(),
+            for_v2_roles=role_ids,
+            for_groups=group_ids,
+        )
+
+        # There should still be no binding to the root workspace.
+        self.expect_role_bindings_to_workspace(
+            num=0,
+            workspace=self.root_workspace(),
+            for_v2_roles=role_ids,
+            for_groups=group_ids,
+        )
+
+    def test_custom_group_custom_role(self):
+        """Test that custom groups are only bound to the default workspace."""
+        role = self.given_v1_role("a role", default=["root:resource:verb", "tenant:resource:verb"])
+
+        custom_group = self.fixture.custom_default_group(self.tenant)
+        self.given_roles_assigned_to_group(custom_group, [role])
+
+        v2_role_id = BindingMapping.objects.get(role=role).mappings["role"]["id"]
+
+        v2_role_ids = [v2_role_id]
+        group_ids = [str(custom_group.uuid)]
+
+        self.expect_1_role_binding_to_workspace(
+            workspace=self.default_workspace(),
+            for_v2_roles=v2_role_ids,
+            for_groups=group_ids,
+        )
+
+        self.expect_role_bindings_to_workspace(
+            num=0,
+            workspace=self.root_workspace(),
+            for_v2_roles=v2_role_ids,
+            for_groups=group_ids,
+        )
+
+        self.expect_role_bindings_to_tenant(
+            num=0,
+            org_id=self.tenant.org_id,
+            for_v2_roles=v2_role_ids,
+            for_groups=group_ids,
+        )
 
     def test_delete_group_removes_role_binding_for_system_roles_if_last_group(self):
         role_1 = self.given_v1_role(
@@ -1444,7 +1669,7 @@ class RbacFixture:
         return group, principals
 
     def custom_default_group(self, tenant: Tenant) -> Group:
-        return set_system_flag_before_update(self.default_group, tenant, None)  # type: ignore
+        return set_system_flag_before_update(Group.objects.get(pk=self.default_group.pk), tenant, None)  # type: ignore
 
     def root_workspace(self, tenant: Tenant) -> Workspace:
         return Workspace.objects.root(tenant=tenant)
