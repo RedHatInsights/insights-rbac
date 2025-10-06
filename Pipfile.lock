@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "4664f97f82bb04d1fe99dc89ecc728514acc13cd6eef5eecc9bf72474a0d45ed"
+            "sha256": "40691a7722c47f047b389edd7a8d0c830de8ee51f6dae4b69fa7d4c2dbfdcaf0"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -42,19 +42,19 @@
         },
         "asgiref": {
             "hashes": [
-                "sha256:0b61526596219d70396548fc003635056856dba5d0d086f86476f10b33c75960",
-                "sha256:a0249afacb66688ef258ffe503528360443e2b9a8d8c4581b6ebefa58c841ef1"
+                "sha256:aef8a81283a34d0ab31630c9b7dfe70c812c95eba78171367ca8745e88124734",
+                "sha256:d89f2d8cd8b56dada7d52fa7dc8075baa08fb836560710d38c292a7a3f78c04e"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==3.9.2"
+            "version": "==3.10.0"
         },
         "attrs": {
             "hashes": [
-                "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3",
-                "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b"
+                "sha256:16d5969b87f0859ef33a48b35d55ac1be6e42ae49d5e853b597db70c35c57e11",
+                "sha256:adcf7e2a1fb3b36ac48d97835bb6d8ade15b8dcce26aba8bf1d14847b57a3373"
             ],
-            "markers": "python_version >= '3.8'",
-            "version": "==25.3.0"
+            "markers": "python_version >= '3.9'",
+            "version": "==25.4.0"
         },
         "billiard": {
             "hashes": [
@@ -100,11 +100,11 @@
         },
         "certifi": {
             "hashes": [
-                "sha256:e564105f78ded564e3ae7c923924435e1daa7463faeab5bb932bc53ffae63407",
-                "sha256:f6c12493cfb1b06ba2ff328595af9350c65d6644968e5d3a2ffd78699af217a5"
+                "sha256:0f212c2744a9bb6de0c56639a6f68afe01ecd92d91f14ae897c4fe7bbeeef0de",
+                "sha256:47c09d31ccf2acf0be3f701ea53595ee7e0b8fa08801c6624be771df09ae7b43"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==2025.8.3"
+            "version": "==2025.10.5"
         },
         "cffi": {
             "hashes": [
@@ -1307,12 +1307,12 @@
         },
         "sentry-sdk": {
             "hashes": [
-                "sha256:8c185854d111f47f329ab6bc35993f28f7a6b7114db64aa426b326998cfa14e9",
-                "sha256:ba655ca5e57b41569b18e2a5552cb3375209760a5d332cdd87c6c3f28f729602"
+                "sha256:b9c4672fb2cafabcc28586ab8fd0ceeff9b2352afcf2b936e13d5ba06d141b9f",
+                "sha256:d5f6ae0f27ea73e7b09c70ad7d42242326eb44765e87a15d8c5aab96b80013e6"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.6'",
-            "version": "==2.39.0"
+            "version": "==2.40.0"
         },
         "setuptools": {
             "hashes": [
@@ -1598,11 +1598,11 @@
         },
         "certifi": {
             "hashes": [
-                "sha256:e564105f78ded564e3ae7c923924435e1daa7463faeab5bb932bc53ffae63407",
-                "sha256:f6c12493cfb1b06ba2ff328595af9350c65d6644968e5d3a2ffd78699af217a5"
+                "sha256:0f212c2744a9bb6de0c56639a6f68afe01ecd92d91f14ae897c4fe7bbeeef0de",
+                "sha256:47c09d31ccf2acf0be3f701ea53595ee7e0b8fa08801c6624be771df09ae7b43"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==2025.8.3"
+            "version": "==2025.10.5"
         },
         "cffi": {
             "hashes": [
