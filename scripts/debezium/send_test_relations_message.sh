@@ -12,7 +12,7 @@ else
     CONTAINER_RUNTIME="docker"  # fallback default
 fi
 
-TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
+TOPIC=${1:-"outbox.event.relations-replication-event"}
 
 # Create test message in the format expected by RBAC Kafka consumer
 cat > /tmp/test_relations_message.json << EOL

@@ -12,7 +12,7 @@ else
     CONTAINER_RUNTIME="docker"  # fallback default
 fi
 
-TOPIC=${1:-"outbox.event.rbac-consumer-replication-event"}
+TOPIC=${1:-"outbox.event.relations-replication-event"}
 MODE=${2:-"interactive"}
 
 echo "Testing RBAC Kafka consumer with topic: $TOPIC in $MODE mode"

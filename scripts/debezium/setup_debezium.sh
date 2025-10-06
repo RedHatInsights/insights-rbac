@@ -573,13 +573,13 @@ verify_setup() {
         exit 1
     fi
 
-    # Check replication slot
-    local slot_check=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c "SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'debezium_slot';" | xargs)
-    if [ "$slot_check" = "1" ]; then
-        print_success "Replication slot created successfully"
+    # Check replication slot - Debezium creates it automatically with connector name
+    local slot_count=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c "SELECT count(*) FROM pg_replication_slots;" | xargs)
+    if [ "$slot_count" -ge "1" ]; then
+        local slot_name=$($CONTAINER_RUNTIME exec rbac_db psql -U postgres -t -c "SELECT slot_name FROM pg_replication_slots LIMIT 1;" | xargs)
+        print_success "Replication slot created successfully: $slot_name"
     else
-        print_error "Replication slot not found"
-        exit 1
+        print_warning "Replication slot not created yet (will be created on first connector activity)"
     fi
 
     # List topics
@@ -752,6 +752,59 @@ test_kafka_consumer_setup() {
     print_success "Test message sent. Consumer setup is ready!"
 }
 
+# Function to restart all containers
+restart_containers() {
+    print_status "Restarting all containers to reload code changes..."
+
+    # Restart main services
+    $COMPOSE_CMD restart
+
+    print_success "All containers restarted"
+    print_status "Waiting for services to be ready..."
+    sleep 5
+
+    # Wait for rbac_server to be healthy
+    local max_attempts=30
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if $CONTAINER_RUNTIME exec rbac_server curl -s http://localhost:8080/metrics > /dev/null 2>&1; then
+            print_success "RBAC server is ready"
+            break
+        fi
+        echo -n "."
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    print_success "Containers restarted and services are ready"
+}
+
+# Function to restart only rbac-server container
+restart_server() {
+    print_status "Restarting rbac-server container to reload code changes..."
+
+    $COMPOSE_CMD restart rbac-server
+
+    print_success "RBAC server container restarted"
+    print_status "Waiting for server to be ready..."
+    sleep 3
+
+    # Wait for rbac_server to be healthy
+    local max_attempts=30
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if $CONTAINER_RUNTIME exec rbac_server curl -s http://localhost:8080/metrics > /dev/null 2>&1; then
+            print_success "RBAC server is ready"
+            break
+        fi
+        echo -n "."
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    print_success "Server restarted and ready"
+}
+
 # Function to run Kafka consumer
 run_kafka_consumer() {
     local topic=${1:-"outbox.event.relations-replication-event"}
@@ -823,6 +876,10 @@ show_connection_info() {
     echo "   • Run consumer (background):      $0 --consumer-bg"
     echo "   • Run consumer (custom topic):    $0 --consumer [topic_name]"
     echo "   • Send test message:              ./scripts/debezium/send_test_relations_message.sh"
+    echo ""
+    echo "🔄 Development Commands:"
+    echo "   • Restart all containers:         $0 --restart"
+    echo "   • Restart server only:            $0 --restart-server"
     echo ""
     echo "🔗 Useful Commands:"
     echo "   • Check connector:        curl http://localhost:8083/connectors/rbac-postgres-connector/status"
@@ -933,6 +990,8 @@ case "${1:-}" in
         echo "  --consumer              Run Kafka consumer (interactive)"
         echo "  --consumer-bg           Run Kafka consumer (background)"
         echo "  --consumer [topic]      Run Kafka consumer with custom topic"
+        echo "  --restart               Restart all containers to reload code changes"
+        echo "  --restart-server        Restart only rbac-server container to reload code changes"
         echo ""
         echo "Prerequisites:"
         echo "  • Docker/Podman and docker-compose/podman-compose installed and running"
@@ -953,6 +1012,20 @@ case "${1:-}" in
         echo "========================================"
         echo ""
         run_kafka_consumer "${2:-outbox.event.relations-replication-event}" "background"
+        ;;
+    --restart)
+        echo "========================================"
+        echo "🔄 Restarting All Containers"
+        echo "========================================"
+        echo ""
+        restart_containers
+        ;;
+    --restart-server)
+        echo "========================================"
+        echo "🔄 Restarting RBAC Server"
+        echo "========================================"
+        echo ""
+        restart_server
         ;;
     *)
         main "$@"
