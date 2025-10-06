@@ -102,6 +102,7 @@ class RelationApiDualWriteSubjectHandler:
     def _update_mapping_for_role(
         self,
         role: Role,
+        scope: Scope,
         update_mapping: Callable[[BindingMapping], None],
         create_default_mapping_for_system_role: Optional[Callable[[V2boundresource], BindingMapping]],
     ):
@@ -117,7 +118,7 @@ class RelationApiDualWriteSubjectHandler:
         if role.system:
             self._update_mapping_for_system_role(
                 role,
-                scope=Scope.DEFAULT,
+                scope=scope,
                 update_mapping=update_mapping,
                 create_default_mapping_for_system_role=create_default_mapping_for_system_role,
                 resource_locked=False,
