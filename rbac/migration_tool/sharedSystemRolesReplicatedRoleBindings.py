@@ -22,6 +22,7 @@ from typing import Any, Iterable, Optional, Tuple, Union
 from django.conf import settings
 from management.models import BindingMapping, Workspace
 from management.permission.model import Permission
+from management.permission.scope_service import ImplicitResourceService
 from management.role.model import Role
 from migration_tool.ingest import add_element
 from migration_tool.models import (
@@ -96,8 +97,16 @@ def v1_role_to_v2_bindings(
         get_workspace_ids_from_resource_definition,
         is_resource_a_workspace,
     )
+    from management.models import Workspace as WorkspaceModel
 
     perm_groupings: PermissionGroupings = {}
+
+    # Get workspace hierarchy for scope-based binding
+    root_workspace = WorkspaceModel.objects.root(tenant=v1_role.tenant)
+    tenant = v1_role.tenant
+
+    # Track permissions without resource definitions for scope-based binding
+    default_permissions_map = {}  # Maps v1_permission string to v2_perm string
 
     # Group V2 permissions by target resource
     for access in v1_role.access.all():
@@ -151,9 +160,24 @@ def v1_role_to_v2_bindings(
                         continue
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
+            # For permissions without resource definitions, collect for scope-based binding
+            default_permissions_map[v1_perm.permission] = v2_perm
+
+    # If there are default permissions, determine their scope and add to appropriate resource
+    if default_permissions_map:
+        # Use ImplicitResourceService.from_settings() to get current settings
+        # instead of the global service (which is initialized at import time)
+        scope_service = ImplicitResourceService.from_settings()
+        scope_resource = scope_service.v2_bound_resource_for_permission(
+            permissions=list(default_permissions_map.keys()),
+            tenant_org_id=tenant.org_id,
+            root_workspace_id=str(root_workspace.id),
+            default_workspace_id=str(default_workspace.id),
+        )
+        for v2_perm in default_permissions_map.values():
             add_element(
                 perm_groupings,
-                V2boundresource(("rbac", "workspace"), str(default_workspace.id)),
+                scope_resource,
                 v2_perm,
                 collection=set,
             )
