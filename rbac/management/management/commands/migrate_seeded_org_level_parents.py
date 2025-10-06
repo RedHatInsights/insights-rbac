@@ -17,7 +17,6 @@
 """Contains a command to update the V2 parent relations for seeded roles to match their expected scope."""
 import logging
 
-from django.conf import settings
 from django.core.management import BaseCommand
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.platform import GlobalPolicyIdService
@@ -29,6 +28,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.role.platform import platform_v2_role_uuid_for
+from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -68,22 +69,15 @@ class Command(BaseCommand):
         relations_to_remove: list[Relationship] = []
         relations_to_add: list[Relationship] = []
 
-        policy_cache = GlobalPolicyIdService()
+        policy_service = GlobalPolicyIdService()
 
-        platform_default_uuid = str(policy_cache.platform_default_policy_uuid())
-        admin_default_uuid = str(policy_cache.admin_default_policy_uuid())
+        platform_default_uuid = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service=policy_service)
+        )
 
-        platform_role_for_scope = {
-            Scope.DEFAULT: platform_default_uuid,
-            Scope.ROOT: settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID,
-            Scope.TENANT: settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID,
-        }
-
-        admin_role_for_scope = {
-            Scope.DEFAULT: admin_default_uuid,
-            Scope.ROOT: settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID,
-            Scope.TENANT: settings.SYSTEM_ADMIN_TENANT_ROLE_UUID,
-        }
+        admin_default_uuid = str(
+            platform_v2_role_uuid_for(DefaultAccessType.ADMIN, Scope.DEFAULT, policy_service=policy_service)
+        )
 
         for role in Role.objects.public_tenant_only():
             role_uuid = str(role.uuid)
@@ -107,7 +101,11 @@ class Command(BaseCommand):
 
                 relations_to_add.append(
                     _child_relationship(
-                        parent_uuid=platform_role_for_scope[target_scope],
+                        parent_uuid=str(
+                            platform_v2_role_uuid_for(
+                                DefaultAccessType.USER, target_scope, policy_service=policy_service
+                            )
+                        ),
                         child_uuid=role_uuid,
                     )
                 )
@@ -124,7 +122,11 @@ class Command(BaseCommand):
 
                 relations_to_add.append(
                     _child_relationship(
-                        parent_uuid=admin_role_for_scope[target_scope],
+                        parent_uuid=str(
+                            platform_v2_role_uuid_for(
+                                DefaultAccessType.ADMIN, target_scope, policy_service=policy_service
+                            )
+                        ),
                         child_uuid=role_uuid,
                     )
                 )
