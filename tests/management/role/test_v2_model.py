@@ -20,8 +20,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
-from management.role.v2_model import RoleV2, CustomRoleV2, SeededRoleV2, PlatformRoleV2
-from management.models import Permission
+from management.models import Permission, RoleV2, CustomRoleV2, SeededRoleV2, PlatformRoleV2
 from tests.identity_request import IdentityRequest
 
 

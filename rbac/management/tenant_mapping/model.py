@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """TenantMapping model."""
-
+import enum
 import logging
 import uuid
 
@@ -25,6 +25,13 @@ from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+class DefaultAccessType(enum.StrEnum):
+    """Represents the two types of default access resources. This mirrors the split in TenantMapping."""
+
+    USER = "user"
+    ADMIN = "admin"
 
 
 class TenantMapping(models.Model):
@@ -48,3 +55,21 @@ class TenantMapping(models.Model):
     root_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     tenant_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     tenant_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+
+    def group_uuid_for(self, access_type: DefaultAccessType) -> uuid.UUID:
+        """Get the UUID for the tenant's default group for the appropriate access type."""
+        if access_type == DefaultAccessType.USER:
+            return self.default_group_uuid
+        elif access_type == DefaultAccessType.ADMIN:
+            return self.default_admin_group_uuid
+        else:
+            raise ValueError(f"Unexpected access type: {access_type}")
+
+    def default_role_binding_uuid_for(self, access_type: DefaultAccessType) -> uuid.UUID:
+        """Get the UUID for the tenant's default role binding (in the default workspace) of the provided access type."""
+        if access_type == DefaultAccessType.USER:
+            return self.default_role_binding_uuid
+        elif access_type == DefaultAccessType.ADMIN:
+            return self.default_admin_role_binding_uuid
+        else:
+            raise ValueError(f"Unexpected access type: {access_type}")
