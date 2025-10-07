@@ -20,6 +20,7 @@
 import logging
 from typing import Any, Dict, List, NotRequired, Optional, Protocol, TypedDict
 
+from django.conf import settings
 from django.db import transaction
 from google.protobuf import json_format
 from management.models import Outbox
@@ -90,13 +91,21 @@ class OutboxReplicator(RelationReplicator):
 
     def _build_replication_event(self, event: ReplicationEvent) -> ReplicationEventPayload:
         """Build replication event."""
+        from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
+
         add_json: list[dict[str, Any]] = []
         for relation in event.add:
             add_json.append(json_format.MessageToDict(relation))
+            # Log each relation being added (only in development mode)
+            if settings.RBAC_LOG_RELATIONS:
+                logger.info(stringify_spicedb_relationship(relation))
 
         remove_json: list[dict[str, Any]] = []
         for relation in event.remove:
             remove_json.append(json_format.MessageToDict(relation))
+            # Log each relation being removed (only in development mode)
+            if settings.RBAC_LOG_RELATIONS:
+                logger.info(f"REMOVE: {stringify_spicedb_relationship(relation)}")
 
         payload: ReplicationEventPayload = {
             "relations_to_add": add_json,

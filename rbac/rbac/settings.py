@@ -132,6 +132,7 @@ MIDDLEWARE = [
     "rbac.middleware.ReadOnlyApiMiddleware",
 ]
 
+RBAC_LOG_RELATIONS = ENVIRONMENT.bool("RBAC_LOG_RELATIONS", default=False)
 DEVELOPMENT = ENVIRONMENT.bool("DEVELOPMENT", default=False)
 if DEVELOPMENT:
     MIDDLEWARE.insert(5, "rbac.dev_middleware.DevelopmentIdentityHeaderMiddleware")
