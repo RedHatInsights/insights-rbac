@@ -25,7 +25,7 @@ import django.core.management
 
 from management.group.definer import seed_group
 from management.group.platform import GlobalPolicyIdService
-from management.models import Role
+from management.models import Access, Permission, Role
 from management.permission.scope_service import ImplicitResourceService
 from management.relation_replicator.relation_replicator import RelationReplicator
 from management.role.definer import seed_roles
@@ -226,13 +226,51 @@ class MigrateOrgLevelTests(TestCase):
 
         self.assertEqual(2, len(self.tuples))
 
+    def test_remove_existing_scoped_relations(self):
+        platform_role = self.fixture.new_system_role(
+            name="platform",
+            permissions=["root:resource:verb"],
+            platform_default=True,
+        )
+
+        admin_role = self.fixture.new_system_role(
+            name="admin",
+            permissions=["root:resource:verb"],
+            admin_default=True,
+        )
+
+        # This will assign the roles in the root workspace scope.
+        self._do_migrate()
+
+        tenant_permission = Permission.objects.create(
+            tenant=self.fixture.public_tenant,
+            permission="tenant:resource:verb",
+        )
+
+        platform_role.access.clear()
+        platform_role.access.create(tenant=self.fixture.public_tenant, permission=tenant_permission)
+
+        admin_role.access.clear()
+        admin_role.access.create(tenant=self.fixture.public_tenant, permission=tenant_permission)
+
+        # This should unassign the roles from the root workspace scope and re-assign them to tenant scope.
+        self._do_migrate()
+
+        self._assert_not_child(parent_uuid=self.root_platform_default_uuid, child_uuid=platform_role.uuid)
+        self._assert_not_child(parent_uuid=self.root_admin_default_uuid, child_uuid=admin_role.uuid)
+
+        self._assert_child(parent_uuid=self.tenant_platform_default_uuid, child_uuid=platform_role.uuid)
+        self._assert_child(parent_uuid=self.tenant_admin_default_uuid, child_uuid=admin_role.uuid)
+
+        self.assertEqual(2, len(self.tuples))
+
     @override_settings(
         REPLICATION_TO_RELATION_ENABLED=True,
         ROOT_SCOPE_PERMISSIONS="approval:actions:create",
         TENANT_SCOPE_PERMISSIONS="inventory:*:*",
     )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_remove_existing_relations(self, outbox_replicate):
+    def test_remove_existing_default_relations(self, outbox_replicate):
         """Test that migrating roles with non-default scope appropriately removes existing relations."""
         # seed_roles doesn't let us customize the replicator it uses, so we have to patch the replicator it does use.
         outbox_replicate.side_effect = self.replicator.replicate

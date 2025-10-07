@@ -72,14 +72,6 @@ class Command(BaseCommand):
 
         policy_service = GlobalPolicyIdService()
 
-        platform_default_uuid = str(
-            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service=policy_service)
-        )
-
-        admin_default_uuid = str(
-            platform_v2_role_uuid_for(DefaultAccessType.ADMIN, Scope.DEFAULT, policy_service=policy_service)
-        )
-
         for role in Role.objects.public_tenant_only().filter(Q(platform_default=True) | Q(admin_default=True)):
             role_uuid = str(role.uuid)
             target_scope = resource_service.highest_scope_for_permissions(
@@ -88,16 +80,21 @@ class Command(BaseCommand):
 
             role_desc = f"{repr(role.name)} (id={role.id})"
 
+            # Remove any existing parent-child relations with default roles.
+            for access_type in DefaultAccessType:
+                for scope in Scope:
+                    relations_to_remove.append(
+                        _child_relationship(
+                            parent_uuid=str(
+                                platform_v2_role_uuid_for(access_type, scope, policy_service=policy_service)
+                            ),
+                            child_uuid=role_uuid,
+                        )
+                    )
+
             if role.platform_default:
                 logger.info(
                     f"Rebinding role {role_desc} to have platform-default parent role for scope {target_scope.name}."
-                )
-
-                relations_to_remove.append(
-                    _child_relationship(
-                        parent_uuid=platform_default_uuid,
-                        child_uuid=role_uuid,
-                    )
                 )
 
                 relations_to_add.append(
@@ -114,13 +111,6 @@ class Command(BaseCommand):
             if role.admin_default:
                 logger.info(
                     f"Rebinding role {role_desc} to have admin-default parent role for scope {target_scope.name}."
-                )
-
-                relations_to_remove.append(
-                    _child_relationship(
-                        parent_uuid=admin_default_uuid,
-                        child_uuid=role_uuid,
-                    )
                 )
 
                 relations_to_add.append(
