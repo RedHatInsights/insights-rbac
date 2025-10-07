@@ -138,3 +138,6 @@ docs/source/specs/typespec/tsp-output/
 
 # umb certs
 rbac/management/principal/umb_certs/
+
+# ai
+.claude
