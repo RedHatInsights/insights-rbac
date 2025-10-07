@@ -112,6 +112,10 @@ class Command(BaseCommand):
                 )
 
             if role.admin_default:
+                logger.info(
+                    f"Rebinding role {role_desc} to have admin-default parent role for scope {target_scope.name}."
+                )
+
                 relations_to_remove.append(
                     _child_relationship(
                         parent_uuid=admin_default_uuid,
@@ -128,10 +132,6 @@ class Command(BaseCommand):
                         ),
                         child_uuid=role_uuid,
                     )
-                )
-
-                logger.info(
-                    f"Rebinding role {role_desc} to have admin-default parent role for scope {target_scope.name}."
                 )
 
         replicator.replicate(
