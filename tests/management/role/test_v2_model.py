@@ -20,7 +20,17 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
-from management.models import Permission, RoleV2, CustomRoleV2, SeededRoleV2, PlatformRoleV2
+from api.models import Tenant
+from management.models import (
+    CustomRoleV2,
+    Group,
+    Permission,
+    PlatformRoleV2,
+    RoleBinding,
+    RoleBindingGroup,
+    RoleV2,
+    SeededRoleV2,
+)
 from tests.identity_request import IdentityRequest
 
 
@@ -407,3 +417,280 @@ class RoleV2ModelTests(IdentityRequest):
         self.assertEqual(custom_role.type, RoleV2.Types.CUSTOM)
         self.assertEqual(seeded_role.type, RoleV2.Types.SEEDED)
         self.assertEqual(platform_role.type, RoleV2.Types.PLATFORM)
+
+
+class RoleBindingModelTests(IdentityRequest):
+    """Test the RoleBinding models."""
+
+    def setUp(self):
+        """Set up the RoleBinding model tests."""
+        super().setUp()
+
+        # Test role
+        self.role = RoleV2.objects.create(name="test_role", tenant=self.tenant)
+
+        # Test groups
+        self.group1 = Group.objects.create(name="group1", tenant=self.tenant)
+        self.group2 = Group.objects.create(name="group2", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down RoleBinding model tests."""
+        RoleBinding.objects.all().delete()
+        RoleBindingGroup.objects.all().delete()
+        RoleV2.objects.all().delete()
+        Group.objects.all().delete()
+
+    def test_rolebinding_creation(self):
+        """Test basic RoleBinding creation."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        self.assertEqual(binding.role, self.role)
+        self.assertEqual(binding.resource_type, "workspace")
+        self.assertEqual(binding.resource_id, "ws-12345")
+        self.assertEqual(binding.tenant, self.tenant)
+        self.assertTrue(binding.uuid)
+
+    def test_rolebinding_unique_constraint(self):
+        """Test unique constraint on (role, resource_type, resource_id)."""
+        resource_type = "workspace"
+        resource_id = "ws-12345"
+        RoleBinding.objects.create(
+            role=self.role,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            tenant=self.tenant,
+        )
+
+        # Try to create duplicate
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                RoleBinding.objects.create(
+                    role=self.role,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    tenant=self.tenant,
+                )
+
+    def test_rolebinding_different_resources_same_role(self):
+        """Test that same role can be bound to different resources."""
+        binding1 = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding2 = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-67890",
+            tenant=self.tenant,
+        )
+
+        self.assertNotEqual(binding1.id, binding2.id)
+        self.assertEqual(binding1.role, binding2.role)
+
+    def test_rolebinding_cascade_delete_on_role(self):
+        """Test that deleting a role deletes its bindings."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding_id = binding.id
+        self.role.delete()
+
+        # Binding should be deleted
+        with self.assertRaises(RoleBinding.DoesNotExist):
+            RoleBinding.objects.get(id=binding_id)
+
+    def test_rolebinding_cascade_delete_on_tenant(self):
+        """Test that deleting a tenant deletes its role bindings."""
+        # Create separate tenant with role and binding
+        new_tenant = Tenant.objects.create(
+            tenant_name="test_tenant_delete",
+            org_id="test_org_delete",
+        )
+
+        new_role = RoleV2.objects.create(name="temp_role", tenant=new_tenant)
+        binding = RoleBinding.objects.create(
+            role=new_role,
+            resource_type="workspace",
+            resource_id="ws-temp",
+            tenant=new_tenant,
+        )
+
+        binding_id = binding.id
+        new_tenant.delete()
+
+        # Binding should be deleted
+        with self.assertRaises(RoleBinding.DoesNotExist):
+            RoleBinding.objects.get(id=binding_id)
+
+        # Role should be deleted
+        with self.assertRaises(RoleV2.DoesNotExist):
+            RoleV2.objects.get(id=new_role.id)
+
+    def test_rolebindinggroup_creation(self):
+        """Test basic RoleBindingGroup creation."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding_group = RoleBindingGroup.objects.create(
+            group=self.group1,
+            binding=binding,
+        )
+
+        self.assertEqual(binding_group.group, self.group1)
+        self.assertEqual(binding_group.binding, binding)
+
+    def test_rolebindinggroup_unique_constraint(self):
+        """Test unique constraint on (group, binding)."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        RoleBindingGroup.objects.create(
+            group=self.group1,
+            binding=binding,
+        )
+
+        # Try to create duplicate
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                RoleBindingGroup.objects.create(
+                    group=self.group1,
+                    binding=binding,
+                )
+
+    def test_rolebindinggroup_different_groups_same_binding(self):
+        """Test that different groups can have same binding."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        bg1 = RoleBindingGroup.objects.create(
+            group=self.group1,
+            binding=binding,
+        )
+
+        bg2 = RoleBindingGroup.objects.create(
+            group=self.group2,
+            binding=binding,
+        )
+
+        self.assertNotEqual(bg1.id, bg2.id)
+        self.assertEqual(bg1.binding, bg2.binding)
+
+    def test_rolebindinggroup_cascade_delete_on_binding(self):
+        """Test that deleting a binding deletes its group entries."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        bg = RoleBindingGroup.objects.create(
+            group=self.group1,
+            binding=binding,
+        )
+
+        bg_id = bg.id
+        binding.delete()
+
+        # Group entry should be deleted
+        with self.assertRaises(RoleBindingGroup.DoesNotExist):
+            RoleBindingGroup.objects.get(id=bg_id)
+
+    def test_rolebindinggroup_cascade_delete_on_group(self):
+        """Test that deleting a group deletes its binding entries."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        bg = RoleBindingGroup.objects.create(
+            group=self.group1,
+            binding=binding,
+        )
+
+        bg_id = bg.id
+        group_id = self.group1.id
+        self.group1.delete()
+
+        with self.assertRaises(Group.DoesNotExist):
+            Group.objects.get(id=group_id)
+
+        # Group entry should be deleted
+        with self.assertRaises(RoleBindingGroup.DoesNotExist):
+            RoleBindingGroup.objects.get(id=bg_id)
+
+    def test_complete_rolebinding_scenario(self):
+        """Test a complete scenario with role binding and groups."""
+        # Create binding
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        # Add groups
+        RoleBindingGroup.objects.create(
+            group=self.group1,
+            binding=binding,
+        )
+        RoleBindingGroup.objects.create(
+            group=self.group2,
+            binding=binding,
+        )
+
+        # Verify relationships
+        self.assertEqual(binding.group_entries.count(), 2)
+
+        # Verify reverse relationships
+        self.assertEqual(self.group1.role_binding_entries.count(), 1)
+        self.assertEqual(self.group2.role_binding_entries.count(), 1)
+
+    def test_rolebinding_related_names(self):
+        """Test related_name attributes from binding classes work correctly."""
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        # Test role.bindings
+        self.assertIn(binding, self.role.bindings.all())
+
+        # Test binding.group_entries
+        bg = RoleBindingGroup.objects.create(
+            group=self.group1,
+            binding=binding,
+        )
+
+        self.assertIn(bg, binding.group_entries.all())
+
+        # Test group.role_binding_entries
+        self.assertIn(bg, self.group1.role_binding_entries.all())
