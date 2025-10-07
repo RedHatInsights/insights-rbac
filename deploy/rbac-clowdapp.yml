@@ -901,6 +901,14 @@ objects:
               value: ${WORKSPACE_ORG_CREATION_LIMIT}
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
+            - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+            - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+              value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
