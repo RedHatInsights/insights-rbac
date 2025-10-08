@@ -179,9 +179,7 @@ def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uu
     ret = []
     if operation == "in":
         value = attributeFilter.get("value", [])
-        for val in value:
-            if is_str_valid_uuid(val):
-                ret.append(uuid.UUID(val))
+        ret.extend(uuid.UUID(val) for val in value if is_str_valid_uuid(val))
     elif operation == "equal":
         value = attributeFilter.get("value", "")
         if is_str_valid_uuid(value):
