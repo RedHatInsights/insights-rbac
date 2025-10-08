@@ -190,7 +190,7 @@ def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uu
 
 def is_str_valid_uuid(uuid_str: str) -> bool:
     """Check if a string can be converted to a valid UUID."""
-    if uuid_str is None or uuid_str == "":
+    if uuid_str is None or not uuid_str:
         return False
     try:
         uuid.UUID(uuid_str)
