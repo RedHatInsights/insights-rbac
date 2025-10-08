@@ -18,6 +18,7 @@
 """Utilities for Internal RBAC use."""
 import json
 import logging
+import uuid
 
 import jsonschema
 from django.conf import settings
@@ -172,14 +173,29 @@ def is_resource_a_workspace(application: str, resource_type: str, attributeFilte
     return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 
 
-def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[str]:
+def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
     """Get workspace id from a resource definition."""
     operation = attributeFilter.get("operation")
+    ret = []
     if operation == "in":
         value = attributeFilter.get("value", [])
-        return [str(val) for val in value if val is not None]
+        for val in value:
+            if is_str_valid_uuid(val):
+                ret.append(uuid.UUID(val))
     elif operation == "equal":
         value = attributeFilter.get("value", "")
-        return [str(value)]
-    else:
-        return []
+        if is_str_valid_uuid(value):
+            ret.append(uuid.UUID(value))
+
+    return ret
+
+
+def is_str_valid_uuid(uuid_str: str) -> bool:
+    """Check if a string can be converted to a valid UUID."""
+    if uuid_str is None or uuid_str == "":
+        return False
+    try:
+        uuid.UUID(uuid_str)
+        return True
+    except ValueError:
+        return False
