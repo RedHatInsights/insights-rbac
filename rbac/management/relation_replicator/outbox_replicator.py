@@ -55,6 +55,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+    event_info: dict[str, object]
 
 
 class WorkspaceEventPayload(TypedDict):
