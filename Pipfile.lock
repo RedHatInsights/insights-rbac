@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "c68cca31cb5d3d4a0df7b802d34f4c41080a0e7742d122baa66a9e9878909066"
+            "sha256": "2eceae40f797ae337d42668e0ef16acbe88abecaf891efb199f79c69d6bfcffd"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -718,11 +718,11 @@
                 "auth"
             ],
             "hashes": [
-                "sha256:9fbf11b1125e8e82d1c4a14c27162dfb56276f9581939f39edbf8e574e032aa1",
-                "sha256:ddee7c6a243cf5e864934d283a9a6fb606658f83884e8bd5f35fecf877a8a98e"
+                "sha256:6e5274363a4326b76c9ab1e45dd2308de6d8e8f83618a6a4eef2b4adb4c41ec0",
+                "sha256:ca1510a490c243afb0eee6d6b409e3a401e4d9ae01c4d573f112861c9810572e"
             ],
             "markers": "python_version >= '3.11'",
-            "version": "==1.5.0"
+            "version": "==2.0.0"
         },
         "kombu": {
             "hashes": [
@@ -1307,12 +1307,12 @@
         },
         "sentry-sdk": {
             "hashes": [
-                "sha256:b9c4672fb2cafabcc28586ab8fd0ceeff9b2352afcf2b936e13d5ba06d141b9f",
-                "sha256:d5f6ae0f27ea73e7b09c70ad7d42242326eb44765e87a15d8c5aab96b80013e6"
+                "sha256:343cde6540574113d13d178d1b2093e011ac21dd55abd3a1ec7e540f0d18a5bd",
+                "sha256:e7af3f4d7f8bac4c56fbaf95adb0d111f061cce58d5df91cfcd4e69782759b10"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.6'",
-            "version": "==2.40.0"
+            "version": "==2.41.0"
         },
         "setuptools": {
             "hashes": [
