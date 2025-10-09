@@ -155,7 +155,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
     def _can_use_non_default_scope(self):
         """
-        Determine whether it is acceptable to bind roles in non-default scopes for this group.
+        Determine whether it is possible to bind roles in non-default scopes for this replicator's group.
 
         Over time, this must never be changed to return false for a group for which it has previously returned true.
         For example, this could result in a role being bound in the tenant scope while this method returns true,
@@ -255,6 +255,8 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
         This functions just as generate_relations_reset_roles, except that the implicit scope of the roles is
         considered when generating role bindings.
+
+        This currently only works for platform-/admin- default groups and system roles.
         """
         roles = list(roles)
 

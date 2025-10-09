@@ -862,7 +862,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
     @override_settings(V2_BOOTSTRAP_TENANT=True)
     def test_custom_group_remove_scope_changed(self, replicate):
-        """Test that removing a role with changed scope from a custom default group works."""
+        """Test that removing a role with changed scope from a custom default group removes the old relations."""
         replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
 
         Role.objects.public_tenant_only().delete()
@@ -913,7 +913,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         )
 
     def test_custom_group_custom_role(self):
-        """Test that custom groups are only bound to the default workspace."""
+        """Test that custom roles added to custom groups are only bound in the default workspace."""
         role = self.given_v1_role("a role", default=["root:resource:verb", "tenant:resource:verb"])
 
         custom_group = self.fixture.custom_default_group(self.tenant)
