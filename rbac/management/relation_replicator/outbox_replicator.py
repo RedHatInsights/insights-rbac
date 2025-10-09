@@ -131,6 +131,7 @@ class OutboxReplicator(RelationReplicator):
             "first_user_id",
             "first_org_id",
             "target_org",
+            "roles",
         ]
         found_id = False
 
@@ -157,7 +158,17 @@ class OutboxReplicator(RelationReplicator):
         # Include any other fields present in resource_context
         for key, value in resource_context.items():
             if key not in validated:
-                validated[key] = value
+                # Convert UUIDs to strings for JSON serialization
+                if isinstance(value, UUID):
+                    validated[key] = str(value)
+                elif isinstance(value, list):
+                    # Convert any UUIDs in the list to strings
+                    validated[key] = [str(item) if isinstance(item, UUID) else item for item in value]
+                elif isinstance(value, dict):
+                    # Convert any UUIDs in dict values to strings
+                    validated[key] = {k: str(v) if isinstance(v, UUID) else v for k, v in value.items()}
+                else:
+                    validated[key] = value
 
         return validated
 
