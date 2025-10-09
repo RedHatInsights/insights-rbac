@@ -93,26 +93,26 @@ def replication_event(relations_to_add, relations_to_remove):
     }
 
 
-def generate_replication_event_to_add_principals(group_uuid, principal_user_id):
+def generate_replication_event_to_add_principals(group_uuid, principal_user_id, org_id="100001"):
     return {
         "relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)],
         "relations_to_remove": [],
         "resource_context": {
             "event_type": "add_principals_to_group",
             "group_uuid": group_uuid,
-            "org_id": "100001",
+            "org_id": org_id,
         },
     }
 
 
-def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
+def generate_replication_event_to_remove_principals(group_uuid, principal_uuid, org_id="100001"):
     return {
         "relations_to_add": [],
         "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)],
         "resource_context": {
             "event_type": "remove_principals_from_group",
             "group_uuid": group_uuid,
-            "org_id": "100001",
+            "org_id": org_id,
         },
     }
 
@@ -3897,7 +3897,7 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717"),
+                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717", org_id),
                 actual_call_arg,
             )
 
@@ -4133,7 +4133,7 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798"),
+                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798", org_id),
                 actual_call_arg,
             )
 
@@ -5742,7 +5742,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345", str(self.tenant.org_id)),
             actual_call_arg,
         )
 
@@ -5780,7 +5780,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234", str(self.tenant.org_id)),
             actual_call_arg,
         )
 
@@ -5856,7 +5856,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234", str(self.tenant.org_id)),
             actual_call_arg,
         )
 
@@ -6131,7 +6131,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456"),
+            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456", str(self.tenant.org_id)),
             actual_call_arg,
         )
 
