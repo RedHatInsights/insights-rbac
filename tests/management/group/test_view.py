@@ -118,6 +118,7 @@ def find_relation_in_list(relation_list, relation_tuple):
     )
 
 
+@override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS="tenant:*:*")
 class GroupViewsetTests(IdentityRequest):
     """Test the group viewset."""
 
@@ -1473,6 +1474,13 @@ class GroupViewsetTests(IdentityRequest):
                 system=True,
                 tenant=self.public_tenant,
             )
+
+            # Ensure this role is in the root scope.
+            default_role.access.create(
+                tenant=self.public_tenant,
+                permission=Permission.objects.create(tenant=self.public_tenant, permission="root:resource:verb"),
+            )
+
             self.defGroup.policies.first().roles.add(default_role)
             self.assertTrue(self.defGroup.system)
             self.assertEqual(self.defGroup.roles().count(), 1)
@@ -1482,7 +1490,7 @@ class GroupViewsetTests(IdentityRequest):
             to_add = actual_call_arg["relations_to_add"]
 
             binding_mapping = BindingMapping.objects.get(
-                role=default_role, resource_type_name="workspace", resource_id=self.default_workspace.id
+                role=default_role, resource_type_name="workspace", resource_id=self.root_workspace.id
             )
 
             # New platform default role for tenant created
@@ -1496,7 +1504,7 @@ class GroupViewsetTests(IdentityRequest):
 
             relation_tuple = relation_api_tuple(
                 "workspace",
-                str(self.default_workspace.id),
+                str(self.root_workspace.id),
                 "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),
@@ -1612,6 +1620,12 @@ class GroupViewsetTests(IdentityRequest):
                 system=True,
                 tenant=self.public_tenant,
             )
+
+            default_role_to_keep_in_group.access.create(
+                tenant=self.public_tenant,
+                permission=Permission.objects.create(tenant=self.public_tenant, permission="tenant:resource:verb"),
+            )
+
             self.defGroup.policies.first().roles.add(default_role)
             self.defGroup.policies.first().roles.add(default_role_to_keep_in_group)
 
@@ -1643,8 +1657,9 @@ class GroupViewsetTests(IdentityRequest):
 
             binding_mapping = BindingMapping.objects.get(
                 role=default_role_to_keep_in_group,
-                resource_type_name="workspace",
-                resource_id=self.default_workspace.id,
+                resource_type_namespace="rbac",
+                resource_type_name="tenant",
+                resource_id=self.tenant.tenant_resource_id(),
             )
 
             relation_tuple = relation_api_tuple(
@@ -1658,8 +1673,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
             relation_tuple = relation_api_tuple(
-                "workspace",
-                str(self.default_workspace.id),
+                "tenant",
+                self.tenant.tenant_resource_id(),
                 "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),
