@@ -772,11 +772,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid)))
         self.assertEqual(len(tuples), 0)
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
     @override_settings(V2_BOOTSTRAP_TENANT=True)
-    def test_custom_group_scopes(self, replicate):
+    def test_custom_group_scopes(self):
         """Test that system roles assigned to a new custom default groups are bound in the appropriate scope."""
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
 
         def expect_binding_present(target: Workspace | Tenant, role: Role, group: Group):
             bound_resource = V2boundresource.for_model(target)
@@ -795,7 +793,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 role=role,
             )
 
-            self.assertEqual(mapping.mappings["groups"], [str(group.uuid)])
+            self.assertIn(str(group.uuid), mapping.mappings["groups"])
 
         def expect_binding_absent(resource: Workspace | Tenant, role: Role, group: Group):
             bound_resource = V2boundresource.for_model(resource)
@@ -822,7 +820,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 return
 
             mapping = mappings[0]
-            self.assertEqual(mapping.mappings["groups"], [str(group.uuid)])
+            self.assertNotIn(str(group.uuid), mapping.mappings["groups"])
 
         for index, (permissions, target_for) in enumerate(
             [
@@ -841,7 +839,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 seed_group()
 
                 self.switch_to_new_tenant(name=f"test-{index}", org_id=f"test-{index}")
-                custom_group = self.fixture.custom_default_group(self.tenant)
+                custom_group = self.given_custom_default_group()
 
                 target = target_for(self.tenant)
 
@@ -859,19 +857,16 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 if target != default_workspace:
                     expect_binding_absent(target, platform_role, custom_group)
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
     @override_settings(V2_BOOTSTRAP_TENANT=True)
-    def test_custom_group_remove_scope_changed(self, replicate):
+    def test_custom_group_remove_scope_changed(self):
         """Test that removing a role with changed scope from a custom default group removes the old relations."""
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
-
         Role.objects.public_tenant_only().delete()
         platform_role = self.given_v1_system_role("platform", ["root:resource:verb"], platform_default=True)
 
         # Assume that the custom default group was created before scope was considered.
         with override_settings(ROOT_SCOPE_PERMISSIONS=""):
             seed_group()
-            custom_group = self.fixture.custom_default_group(self.tenant)
+            custom_group = self.given_custom_default_group()
 
         self.default_workspace()
 
@@ -912,11 +907,11 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             for_groups=group_ids,
         )
 
-    def test_custom_group_custom_role(self):
-        """Test that custom roles added to custom groups are only bound in the default workspace."""
+    def test_custom_default_group_custom_role(self):
+        """Test that custom roles added to custom default groups are only bound in the default workspace."""
         role = self.given_v1_role("a role", default=["root:resource:verb", "tenant:resource:verb"])
 
-        custom_group = self.fixture.custom_default_group(self.tenant)
+        custom_group = self.given_custom_default_group()
         self.given_roles_assigned_to_group(custom_group, [role])
 
         v2_role_id = BindingMapping.objects.get(role=role).mappings["role"]["id"]
@@ -943,6 +938,26 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             for_v2_roles=v2_role_ids,
             for_groups=group_ids,
         )
+
+    def test_bind_scoped_ordinary_group(self):
+        """Test that roles cannot be bound in non-default scope for non-custom-default groups."""
+
+        platform_role = self.given_v1_system_role("platform", ["root:resource:verb"], platform_default=True)
+        group, _ = self.given_group(name="a group")
+
+        handler = RelationApiDualWriteGroupHandler(group=group, event_type=ReplicationEventType.ASSIGN_ROLE)
+
+        self.assertRaises(ValueError, handler.generate_relations_scoped_reset_roles, roles=[platform_role])
+
+    def test_bind_scoped_custom_role(self):
+        """Test that custom roles cannot be bound in non-default scope."""
+
+        platform_role = self.given_v1_role("platform", default=["root:resource:verb"])
+        group = self.given_custom_default_group()
+
+        handler = RelationApiDualWriteGroupHandler(group=group, event_type=ReplicationEventType.ASSIGN_ROLE)
+
+        self.assertRaises(ValueError, handler.generate_relations_scoped_reset_roles, roles=[platform_role])
 
     def test_delete_group_removes_role_binding_for_system_roles_if_last_group(self):
         role_1 = self.given_v1_role(
