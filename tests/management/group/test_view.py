@@ -97,6 +97,11 @@ def generate_replication_event_to_add_principals(group_uuid, principal_user_id):
     return {
         "relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)],
         "relations_to_remove": [],
+        "resource_context": {
+            "event_type": "add_principals_to_group",
+            "group_uuid": group_uuid,
+            "org_id": "100001",
+        },
     }
 
 
@@ -104,6 +109,11 @@ def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
     return {
         "relations_to_add": [],
         "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)],
+        "resource_context": {
+            "event_type": "remove_principals_from_group",
+            "group_uuid": group_uuid,
+            "org_id": "100001",
+        },
     }
 
 
