@@ -103,7 +103,7 @@ class OutboxReplicator(RelationReplicator):
         Returns a dictionary containing the validated fields that exist.
         Logs warnings for missing recommended fields.
         """
-        validated = {}
+        validated: dict[str, object] = {}
 
         # Add event_type to the validated context
         validated["event_type"] = str(event_type)
@@ -170,7 +170,7 @@ class OutboxReplicator(RelationReplicator):
         # Validate and extract resource_context fields
         validated_context = self._validate_resource_context(resource_context, event_type)
 
-        payload = {
+        payload: ReplicationEventPayload = {
             "relations_to_add": add_json,
             "relations_to_remove": remove_json,
             "resource_context": validated_context,
