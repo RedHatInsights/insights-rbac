@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "2eceae40f797ae337d42668e0ef16acbe88abecaf891efb199f79c69d6bfcffd"
+            "sha256": "77ae0e81c88bd561b249d71e062b761ff182f4ee13aa92f854f0c029bdb6f593"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -66,20 +66,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:5b145752d20f29908e3cb8c823bee31c77e6bcf18787e570f36bbc545cc779ed",
-                "sha256:e8d794dc1f01729d93dc188c90cf63cd0d32df8818a82ac46e641f6ffcea615e"
+                "sha256:64eb7af5f66998b34ad629786ff4a7f81d74c2d4ef9e42f69d99499dbee46d07",
+                "sha256:ea37d133548fbae543092ada61aeb08bced8f9aecd2e96e803dc8237459a80a0"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.45"
+            "version": "==1.40.49"
         },
         "botocore": {
             "hashes": [
-                "sha256:18bed348ce707aa896065b424f36a0b8d542fa6810e9165618e105b1abf34e7e",
-                "sha256:34795305bb5aa670befcbdc936fd144a0af5db5323d78e7245dbd6aa246bf3db"
+                "sha256:bf1089d0e77e4fc2e195d81c519b194ab62a4d4dd3e7113ee4e2bf903b0b75ab",
+                "sha256:fe8d4cbcc22de84c20190ae728c46b931bafeb40fce247010fb071c31b6532b5"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.48"
+            "version": "==1.40.49"
         },
         "cachetools": {
             "hashes": [
@@ -2402,11 +2402,11 @@
         },
         "pyproject-api": {
             "hashes": [
-                "sha256:43c9918f49daab37e302038fc1aed54a8c7a91a9fa935d00b9a485f37e0f5335",
-                "sha256:7d6238d92f8962773dd75b5f0c4a6a27cce092a14b623b811dba656f3b628948"
+                "sha256:40c6f2d82eebdc4afee61c773ed208c04c19db4c4a60d97f8d7be3ebc0bbb330",
+                "sha256:8757c41a79c0f4ab71b99abed52b97ecf66bd20b04fa59da43b5840bac105a09"
             ],
-            "markers": "python_version >= '3.9'",
-            "version": "==1.9.1"
+            "markers": "python_version >= '3.10'",
+            "version": "==1.10.0"
         },
         "pytokens": {
             "hashes": [
