@@ -19,6 +19,7 @@
 
 import logging
 from typing import Any, Dict, List, Optional, Protocol, TypedDict
+from uuid import UUID
 
 from django.db import transaction
 from google.protobuf import json_format
@@ -102,6 +103,7 @@ class OutboxReplicator(RelationReplicator):
 
         Returns a dictionary containing the validated fields that exist.
         Logs warnings for missing recommended fields.
+        Converts UUID objects to strings for JSON serialization.
         """
         validated: dict[str, object] = {}
 
@@ -134,7 +136,15 @@ class OutboxReplicator(RelationReplicator):
 
         for id_field in id_fields:
             if id_field in resource_context:
-                validated[id_field] = resource_context[id_field]
+                field_value = resource_context[id_field]
+                # Convert UUID to string if needed
+                if isinstance(field_value, UUID):
+                    validated[id_field] = str(field_value)
+                elif isinstance(field_value, list):
+                    # Convert any UUIDs in the list to strings (e.g., roles list)
+                    validated[id_field] = [str(item) if isinstance(item, UUID) else item for item in field_value]
+                else:
+                    validated[id_field] = field_value
                 found_id = True
 
         if not found_id:
