@@ -90,6 +90,21 @@ class OutboxReplicator(RelationReplicator):
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
+    def _serialize_value(self, value: object) -> object:
+        """
+        Convert a value to be JSON serializable.
+
+        Recursively converts UUID objects to strings in any nested structure.
+        """
+        if isinstance(value, UUID):
+            return str(value)
+        elif isinstance(value, list):
+            return [self._serialize_value(item) for item in value]
+        elif isinstance(value, dict):
+            return {k: self._serialize_value(v) for k, v in value.items()}
+        else:
+            return value
+
     def _validate_resource_context(
         self, resource_context: dict[str, object], event_type: ReplicationEventType
     ) -> dict[str, object]:
@@ -112,7 +127,7 @@ class OutboxReplicator(RelationReplicator):
 
         # Check for org_id
         if "org_id" in resource_context:
-            validated["org_id"] = resource_context["org_id"]
+            validated["org_id"] = self._serialize_value(resource_context["org_id"])
         else:
             logger.debug("[Dual Write] resource_context missing 'org_id' field")
 
@@ -137,15 +152,7 @@ class OutboxReplicator(RelationReplicator):
 
         for id_field in id_fields:
             if id_field in resource_context:
-                field_value = resource_context[id_field]
-                # Convert UUID to string if needed
-                if isinstance(field_value, UUID):
-                    validated[id_field] = str(field_value)
-                elif isinstance(field_value, list):
-                    # Convert any UUIDs in the list to strings (e.g., roles list)
-                    validated[id_field] = [str(item) if isinstance(item, UUID) else item for item in field_value]
-                else:
-                    validated[id_field] = field_value
+                validated[id_field] = self._serialize_value(resource_context[id_field])
                 found_id = True
 
         if not found_id:
@@ -158,17 +165,7 @@ class OutboxReplicator(RelationReplicator):
         # Include any other fields present in resource_context
         for key, value in resource_context.items():
             if key not in validated:
-                # Convert UUIDs to strings for JSON serialization
-                if isinstance(value, UUID):
-                    validated[key] = str(value)
-                elif isinstance(value, list):
-                    # Convert any UUIDs in the list to strings
-                    validated[key] = [str(item) if isinstance(item, UUID) else item for item in value]
-                elif isinstance(value, dict):
-                    # Convert any UUIDs in dict values to strings
-                    validated[key] = {k: str(v) if isinstance(v, UUID) else v for k, v in value.items()}
-                else:
-                    validated[key] = value
+                validated[key] = self._serialize_value(value)
 
         return validated
 
