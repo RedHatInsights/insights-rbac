@@ -55,7 +55,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
-    event_info: dict[str, object]
+    resource_context: dict[str, object]
 
 
 class WorkspaceEventPayload(TypedDict):
@@ -76,7 +76,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove, event.event_info)
+        payload = self._build_replication_event(event.add, event.remove, event.event_info, event.event_type)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -89,11 +89,74 @@ class OutboxReplicator(RelationReplicator):
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
+    def _validate_resource_context(
+        self, resource_context: dict[str, object], event_type: ReplicationEventType
+    ) -> dict[str, object]:
+        """
+        Validate and extract resource_context fields.
+
+        Checks for the presence of:
+        - event_type: The type of replication event
+        - org_id: The organization ID (required for most events)
+        - Resource-specific identifier: Various UUID fields like group_uuid, workspace_id, v1_role_uuid, etc.
+
+        Returns a dictionary containing the validated fields that exist.
+        Logs warnings for missing recommended fields.
+        """
+        validated = {}
+
+        # Add event_type to the validated context
+        validated["event_type"] = str(event_type)
+
+        # Check for org_id
+        if "org_id" in resource_context:
+            validated["org_id"] = resource_context["org_id"]
+        else:
+            logger.debug("[Dual Write] resource_context missing 'org_id' field")
+
+        # Check for resource-specific ID fields
+        id_fields = [
+            "id",
+            "group_uuid",
+            "workspace_id",
+            "v1_role_uuid",
+            "role_uuid",
+            "user_id",
+            "principal_uuid",
+            "ungrouped_hosts_id",
+            "default_workspace_id",
+            "mapping_id",
+            "first_user_id",
+            "first_org_id",
+            "target_org",
+        ]
+        found_id = False
+
+        for id_field in id_fields:
+            if id_field in resource_context:
+                validated[id_field] = resource_context[id_field]
+                found_id = True
+
+        if not found_id:
+            logger.debug(
+                "[Dual Write] resource_context missing resource ID field. " "Expected one of: %s. Available keys: %s",
+                ", ".join(id_fields),
+                ", ".join(resource_context.keys()),
+            )
+
+        # Include any other fields present in resource_context
+        for key, value in resource_context.items():
+            if key not in validated:
+                validated[key] = value
+
+        return validated
+
     def _build_replication_event(
         self,
         relations_to_add: list[Relationship],
         relations_to_remove: list[Relationship],
-        event_info: dict[str, object],
+        resource_context: dict[str, object],
+        event_type: ReplicationEventType,
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
@@ -104,10 +167,13 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
+        # Validate and extract resource_context fields
+        validated_context = self._validate_resource_context(resource_context, event_type)
+
         payload = {
             "relations_to_add": add_json,
             "relations_to_remove": remove_json,
-            "event_info": event_info,
+            "resource_context": validated_context,
         }
 
         return payload
