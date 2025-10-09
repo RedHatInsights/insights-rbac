@@ -108,7 +108,7 @@ class OutboxReplicator(RelationReplicator):
         validated: dict[str, object] = {}
 
         # Add event_type to the validated context
-        validated["event_type"] = str(event_type)
+        validated["event_type"] = event_type.value
 
         # Check for org_id
         if "org_id" in resource_context:
