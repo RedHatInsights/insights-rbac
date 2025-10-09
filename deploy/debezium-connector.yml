@@ -27,6 +27,8 @@ objects:
       transforms: outbox
       transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
       transforms.outbox.table.field.payload: ${PAYLOAD_NAME}
+      transforms.outbox.table.expand.json.payload: ${EXPAND_PAYLOAD}
+      transforms.outbox.table.fields.additional.placement: ${ADDITIONAL_FIELDS}
       plugin.name: pgoutput
       heartbeat.interval.ms: ${DEBEZIUM_HEARTBEAT_INTERVAL_MS}
       heartbeat.action.query: ${DEBEZIUM_ACTION_QUERY}
@@ -65,6 +67,12 @@ parameters:
 - name: PAYLOAD_NAME
   value: payload
   description: Specify the field that contains the message payload in the outbox table
+- name: EXPAND_PAYLOAD
+  value: "true"
+  description: Expand JSON payload fields to top level of the message
+- name: ADDITIONAL_FIELDS
+  value: aggregatetype:envelope, aggregateid:envelope, type:envelope
+  description: Additional fields to include in the message envelope
 - name: TOPIC_PREFIX
   value: rbac
   description: Topic name prefix for the connector
