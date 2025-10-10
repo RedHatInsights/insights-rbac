@@ -59,7 +59,7 @@ cryptography = "==46.0.2"
 flake8 = "==7.3.0"
 pre-commit = "==4.3.0"
 mypy = "==1.18.2"
-psycopg2-binary = "==2.9.10"
+psycopg2-binary = "==2.9.11"
 tblib = "*"
 
 [requires]
