@@ -82,19 +82,28 @@ class OutboxReplicatorTest(TestCase):
 
         self.assertEqual(logged_event.aggregateid, "test-env")
         self.assertEqual(logged_event.event_type, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP)
+
+        # Validate relations
         self.assertEqual(
-            logged_event.payload,
-            {
-                "relations_to_add": [
-                    json_format.MessageToDict(principal_to_group_add1),
-                    json_format.MessageToDict(principal_to_group_add2),
-                ],
-                "relations_to_remove": [
-                    json_format.MessageToDict(principal_to_group_remove1),
-                    json_format.MessageToDict(principal_to_group_remove2),
-                ],
-            },
+            logged_event.payload["relations_to_add"],
+            [
+                json_format.MessageToDict(principal_to_group_add1),
+                json_format.MessageToDict(principal_to_group_add2),
+            ],
         )
+        self.assertEqual(
+            logged_event.payload["relations_to_remove"],
+            [
+                json_format.MessageToDict(principal_to_group_remove1),
+                json_format.MessageToDict(principal_to_group_remove2),
+            ],
+        )
+
+        # Validate resource_context exists and has event_type
+        self.assertIn("resource_context", logged_event.payload)
+        self.assertIn("event_type", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["event_type"], "add_principals_to_group")
+
         self.assertEqual(logged_event.aggregatetype, "relations-replication-event")
 
     def test_replicate_empty_event_warns_instead_of_saving(self):

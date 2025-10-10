@@ -55,6 +55,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+    resource_context: Dict[str, object]
 
 
 class WorkspaceEventPayload(TypedDict):
@@ -75,7 +76,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove)
+        payload = self._build_replication_event(event.add, event.remove, event.event_info)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -88,8 +89,57 @@ class OutboxReplicator(RelationReplicator):
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
+    def _build_resource_context(self, event_info: Dict[str, object]) -> Dict[str, object]:
+        """
+        Build resource context from event_info.
+
+        Validates and extracts standard fields:
+        - org_id: Organization identifier
+        - resource_id: Resource identifier (UUID, user_id, workspace_id, etc.)
+
+        Args:
+            event_info: Event information dictionary
+
+        Returns:
+            Dictionary with validated resource context
+        """
+        resource_context = event_info.copy()
+
+        # Ensure org_id is a string if present
+        if "org_id" in resource_context and not isinstance(resource_context["org_id"], str):
+            resource_context["org_id"] = str(resource_context["org_id"])
+
+        # Check for resource identifier (one of the common ID fields)
+        resource_id_fields = [
+            "group_uuid",
+            "v1_role_uuid",
+            "workspace_id",
+            "user_id",
+            "ungrouped_hosts_id",
+            "default_workspace_id",
+        ]
+        has_resource_id = any(field in resource_context for field in resource_id_fields)
+
+        if not has_resource_id and resource_context:  # Only warn if context is not empty
+            logger.debug(
+                "[Dual Write] event_info missing standard resource identifier. "
+                "Expected one of: %s. Present fields: %s",
+                resource_id_fields,
+                list(resource_context.keys()),
+            )
+
+        # Ensure all ID fields are strings
+        for field in resource_id_fields:
+            if field in resource_context and not isinstance(resource_context[field], str):
+                resource_context[field] = str(resource_context[field])
+
+        return resource_context
+
     def _build_replication_event(
-        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
+        self,
+        relations_to_add: list[Relationship],
+        relations_to_remove: list[Relationship],
+        event_info: Dict[str, object],
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
@@ -100,7 +150,9 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json}
+        resource_context = self._build_resource_context(event_info)
+
+        return {"relations_to_add": add_json, "relations_to_remove": remove_json, "resource_context": resource_context}
 
     def _save_replication_event(
         self,
@@ -124,6 +176,8 @@ class OutboxReplicator(RelationReplicator):
                 logged_info,
             )
             return
+
+        payload["resource_context"]["event_type"] = event_type.value
 
         logger.info(
             "[Dual Write] Publishing replication event. aggregateid='%s' event_type='%s' %s",
