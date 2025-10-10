@@ -103,7 +103,7 @@ class OutboxReplicator(RelationReplicator):
         Returns:
             Dictionary with validated resource context
         """
-        resource_context = {}
+        resource_context: Dict[str, object] = {}
 
         # Convert all values to JSON-serializable types
         for key, value in event_info.items():
