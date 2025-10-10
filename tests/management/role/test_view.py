@@ -64,7 +64,7 @@ def normalize_and_sort(json_obj):
     return json_obj
 
 
-def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id):
+def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id, org_id="unknown"):
     """Create a replication event for a v1 role."""
     return {
         "relations_to_add": relation_api_tuples_for_v1_role(
@@ -72,6 +72,7 @@ def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id):
             bound_workspace_id=bound_workspace_id,
         ),
         "relations_to_remove": [],
+        "org_id": org_id,
     }
 
 

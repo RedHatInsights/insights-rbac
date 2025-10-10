@@ -89,7 +89,7 @@ class OutboxReplicator(RelationReplicator):
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
     def _build_replication_event(
-        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
+        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship], org_id: str
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
@@ -100,7 +100,7 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json}
+        return {"relations_to_add": add_json, "relations_to_remove": remove_json, "org_id": org_id}
 
     def _save_replication_event(
         self,

@@ -534,7 +534,7 @@ class RBACKafkaConsumerTests(TestCase):
 
         self.assertFalse(result)
 
-    def test_process_relations_message_success(self):
+    def test_process_relations_message_success(self, mock_tenant_model, mock_write_relationships):
         """Test successful relations message processing."""
         consumer = RBACKafkaConsumer()
 
