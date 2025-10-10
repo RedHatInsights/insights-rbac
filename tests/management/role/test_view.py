@@ -72,6 +72,7 @@ def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id):
             bound_workspace_id=bound_workspace_id,
         ),
         "relations_to_remove": [],
+        "resource_context": {},
     }
 
 
