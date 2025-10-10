@@ -17,7 +17,7 @@
 """Test OutboxReplicator."""
 
 import logging
-
+from uuid import uuid4
 from django.test import TestCase, override_settings
 from google.protobuf import json_format
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
@@ -110,12 +110,12 @@ class OutboxReplicatorTest(TestCase):
 
     def test_replicate_sets_resource_type_and_id_from_identifiers(self):
         """Test that resource_type and resource_id are set correctly based on resource identifiers."""
-        from uuid import uuid4
 
-        # Test group resource type
         principal_to_group = create_relationship(
             ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
         )
+
+        # Test group resource type
         group_uuid = uuid4()
         event = ReplicationEvent(
             add=[principal_to_group],
@@ -126,28 +126,25 @@ class OutboxReplicatorTest(TestCase):
         )
         self.replicator.replicate(event)
 
-        logged_event = self.log.first()
+        logged_event = self.log[0]
         self.assertIn("resource_type", logged_event.payload["resource_context"])
         self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Group")
         self.assertIn("resource_id", logged_event.payload["resource_context"])
         self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(group_uuid))
-        # Original field should be removed
         self.assertNotIn("group_uuid", logged_event.payload["resource_context"])
 
         # Test role resource type
-        self.log = InMemoryLog()
-        self.replicator = OutboxReplicator(self.log)
         role_uuid = uuid4()
         event = ReplicationEvent(
             add=[principal_to_group],
             remove=[],
-            event_type=ReplicationEventType.CREATE_V1_ROLE,
+            event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
             info={"v1_role_uuid": role_uuid, "org_id": "123456"},
             partition_key=PartitionKey.byEnvironment(),
         )
         self.replicator.replicate(event)
 
-        logged_event = self.log.first()
+        logged_event = self.log[1]
         self.assertIn("resource_type", logged_event.payload["resource_context"])
         self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Role")
         self.assertIn("resource_id", logged_event.payload["resource_context"])
@@ -155,8 +152,6 @@ class OutboxReplicatorTest(TestCase):
         self.assertNotIn("v1_role_uuid", logged_event.payload["resource_context"])
 
         # Test workspace resource type
-        self.log = InMemoryLog()
-        self.replicator = OutboxReplicator(self.log)
         workspace_id = uuid4()
         event = ReplicationEvent(
             add=[principal_to_group],
@@ -167,7 +162,7 @@ class OutboxReplicatorTest(TestCase):
         )
         self.replicator.replicate(event)
 
-        logged_event = self.log.first()
+        logged_event = self.log[2]
         self.assertIn("resource_type", logged_event.payload["resource_context"])
         self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Workspace")
         self.assertIn("resource_id", logged_event.payload["resource_context"])
@@ -175,8 +170,6 @@ class OutboxReplicatorTest(TestCase):
         self.assertNotIn("workspace_id", logged_event.payload["resource_context"])
 
         # Test principal resource type
-        self.log = InMemoryLog()
-        self.replicator = OutboxReplicator(self.log)
         event = ReplicationEvent(
             add=[principal_to_group],
             remove=[],
@@ -186,7 +179,7 @@ class OutboxReplicatorTest(TestCase):
         )
         self.replicator.replicate(event)
 
-        logged_event = self.log.first()
+        logged_event = self.log[3]
         self.assertIn("resource_type", logged_event.payload["resource_context"])
         self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Principal")
         self.assertIn("resource_id", logged_event.payload["resource_context"])
