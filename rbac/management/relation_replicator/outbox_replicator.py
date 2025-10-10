@@ -96,12 +96,13 @@ class OutboxReplicator(RelationReplicator):
         Validates and extracts standard fields:
         - org_id: Organization identifier
         - resource_id: Resource identifier (UUID, user_id, workspace_id, etc.)
+        - resource_type: Type of resource being operated on
 
         Args:
             event_info: Event information dictionary
 
         Returns:
-            Dictionary with validated resource context
+            Dictionary with validated resource context including resource_type, resource_id, org_id and event_type
         """
         resource_context: Dict[str, object] = {}
 
@@ -116,29 +117,27 @@ class OutboxReplicator(RelationReplicator):
             else:
                 resource_context[key] = value
 
-        # Check for resource identifier (one of the common ID fields)
-        resource_id_fields = [
-            "group_uuid",
-            "v1_role_uuid",
-            "workspace_id",
-            "user_id",
-            "ungrouped_hosts_id",
-            "default_workspace_id",
-            "mapping_id",
-            "binding_mappings",
-            "principal_uuid",
-            "role_uuid",
-            "policy_uuid",
-        ]
-        has_resource_id = any(field in resource_context for field in resource_id_fields)
+        # Map field names to resource types
+        type_map = {
+            "group_uuid": "group",
+            "v1_role_uuid": "role",
+            "role_uuid": "role",
+            "workspace_id": "workspace",
+            "default_workspace_id": "workspace",
+            "ungrouped_hosts_id": "workspace",
+            "user_id": "principal",
+            "principal_uuid": "principal",
+            "policy_uuid": "policy",
+            "mapping_id": "binding_mapping",
+            "binding_mappings": "binding_mapping",
+        }
 
-        if not has_resource_id and resource_context:  # Only warn if context is not empty
-            logger.debug(
-                "[Dual Write] event_info missing standard resource identifier. "
-                "Expected one of: %s. Present fields: %s",
-                resource_id_fields,
-                list(resource_context.keys()),
-            )
+        # Set resource_type and resource_id from first matching field
+        for field, rtype in type_map.items():
+            if field in resource_context:
+                resource_context["resource_type"] = rtype
+                resource_context["resource_id"] = resource_context.pop(field)
+                break
 
         return resource_context
 
