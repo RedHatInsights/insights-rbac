@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "5b9707f0ca37fd78aa4e0aa595d61e3ed920fde57d3c093dd8b465832bf7ba62"
+            "sha256": "9124ced5ade2b3b7858b55b14fc78920f75f3e92028af693476853785361474b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -66,20 +66,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:5b145752d20f29908e3cb8c823bee31c77e6bcf18787e570f36bbc545cc779ed",
-                "sha256:e8d794dc1f01729d93dc188c90cf63cd0d32df8818a82ac46e641f6ffcea615e"
+                "sha256:62901bc616c64236700001f530fc66b659ecd1acb4f541ddac6fcae3a1d37ea6",
+                "sha256:ae34363e8f34a49ab130d10c507a611926c1101d5d14d70be5598ca308e13266"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.45"
+            "version": "==1.40.50"
         },
         "botocore": {
             "hashes": [
-                "sha256:bf1089d0e77e4fc2e195d81c519b194ab62a4d4dd3e7113ee4e2bf903b0b75ab",
-                "sha256:fe8d4cbcc22de84c20190ae728c46b931bafeb40fce247010fb071c31b6532b5"
+                "sha256:1d3d5b5759c9cb30202cd5ad231ec8afb1abe5be0c088a1707195c2cbae0e742",
+                "sha256:53126c153fae0670dc54f03d01c89b1af144acedb1020199b133dedb309e434d"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.40.49"
+            "version": "==1.40.50"
         },
         "cachetools": {
             "hashes": [
@@ -2645,11 +2645,11 @@
         },
         "virtualenv": {
             "hashes": [
-                "sha256:041dac43b6899858a91838b616599e80000e545dee01a21172a6a46746472cb2",
-                "sha256:1d9d93cd01d35b785476e2fa7af711a98d40d227a078941695bbae394f8737e2"
+                "sha256:332b71e3a0d62051a6b893f533deac9bc2e987599eb8e3328654b8faada95263",
+                "sha256:e0cbdff9afbd6a89eacbff54dbdcde5901add75ae3eb086b1a32ff5ac6eff790"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==20.35.1"
+            "version": "==20.35.2"
         }
     }
 }
