@@ -5,6 +5,7 @@ info:
 tags:
   - name: Workspaces
   - name: Role Bindings
+  - name: Roles
 paths:
   /role-bindings/by-subject:
     get:
@@ -233,6 +234,110 @@ paths:
                     format: uri
       tags:
         - Role Bindings
+  /roles/:
+    get:
+      operationId: Roles_list
+      summary: List Roles
+      description: View a list of the roles that a user has access to under a Tenant
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          description: Tenant ID to filter roles for
+          schema:
+            type: string
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 10
+          explode: false
+        - name: cursor
+          in: query
+          required: false
+          description: Cursor for cursor-based pagination.
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Roles.RoleListResponse'
+              example:
+                meta:
+                  limit: 10
+                links:
+                  next: http://localhost:8000/api/rbac/v2/roles/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw
+                  previous: null
+                data:
+                  - uuid: 550e8400-e29b-41d4-a716-446655440000
+                    name: Tenant admin
+                    description: Full administrative access to the tenant
+                    permissions_count: 5
+                    workspace_count: 1
+                    user_group_count: 1
+                    last_modified: 1 year ago
+                  - uuid: 550e8400-e29b-41d4-a716-446655440001
+                    name: Workspace admin
+                    description: Administrative access to specific workspaces
+                    permissions_count: 4
+                    workspace_count: 1
+                    user_group_count: 1
+                    last_modified: 1 year ago
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
   /workspaces/:
     get:
       operationId: Workspaces_list
@@ -1235,6 +1340,130 @@ components:
           description: User details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
+    Roles.Role:
+      type: object
+      required:
+        - uuid
+        - name
+        - description
+        - permissions_count
+        - workspace_count
+        - user_group_count
+        - last_modified
+      properties:
+        uuid:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          description: Unique identifier for the role
+        name:
+          type: string
+          description: Name of the role
+          example: Tenant admin
+        description:
+          type: string
+          description: Description of the role
+          example: Full administrative access to the tenant
+        permissions_count:
+          anyOf:
+            - type: integer
+              format: int64
+            - type: string
+              enum:
+                - Not available
+          description: Count of permissions associated with this role
+          example: 5
+        workspace_count:
+          anyOf:
+            - type: integer
+              format: int64
+            - type: string
+              enum:
+                - Not available
+          description: How many workspaces that role is in
+          example: 1
+        user_group_count:
+          anyOf:
+            - type: integer
+              format: int64
+            - type: string
+              enum:
+                - Not available
+          description: How many user groups that role is in
+          example: 1
+        last_modified:
+          type: string
+          description: When the role was last modified
+          example: 1 year ago
+      example:
+        uuid: 550e8400-e29b-41d4-a716-446655440000
+        name: Tenant admin
+        description: Full administrative access to the tenant
+        permissions_count: 5
+        workspace_count: 1
+        user_group_count: 1
+        last_modified: 1 year ago
+    Roles.RoleListResponse:
+      type: object
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/CursorPaginationMeta'
+          description: Pagination metadata
+        links:
+          allOf:
+            - $ref: '#/components/schemas/CursorPaginationLinks'
+          description: Pagination links
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Roles.Role'
+          description: List of roles that the user has access to
+      example:
+        meta:
+          limit: 10
+        links:
+          next: http://localhost:8000/api/rbac/v2/roles/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw
+          previous: null
+        data:
+          - uuid: 550e8400-e29b-41d4-a716-446655440000
+            name: Tenant admin
+            description: Full administrative access to the tenant
+            permissions_count: 5
+            workspace_count: 1
+            user_group_count: 1
+            last_modified: 1 year ago
+          - uuid: 550e8400-e29b-41d4-a716-446655440001
+            name: Workspace admin
+            description: Administrative access to specific workspaces
+            permissions_count: 4
+            workspace_count: 1
+            user_group_count: 1
+            last_modified: 1 year ago
+          - uuid: 550e8400-e29b-41d4-a716-446655440002
+            name: RHEL DevOps
+            description: DevOps access for RHEL systems
+            permissions_count: 3
+            workspace_count: 2
+            user_group_count: 2
+            last_modified: 1 year ago
+          - uuid: 550e8400-e29b-41d4-a716-446655440003
+            name: Cost mgmt role
+            description: Cost management access
+            permissions_count: Not available
+            workspace_count: Not available
+            user_group_count: Not available
+            last_modified: 1 year ago
+          - uuid: 550e8400-e29b-41d4-a716-446655440004
+            name: RHEL Inventory viewer
+            description: Read-only access to RHEL inventory
+            permissions_count: 1
+            workspace_count: 1
+            user_group_count: 1
+            last_modified: 2 days ago
     Timestamps:
       type: object
       required:
