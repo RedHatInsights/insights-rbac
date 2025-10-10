@@ -103,11 +103,18 @@ class OutboxReplicator(RelationReplicator):
         Returns:
             Dictionary with validated resource context
         """
-        resource_context = event_info.copy()
+        resource_context = {}
 
-        # Ensure org_id is a string if present
-        if "org_id" in resource_context and not isinstance(resource_context["org_id"], str):
-            resource_context["org_id"] = str(resource_context["org_id"])
+        # Convert all values to JSON-serializable types
+        for key, value in event_info.items():
+            if isinstance(value, list):
+                # Convert list items that might be UUIDs
+                resource_context[key] = [str(item) if not isinstance(item, str) else item for item in value]
+            elif not isinstance(value, str):
+                # Convert non-string values (including UUIDs) to strings
+                resource_context[key] = str(value) if value is not None else None
+            else:
+                resource_context[key] = value
 
         # Check for resource identifier (one of the common ID fields)
         resource_id_fields = [
@@ -127,11 +134,6 @@ class OutboxReplicator(RelationReplicator):
                 resource_id_fields,
                 list(resource_context.keys()),
             )
-
-        # Ensure all ID fields are strings
-        for field in resource_id_fields:
-            if field in resource_context and not isinstance(resource_context[field], str):
-                resource_context[field] = str(resource_context[field])
 
         return resource_context
 
