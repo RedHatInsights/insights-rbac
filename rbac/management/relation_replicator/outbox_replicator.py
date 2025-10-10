@@ -124,6 +124,11 @@ class OutboxReplicator(RelationReplicator):
             "user_id",
             "ungrouped_hosts_id",
             "default_workspace_id",
+            "mapping_id",
+            "binding_mappings",
+            "principal_uuid",
+            "role_uuid",
+            "policy_uuid",
         ]
         has_resource_id = any(field in resource_context for field in resource_id_fields)
 
