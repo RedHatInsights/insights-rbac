@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "5b9707f0ca37fd78aa4e0aa595d61e3ed920fde57d3c093dd8b465832bf7ba62"
+            "sha256": "4cc94164488d987531d8404eeac73ad1e9378551b4efb8380837729266952716"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -707,11 +707,11 @@
         },
         "kafka-python": {
             "hashes": [
-                "sha256:205953e581c0371cada35bebdacc58ac7dee6c3f9e8d95b9a6a0a7bacc054ca0",
-                "sha256:6765c25440046cdadeb9c31469566be259d50802d27d4f8aae86d9ae755b78e2"
+                "sha256:84c0993cd4f7f2f01e92d8104ea9bdf631aff72fc5e6ea62eb3bdf1d56528fc3",
+                "sha256:e0f480a45f3814cb0eb705b8b4f61069e1be61dae0d8c69d0f1f2da33eea1bd5"
             ],
             "index": "pypi",
-            "version": "==2.1.5"
+            "version": "==2.2.15"
         },
         "kessel-sdk": {
             "extras": [
@@ -2645,11 +2645,11 @@
         },
         "virtualenv": {
             "hashes": [
-                "sha256:041dac43b6899858a91838b616599e80000e545dee01a21172a6a46746472cb2",
-                "sha256:1d9d93cd01d35b785476e2fa7af711a98d40d227a078941695bbae394f8737e2"
+                "sha256:341f5afa7eee943e4984a9207c025feedd768baff6753cd660c857ceb3e36026",
+                "sha256:44815b2c9dee7ed86e387b842a84f20b93f7f417f95886ca1996a72a4138eb1a"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==20.35.1"
+            "version": "==20.34.0"
         }
     }
 }
