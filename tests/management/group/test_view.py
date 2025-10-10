@@ -6131,7 +6131,9 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456", str(self.tenant.org_id)),
+            generate_replication_event_to_remove_principals(
+                str(test_group.uuid), "redhat/3456", str(self.tenant.org_id)
+            ),
             actual_call_arg,
         )
 
