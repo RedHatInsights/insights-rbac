@@ -108,58 +108,71 @@ class OutboxReplicatorTest(TestCase):
 
         self.assertEqual(logged_event.aggregatetype, "relations-replication-event")
 
-    def test_replicate_sets_resource_type_from_identifiers(self):
-        """Test that resource_type is set correctly based on resource identifiers."""
+    def test_replicate_sets_resource_type_and_id_from_identifiers(self):
+        """Test that resource_type and resource_id are set correctly based on resource identifiers."""
         from uuid import uuid4
 
         # Test group resource type
         principal_to_group = create_relationship(
             ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
         )
+        group_uuid = uuid4()
         event = ReplicationEvent(
             add=[principal_to_group],
             remove=[],
             event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
-            info={"group_uuid": uuid4(), "org_id": "123456"},
+            info={"group_uuid": group_uuid, "org_id": "123456"},
             partition_key=PartitionKey.byEnvironment(),
         )
         self.replicator.replicate(event)
 
         logged_event = self.log.first()
         self.assertIn("resource_type", logged_event.payload["resource_context"])
-        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "group")
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Group")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(group_uuid))
+        # Original field should be removed
+        self.assertNotIn("group_uuid", logged_event.payload["resource_context"])
 
         # Test role resource type
         self.log = InMemoryLog()
         self.replicator = OutboxReplicator(self.log)
+        role_uuid = uuid4()
         event = ReplicationEvent(
             add=[principal_to_group],
             remove=[],
             event_type=ReplicationEventType.CREATE_V1_ROLE,
-            info={"v1_role_uuid": uuid4(), "org_id": "123456"},
+            info={"v1_role_uuid": role_uuid, "org_id": "123456"},
             partition_key=PartitionKey.byEnvironment(),
         )
         self.replicator.replicate(event)
 
         logged_event = self.log.first()
         self.assertIn("resource_type", logged_event.payload["resource_context"])
-        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "role")
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Role")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(role_uuid))
+        self.assertNotIn("v1_role_uuid", logged_event.payload["resource_context"])
 
         # Test workspace resource type
         self.log = InMemoryLog()
         self.replicator = OutboxReplicator(self.log)
+        workspace_id = uuid4()
         event = ReplicationEvent(
             add=[principal_to_group],
             remove=[],
             event_type=ReplicationEventType.CREATE_WORKSPACE,
-            info={"workspace_id": uuid4(), "org_id": "123456"},
+            info={"workspace_id": workspace_id, "org_id": "123456"},
             partition_key=PartitionKey.byEnvironment(),
         )
         self.replicator.replicate(event)
 
         logged_event = self.log.first()
         self.assertIn("resource_type", logged_event.payload["resource_context"])
-        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "workspace")
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Workspace")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(workspace_id))
+        self.assertNotIn("workspace_id", logged_event.payload["resource_context"])
 
         # Test principal resource type
         self.log = InMemoryLog()
@@ -175,7 +188,10 @@ class OutboxReplicatorTest(TestCase):
 
         logged_event = self.log.first()
         self.assertIn("resource_type", logged_event.payload["resource_context"])
-        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "principal")
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Principal")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], "user-123")
+        self.assertNotIn("user_id", logged_event.payload["resource_context"])
 
     def test_replicate_empty_event_warns_instead_of_saving(self):
         """Test replicate with empty event warns."""
