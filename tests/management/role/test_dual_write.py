@@ -773,7 +773,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.assertEqual(len(tuples), 0)
 
     @override_settings(V2_BOOTSTRAP_TENANT=True)
-    def test_custom_group_scopes(self):
+    def test_custom_default_group_scopes(self):
         """Test that system roles assigned to a new custom default groups are bound in the appropriate scope."""
 
         def expect_binding_present(target: Workspace | Tenant, role: Role, group: Group):
@@ -858,7 +858,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                     expect_binding_absent(target, platform_role, custom_group)
 
     @override_settings(V2_BOOTSTRAP_TENANT=True)
-    def test_custom_group_remove_scope_changed(self):
+    def test_custom_default_group_remove_scope_changed(self):
         """Test that removing a role with changed scope from a custom default group removes the old relations."""
         Role.objects.public_tenant_only().delete()
         platform_role = self.given_v1_system_role("platform", ["root:resource:verb"], platform_default=True)
