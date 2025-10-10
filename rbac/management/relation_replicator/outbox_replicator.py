@@ -119,17 +119,17 @@ class OutboxReplicator(RelationReplicator):
 
         # Map field names to resource types
         type_map = {
-            "group_uuid": "group",
-            "v1_role_uuid": "role",
-            "role_uuid": "role",
-            "workspace_id": "workspace",
-            "default_workspace_id": "workspace",
-            "ungrouped_hosts_id": "workspace",
-            "user_id": "principal",
-            "principal_uuid": "principal",
-            "policy_uuid": "policy",
-            "mapping_id": "binding_mapping",
-            "binding_mappings": "binding_mapping",
+            "group_uuid": "Group",
+            "v1_role_uuid": "Role",
+            "role_uuid": "Role",
+            "workspace_id": "Workspace",
+            "default_workspace_id": "Workspace",
+            "ungrouped_hosts_id": "Workspace",
+            "user_id": "Principal",
+            "principal_uuid": "Principal",
+            "policy_uuid": "Policy",
+            "mapping_id": "BindingMapping",
+            "binding_mappings": "BindingMapping",
         }
 
         # Set resource_type and resource_id from first matching field
