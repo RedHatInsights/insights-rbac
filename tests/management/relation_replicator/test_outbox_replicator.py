@@ -17,7 +17,7 @@
 """Test OutboxReplicator."""
 
 import logging
-
+from uuid import uuid4
 from django.test import TestCase, override_settings
 from google.protobuf import json_format
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
@@ -82,20 +82,109 @@ class OutboxReplicatorTest(TestCase):
 
         self.assertEqual(logged_event.aggregateid, "test-env")
         self.assertEqual(logged_event.event_type, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP)
+
+        # Validate relations
         self.assertEqual(
-            logged_event.payload,
-            {
-                "relations_to_add": [
-                    json_format.MessageToDict(principal_to_group_add1),
-                    json_format.MessageToDict(principal_to_group_add2),
-                ],
-                "relations_to_remove": [
-                    json_format.MessageToDict(principal_to_group_remove1),
-                    json_format.MessageToDict(principal_to_group_remove2),
-                ],
-            },
+            logged_event.payload["relations_to_add"],
+            [
+                json_format.MessageToDict(principal_to_group_add1),
+                json_format.MessageToDict(principal_to_group_add2),
+            ],
         )
+        self.assertEqual(
+            logged_event.payload["relations_to_remove"],
+            [
+                json_format.MessageToDict(principal_to_group_remove1),
+                json_format.MessageToDict(principal_to_group_remove2),
+            ],
+        )
+
+        # Validate resource_context exists and has event_type and resource_type
+        self.assertIn("resource_context", logged_event.payload)
+        self.assertIn("event_type", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["event_type"], "add_principals_to_group")
+        # resource_type is not set in this test because event_info contains {"key": "value"} without any resource identifiers
+        self.assertNotIn("resource_type", logged_event.payload["resource_context"])
+
         self.assertEqual(logged_event.aggregatetype, "relations-replication-event")
+
+    def test_replicate_sets_resource_type_and_id_from_identifiers(self):
+        """Test that resource_type and resource_id are set correctly based on resource identifiers."""
+
+        principal_to_group = create_relationship(
+            ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
+        )
+
+        # Test group resource type
+        group_uuid = uuid4()
+        event = ReplicationEvent(
+            add=[principal_to_group],
+            remove=[],
+            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+            info={"group_uuid": group_uuid, "org_id": "123456"},
+            partition_key=PartitionKey.byEnvironment(),
+        )
+        self.replicator.replicate(event)
+
+        logged_event = self.log[0]
+        self.assertIn("resource_type", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Group")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(group_uuid))
+        self.assertNotIn("group_uuid", logged_event.payload["resource_context"])
+
+        # Test role resource type
+        role_uuid = uuid4()
+        event = ReplicationEvent(
+            add=[principal_to_group],
+            remove=[],
+            event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
+            info={"v1_role_uuid": role_uuid, "org_id": "123456"},
+            partition_key=PartitionKey.byEnvironment(),
+        )
+        self.replicator.replicate(event)
+
+        logged_event = self.log[1]
+        self.assertIn("resource_type", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Role")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(role_uuid))
+        self.assertNotIn("v1_role_uuid", logged_event.payload["resource_context"])
+
+        # Test workspace resource type
+        workspace_id = uuid4()
+        event = ReplicationEvent(
+            add=[principal_to_group],
+            remove=[],
+            event_type=ReplicationEventType.CREATE_WORKSPACE,
+            info={"workspace_id": workspace_id, "org_id": "123456"},
+            partition_key=PartitionKey.byEnvironment(),
+        )
+        self.replicator.replicate(event)
+
+        logged_event = self.log[2]
+        self.assertIn("resource_type", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Workspace")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(workspace_id))
+        self.assertNotIn("workspace_id", logged_event.payload["resource_context"])
+
+        # Test principal resource type
+        event = ReplicationEvent(
+            add=[principal_to_group],
+            remove=[],
+            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+            info={"user_id": "user-123", "org_id": "123456"},
+            partition_key=PartitionKey.byEnvironment(),
+        )
+        self.replicator.replicate(event)
+
+        logged_event = self.log[3]
+        self.assertIn("resource_type", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Principal")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], "user-123")
+        self.assertNotIn("user_id", logged_event.payload["resource_context"])
 
     def test_replicate_empty_event_warns_instead_of_saving(self):
         """Test replicate with empty event warns."""

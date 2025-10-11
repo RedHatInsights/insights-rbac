@@ -55,6 +55,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+    resource_context: Dict[str, object]
 
 
 class WorkspaceEventPayload(TypedDict):
@@ -75,7 +76,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove)
+        payload = self._build_replication_event(event.add, event.remove, event.event_info)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -88,8 +89,63 @@ class OutboxReplicator(RelationReplicator):
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
+    def _build_resource_context(self, event_info: Dict[str, object]) -> Dict[str, object]:
+        """
+        Build resource context from event_info.
+
+        Validates and extracts standard fields:
+        - org_id: Organization identifier
+        - resource_id: Resource identifier (UUID, user_id, workspace_id, etc.)
+        - resource_type: Type of resource being operated on
+
+        Args:
+            event_info: Event information dictionary
+
+        Returns:
+            Dictionary with validated resource context including resource_type, resource_id, org_id and event_type
+        """
+        resource_context: Dict[str, object] = {}
+
+        # Convert all values to JSON-serializable types
+        for key, value in event_info.items():
+            if isinstance(value, list):
+                # Convert list items that might be UUIDs
+                resource_context[key] = [str(item) if not isinstance(item, str) else item for item in value]
+            elif not isinstance(value, str):
+                # Convert non-string values (including UUIDs) to strings
+                resource_context[key] = str(value) if value is not None else None
+            else:
+                resource_context[key] = value
+
+        # Map field names to resource types
+        type_map = {
+            "group_uuid": "Group",
+            "v1_role_uuid": "Role",
+            "role_uuid": "Role",
+            "workspace_id": "Workspace",
+            "default_workspace_id": "Workspace",
+            "ungrouped_hosts_id": "Workspace",
+            "user_id": "Principal",
+            "principal_uuid": "Principal",
+            "policy_uuid": "Policy",
+            "mapping_id": "BindingMapping",
+            "binding_mappings": "BindingMapping",
+        }
+
+        # Set resource_type and resource_id from first matching field
+        for field, rtype in type_map.items():
+            if field in resource_context:
+                resource_context["resource_type"] = rtype
+                resource_context["resource_id"] = resource_context.pop(field)
+                break
+
+        return resource_context
+
     def _build_replication_event(
-        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
+        self,
+        relations_to_add: list[Relationship],
+        relations_to_remove: list[Relationship],
+        event_info: Dict[str, object],
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
@@ -100,7 +156,9 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json}
+        resource_context = self._build_resource_context(event_info)
+
+        return {"relations_to_add": add_json, "relations_to_remove": remove_json, "resource_context": resource_context}
 
     def _save_replication_event(
         self,
@@ -124,6 +182,8 @@ class OutboxReplicator(RelationReplicator):
                 logged_info,
             )
             return
+
+        payload["resource_context"]["event_type"] = event_type.value
 
         logger.info(
             "[Dual Write] Publishing replication event. aggregateid='%s' event_type='%s' %s",
