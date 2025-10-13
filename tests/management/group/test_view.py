@@ -5783,14 +5783,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         actual_call_arg = mock_method.call_args[0][0]
-        expected_event = generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234")
-
-        # Validate relations match expected
-        self.assertEqual(expected_event["relations_to_add"], actual_call_arg["relations_to_add"])
-        self.assertEqual(expected_event["relations_to_remove"], actual_call_arg["relations_to_remove"])
-
-        # Validate resource_context exists (exact contents may vary by implementation)
-        self.assertIn("resource_context", actual_call_arg)
+        self.assertEqual(
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
+            actual_call_arg,
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -5863,14 +5859,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         actual_call_arg = mock_method.call_args[0][0]
-        expected_event = generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234")
-
-        # Validate relations match expected
-        self.assertEqual(expected_event["relations_to_add"], actual_call_arg["relations_to_add"])
-        self.assertEqual(expected_event["relations_to_remove"], actual_call_arg["relations_to_remove"])
-
-        # Validate resource_context exists (exact contents may vary by implementation)
-        self.assertIn("resource_context", actual_call_arg)
+        self.assertEqual(
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
+            actual_call_arg,
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -6142,14 +6134,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
         actual_call_arg = mock_method.call_args[0][0]
-        expected_event = generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456")
-
-        # Validate relations match expected
-        self.assertEqual(expected_event["relations_to_add"], actual_call_arg["relations_to_add"])
-        self.assertEqual(expected_event["relations_to_remove"], actual_call_arg["relations_to_remove"])
-
-        # Validate resource_context exists (exact contents may vary by implementation)
-        self.assertIn("resource_context", actual_call_arg)
+        self.assertEqual(
+            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456"),
+            actual_call_arg,
+        )
 
         # Add once removed principal into group
         test_group.principals.add(sa_principal)

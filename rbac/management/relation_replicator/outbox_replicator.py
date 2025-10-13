@@ -89,13 +89,15 @@ class OutboxReplicator(RelationReplicator):
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
-    def _build_resource_context(self, event_info: Dict[str, object]) -> Dict[str, object]:
+    def _build_resource_context(
+        self, event_info: Dict[str, object], event_type: ReplicationEventType
+    ) -> Dict[str, object]:
         """
-        Build resource context from event_info.
+        Build resource context from event_info, this currently assumes we only care about workspace create events.
 
         Validates and extracts standard fields:
         - org_id: Organization identifier
-        - resource_id: Resource identifier (UUID, user_id, workspace_id, etc.)
+        - resource_id: Resource identifier - workspace_id
         - resource_type: Type of resource being operated on
 
         Args:
@@ -106,39 +108,19 @@ class OutboxReplicator(RelationReplicator):
         """
         resource_context: Dict[str, object] = {}
 
-        # Convert all values to JSON-serializable types
+        # Convert all values to string
         for key, value in event_info.items():
-            if isinstance(value, list):
-                # Convert list items that might be UUIDs
-                resource_context[key] = [str(item) if not isinstance(item, str) else item for item in value]
-            elif not isinstance(value, str):
-                # Convert non-string values (including UUIDs) to strings
-                resource_context[key] = str(value) if value is not None else None
-            else:
-                resource_context[key] = value
+            resource_context[key] = str(value) if value is not None else None
 
-        # Map field names to resource types
-        type_map = {
-            "group_uuid": "Group",
-            "v1_role_uuid": "Role",
-            "role_uuid": "Role",
-            "workspace_id": "Workspace",
-            "default_workspace_id": "Workspace",
-            "ungrouped_hosts_id": "Workspace",
-            "user_id": "Principal",
-            "principal_uuid": "Principal",
-            "policy_uuid": "Policy",
-            "mapping_id": "BindingMapping",
-            "binding_mappings": "BindingMapping",
-        }
-
-        # Set resource_type and resource_id from first matching field
-        for field, rtype in type_map.items():
-            if field in resource_context:
-                resource_context["resource_type"] = rtype
-                resource_context["resource_id"] = resource_context.pop(field)
-                break
-
+        # If the workspace_id is present from event_info create the context for that resource type only
+        if "workspace_id" in resource_context:
+            resource_context["resource_type"] = "Workspace"
+            resource_context["resource_id"] = resource_context.pop("workspace_id")
+            resource_context["event_type"] = event_type.value
+        else:
+            logger.warning(
+                "Event info is missing required workspace_id identifier to build the resource context.",
+            )
         return resource_context
 
     def _build_replication_event(
@@ -182,8 +164,6 @@ class OutboxReplicator(RelationReplicator):
                 logged_info,
             )
             return
-
-        payload["resource_context"]["event_type"] = event_type.value
 
         logger.info(
             "[Dual Write] Publishing replication event. aggregateid='%s' event_type='%s' %s",
