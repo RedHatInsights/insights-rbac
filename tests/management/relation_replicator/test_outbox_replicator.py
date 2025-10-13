@@ -98,7 +98,7 @@ class OutboxReplicatorTest(TestCase):
         self.assertEqual(logged_event.aggregatetype, "relations-replication-event")
 
     def test_replicate_sets_resource_type_and_id_from_identifiers_for_workspace(self):
-        """Test that resource_type and resource_id are set correctly based on resource identifiers."""
+        """Test that resource_type and resource_id are set correctly based on resource identifiers for workspace event."""
 
         principal_to_group = create_relationship(
             ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
@@ -115,7 +115,7 @@ class OutboxReplicatorTest(TestCase):
         )
         self.replicator.replicate(event)
 
-        logged_event = self.log[2]
+        logged_event = self.log[0]
         self.assertIn("resource_type", logged_event.payload["resource_context"])
         self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Workspace")
         self.assertIn("resource_id", logged_event.payload["resource_context"])
