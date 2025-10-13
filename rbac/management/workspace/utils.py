@@ -15,15 +15,26 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Utils for workspace model."""
+import logging
 from uuid import UUID
 
+from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
+from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+from management.principal.model import Principal
 from management.utils import get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def is_user_allowed(request, required_operation, target_workspace):
     """Check if the user is allowed to perform the required permission on the target workspace."""
+    # Check if access check v2 is enabled
+    if FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
+        return is_user_allowed_v2(request, required_operation, target_workspace)
+
+    # Original implementation
     root_workspace_id = str(Workspace.objects.root(tenant_id=request.tenant).id)
     is_get_action = request.method == "GET"
     if target_workspace is None:
@@ -43,6 +54,45 @@ def is_user_allowed(request, required_operation, target_workspace):
         # Get the set of permission tuples for later filter
         request.permission_tuples = tuple_set
     return any(valid_perm_tuple in tuple_set for valid_perm_tuple in valid_perm_tuples)
+
+
+def is_user_allowed_v2(request, required_operation, target_workspace):
+    """
+    Check if the user is allowed to perform the required permission on the target workspace using Inventory API.
+
+    This is the v2 implementation using Inventory API for permission checks.
+
+    Args:
+        request: The HTTP request object
+        required_operation: The operation/relation to check (view, create, edit, move, delete)
+        target_workspace: The workspace ID to check, or None for list operations
+
+    Returns:
+        bool: True if the user has permission, False otherwise
+    """
+    principal = get_principal_from_request(request)
+    # Format principal ID as required by Inventory API (e.g., "localhost/username")
+    principal_id = Principal.user_id_to_principal_resource_id(principal.user_id)
+    # Create the Inventory API checker
+    checker = WorkspaceInventoryAccessChecker()
+
+    # Use the required_operation directly (already determined by permission_from_request)
+    relation = required_operation
+
+    # For list operations (None workspace_id), get all accessible workspaces
+    if target_workspace is None:
+        # Lookup accessible workspaces using StreamedListObjects
+        accessible_workspace_ids = checker.lookup_accessible_workspaces(principal_id=principal_id, relation=relation)
+        # Store permission tuples for later filtering
+        request.permission_tuples = [(None, ws_id) for ws_id in accessible_workspace_ids]
+        return len(accessible_workspace_ids) > 0
+
+    # For specific workspace operations, check access for that workspace
+    has_access = checker.check_workspace_access(
+        workspace_id=target_workspace, principal_id=principal_id, relation=relation
+    )
+
+    return has_access
 
 
 def get_access_permission_tuples(access, tenant, root_workspace_id, is_get_action):
