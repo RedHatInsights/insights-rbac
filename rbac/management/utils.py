@@ -72,7 +72,7 @@ def create_client_channel(addr):
 @contextmanager
 def create_client_channel_inventory(addr):
     """Create secure channel for grpc requests for inventory api."""
-    if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)
+    if settings.DEVELOPMENT or settings.CLOWDER_ENABLED:  # Flag for local dev (avoids ssl error)
         channel = grpc.insecure_channel(addr)
         yield channel
     else:

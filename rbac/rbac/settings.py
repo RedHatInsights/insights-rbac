@@ -36,7 +36,7 @@ import redis
 from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
-from app_common_python import LoadedConfig, KafkaTopics
+from app_common_python import LoadedConfig, KafkaTopics, DependencyEndpoints
 from feature_flags import FEATURE_FLAGS
 
 
@@ -338,6 +338,8 @@ else:
     FEATURE_FLAGS_URL = ENVIRONMENT.get_value("FEATURE_FLAGS_URL", default="http://localhost:4242/api")
     APP_NAME = "rbac"
 
+CLOWDER_ENABLED = ENVIRONMENT.bool("CLOWDER_ENABLED", default=False)
+
 FEATURE_FLAGS_CACHE_DIR = ENVIRONMENT.get_value("FEATURE_FLAGS_CACHE_DIR", default="/tmp/")
 
 REDIS_SSL = REDIS_PASSWORD is not None
@@ -541,11 +543,21 @@ INVENTORY_API_TOKEN_URL = ENVIRONMENT.get_value(
 )
 INVENTORY_API_LOCAL = ENVIRONMENT.bool("INVENTORY_API_LOCAL", default=True)
 INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
+KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME = "kessel-inventory-api"
+INVENTORY_API_PORT = 9000
+if CLOWDER_ENABLED:
+    try:
+        hostname = DependencyEndpoints[KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME]["api"].hostname
+        INVENTORY_API_SERVER = f"{hostname}:{INVENTORY_API_PORT}"
+    except KeyError as e:
+        raise RuntimeError(f"Missing dependency endpoint: {e}")
+
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 
 # Versioned API settings
 V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
 V2_READ_ONLY_API_MODE = ENVIRONMENT.bool("V2_READ_ONLY_API_MODE", default=False)
+WORKSPACE_ACCESS_CHECK_V2_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_CHECK_V2_ENABLED", default=False)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
 
 # Workspace settings
