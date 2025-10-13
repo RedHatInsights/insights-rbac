@@ -59,6 +59,19 @@ class BaseIdentityRequest:
             cls.tenant.delete()
         super().tearDownClass()
 
+    def tearDown(self):
+        """Tear down each test - clear cache to ensure test isolation."""
+        from management.utils import PRINCIPAL_CACHE
+
+        try:
+            # Try to clear Redis cache if available
+            if PRINCIPAL_CACHE.use_caching:
+                PRINCIPAL_CACHE.connection.flushdb()
+        except Exception:
+            # If Redis is not available or fails, just disable caching
+            PRINCIPAL_CACHE.disable_caching()
+        super().tearDown()
+
     @classmethod
     def _create_customer_data(cls):
         """Create customer data."""
