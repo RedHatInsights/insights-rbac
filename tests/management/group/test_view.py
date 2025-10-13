@@ -97,7 +97,6 @@ def generate_replication_event_to_add_principals(group_uuid, principal_user_id):
     return {
         "relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)],
         "relations_to_remove": [],
-        "resource_context": {},
     }
 
 
@@ -105,7 +104,6 @@ def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
     return {
         "relations_to_add": [],
         "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)],
-        "resource_context": {},
     }
 
 
@@ -3888,14 +3886,10 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
             self.assertEqual(al_dict_action, "add")
 
             actual_call_arg = mock_method.call_args[0][0]
-            expected_event = generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717")
-
-            # Validate relations match expected
-            self.assertEqual(expected_event["relations_to_add"], actual_call_arg["relations_to_add"])
-            self.assertEqual(expected_event["relations_to_remove"], actual_call_arg["relations_to_remove"])
-
-            # Validate resource_context exists (exact contents may vary by implementation)
-            self.assertIn("resource_context", actual_call_arg)
+            self.assertEqual(
+                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717"),
+                actual_call_arg,
+            )
 
             send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
@@ -4128,14 +4122,10 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
             )
 
             actual_call_arg = mock_method.call_args[0][0]
-            expected_event = generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798")
-
-            # Validate relations match expected
-            self.assertEqual(expected_event["relations_to_add"], actual_call_arg["relations_to_add"])
-            self.assertEqual(expected_event["relations_to_remove"], actual_call_arg["relations_to_remove"])
-
-            # Validate resource_context exists (exact contents may vary by implementation)
-            self.assertIn("resource_context", actual_call_arg)
+            self.assertEqual(
+                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798"),
+                actual_call_arg,
+            )
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
@@ -5741,14 +5731,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         actual_call_arg = mock_method.call_args[0][0]
-        expected_event = generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345")
-
-        # Validate relations match expected
-        self.assertEqual(expected_event["relations_to_add"], actual_call_arg["relations_to_add"])
-        self.assertEqual(expected_event["relations_to_remove"], actual_call_arg["relations_to_remove"])
-
-        # Validate resource_context exists (exact contents may vary by implementation)
-        self.assertIn("resource_context", actual_call_arg)
+        self.assertEqual(
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"),
+            actual_call_arg,
+        )
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch(

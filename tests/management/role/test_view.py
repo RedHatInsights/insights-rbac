@@ -1890,7 +1890,6 @@ class RoleViewsetTests(IdentityRequest):
         expected_sorted = normalize_and_sort(replication_event)
         actual_sorted = normalize_and_sort(actual_call_arg)
         self.assertEqual(expected_sorted, actual_sorted)
-
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
@@ -2086,7 +2085,6 @@ class RoleViewsetTests(IdentityRequest):
         expected_sorted = normalize_and_sort(replication_event)
         actual_sorted = normalize_and_sort(actual_call_arg)
         self.assertEqual(expected_sorted, actual_sorted)
-
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_system_flag_filter(self):
