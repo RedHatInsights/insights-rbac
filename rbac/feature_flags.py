@@ -34,6 +34,8 @@ class FeatureFlags:
     TOGGLE_REMOVE_NULL_VALUE = "rbac.resource-definition-remove-null-value.enabled"
     # Makes the V2 API to only allow "GET" requests.
     TOGGLE_V2_API_READONLY = "rbac.v2-api-readonly-mode.enabled"
+    # Enables Inventory API access check v2 for workspace permissions.
+    TOGGLE_WORKSPACE_ACCESS_CHECK_V2 = "rbac.workspace-access-check-v2.enabled"
 
     def __init__(self):
         """Add attributes."""
@@ -125,6 +127,16 @@ class FeatureFlags:
         return self.is_enabled(
             feature_name=self.TOGGLE_V2_API_READONLY,
             fallback_function=lambda ignored_toggle_name, ignored_context: settings.V2_READ_ONLY_API_MODE,
+        )
+
+    def is_workspace_access_check_v2_enabled(self):
+        """Check whether the "workspace access check v2" feature is enabled.
+
+        Falls back to reading the environment variable if any error occurs.
+        """
+        return self.is_enabled(
+            feature_name=self.TOGGLE_WORKSPACE_ACCESS_CHECK_V2,
+            fallback_function=lambda ignored_toggle_name, ignored_context: settings.WORKSPACE_ACCESS_CHECK_V2_ENABLED,
         )
 
 
