@@ -14,8 +14,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Describes the urls and patterns for the API application."""
-from django.conf.urls import include
-from django.urls import re_path
+from django.urls import include, re_path
 from rest_framework.routers import DefaultRouter
 
 from api.views import CrossAccountRequestViewSet, openapi, status

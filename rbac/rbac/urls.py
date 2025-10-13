@@ -22,9 +22,8 @@ The `urlpatterns` list routes URLs to views. For more information please see:
 import os
 
 from django.conf import settings
-from django.conf.urls import include
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from django.urls import path, re_path
+from django.urls import include, path, re_path
 
 API_PATH_PREFIX = os.getenv("API_PATH_PREFIX", "api/")
 if API_PATH_PREFIX != "":
