@@ -9,7 +9,7 @@
   "packageRules": [
     {
       "matchPackageNames": ["boto3"],
-      "updateTypes": ["minor", "major"],
+      "matchUpdateTypes": ["minor", "major"],
       "description": "Only update boto3 when minor or major versions change"
     }
   ]
