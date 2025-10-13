@@ -82,22 +82,19 @@ class OutboxReplicatorTest(TestCase):
 
         self.assertEqual(logged_event.aggregateid, "test-env")
         self.assertEqual(logged_event.event_type, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP)
-
         self.assertEqual(
-            logged_event.payload["relations_to_add"],
-            [
-                json_format.MessageToDict(principal_to_group_add1),
-                json_format.MessageToDict(principal_to_group_add2),
-            ],
+            logged_event.payload,
+            {
+                "relations_to_add": [
+                    json_format.MessageToDict(principal_to_group_add1),
+                    json_format.MessageToDict(principal_to_group_add2),
+                ],
+                "relations_to_remove": [
+                    json_format.MessageToDict(principal_to_group_remove1),
+                    json_format.MessageToDict(principal_to_group_remove2),
+                ],
+            },
         )
-        self.assertEqual(
-            logged_event.payload["relations_to_remove"],
-            [
-                json_format.MessageToDict(principal_to_group_remove1),
-                json_format.MessageToDict(principal_to_group_remove2),
-            ],
-        )
-
         self.assertEqual(logged_event.aggregatetype, "relations-replication-event")
 
     def test_replicate_sets_resource_type_and_id_from_identifiers_for_workspace(self):
