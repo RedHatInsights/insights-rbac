@@ -1949,7 +1949,13 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertIn("The 'parent_id' field is required", str(response.data))
 
     def test_move_invalid_parent_id_uuid(self):
-        """Test that move fails when parent_id is not a valid UUID."""
+        """Test that move fails when parent_id is not a valid UUID.
+
+        Note: With the workspace_from_request fix, permission checks now happen before
+        parameter validation. This means that when an invalid UUID is provided,
+        the permission check on the source workspace happens first and returns 403
+        before we can validate the UUID format.
+        """
         request_context = self._create_request_context(self.customer_data, self.user_with_access, is_org_admin=False)
         headers = request_context["request"].META
 
@@ -1958,8 +1964,9 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         data = {"parent_id": "invalid-uuid"}
         response = client.post(url, data, format="json", **headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("not a valid UUID", str(response.data))
+        # Permission check happens before UUID validation, so we get 403 instead of 400
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("You do not have permission to perform this action", str(response.data))
 
     def test_move_with_read_only_access(self):
         """Test that move fails when user only has read access to target workspace."""
@@ -2013,7 +2020,10 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
     def test_move_with_source_access_but_no_target_access_unique(self):
         """Test that move fails with PermissionDenied when user has write access to source workspace but not target workspace.
 
-        This specifically tests our inner _check_target_workspace_write_access method.
+        Note: With the workspace_from_request fix, the WorkspaceAccessPermission class now
+        correctly checks permissions on the target workspace (derived from parent_id in the
+        request data for move operations). This means the generic permission check happens
+        at the permission class level before the view's custom validation logic runs.
         """
         # Create a user with access to the source workspace but not target
         source_access_user = {"username": "source_access_user", "email": "source_access_user@example.com"}
@@ -2042,10 +2052,10 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         data = {"parent_id": str(target_workspace.id)}
         response = client.post(url, data, format="json", **headers)
 
-        # Verify - Should get 403 from our inner _check_target_workspace_write_access method
+        # Verify - Now gets 403 from WorkspaceAccessPermission class with generic message
+        # (permission check happens before view's custom validation)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        # The error message should come from our PermissionDenied exception
-        self.assertIn("You do not have write access to the target workspace", str(response.data))
+        self.assertIn("You do not have permission to perform this action", str(response.data))
 
 
 @override_settings(V2_APIS_ENABLED=True)
