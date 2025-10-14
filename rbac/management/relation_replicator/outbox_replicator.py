@@ -18,7 +18,7 @@
 """RelationReplicator which writes to the outbox table."""
 
 import logging
-from typing import Any, Dict, List, Optional, Protocol, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, Protocol, TypedDict
 
 from django.db import transaction
 from google.protobuf import json_format
@@ -55,7 +55,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
-    resource_context: Dict[str, object]
+    resource_context: NotRequired[Dict[str, object]]
 
 
 class WorkspaceEventPayload(TypedDict):
@@ -145,9 +145,21 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        resource_context = self._build_resource_context(event_info, event_type)
+        payload: Dict[str, Any] = {
+            "relations_to_add": add_json,
+            "relations_to_remove": remove_json,
+        }
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json, "resource_context": resource_context}
+        # Only include resource_context for workspace events
+        if event_type in (
+            ReplicationEventType.CREATE_WORKSPACE,
+            ReplicationEventType.UPDATE_WORKSPACE,
+            ReplicationEventType.DELETE_WORKSPACE,
+        ):
+            resource_context = self._build_resource_context(event_info, event_type)
+            payload["resource_context"] = resource_context
+
+        return payload
 
     def _save_replication_event(
         self,
