@@ -24,7 +24,10 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
-from management.permission.scope_service import ImplicitResourceService, Scope
+from management.permission.scope_service import (
+    Scope,
+    _implicit_resource_service as permission_service,
+)
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
@@ -130,25 +133,16 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         relations = []
 
         # Gather permissions for the role in order to determine scope of role
-        permissions = list()
+        permissions: list[str] = []
         for access in self.role.access.all():
             v1_perm = access.permission
             v2_perm = v1_perm_to_v2_perm(v1_perm)
             permissions.append(v2_perm)
-
-        for permission in permissions:
-            relations.append(
-                create_relationship(
-                    ("rbac", "role"),
-                    str(self.role.uuid),
-                    ("rbac", "principal"),
-                    str("*"),
-                    permission,
-                )
-            )
+            # v1_permissions.append(v1_perm_string)
+            # v2_permissions.append(v2_perm)
 
         # Determine highest scope for the role's permissions
-        highest_scope: Scope = ImplicitResourceService.from_settings().highest_scope_for_permissions(permissions)
+        highest_scope: Scope = permission_service.highest_scope_for_permissions(permissions)
 
         # these are the parent roles
         admin_default = self._get_admin_default_policy_uuid()
@@ -192,7 +186,16 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                         ("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child"
                     )
                 )
-
+        for permission in permissions:
+            relations.append(
+                create_relationship(
+                    ("rbac", "role"),
+                    str(self.role.uuid),
+                    ("rbac", "principal"),
+                    str("*"),
+                    permission,
+                )
+            )
         return relations
 
     def _create_metadata_from_role(self) -> dict[str, object]:
