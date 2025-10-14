@@ -1095,7 +1095,6 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         platform_default = str(platform_default_group.policies.get().uuid)
 
         # Create a platform default role with a permission that yields DEFAULT scope
-        # 'inventory:hosts:read' is assumed not to be in ROOT_SCOPE_PERMISSIONS
         role = self.given_v1_system_role(
             "update_platform_role_flip", permissions=["inventory:hosts:read"], platform_default=True
         )
