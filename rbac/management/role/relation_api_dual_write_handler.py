@@ -148,7 +148,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             )
 
         # Determine highest scope for the role's permissions
-        highest_scope: Scope = ImplicitResourceService.highest_scope_for_permissions(permissions)
+        highest_scope: Scope = ImplicitResourceService.highest_scope_for_permissions(self, permissions)
 
         # these are the parent roles
         admin_default = self._get_admin_default_policy_uuid()
