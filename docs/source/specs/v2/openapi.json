@@ -287,7 +287,7 @@
       "get": {
         "operationId": "Roles_list",
         "summary": "List Roles",
-        "description": "View a list of the roles that a user has access to under a Tenant",
+        "description": "View a list of the roles that a user has access to under a Tenant. Supports 3 use cases: 1) Org admin viewing all tenant roles, 2) Org admin viewing specific user's roles, 3) Non-admin user viewing their own roles",
         "parameters": [
           {
             "name": "tenant_id",
@@ -319,6 +319,31 @@
               "type": "string"
             },
             "explode": false
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering resource by scope. 'org_id' shows all roles in tenant (admin view), 'principal' shows only roles assigned to current user or specified username",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "org_id",
+                "principal"
+              ],
+              "default": "org_id"
+            },
+            "explode": false
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "description": "Unique username of the principal to obtain roles for (only available for admins, and if supplied, takes precedence over the identity header)",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
           }
         ],
         "responses": {
@@ -329,34 +354,91 @@
                 "schema": {
                   "$ref": "#/components/schemas/Roles.RoleListResponse"
                 },
-                "example": {
-                  "meta": {
-                    "limit": 10
-                  },
-                  "links": {
-                    "next": "http://localhost:8000/api/rbac/v2/roles/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
-                    "previous": null
-                  },
-                  "data": [
-                    {
-                      "uuid": "550e8400-e29b-41d4-a716-446655440000",
-                      "name": "Tenant admin",
-                      "description": "Full administrative access to the tenant",
-                      "permissions_count": 5,
-                      "workspace_count": 1,
-                      "user_group_count": 1,
-                      "last_modified": "1 year ago"
-                    },
-                    {
-                      "uuid": "550e8400-e29b-41d4-a716-446655440001",
-                      "name": "Workspace admin",
-                      "description": "Administrative access to specific workspaces",
-                      "permissions_count": 4,
-                      "workspace_count": 1,
-                      "user_group_count": 1,
-                      "last_modified": "1 year ago"
+                "examples": {
+                  "example0": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": null,
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "uuid": "550e8400-e29b-41d4-a716-446655440004",
+                          "name": "RHEL Inventory viewer",
+                          "description": "Read-only access to RHEL inventory",
+                          "permissions_count": 1,
+                          "workspace_count": 1,
+                          "user_group_count": 1,
+                          "last_modified": "2 days ago"
+                        }
+                      ]
                     }
-                  ]
+                  },
+                  "example1": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/roles/?cursor=xyz123",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "uuid": "550e8400-e29b-41d4-a716-446655440001",
+                          "name": "Workspace admin",
+                          "description": "Administrative access to specific workspaces",
+                          "permissions_count": 4,
+                          "workspace_count": 1,
+                          "user_group_count": 1,
+                          "last_modified": "1 year ago"
+                        },
+                        {
+                          "uuid": "550e8400-e29b-41d4-a716-446655440004",
+                          "name": "RHEL Inventory viewer",
+                          "description": "Read-only access to RHEL inventory",
+                          "permissions_count": 1,
+                          "workspace_count": 1,
+                          "user_group_count": 1,
+                          "last_modified": "2 days ago"
+                        }
+                      ]
+                    }
+                  },
+                  "example2": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/roles/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                          "name": "Tenant admin",
+                          "description": "Full administrative access to the tenant",
+                          "permissions_count": 5,
+                          "workspace_count": 1,
+                          "user_group_count": 1,
+                          "last_modified": "1 year ago"
+                        },
+                        {
+                          "uuid": "550e8400-e29b-41d4-a716-446655440001",
+                          "name": "Workspace admin",
+                          "description": "Administrative access to specific workspaces",
+                          "permissions_count": 4,
+                          "workspace_count": 1,
+                          "user_group_count": 1,
+                          "last_modified": "1 year ago"
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }
