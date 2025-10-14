@@ -24,7 +24,7 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
-from management.permission.scope_service import ImplicitResourceService as permission_service, Scope
+from management.permission.scope_service import Scope, default_implicit_resource_service
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
@@ -135,11 +135,9 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             v1_perm = access.permission
             v2_perm = v1_perm_to_v2_perm(v1_perm)
             permissions.append(v2_perm)
-            # v1_permissions.append(v1_perm_string)
-            # v2_permissions.append(v2_perm)
 
         # Determine highest scope for the role's permissions
-        highest_scope: Scope = permission_service.highest_scope_for_permissions(permissions)
+        highest_scope: Scope = default_implicit_resource_service.highest_scope_for_permissions(permissions)
 
         # these are the parent roles
         admin_default = self._get_admin_default_policy_uuid()
