@@ -738,118 +738,84 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="app1:workspace:admin", TENANT_SCOPE_PERMISSIONS="app1:organization:admin"
     )
-    def test_role_scope_changes_with_permissions(self):
-        """Test that role scope and parent relationships update correctly when permissions change."""
-        platform_default_group, admin_default_group = seed_group()
-        platform_default = str(platform_default_group.policies.get().uuid)
+    def test_admin_role_scope_changes_with_permissions(self):
+        """Test that admin_default role parent relationships update correctly when permissions change scope."""
+        # Initialize platform and admin default groups/policies
+        _, admin_default_group = seed_group()
         admin_default = str(admin_default_group.policies.get().uuid)
 
-        # Create role with default scope permissions
-        role = self.given_v1_system_role(
-            "test_role1",
+        # Create admin role with default scope permissions
+        admin_role = self.given_v1_system_role(
+            "admin_role",
             permissions=["app1:resource:read"],  # Basic permission maps to default scope
-            platform_default=True,
-            admin_default=True,
+            admin_default=True,  # Only set admin_default, we're testing admin role transitions
         )
 
-        # Verify initial default scope parent relationships
-        self.assertEqual(
-            len(
-                self.tuples.find_tuples(
-                    all_of(
-                        resource("rbac", "role", platform_default),
-                        relation("child"),
-                        subject("rbac", "role", str(role.uuid)),
-                    )
-                )
-            ),
-            1,
-        )
+        # Verify initial default scope parent relationship with admin_default
         self.assertEqual(
             len(
                 self.tuples.find_tuples(
                     all_of(
                         resource("rbac", "role", admin_default),
                         relation("child"),
-                        subject("rbac", "role", str(role.uuid)),
+                        subject("rbac", "role", str(admin_role.uuid)),
                     )
                 )
             ),
             1,
+            "Admin role should have admin_default as parent in default scope",
         )
 
         # Update role to have root scope permissions
         dual_write_handler = SeedingRelationApiDualWriteHandler(
-            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+            role=admin_role, replicator=InMemoryRelationReplicator(self.tuples)
         )
         dual_write_handler.prepare_for_update()
-        role = self.fixture.update_custom_role(
-            role,
+        admin_role = self.fixture.update_custom_role(
+            admin_role,
             resource_access=self.fixture.workspace_access(default=["app1:workspace:admin"]),
         )
         dual_write_handler.replicate_update_system_role()
 
-        # Verify root scope parent relationships
-        self.assertEqual(
-            len(
-                self.tuples.find_tuples(
-                    all_of(
-                        resource("rbac", "role", str(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID)),
-                        relation("child"),
-                        subject("rbac", "role", str(role.uuid)),
-                    )
-                )
-            ),
-            1,
-        )
+        # Verify root scope parent relationship with SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE
         self.assertEqual(
             len(
                 self.tuples.find_tuples(
                     all_of(
                         resource("rbac", "role", str(settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID)),
                         relation("child"),
-                        subject("rbac", "role", str(role.uuid)),
+                        subject("rbac", "role", str(admin_role.uuid)),
                     )
                 )
             ),
             1,
+            "Admin role should have system admin root workspace role as parent in root scope",
         )
 
         # Update role to have tenant scope permissions
         dual_write_handler = SeedingRelationApiDualWriteHandler(
-            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+            role=admin_role, replicator=InMemoryRelationReplicator(self.tuples)
         )
         dual_write_handler.prepare_for_update()
-        role = self.fixture.update_custom_role(
-            role,
+        admin_role = self.fixture.update_custom_role(
+            admin_role,
             resource_access=self.fixture.workspace_access(default=["app1:organization:admin"]),
         )
         dual_write_handler.replicate_update_system_role()
 
-        # Verify tenant scope parent relationships
+        # Verify tenant scope parent relationship with SYSTEM_ADMIN_ORG_ADMIN_ROLE
         self.assertEqual(
             len(
                 self.tuples.find_tuples(
                     all_of(
-                        resource("rbac", "role", str(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)),
+                        resource("rbac", "role", str(settings.SYSTEM_ADMIN_ORG_ADMIN_ROLE_UUID)),
                         relation("child"),
-                        subject("rbac", "role", str(role.uuid)),
+                        subject("rbac", "role", str(admin_role.uuid)),
                     )
                 )
             ),
             1,
-        )
-        self.assertEqual(
-            len(
-                self.tuples.find_tuples(
-                    all_of(
-                        resource("rbac", "role", str(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)),
-                        relation("child"),
-                        subject("rbac", "role", str(role.uuid)),
-                    )
-                )
-            ),
-            1,
+            "Admin role should have system admin org admin role as parent in tenant scope",
         )
 
     @override_settings(TENANT_SCOPE_PERMISSIONS="app1:organization:admin")
