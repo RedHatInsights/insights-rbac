@@ -773,7 +773,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Permission defined in ROOT_SCOPE_PERMISSIONS which should map to root scope
         permissions = ["app1:workspace:admin"]
 
-        # Test platform_default role at root scope
+        # Test platform_default role at root scope - should create relationship with SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE
         role = self.given_v1_system_role("test_role1", permissions=permissions, platform_default=True)
 
         # Verify parent relationship with platform default root workspace role

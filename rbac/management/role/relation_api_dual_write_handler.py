@@ -142,7 +142,13 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
         # Determine highest scope for the role's permissions
         highest_scope: Scope = default_implicit_resource_service.highest_scope_for_permissions(v1_permissions)
-        print("hello there", highest_scope)
+        logger.debug(
+            f"Role {self.role.name} (UUID: {self.role.uuid}) - "
+            f"Permissions: {v1_permissions}, "
+            f"Scope: {highest_scope}, "
+            f"Platform Default: {self.role.platform_default}, "
+            f"Admin Default: {self.role.admin_default}"
+        )
 
         # these are the parent roles
         admin_default = self._get_admin_default_policy_uuid()
@@ -172,16 +178,28 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         # create the appropriate relationship
         if self.role.admin_default:
             parent_uuid = admin_parent_for_scope(highest_scope)
+            logger.debug(
+                f"Admin role {self.role.name} (scope: {highest_scope}): "
+                f"Creating child relationship with parent {parent_uuid}"
+            )
             if parent_uuid:
-                relations.append(
-                    create_relationship(("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child")
+                child_relation = create_relationship(
+                    ("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child"
                 )
+                relations.append(child_relation)
+
         if self.role.platform_default:
             parent_uuid = platform_parent_for_scope(highest_scope)
+            logger.debug(
+                f"Platform role {self.role.name} (scope: {highest_scope}): "
+                f"Creating child relationship with parent {parent_uuid}"
+            )
             if parent_uuid:
-                relations.append(
-                    create_relationship(("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child")
+                child_relation = create_relationship(
+                    ("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child"
                 )
+                relations.append(child_relation)
+
         for permission in v2_permissions:
             relations.append(
                 create_relationship(
