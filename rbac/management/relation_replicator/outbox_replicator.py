@@ -145,7 +145,7 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        payload: Dict[str, Any] = {
+        payload: ReplicationEventPayload = {
             "relations_to_add": add_json,
             "relations_to_remove": remove_json,
         }
