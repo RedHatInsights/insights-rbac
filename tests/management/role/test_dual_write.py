@@ -865,6 +865,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 
     def test_default_scope_role_parent_relationships(self):
         """Test that roles with basic permissions get correct parent relationships."""
+        platform_default_group, admin_default_group = seed_group()
+        platform_default = str(platform_default_group.policies.get().uuid)
+        admin_default = str(admin_default_group.policies.get().uuid)
+
         # Basic permission that should map to default scope
         permissions = ["app1:resource:read"]
 
@@ -874,7 +878,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Verify parent relationship with platform default policy
         platform_default_parent_relations = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)),
+                resource("rbac", "role", platform_default),
                 relation("child"),
                 subject("rbac", "role", str(role.uuid)),
             )
@@ -887,7 +891,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Verify parent relationship with admin default policy
         admin_default_parent_relations = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role", str(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)),
+                resource("rbac", "role", admin_default),
                 relation("child"),
                 subject("rbac", "role", str(role2.uuid)),
             )
