@@ -128,16 +128,20 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     def _generate_relations_for_role(self) -> list[common_pb2.Relationship]:
         """Generate system role permissions."""
         relations = []
+        # Gather v1 and v2 permissions for the role
+        v1_permissions: list[str] = []
+        v2_permissions: list[str] = []
 
         # Gather permissions for the role in order to determine scope of role
-        permissions: list[str] = []
         for access in self.role.access.all():
             v1_perm = access.permission
+            v1_perm_string = v1_perm.permission
+            v1_permissions.append(v1_perm_string)
             v2_perm = v1_perm_to_v2_perm(v1_perm)
-            permissions.append(v2_perm)
+            v2_permissions.append(v2_perm)
 
         # Determine highest scope for the role's permissions
-        highest_scope: Scope = default_implicit_resource_service.highest_scope_for_permissions(permissions)
+        highest_scope: Scope = default_implicit_resource_service.highest_scope_for_permissions(v1_permissions)
 
         # these are the parent roles
         admin_default = self._get_admin_default_policy_uuid()
@@ -181,7 +185,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                         ("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child"
                     )
                 )
-        for permission in permissions:
+        for permission in v2_permissions:
             relations.append(
                 create_relationship(
                     ("rbac", "role"),
