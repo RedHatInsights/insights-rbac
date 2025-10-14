@@ -76,7 +76,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove, event.event_info)
+        payload = self._build_replication_event(event.add, event.remove, event.event_info, event.event_type)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -128,6 +128,7 @@ class OutboxReplicator(RelationReplicator):
         relations_to_add: list[Relationship],
         relations_to_remove: list[Relationship],
         event_info: Dict[str, object],
+        event_type: ReplicationEventType,
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
@@ -138,7 +139,7 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        resource_context = self._build_resource_context(event_info)
+        resource_context = self._build_resource_context(event_info, event_type)
 
         return {"relations_to_add": add_json, "relations_to_remove": remove_json, "resource_context": resource_context}
 
