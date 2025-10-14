@@ -912,27 +912,27 @@ namespace Roles {
     model Role {
         @doc("Unique identifier for the role")
         uuid: UUID;
-        
+
         @doc("Name of the role")
         @example("Tenant admin")
         name: string;
-        
+
         @doc("Description of the role")
         @example("Full administrative access to the tenant")
         description: string;
-        
+
         @doc("Count of permissions associated with this role")
         @example(5)
         permissions_count: int64 | "Not available";
-        
+
         @doc("How many workspaces that role is in")
         @example(1)
         workspace_count: int64 | "Not available";
-        
+
         @doc("How many user groups that role is in")
         @example(1)
         user_group_count: int64 | "Not available";
-        
+
         @doc("When the role was last modified")
         @example("1 year ago")
         last_modified: string;
@@ -997,17 +997,17 @@ namespace Roles {
     model RoleListResponse {
         @doc("Pagination metadata")
         meta: CursorPaginationMeta;
-        
+
         @doc("Pagination links")
         links: CursorPaginationLinks;
-        
+
         @doc("List of roles that the user has access to")
         data: Role[];
     }
 
     @doc("View a list of the roles that a user has access to under a Tenant. Supports 3 use cases: 1) Org admin viewing all tenant roles, 2) Org admin viewing specific user's roles, 3) Non-admin user viewing their own roles")
     @summary("List Roles")
-    
+
     // Use Case 1: Org admin viewing all roles in tenant
     @opExample(#{
         parameters: #{
@@ -1045,7 +1045,7 @@ namespace Roles {
             ]
         }
     })
-    
+
     // Use Case 2: Org admin viewing specific user's roles
     @opExample(#{
         parameters: #{
@@ -1083,7 +1083,7 @@ namespace Roles {
             ]
         }
     })
-    
+
     // Use Case 3: Non-admin user viewing their own roles
     @opExample(#{
         parameters: #{
@@ -1115,15 +1115,15 @@ namespace Roles {
     @get op list(
         @doc("Tenant ID to filter roles for")
         @query tenant_id: string;
-        
+
         @query limit?: int64 = 10;
-        
+
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: string;
-        
+
         @doc("Parameter for filtering resource by scope. 'tenant' shows all roles in tenant (admin view), 'principal' shows only roles assigned to current user or specified username")
         @query scope?: ScopeType = ScopeType.tenant;
-        
+
         @doc("Unique username of the principal to obtain roles for (only available for admins, and if supplied, takes precedence over the identity header)")
         @query username?: string;
     ): RoleListResponse | Problems.CommonProblems;
