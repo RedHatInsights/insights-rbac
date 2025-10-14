@@ -1211,7 +1211,7 @@ class SeedingRelationApiDualWriteHandlerTest(DualWriteTestCase):
             self.assertEqual(call_args.event_type, ReplicationEventType.DELETE_SYSTEM_ROLE)
 
             # Verify metadata
-            self.assertEqual(call_args.info["role_uuid"], role.uuid)
+            self.assertEqual(call_args.event_info["role_uuid"], role.uuid)
 
             # Verify relationships (should remove existing relations, add none)
             self.assertGreater(len(call_args.remove), 0)  # Should have relations to remove
