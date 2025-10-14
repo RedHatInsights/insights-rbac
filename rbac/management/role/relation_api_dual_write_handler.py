@@ -142,7 +142,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
         # Determine highest scope for the role's permissions
         highest_scope: Scope = default_implicit_resource_service.highest_scope_for_permissions(v1_permissions)
-        print(highest_scope)
+        print("hello there", highest_scope)
 
         # these are the parent roles
         admin_default = self._get_admin_default_policy_uuid()
@@ -170,21 +170,17 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             return platform_default
 
         # create the appropriate relationship
-        if self.role.admin_default and admin_default:
+        if self.role.admin_default:
             parent_uuid = admin_parent_for_scope(highest_scope)
             if parent_uuid:
                 relations.append(
-                    create_relationship(
-                        ("rbac", "role"), admin_default, ("rbac", "role"), str(self.role.uuid), "child"
-                    )
+                    create_relationship(("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child")
                 )
-        if self.role.platform_default and platform_default:
+        if self.role.platform_default:
             parent_uuid = platform_parent_for_scope(highest_scope)
             if parent_uuid:
                 relations.append(
-                    create_relationship(
-                        ("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child"
-                    )
+                    create_relationship(("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child")
                 )
         for permission in v2_permissions:
             relations.append(

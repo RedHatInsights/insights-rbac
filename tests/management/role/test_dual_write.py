@@ -777,6 +777,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         )
         dual_write_handler.replicate_update_system_role()
 
+        print("tuples", self.tuples)
         # Verify root scope parent relationship with SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE
         self.assertEqual(
             len(
