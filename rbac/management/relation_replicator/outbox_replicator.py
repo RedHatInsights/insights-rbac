@@ -102,6 +102,7 @@ class OutboxReplicator(RelationReplicator):
 
         Args:
             event_info: Event information dictionary
+            event_type: Type of replication event
 
         Returns:
             Dictionary with validated resource context including resource_type, resource_id, org_id and event_type
@@ -117,7 +118,12 @@ class OutboxReplicator(RelationReplicator):
             resource_context["resource_type"] = "Workspace"
             resource_context["resource_id"] = resource_context.pop("workspace_id")
             resource_context["event_type"] = event_type.value
-        else:
+        elif event_type in (
+            ReplicationEventType.CREATE_WORKSPACE,
+            ReplicationEventType.UPDATE_WORKSPACE,
+            ReplicationEventType.DELETE_WORKSPACE,
+        ):
+            # Only warn for workspace events that are missing workspace_id
             logger.warning(
                 "Event info is missing required workspace_id identifier to build the resource context.",
             )
