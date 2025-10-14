@@ -808,7 +808,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
             len(
                 self.tuples.find_tuples(
                     all_of(
-                        resource("rbac", "role", str(settings.SYSTEM_ADMIN_ORG_ADMIN_ROLE_UUID)),
+                        resource("rbac", "role", str(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)),
                         relation("child"),
                         subject("rbac", "role", str(admin_role.uuid)),
                     )
