@@ -24,10 +24,7 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
-from management.permission.scope_service import (
-    Scope,
-    _implicit_resource_service as permission_service,
-)
+from management.permission.scope_service import ImplicitResourceService as permission_service, Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
