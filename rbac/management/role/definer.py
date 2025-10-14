@@ -28,7 +28,6 @@ from management.notifications.notification_handlers import role_obj_change_notif
 from management.permission.model import Permission
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
-from management.group.model import Group
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
@@ -88,12 +87,6 @@ def _make_role(data, force_create_relationships=False):
             role.save()
         logger.info("Created system role %s.", name)
         role_obj_change_notification_handler(role, "created")
-        # Ensure seeded system roles are also assigned to the corresponding public parent group policies
-        try:
-            _assign_role_to_parent_groups(role)
-        except Exception:
-            # Don't fail seeding if policy/group assignment can't be completed
-            logger.debug(f"Could not assign role {role.name} to platform/admin parent policies during seeding")
     else:
         if role.version != defaults["version"]:
             dual_write_handler.prepare_for_update()
@@ -169,12 +162,6 @@ def seed_roles(force_create_relationships=False):
         # Actually remove roles no longer in config
         with transaction.atomic():
             for role in roles_to_delete:
-                # Attempt to remove role from any parent system policies first
-                try:
-                    _remove_role_from_parent_groups(role)
-                except Exception:
-                    logger.debug(f"Could not remove role {role.name} from parent policies prior to deletion")
-
                 dual_write_handler = SeedingRelationApiDualWriteHandler(role)
                 dual_write_handler.replicate_deleted_system_role()
             roles_to_delete.delete()
@@ -266,71 +253,3 @@ def delete_permission(permission: Permission):
             dual_write_handler.replicate_update_system_role()
         else:
             dual_write_handler.replicate_new_or_updated_role(role)
-
-
-def _assign_role_to_parent_groups(role: Role):
-    """If the role is marked platform_default or admin_default, ensure it is present
-    in the corresponding public-tenant group's system policy (the "parent" role).
-    Fail silently if the public groups/policies don't exist.
-    """
-    try:
-        # platform default group -> add role to its policy
-        if role.platform_default:
-            try:
-                platform_group = Group.objects.public_tenant_only().get(platform_default=True)
-                policy = platform_group.policies.get()
-                if role not in policy.roles.all():
-                    policy.roles.add(role)
-            except Group.DoesNotExist:
-                # public platform default group not present yet; skip
-                pass
-            except Exception:
-                # ignore policy lookup/add errors during seeding
-                pass
-
-        # admin default group -> add role to its policy
-        if role.admin_default:
-            try:
-                admin_group = Group.objects.public_tenant_only().get(admin_default=True)
-                policy = admin_group.policies.get()
-                if role not in policy.roles.all():
-                    policy.roles.add(role)
-            except Group.DoesNotExist:
-                # public admin default group not present yet; skip
-                pass
-            except Exception:
-                # ignore policy lookup/add errors during seeding
-                pass
-    except Exception as e:
-        logger.debug(f"Failed to assign role {role.name} to parent groups: {e}")
-
-
-def _remove_role_from_parent_groups(role: Role):
-    """If the role is marked platform_default or admin_default (or if it exists in parent
-    policies), remove it from the corresponding public-tenant group's system policy(s).
-    Fail silently on missing groups/policies or errors.
-    """
-    try:
-        # Try removing from platform default policy if present
-        try:
-            platform_group = Group.objects.public_tenant_only().filter(platform_default=True).first()
-            if platform_group:
-                policy = platform_group.policies.first()
-                if policy and role in policy.roles.all():
-                    policy.roles.remove(role)
-        except Exception:
-            # ignore errors during cleanup
-            pass
-
-        # Try removing from admin default policy if present
-        try:
-            admin_group = Group.objects.public_tenant_only().filter(admin_default=True).first()
-            if admin_group:
-                policy = admin_group.policies.first()
-                if policy and role in policy.roles.all():
-                    policy.roles.remove(role)
-        except Exception:
-            # ignore errors during cleanup
-            pass
-    except Exception as e:
-        logger.debug(f"Failed to remove role {role.name} from parent groups: {e}")

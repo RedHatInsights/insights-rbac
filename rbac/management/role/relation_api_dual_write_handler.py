@@ -24,6 +24,7 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
+from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
@@ -127,19 +128,8 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     def _generate_relations_for_role(self) -> list[common_pb2.Relationship]:
         """Generate system role permissions."""
         relations = []
-        admin_default = self._get_admin_default_policy_uuid()
-        platform_default = self._get_platform_default_policy_uuid()
 
-        # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
-        if self.role.admin_default and admin_default:
-            relations.append(
-                create_relationship(("rbac", "role"), admin_default, ("rbac", "role"), str(self.role.uuid), "child")
-            )
-        if self.role.platform_default and platform_default:
-            relations.append(
-                create_relationship(("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child")
-            )
-
+        # Gather permissions for the role in order to determine scope of role
         permissions = list()
         for access in self.role.access.all():
             v1_perm = access.permission
@@ -148,8 +138,60 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
         for permission in permissions:
             relations.append(
-                create_relationship(("rbac", "role"), str(self.role.uuid), ("rbac", "principal"), str("*"), permission)
+                create_relationship(
+                    ("rbac", "role"),
+                    str(self.role.uuid),
+                    ("rbac", "principal"),
+                    str("*"),
+                    permission,
+                )
             )
+
+        # Determine highest scope for the role's permissions
+        highest_scope: Scope = ImplicitResourceService.highest_scope_for_permissions(permissions)
+
+        # these are the parent roles
+        admin_default = self._get_admin_default_policy_uuid()
+        platform_default = self._get_platform_default_policy_uuid()
+
+        admin_default_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+        admin_tenant_role_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+        platform_default_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+        platform_default_tenant_role_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+
+        # determine the scope
+        def admin_parent_for_scope(scope: Scope) -> Optional[str]:
+            if scope == Scope.TENANT:
+                return admin_tenant_role_uuid
+            if scope == Scope.ROOT:
+                return admin_default_root_uuid
+            return admin_default
+
+        def platform_parent_for_scope(scope: Scope) -> Optional[str]:
+            if scope == Scope.TENANT:
+                return platform_default_tenant_role_uuid
+            if scope == Scope.ROOT:
+                return platform_default_root_uuid
+            return platform_default
+
+        # create the appropriate relationship
+        if self.role.admin_default and admin_default:
+            parent_uuid = admin_parent_for_scope(highest_scope)
+            if parent_uuid:
+                relations.append(
+                    create_relationship(
+                        ("rbac", "role"), admin_default, ("rbac", "role"), str(self.role.uuid), "child"
+                    )
+                )
+        if self.role.platform_default and platform_default:
+            parent_uuid = platform_parent_for_scope(highest_scope)
+            if parent_uuid:
+                relations.append(
+                    create_relationship(
+                        ("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child"
+                    )
+                )
 
         return relations
 
