@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from typing import Callable, Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
+from django.conf import settings
 from management.group.definer import seed_group, set_system_flag_before_update
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
@@ -733,6 +734,165 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="app1:workspace:admin", TENANT_SCOPE_PERMISSIONS="app1:organization:admin"
+    )
+    def test_role_scope_changes_with_permissions(self):
+        """Test that role scope and parent relationships update correctly when permissions change."""
+        # Start with default scope permission
+        role = self.given_v1_system_role("test_role", permissions=["app1:resource:read"], platform_default=True)
+
+        # Initially should have tenant-level parent (default scope)
+        default_scope_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(default_scope_relations), 1)
+
+        # Update to root scope permission
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role)
+        dual_write_handler.prepare_for_update()
+        role.access.clear()  # Clear existing permissions
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(default=["app1:workspace:admin"]),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        # Should now have root-level parent
+        root_scope_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(root_scope_relations), 1)
+
+        # Previous parent relationship should be removed
+        self.assertEqual(len(default_scope_relations), 0)
+
+        # Update to tenant scope permission
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role)
+        dual_write_handler.prepare_for_update()
+        role.access.clear()  # Clear existing permissions
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(default=["app1:organization:admin"]),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        # Should now have tenant-level parent
+        tenant_scope_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(tenant_scope_relations), 1)
+
+        # Previous parent relationship should be removed
+        self.assertEqual(len(root_scope_relations), 0)
+
+    @override_settings(TENANT_SCOPE_PERMISSIONS="app1:organization:admin")
+    def test_tenant_scope_role_parent_relationships(self):
+        """Test that roles with tenant scope permissions get correct parent relationships."""
+        # Permission defined in TENANT_SCOPE_PERMISSIONS which should map to tenant scope
+        permissions = ["app1:organization:admin"]
+
+        # Test platform_default role at tenant scope
+        role = self.given_v1_system_role("test_role1", permissions=permissions, platform_default=True)
+
+        # Verify parent relationship with platform default tenant role
+        platform_default_parent_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(platform_default_parent_relations), 1)
+
+        # Test admin_default role at tenant scope
+        role2 = self.given_v1_system_role("test_role2", permissions=permissions, admin_default=True)
+
+        # Verify parent relationship with admin default tenant role
+        admin_default_parent_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role2.uuid)),
+            )
+        )
+        self.assertEqual(len(admin_default_parent_relations), 1)
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="app1:workspace:admin")
+    def test_root_scope_role_parent_relationships(self):
+        """Test that roles with root scope permissions get correct parent relationships."""
+        # Permission defined in ROOT_SCOPE_PERMISSIONS which should map to root scope
+        permissions = ["app1:workspace:admin"]
+
+        # Test platform_default role at root scope
+        role = self.given_v1_system_role("test_role1", permissions=permissions, platform_default=True)
+
+        # Verify parent relationship with platform default root workspace role
+        platform_default_parent_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(platform_default_parent_relations), 1)
+
+        # Test admin_default role at root scope
+        role2 = self.given_v1_system_role("test_role2", permissions=permissions, admin_default=True)
+
+        # Verify parent relationship with admin default root workspace role
+        admin_default_parent_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role2.uuid)),
+            )
+        )
+        self.assertEqual(len(admin_default_parent_relations), 1)
+
+    def test_default_scope_role_parent_relationships(self):
+        """Test that roles with basic permissions get correct parent relationships."""
+        # Basic permission that should map to default scope
+        permissions = ["app1:resource:read"]
+
+        # Test platform_default role
+        role = self.given_v1_system_role("test_role1", permissions=permissions, platform_default=True)
+
+        # Verify parent relationship with platform default policy
+        platform_default_parent_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(platform_default_parent_relations), 1)
+
+        # Test admin_default role
+        role2 = self.given_v1_system_role("test_role2", permissions=permissions, admin_default=True)
+
+        # Verify parent relationship with admin default policy
+        admin_default_parent_relations = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", str(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)),
+                relation("child"),
+                subject("rbac", "role", str(role2.uuid)),
+            )
+        )
+        self.assertEqual(len(admin_default_parent_relations), 1)
 
     def test_system_role_grants_access_to_default_workspace(self):
         """Create role binding only when system role is bound to group."""
