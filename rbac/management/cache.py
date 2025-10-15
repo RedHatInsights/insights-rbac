@@ -325,6 +325,22 @@ class PrincipalCache(BasicCache):
         """
         super().save(key=self.key_for(org_id, principal.username), item=principal, obj_name="principal")
 
+    def delete_all_principals_for_tenant(self, org_id: str):
+        """Purge all principals for a given tenant from the cache.
+
+        :param org_id: The tenant org_id to clear principals for.
+        """
+        err_msg = f"Error deleting all principals for tenant {org_id}"
+        with self.delete_handler(err_msg):
+            logger.info(f"Deleting entire principal cache for tenant {org_id}")
+            count = 0
+            pipeline = self.connection.pipeline()
+            for key in self.connection.scan_iter(match=f"rbac::principal::{org_id}::*", count=BATCH_DELETE_SIZE):
+                pipeline.delete(key)
+                count += 1
+            pipeline.execute()
+            logger.info(f"Deleted {count} principals for tenant {org_id}")
+
 
 def skip_purging_cache_for_public_tenant(tenant):
     """Skip purging cache for public tenant."""

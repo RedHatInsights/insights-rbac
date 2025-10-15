@@ -119,6 +119,10 @@ class BaseInternalViewsetTests(IdentityRequest):
         Role.objects.all().delete()
         Policy.objects.all().delete()
         logging.disable(self._prior_logging_disable_level)
+        # Clear the principal cache to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
 @override_settings(
