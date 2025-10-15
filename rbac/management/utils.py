@@ -220,6 +220,15 @@ def get_principal(
         if not principal:
             principal = Principal.objects.get(username__iexact=username, tenant=tenant)
             PRINCIPAL_CACHE.cache_principal(org_id=tenant.org_id, principal=principal)
+        else:
+            # Principal came from cache - refresh from DB to ensure ManyToMany relationships work correctly
+            # If the cached principal no longer exists in DB, we'll get it from the database
+            try:
+                principal.refresh_from_db()
+            except Principal.DoesNotExist:
+                # Cached principal was deleted, fetch fresh from database
+                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                PRINCIPAL_CACHE.cache_principal(org_id=tenant.org_id, principal=principal)
 
     except Principal.DoesNotExist:
         # If the "from query" parameter was specified, the username was validated above, so there is no need to
