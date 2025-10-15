@@ -18,7 +18,7 @@
 """RelationReplicator which writes to the outbox table."""
 
 import logging
-from typing import Any, Dict, List, Optional, Protocol, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, Protocol, TypedDict
 
 from django.db import transaction
 from google.protobuf import json_format
@@ -55,6 +55,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+    resource_context: NotRequired[Dict[str, object]]
 
 
 class WorkspaceEventPayload(TypedDict):
@@ -75,7 +76,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove)
+        payload = self._build_replication_event(event.add, event.remove, event.event_info, event.event_type)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -88,8 +89,52 @@ class OutboxReplicator(RelationReplicator):
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
+    def _build_resource_context(
+        self, event_info: Dict[str, object], event_type: ReplicationEventType
+    ) -> Dict[str, object]:
+        """
+        Build resource context from event_info, this currently assumes we only care about workspace create events.
+
+        Validates and extracts standard fields:
+        - org_id: Organization identifier
+        - resource_id: Resource identifier - workspace_id
+        - resource_type: Type of resource being operated on
+
+        Args:
+            event_info: Event information dictionary
+            event_type: Type of replication event
+
+        Returns:
+            Dictionary with validated resource context including resource_type, resource_id, org_id and event_type
+        """
+        resource_context: Dict[str, object] = {}
+
+        # Convert all values to string
+        for key, value in event_info.items():
+            resource_context[key] = str(value) if value is not None else None
+
+        # If the workspace_id is present from event_info create the context for that resource type only
+        if "workspace_id" in resource_context:
+            resource_context["resource_type"] = "Workspace"
+            resource_context["resource_id"] = resource_context.pop("workspace_id")
+            resource_context["event_type"] = event_type.value
+        elif event_type in (
+            ReplicationEventType.CREATE_WORKSPACE,
+            ReplicationEventType.UPDATE_WORKSPACE,
+            ReplicationEventType.DELETE_WORKSPACE,
+        ):
+            # Only warn for workspace events that are missing workspace_id
+            logger.warning(
+                "Event info is missing required workspace_id identifier to build the resource context.",
+            )
+        return resource_context
+
     def _build_replication_event(
-        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
+        self,
+        relations_to_add: list[Relationship],
+        relations_to_remove: list[Relationship],
+        event_info: Dict[str, object],
+        event_type: ReplicationEventType,
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
@@ -100,7 +145,21 @@ class OutboxReplicator(RelationReplicator):
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json}
+        payload: ReplicationEventPayload = {
+            "relations_to_add": add_json,
+            "relations_to_remove": remove_json,
+        }
+
+        # Only include resource_context for workspace events
+        if event_type in (
+            ReplicationEventType.CREATE_WORKSPACE,
+            ReplicationEventType.UPDATE_WORKSPACE,
+            ReplicationEventType.DELETE_WORKSPACE,
+        ):
+            resource_context = self._build_resource_context(event_info, event_type)
+            payload["resource_context"] = resource_context
+
+        return payload
 
     def _save_replication_event(
         self,
