@@ -38,13 +38,24 @@ def permission_seeding():
     run_seeds("permission")
 
 
+def workspace_seeding():
+    """Execute workspace seeding."""
+    run_seeds("workspace")
+
+
 def run_seeds(seed_type, force_create_relationships=False):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from management.group.definer import seed_group
     from management.role.definer import seed_roles, seed_permissions
+    from management.workspace.definer import seed_workspaces
 
-    seed_functions = {"role": seed_roles, "group": seed_group, "permission": seed_permissions}
+    seed_functions = {
+        "role": seed_roles,
+        "group": seed_group,
+        "permission": seed_permissions,
+        "workspace": seed_workspaces,
+    }
 
     try:
         logger.info(f"Seeding {seed_type} changes.")

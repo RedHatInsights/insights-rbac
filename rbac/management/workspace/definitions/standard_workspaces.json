@@ -1,0 +1,24 @@
+{
+  "workspaces": [
+    {
+      "name": "Production Environment",
+      "description": "Production workloads and resources with strict access controls",
+      "type": "standard"
+    },
+    {
+      "name": "Non-Production Environment",
+      "description": "Development, testing, and staging resources",
+      "type": "standard"
+    },
+    {
+      "name": "Platform Services",
+      "description": "Shared platform and infrastructure services",
+      "type": "standard"
+    },
+    {
+      "name": "Standard workspace",
+      "description": "Standard workspace for testing",
+      "type": "standard"
+    }
+  ]
+}

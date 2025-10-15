@@ -18,7 +18,7 @@
 import logging
 
 from django.core.management.base import BaseCommand
-from management.seeds import group_seeding, permission_seeding, role_seeding
+from management.seeds import group_seeding, permission_seeding, role_seeding, workspace_seeding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -26,13 +26,14 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Command(BaseCommand):
     """Command class for running seeds."""
 
-    help = "Runs the seeding for roles, permissions and groups"
+    help = "Runs the seeding for roles, workspaces, permissions and groups"
 
     def add_arguments(self, parser):
         """Add arguments to command."""
         parser.add_argument("--permissions", action="store_true")
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
+        parser.add_argument("--workspaces", action="store_true")
         parser.add_argument("--force-create-relationships", action="store_true")
 
     def handle(self, *args, **options):
@@ -54,6 +55,11 @@ class Command(BaseCommand):
             logger.info("*** Seeding groups... ***")
             group_seeding()
             logger.info("*** Group seeding completed. ***\n")
+
+        if options["workspaces"] or seed_all:
+            logger.info("*** Seeding workspaces... ***")
+            workspace_seeding()
+            logger.info("*** Workspace seeding completed. ***\n")
 
         # Since the cache will expire in 10 min. We can let it expire by itself. Not worth to explicitly expire it
         # currently becuthere might be some other unexpected issues. Can enable it in the future if it becomes an issue.

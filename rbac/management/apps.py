@@ -20,12 +20,13 @@ import sys
 
 from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
-from management.seeds import group_seeding, permission_seeding, role_seeding
+from management.seeds import group_seeding, permission_seeding, role_seeding, workspace_seeding
 
 from rbac.settings import (
     GROUP_SEEDING_ENABLED,
     PERMISSION_SEEDING_ENABLED,
     ROLE_SEEDING_ENABLED,
+    WORKSPACE_SEEDING_ENABLED,
 )
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -48,6 +49,8 @@ class ManagementConfig(AppConfig):
                 role_seeding()
             if GROUP_SEEDING_ENABLED:
                 group_seeding()
+            if WORKSPACE_SEEDING_ENABLED:
+                workspace_seeding()
 
         except (OperationalError, ProgrammingError) as op_error:
             if "no such table" in str(op_error) or "does not exist" in str(op_error):
