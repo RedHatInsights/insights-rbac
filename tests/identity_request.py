@@ -70,8 +70,11 @@ class BaseIdentityRequest:
 
     @classmethod
     def _create_user_data(cls):
-        """Create user data."""
-        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email(), "user_id": cls.fake.ean8()}
+        """Create user data with unique username to avoid cache collisions between tests."""
+        # Generate unique username by appending UUID to avoid cache collisions
+        base_username = cls.fake.user_name()
+        unique_username = f"{base_username}_{uuid.uuid4().hex[:8]}"
+        user_data = {"username": unique_username, "email": cls.fake.email(), "user_id": cls.fake.ean8()}
         return user_data
 
     def _create_service_account_data(cls) -> dict[str, str]:
