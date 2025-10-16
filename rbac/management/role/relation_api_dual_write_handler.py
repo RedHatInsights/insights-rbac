@@ -128,7 +128,9 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         """Generate system role permissions."""
         relations = []
         admin_default = self._get_admin_default_policy_uuid()
-        platform_default = self._get_platform_default_policy_uuid()
+        platform_default_default = self._get_platform_default_policy_uuid()
+        platform_default_root = self._get_platform_default_root_policy_uuid()
+        platform_default_tenant = self._get_platform_default_tenant_policy_uuid()
 
         # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
         if self.role.admin_default and admin_default:
@@ -136,6 +138,14 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 create_relationship(("rbac", "role"), admin_default, ("rbac", "role"), str(self.role.uuid), "child")
             )
         if self.role.platform_default and platform_default:
+            scope = scope_service.scope_for_permission(role.access.all())
+            if scope == Scope.DEFAULT:
+                platform_default = platform_default_default
+            elif scope == Scope.ROOT:
+                platform_default = platform_default_root
+            elif scope == Scope.TENANT:
+                platform_default = platform_default_tenant
+            else:
             relations.append(
                 create_relationship(("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child")
             )
