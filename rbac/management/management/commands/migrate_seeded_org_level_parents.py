@@ -69,7 +69,7 @@ class Command(BaseCommand):
 
             role_desc = f"{repr(role.name)} (id={role.id})"
 
-            # Remove any existing parent-child relations with default roles.
+            # Remove any existing parent-child relations with both platform- and admin-default roles.
             for access_type in DefaultAccessType:
                 for scope in Scope:
                     relations_to_remove.append(
