@@ -22,8 +22,35 @@ from feature_flags import FEATURE_FLAGS
 from management.models import Workspace
 from management.workspace.utils import is_user_allowed, is_user_allowed_v2
 from rest_framework import permissions
+from rest_framework.exceptions import PermissionDenied
 
 logger = logging.getLogger(__name__)
+
+# Map HTTP methods to workspace permissions
+PERM_MAP = {
+    "GET": "view",
+    "POST": "create",
+    "PUT": "edit",
+    "PATCH": "edit",
+    "DELETE": "delete",
+}
+
+
+def _get_default_workspace_id(request) -> Optional[str]:
+    """
+    Get the default workspace ID for a tenant.
+
+    Args:
+        request: The HTTP request object containing tenant information
+
+    Returns:
+        Optional[str]: The default workspace ID, or None if it doesn't exist
+    """
+    try:
+        return str(Workspace.objects.default(tenant_id=request.tenant).id)
+    except Workspace.DoesNotExist:
+        logger.warning(f"No default workspace for tenant {request.tenant}")
+        return None
 
 
 class WorkspaceAccessPermission(permissions.BasePermission):
@@ -49,25 +76,30 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         Returns:
             str: The permission/relation name (view, create, edit, move, delete)
+
+        Raises:
+            PermissionDenied: If the HTTP method is not supported
         """
         method = request.method.upper()
 
-        if method == "GET":
-            return "view"
-        elif method == "POST":
-            return "create"
-        elif method in ("PUT", "PATCH"):
-            # Check if this is a move operation (changing parent)
-            if hasattr(request, "data"):
-                if "parent_id" in request.data or "parent" in request.data:
-                    return "move"
-            return "edit"
-        elif method == "DELETE":
-            return "delete"
-        else:
-            # Default to view for unknown methods
-            logger.warning(f"Unknown HTTP method {method}, defaulting to 'view' permission")
-            return "view"
+        if method not in PERM_MAP:
+            logger.error(f"Unsupported HTTP method: {method}")
+            raise PermissionDenied(f"Unsupported HTTP method: {method}")
+
+        perm = PERM_MAP[method]
+
+        # Check if this is a move operation (changing parent)
+        if (
+            perm == "edit"
+            and hasattr(request, "data")
+            and (
+                request.data.get("parent_id") is not None
+                or request.data.get("parent") is not None
+            )
+        ):
+            return "move"
+
+        return perm
 
     @staticmethod
     def workspace_from_request(request, view=None) -> Optional[str]:
@@ -86,38 +118,42 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         Returns:
             Optional[str]: The workspace ID to check permissions against, or None for list operations
         """
-        # For POST (create), check parent_id in request data
-        if request.method == "POST" and (not view or view.kwargs.get("pk") is None):
-            # Create operation: check permissions on the intended parent workspace
-            if hasattr(request, "data") and (parent_id := request.data.get("parent_id")):
+        # Get lookup key from view (defaults to "pk")
+        lookup = getattr(view, "lookup_url_kwarg", "pk") if view else "pk"
+        pk = getattr(view, "kwargs", {}).get(lookup) if view else None
+
+        # For POST (create): prefer explicit parent_id, else default
+        if request.method == "POST":
+            parent_id = (
+                request.data.get("parent_id") if hasattr(request, "data") else None
+            )
+            if parent_id:
                 return parent_id
-            else:
-                # Fall back to default workspace for create operations without parent_id
-                try:
-                    return str(Workspace.objects.default(tenant_id=request.tenant).id)
-                except Exception:
-                    # If default workspace doesn't exist, return None
-                    return None
+            default_id = _get_default_workspace_id(request)
+            if default_id:
+                logger.debug(
+                    f"No parent_id provided for workspace creation, using default workspace: {default_id}"
+                )
+            return default_id
 
-        # For list operations (GET without pk), return None to indicate list all accessible
-        if request.method == "GET" and (not view or not view.kwargs.get("pk")):
-            return None
+        # For GET: list (None) vs detail (pk)
+        if request.method == "GET":
+            return pk
 
-        # For detail operations (update/delete/retrieve), use pk from URL
-        if view and view.kwargs.get("pk"):
-            return view.kwargs.get("pk")
-
-        # Fallback to default workspace (shouldn't normally reach here)
-        return str(Workspace.objects.default(tenant_id=request.tenant).id)
+        # All other methods (PUT/PATCH/DELETE) operate on existing pk
+        return pk or _get_default_workspace_id(request)
 
     def has_permission(self, request, view):
         """Check permission based on Account Admin property."""
-        if FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
-            workspace_id = self.workspace_from_request(request, view)
-            return is_user_allowed_v2(request, self.permission_from_request(request), workspace_id)
-
+        # Admin users always have full access regardless of v2 flag
         if request.user.admin:
             return True
+
+        if FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
+            workspace_id = self.workspace_from_request(request, view)
+            return is_user_allowed_v2(
+                request, self.permission_from_request(request), workspace_id
+            )
 
         # Determine the target workspace for permission checking
         workspace_id = self.workspace_from_request(request, view)

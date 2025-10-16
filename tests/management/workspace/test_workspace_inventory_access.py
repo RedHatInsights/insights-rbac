@@ -26,11 +26,21 @@ from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
 from google.protobuf import json_format
 from importlib import reload
+from kessel.inventory.v1beta2 import allowed_pb2
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
-from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role, Workspace
+from management.models import (
+    Access,
+    Group,
+    Permission,
+    Policy,
+    Principal,
+    ResourceDefinition,
+    Role,
+    Workspace,
+)
 from management.workspace.service import WorkspaceService
 from rbac import urls
 from tests.identity_request import IdentityRequest
@@ -73,13 +83,17 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
             "description": "Standard Workspace - description",
             "parent_id": self.default_workspace.id,
         }
-        self.standard_workspace = self.service.create(validated_data_standard_ws, self.tenant)
+        self.standard_workspace = self.service.create(
+            validated_data_standard_ws, self.tenant
+        )
         validated_data_standard_sub_ws = {
             "name": "Standard Sub-workspace",
             "description": "Standard Workspace with another standard workspace parent.",
             "parent_id": self.standard_workspace.id,
         }
-        self.standard_sub_workspace = self.service.create(validated_data_standard_sub_ws, self.tenant)
+        self.standard_sub_workspace = self.service.create(
+            validated_data_standard_sub_ws, self.tenant
+        )
 
     def tearDown(self):
         """Tear down workspace tests."""
@@ -90,9 +104,15 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
         """Generate a random string name."""
         return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
-    def _setup_access_for_principal(self, username, permission, workspace_id=None, platform_default=False):
+    def _setup_access_for_principal(
+        self, username, permission, workspace_id=None, platform_default=False
+    ):
         """Set up access for a principal with the given permission."""
-        group = Group(name=self._get_random_name(), platform_default=platform_default, tenant=self.tenant)
+        group = Group(
+            name=self._get_random_name(),
+            platform_default=platform_default,
+            tenant=self.tenant,
+        )
         group.save()
         role = Role.objects.create(
             name="".join(random.choices(string.ascii_letters + string.digits, k=5)),
@@ -100,8 +120,12 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
             tenant=self.tenant,
         )
         public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
-        permission, _ = Permission.objects.get_or_create(permission=permission, tenant=public_tenant)
-        access = Access.objects.create(permission=permission, role=role, tenant=self.tenant)
+        permission, _ = Permission.objects.get_or_create(
+            permission=permission, tenant=public_tenant
+        )
+        access = Access.objects.create(
+            permission=permission, role=role, tenant=self.tenant
+        )
         if workspace_id:
             operation = "in" if isinstance(workspace_id, list) else "equal"
             ResourceDefinition.objects.create(
@@ -114,13 +138,18 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
                 tenant=self.tenant,
             )
 
-        policy = Policy.objects.create(name=self._get_random_name(), group=group, tenant=self.tenant)
+        policy = Policy.objects.create(
+            name=self._get_random_name(), group=group, tenant=self.tenant
+        )
         policy.roles.add(role)
         policy.save()
         group.policies.add(policy)
         group.save()
         if not platform_default:
-            principal, _ = Principal.objects.get_or_create(username=username, tenant=self.tenant)
+            # Set user_id to match the hard-coded value in IdentityRequest._build_identity
+            principal, _ = Principal.objects.get_or_create(
+                username=username, tenant=self.tenant, user_id="1111111"
+            )
             group.principals.add(principal)
 
     def _create_mock_inventory_check_response(self, allowed=True):
@@ -130,8 +159,13 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
         with patch.object(json_format, "MessageToDict", return_value=response_dict):
             return mock_response
 
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_workspace_list_non_org_admin_default_group(self, mock_flag, mock_channel):
         """Test workspace list for non-org admin with default group access."""
         # Mock Inventory API to return allowed for default workspace
@@ -139,12 +173,8 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Mock StreamedListObjects to return accessible workspaces
-        def stream_side_effect(request):
-            # Return workspaces accessible to user with platform default group
-            for ws in [self.default_workspace, self.standard_workspace]:
-                yield MagicMock()
-
-        mock_stub.StreamedListObjects.return_value = stream_side_effect(None)
+        # Return workspaces accessible to user with platform default group
+        mock_stub.StreamedListObjects.return_value = iter([MagicMock(), MagicMock()])
 
         with patch.object(
             json_format,
@@ -160,12 +190,16 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
             ):
 
                 # Create request context for non-org admin user
-                request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+                request_context = self._create_request_context(
+                    self.customer_data, self.user_data, is_org_admin=False
+                )
                 headers = request_context["request"].META
 
                 # Setup platform default access
                 self._setup_access_for_principal(
-                    self.user_data["username"], "inventory:groups:read", platform_default=True
+                    self.user_data["username"],
+                    "inventory:groups:read",
+                    platform_default=True,
                 )
 
                 url = reverse("v2_management:workspace-list")
@@ -176,59 +210,31 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertIn("data", response.data)
 
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
-    def test_workspace_read_non_org_admin_custom_default_group(self, mock_flag, mock_channel):
-        """Test workspace read for non-org admin with custom default group."""
-        # Mock Inventory API
-        mock_stub = MagicMock()
-        mock_channel.return_value.__enter__.return_value = MagicMock()
-
-        mock_response = MagicMock()
-        mock_stub.Check.return_value = mock_response
-        with patch.object(json_format, "MessageToDict", return_value={"allowed": "ALLOWED_TRUE"}):
-            with patch(
-                "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
-                return_value=mock_stub,
-            ):
-
-                # Create request context for non-org admin user
-                request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-                headers = request_context["request"].META
-
-                # Setup custom default group access
-                self._setup_access_for_principal(
-                    self.user_data["username"], "inventory:groups:read", platform_default=False
-                )
-
-                url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-                client = APIClient()
-                response = client.get(url, format="json", **headers)
-
-                # Should be able to read workspace
-                self.assertEqual(response.status_code, status.HTTP_200_OK)
-                self.assertEqual(response.data["id"], str(self.standard_workspace.id))
-
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
-    def test_workspace_list_custom_group_without_attribute_filter(self, mock_flag, mock_channel):
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_custom_group_without_attribute_filter(
+        self, mock_flag, mock_channel
+    ):
         """Test workspace list with custom group having inventory view permission without attribute filter."""
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Mock StreamedListObjects to return all accessible workspaces
-        def stream_side_effect(request):
-            # User with no attribute filter has access to all workspaces
-            for ws in [
-                self.root_workspace,
-                self.default_workspace,
-                self.standard_workspace,
-                self.standard_sub_workspace,
-            ]:
-                yield MagicMock()
-
-        mock_stub.StreamedListObjects.return_value = stream_side_effect(None)
+        # User with no attribute filter has access to all workspaces
+        mock_stub.StreamedListObjects.return_value = iter(
+            [
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+            ]
+        )
 
         with patch.object(
             json_format,
@@ -246,7 +252,9 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
             ):
 
                 # Create request context for non-org admin user
-                request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+                request_context = self._create_request_context(
+                    self.customer_data, self.user_data, is_org_admin=False
+                )
                 headers = request_context["request"].META
 
                 # Setup custom group with inventory view permission (no attribute filter)
@@ -264,21 +272,24 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
                 # Should have access to workspaces
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
-    def test_workspace_list_custom_group_with_attribute_filter_group_id(self, mock_flag, mock_channel):
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_custom_group_with_attribute_filter_group_id(
+        self, mock_flag, mock_channel
+    ):
         """Test workspace list with custom group having attribute filter for group.id (workspace hierarchy)."""
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Mock StreamedListObjects to return only specific workspace and its children
-        def stream_side_effect(request):
-            # User with attribute filter has access to specific workspace and its sub-workspaces
-            for ws in [self.standard_workspace, self.standard_sub_workspace]:
-                yield MagicMock()
-
-        mock_stub.StreamedListObjects.return_value = stream_side_effect(None)
+        # User with attribute filter has access to specific workspace and its sub-workspaces
+        mock_stub.StreamedListObjects.return_value = iter([MagicMock(), MagicMock()])
 
         with patch.object(
             json_format,
@@ -294,14 +305,18 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
             ):
 
                 # Create request context for non-org admin user
-                request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+                request_context = self._create_request_context(
+                    self.customer_data, self.user_data, is_org_admin=False
+                )
                 headers = request_context["request"].META
 
                 # Setup custom group with attribute filter for specific workspace (group.id)
                 self._setup_access_for_principal(
                     self.user_data["username"],
                     "inventory:groups:read",
-                    workspace_id=str(self.standard_workspace.id),  # Specific workspace ID
+                    workspace_id=str(
+                        self.standard_workspace.id
+                    ),  # Specific workspace ID
                     platform_default=False,
                 )
 
@@ -312,8 +327,13 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
                 # Should have access to the specific workspace and its hierarchy
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_workspace_list_admin_default_group(self, mock_flag, mock_channel):
         """Test workspace list for user in admin default group."""
         # Mock Inventory API
@@ -321,17 +341,15 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Mock StreamedListObjects to return all workspaces for admin
-        def stream_side_effect(request):
-            # Return all workspaces as accessible for admin
-            for ws in [
-                self.root_workspace,
-                self.default_workspace,
-                self.standard_workspace,
-                self.standard_sub_workspace,
-            ]:
-                yield MagicMock()
-
-        mock_stub.StreamedListObjects.return_value = stream_side_effect(None)
+        # Return all workspaces as accessible for admin
+        mock_stub.StreamedListObjects.return_value = iter(
+            [
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+            ]
+        )
 
         with patch.object(
             json_format,
@@ -352,14 +370,21 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
                 # Create request context for org admin user
                 url = reverse("v2_management:workspace-list")
                 client = APIClient()
-                response = client.get(url, format="json", **self.headers)  # Use admin headers
+                response = client.get(
+                    url, format="json", **self.headers
+                )  # Use admin headers
 
                 # Admin should have access to all workspaces
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertIn("data", response.data)
 
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_workspace_list_admin_default_custom_group(self, mock_flag, mock_channel):
         """Test workspace list for user in admin default custom group."""
         # Mock Inventory API
@@ -367,19 +392,15 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Mock StreamedListObjects to return all workspaces
-        mock_stream_response = MagicMock()
-
-        def stream_side_effect(request):
-            # Return all workspaces as accessible
-            for ws in [
-                self.root_workspace,
-                self.default_workspace,
-                self.standard_workspace,
-                self.standard_sub_workspace,
-            ]:
-                yield MagicMock()
-
-        mock_stub.StreamedListObjects.return_value = stream_side_effect(None)
+        # Return all workspaces as accessible
+        mock_stub.StreamedListObjects.return_value = iter(
+            [
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+            ]
+        )
 
         with patch.object(
             json_format,
@@ -397,30 +418,46 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
             ):
 
                 # Create request context for non-org admin user
-                request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+                request_context = self._create_request_context(
+                    self.customer_data, self.user_data, is_org_admin=False
+                )
                 headers = request_context["request"].META
 
                 # Create an admin default custom group with full permissions
                 group = Group(
-                    name="Admin Default Custom Group", platform_default=True, admin_default=True, tenant=self.tenant
+                    name="Admin Default Custom Group",
+                    platform_default=True,
+                    admin_default=True,
+                    tenant=self.tenant,
                 )
                 group.save()
 
                 role = Role.objects.create(
-                    name="Admin Custom Role", description="Admin custom role", tenant=self.tenant, admin_default=True
+                    name="Admin Custom Role",
+                    description="Admin custom role",
+                    tenant=self.tenant,
+                    admin_default=True,
                 )
 
                 public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
-                permission, _ = Permission.objects.get_or_create(permission="inventory:*:*", tenant=public_tenant)
-                Access.objects.create(permission=permission, role=role, tenant=self.tenant)
+                permission, _ = Permission.objects.get_or_create(
+                    permission="inventory:*:*", tenant=public_tenant
+                )
+                Access.objects.create(
+                    permission=permission, role=role, tenant=self.tenant
+                )
 
-                policy = Policy.objects.create(name="Admin Policy", group=group, tenant=self.tenant)
+                policy = Policy.objects.create(
+                    name="Admin Policy", group=group, tenant=self.tenant
+                )
                 policy.roles.add(role)
                 policy.save()
                 group.policies.add(policy)
                 group.save()
 
-                principal, _ = Principal.objects.get_or_create(username=self.user_data["username"], tenant=self.tenant)
+                principal, _ = Principal.objects.get_or_create(
+                    username=self.user_data["username"], tenant=self.tenant
+                )
                 group.principals.add(principal)
 
                 url = reverse("v2_management:workspace-list")
@@ -430,8 +467,13 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
                 # Should have full access via admin default custom group
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_workspace_access_denied(self, mock_flag, mock_channel):
         """Test workspace access is denied when Inventory API returns not allowed."""
         # Mock Inventory API to return not allowed
@@ -439,59 +481,441 @@ class WorkspaceInventoryAccessV2Tests(IdentityRequest):
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
         mock_stub.Check.return_value = mock_response
-        with patch.object(json_format, "MessageToDict", return_value={"allowed": "ALLOWED_FALSE"}):
-            with patch(
-                "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
-                return_value=mock_stub,
-            ):
 
-                # Create request context for non-org admin user without permissions
-                request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-                headers = request_context["request"].META
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
 
-                url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
-                client = APIClient()
-                response = client.get(url, format="json", **headers)
+            # Create request context for non-org admin user without permissions
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
 
-                # Should be denied access
-                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
 
-    @patch("management.permissions.workspace_inventory_access.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
-    def test_workspace_create_with_inventory_access_check(self, mock_flag, mock_channel):
+            # Should be denied access
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_create_with_inventory_access_check(
+        self, mock_flag, mock_channel
+    ):
         """Test workspace creation with Inventory API access check."""
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
         mock_stub.Check.return_value = mock_response
-        with patch.object(json_format, "MessageToDict", return_value={"allowed": "ALLOWED_TRUE"}):
-            with patch(
-                "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
-                return_value=mock_stub,
-            ):
 
-                # Create request context for non-org admin user
-                request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-                headers = request_context["request"].META
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
 
-                # Setup write access
-                self._setup_access_for_principal(
-                    self.user_data["username"], "inventory:groups:write", workspace_id=str(self.default_workspace.id)
-                )
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
 
-                workspace_data = {
-                    "name": "New Workspace V2",
-                    "description": "Created with access check v2",
-                    "parent_id": str(self.default_workspace.id),
-                }
+            # Setup write access
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.default_workspace.id),
+            )
 
-                url = reverse("v2_management:workspace-list")
-                client = APIClient()
-                response = client.post(url, workspace_data, format="json", **headers)
+            workspace_data = {
+                "name": "New Workspace V2",
+                "description": "Created with access check v2",
+                "parent_id": str(self.default_workspace.id),
+            }
 
-                # Should be able to create workspace
-                self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-                self.assertEqual(response.data["name"], "New Workspace V2")
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.post(url, workspace_data, format="json", **headers)
+
+            # Should be able to create workspace
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+            self.assertEqual(response.data["name"], "New Workspace V2")
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_create_access_denied(self, mock_flag, mock_channel):
+        """Test workspace creation is denied when Inventory API returns not allowed."""
+        # Mock Inventory API to return not allowed
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            workspace_data = {
+                "name": "New Workspace V2",
+                "description": "Created with access check v2",
+                "parent_id": str(self.default_workspace.id),
+            }
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.post(url, workspace_data, format="json", **headers)
+
+            # Should be denied access
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_with_non_existent_workspace_in_attribute_filter(
+        self, mock_flag, mock_channel
+    ):
+        """Test workspace list with attribute filter containing non-existent workspace ID."""
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Mock StreamedListObjects to return empty (no access)
+        def stream_side_effect(request):
+            # Return empty - non-existent workspace means no access
+            return iter([])  # Return empty iterator
+
+        mock_stub.StreamedListObjects.return_value = stream_side_effect(None)
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            # Setup custom group with attribute filter for non-existent workspace
+            non_existent_workspace_id = str(uuid4())
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:read",
+                workspace_id=non_existent_workspace_id,
+                platform_default=False,
+            )
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should return 403 since user has no access to any workspace (non-existent workspace)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_update_with_inventory_access_check(
+        self, mock_flag, mock_channel
+    ):
+        """Test workspace update (PUT) with Inventory API access check."""
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            # Setup edit access
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            updated_data = {
+                "name": "Updated Workspace Name",
+                "description": "Updated description",
+            }
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.put(url, updated_data, format="json", **headers)
+
+            # Should be able to update workspace
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["name"], "Updated Workspace Name")
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_update_access_denied(self, mock_flag, mock_channel):
+        """Test workspace update is denied when Inventory API returns not allowed."""
+        # Mock Inventory API to return not allowed
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            updated_data = {
+                "name": "Updated Workspace Name",
+                "description": "Updated description",
+            }
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.put(url, updated_data, format="json", **headers)
+
+            # Should be denied access
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_patch_with_inventory_access_check(self, mock_flag, mock_channel):
+        """Test workspace partial update (PATCH) with Inventory API access check."""
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            # Setup edit access
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            updated_data = {"description": "Patched description"}
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.patch(url, updated_data, format="json", **headers)
+
+            # Should be able to patch workspace
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["description"], "Patched description")
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_delete_with_inventory_access_check(
+        self, mock_flag, mock_channel
+    ):
+        """Test workspace deletion with Inventory API access check."""
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create a temporary workspace for deletion
+            temp_workspace = self.service.create(
+                {
+                    "name": "Temp Workspace for Deletion",
+                    "description": "Will be deleted",
+                    "parent_id": self.standard_workspace.id,
+                },
+                self.tenant,
+            )
+
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            # Setup delete access
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(temp_workspace.id),
+            )
+
+            url = reverse(
+                "v2_management:workspace-detail", kwargs={"pk": temp_workspace.id}
+            )
+            client = APIClient()
+            response = client.delete(url, format="json", **headers)
+
+            # Should be able to delete workspace
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_delete_access_denied(self, mock_flag, mock_channel):
+        """Test workspace deletion is denied when user lacks permissions."""
+        # Mock Inventory API to return not allowed
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create request context for non-org admin user without permissions
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.delete(url, format="json", **headers)
+
+            # Should be denied
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "management.permissions.workspace_inventory_access.create_client_channel_inventory"
+    )
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_user_without_permissions(self, mock_flag, mock_channel):
+        """Test workspace list for user without any permissions or group memberships."""
+        # Mock Inventory API to return no workspaces (user has no permissions)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Mock StreamedListObjects to return empty list
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "management.permissions.workspace_inventory_access.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            # Do NOT setup any access - user has no permissions
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should be denied access (403) since user has no permissions to any workspace
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

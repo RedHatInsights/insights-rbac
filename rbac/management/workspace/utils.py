@@ -20,7 +20,9 @@ from uuid import UUID
 
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
-from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+from management.permissions.workspace_inventory_access import (
+    WorkspaceInventoryAccessChecker,
+)
 from management.principal.model import Principal
 from management.utils import get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
@@ -88,11 +90,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
         return len(accessible_workspace_ids) > 0
 
     # For specific workspace operations, check access for that workspace
-    has_access = checker.check_workspace_access(
-        workspace_id=target_workspace, principal_id=principal_id, relation=relation
-    )
-
-    return has_access
+    return checker.check_workspace_access(workspace_id=target_workspace, principal_id=principal_id, relation=relation)
 
 
 def get_access_permission_tuples(access, tenant, root_workspace_id, is_get_action):
@@ -123,7 +121,9 @@ def workspace_permission_tuple_set(request, root_workspace_id, is_get_action):
         },
     )
     accesses = Access.objects.filter(
-        role__in=roles, permission__application="inventory", permission__resource_type__in=["groups", "*"]
+        role__in=roles,
+        permission__application="inventory",
+        permission__resource_type__in=["groups", "*"],
     )
     tuple_set = set()
     for access in accesses:

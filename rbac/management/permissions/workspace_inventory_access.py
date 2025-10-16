@@ -23,6 +23,8 @@ from typing import Set
 from django.conf import settings
 from google.protobuf import json_format
 from kessel.inventory.v1beta2 import (
+    allowed_pb2,
+    check_response_pb2,
     inventory_service_pb2_grpc,
     reporter_reference_pb2,
     representation_type_pb2,
@@ -36,11 +38,55 @@ from management.utils import create_client_channel_inventory
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
+def _create_reporter_reference(reporter_type: str = "rbac"):
+    """Create a reporter reference for the given type."""
+    return reporter_reference_pb2.ReporterReference(type=reporter_type)
+
+
+def _create_principal_subject_reference(principal_id: str):
+    """
+    Create a subject reference for a principal.
+
+    Args:
+        principal_id: Principal identifier (e.g., "localhost/username")
+
+    Returns:
+        SubjectReference: The subject reference for the principal
+    """
+    return subject_reference_pb2.SubjectReference(
+        resource=resource_reference_pb2.ResourceReference(
+            resource_id=principal_id,
+            resource_type="principal",
+            reporter=_create_reporter_reference(),
+        )
+    )
+
+
+def _create_workspace_resource_reference(workspace_id: str):
+    """
+    Create a resource reference for a workspace.
+
+    Args:
+        workspace_id: UUID of the workspace
+
+    Returns:
+        ResourceReference: The resource reference for the workspace
+    """
+    return resource_reference_pb2.ResourceReference(
+        resource_id=workspace_id,
+        resource_type="workspace",
+        reporter=_create_reporter_reference(),
+    )
+
+
 class WorkspaceInventoryAccessChecker:
     """Check workspace access using Inventory API."""
 
     def check_workspace_access(
-        self, workspace_id: str, principal_id: str, relation: str = "inventory_host_view"
+        self,
+        workspace_id: str,
+        principal_id: str,
+        relation: str,
     ) -> bool:
         """
         Check if a principal has access to a specific workspace using Inventory API Check.
@@ -48,45 +94,43 @@ class WorkspaceInventoryAccessChecker:
         Args:
             workspace_id: UUID of the workspace to check
             principal_id: Principal identifier (e.g., "localhost/username")
-            relation: The relation to check (default: "inventory_host_view")
+            relation: The relation to check
 
         Returns:
             bool: True if principal has access, False otherwise
         """
         try:
-            with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+            with create_client_channel_inventory(
+                settings.INVENTORY_API_SERVER
+            ) as channel:
                 stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
                 check_request = CheckRequest(
-                    object=resource_reference_pb2.ResourceReference(
-                        resource_id=workspace_id,
-                        resource_type="workspace",
-                        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                    ),
+                    object=_create_workspace_resource_reference(workspace_id),
                     relation=relation,
-                    subject=subject_reference_pb2.SubjectReference(
-                        resource=resource_reference_pb2.ResourceReference(
-                            resource_id=principal_id,
-                            resource_type="principal",
-                            reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
-                    ),
+                    subject=_create_principal_subject_reference(principal_id),
                 )
 
                 response = stub.Check(check_request)
-                response_dict = json_format.MessageToDict(response)
-                allowed = response_dict.get("allowed", "") != "ALLOWED_FALSE"
 
-                if allowed:
+                # Use protobuf enum for robust status checking
+                if response.allowed == allowed_pb2.Allowed.ALLOWED_TRUE:
                     logger.debug(
                         f"Access granted: principal={principal_id}, workspace={workspace_id}, relation={relation}"
                     )
-                else:
+                    return True
+                elif response.allowed == allowed_pb2.Allowed.ALLOWED_FALSE:
                     logger.debug(
                         f"Access denied: principal={principal_id}, workspace={workspace_id}, relation={relation}"
                     )
-
-                return allowed
+                    return False
+                else:
+                    # Handle unexpected allowed status values
+                    logger.warning(
+                        f"Unexpected allowed status from Inventory API: {response.allowed}, "
+                        f"workspace={workspace_id}, principal={principal_id}, relation={relation}"
+                    )
+                    return False
 
         except Exception as e:
             logger.error(
@@ -95,7 +139,9 @@ class WorkspaceInventoryAccessChecker:
             )
             return False
 
-    def lookup_accessible_workspaces(self, principal_id: str, relation: str = "view") -> Set[str]:
+    def lookup_accessible_workspaces(
+        self, principal_id: str, relation: str
+    ) -> Set[str]:
         """
         Lookup which workspaces are accessible to the principal using Inventory API StreamedListObjects.
 
@@ -105,7 +151,7 @@ class WorkspaceInventoryAccessChecker:
 
         Args:
             principal_id: Principal identifier (e.g., "localhost/username")
-            relation: The relation to check (default: "view")
+            relation: The relation to check
 
         Returns:
             Set[str]: Set of workspace IDs that the principal has access to
@@ -113,23 +159,21 @@ class WorkspaceInventoryAccessChecker:
         accessible_workspaces = set()
 
         try:
-            with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+            with create_client_channel_inventory(
+                settings.INVENTORY_API_SERVER
+            ) as channel:
                 stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
                 # Build StreamedListObjects request
-                request_data = streamed_list_objects_request_pb2.StreamedListObjectsRequest(
-                    object_type=representation_type_pb2.RepresentationType(
-                        resource_type="workspace",
-                        reporter_type="rbac",
-                    ),
-                    relation=relation,
-                    subject=subject_reference_pb2.SubjectReference(
-                        resource=resource_reference_pb2.ResourceReference(
-                            resource_id=principal_id,
-                            resource_type="principal",
-                            reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
-                    ),
+                request_data = (
+                    streamed_list_objects_request_pb2.StreamedListObjectsRequest(
+                        object_type=representation_type_pb2.RepresentationType(
+                            resource_type="workspace",
+                            reporter_type="rbac",
+                        ),
+                        relation=relation,
+                        subject=_create_principal_subject_reference(principal_id),
+                    )
                 )
 
                 # Stream all accessible workspace objects
@@ -139,9 +183,17 @@ class WorkspaceInventoryAccessChecker:
                 for response in responses:
                     response_dict = json_format.MessageToDict(response)
                     # Extract the workspace ID from the response
-                    if "object" in response_dict and "resourceId" in response_dict["object"]:
+                    if (
+                        "object" in response_dict
+                        and "resourceId" in response_dict["object"]
+                    ):
                         workspace_id = response_dict["object"]["resourceId"]
                         accessible_workspaces.add(workspace_id)
+                    else:
+                        logger.warning(
+                            f"Malformed workspace response from StreamedListObjects: "
+                            f"missing object.resourceId in response for principal={principal_id}"
+                        )
 
             logger.debug(
                 f"Accessible workspaces for principal={principal_id}: "
