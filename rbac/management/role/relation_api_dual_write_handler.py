@@ -23,6 +23,7 @@ from typing import Optional
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
+from management.group.platform import GlobalPolicyIdService
 from management.models import Workspace
 from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -32,6 +33,9 @@ from management.relation_replicator.relation_replicator import RelationReplicato
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import BindingMapping, Role
+from management.role.platform import platform_v2_role_uuid_for
+from management.role.relations import role_child_relationship
+from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.migrate_role import migrate_role
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
 from migration_tool.utils import create_relationship
@@ -144,47 +148,24 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         # Determine highest scope for the role's permissions
         highest_scope: Scope = self.implicit_resource_service.highest_scope_for_permissions(v1_permissions)
 
-        # these are the parent roles
-        admin_default = self._get_admin_default_policy_uuid()
-        platform_default = self._get_platform_default_policy_uuid()
-
-        admin_default_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
-        admin_tenant_role_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
-
-        platform_default_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
-        platform_default_tenant_role_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
-
-        # determine the scope
-        def admin_parent_for_scope(scope: Scope) -> Optional[str]:
-            if scope == Scope.TENANT:
-                return admin_tenant_role_uuid
-            if scope == Scope.ROOT:
-                return admin_default_root_uuid
-            return admin_default
-
-        def platform_parent_for_scope(scope: Scope) -> Optional[str]:
-            if scope == Scope.TENANT:
-                return platform_default_tenant_role_uuid
-            if scope == Scope.ROOT:
-                return platform_default_root_uuid
-            return platform_default
-
         # create the appropriate relationship
         if self.role.admin_default:
-            parent_uuid = admin_parent_for_scope(highest_scope)
+            # parent_uuid = admin_parent_for_scope(highest_scope)
+            parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, highest_scope, GlobalPolicyIdService)
             if parent_uuid:
-                child_relation = create_relationship(
-                    ("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child"
-                )
-                relations.append(child_relation)
+                create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
+                relations.append(create_parent_child_relationship)
 
         if self.role.platform_default:
-            parent_uuid = platform_parent_for_scope(highest_scope)
+            # parent_uuid = platform_parent_for_scope(highest_scope)
+            parent_uuid = platform_v2_role_uuid_for(
+                DefaultAccessType.USER,
+                highest_scope,
+                GlobalPolicyIdService,
+            )
             if parent_uuid:
-                child_relation = create_relationship(
-                    ("rbac", "role"), parent_uuid, ("rbac", "role"), str(self.role.uuid), "child"
-                )
-                relations.append(child_relation)
+                create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
+                relations.append(create_parent_child_relationship)
 
         for permission in v2_permissions:
             relations.append(
