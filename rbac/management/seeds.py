@@ -34,8 +34,13 @@ def v2_role_seeding():
 
 
 def role_binding_seeding():
-    """Execute V2 role seeding."""
+    """Execute V2 role binding seeding."""
     run_seeds("role_binding")
+
+
+def role_binding_group_seeding():
+    """Execute V2 role binding group seeding."""
+    run_seeds("role_binding_group")
 
 
 def group_seeding():
@@ -57,7 +62,13 @@ def run_seeds(seed_type, force_create_relationships=False):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from management.group.definer import seed_group
-    from management.role.definer import seed_roles, seed_permissions, seed_v2_roles, seed_role_bindings
+    from management.role.definer import (
+        seed_permissions,
+        seed_role_binding_groups,
+        seed_role_bindings,
+        seed_roles,
+        seed_v2_roles,
+    )
     from management.workspace.definer import seed_workspaces
 
     seed_functions = {
@@ -67,6 +78,7 @@ def run_seeds(seed_type, force_create_relationships=False):
         "workspace": seed_workspaces,
         "role_v2": seed_v2_roles,
         "role_binding": seed_role_bindings,
+        "role_binding_group": seed_role_binding_groups,
     }
 
     try:

@@ -3,80 +3,73 @@
     {
       "binding": "platform-admin-default-workspace",
       "groups": [
-        "Platform Administrators",
-        "System Administrators"
+        "Default admin access"
       ]
     },
     {
       "binding": "platform-viewer-default-workspace",
       "groups": [
-        "Platform Viewers",
-        "All Users"
+        "Default access"
       ]
     },
     {
       "binding": "inventory-admin-inventory-workspace",
       "groups": [
-        "Inventory Administrators",
-        "System Administrators"
+        "Default admin access"
       ]
     },
     {
       "binding": "inventory-viewer-inventory-workspace",
       "groups": [
-        "Inventory Viewers",
-        "All Users"
+        "Default access"
       ]
     },
     {
       "binding": "inventory-host-manager-inventory-workspace",
       "groups": [
-        "Inventory Host Managers"
+        "Default access"
       ]
     },
     {
       "binding": "approval-admin-approval-workspace",
       "groups": [
-        "Approval Administrators",
-        "System Administrators"
+        "Default admin access"
       ]
     },
     {
       "binding": "approval-viewer-approval-workspace",
       "groups": [
-        "Approval Viewers"
+        "Default access"
       ]
     },
     {
       "binding": "approval-request-manager-approval-workspace",
       "groups": [
-        "Approval Request Managers"
+        "Default access"
       ]
     },
     {
       "binding": "user-access-admin-default-workspace",
       "groups": [
-        "RBAC Administrators",
-        "System Administrators"
+        "Default admin access"
       ]
     },
     {
       "binding": "user-access-group-manager-default-workspace",
       "groups": [
-        "RBAC Group Managers"
+        "Default admin access"
       ]
     },
     {
       "binding": "user-access-role-manager-default-workspace",
       "groups": [
-        "RBAC Role Managers"
+        "Default admin access"
       ]
     },
     {
       "binding": "user-access-viewer-default-workspace",
       "groups": [
-        "RBAC Viewers",
-        "All Users"
+        "Default access"
       ]
     }
   ]

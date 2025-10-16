@@ -21,6 +21,7 @@ from django.core.management.base import BaseCommand
 from management.seeds import (
     group_seeding,
     permission_seeding,
+    role_binding_group_seeding,
     role_binding_seeding,
     role_seeding,
     v2_role_seeding,
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Command(BaseCommand):
     """Command class for running seeds."""
 
-    help = "Runs the seeding for roles, V2 roles, workspaces, permissions and groups"
+    help = "Runs the seeding for roles, V2 roles, workspaces, permissions, groups, and role bindings"
 
     def add_arguments(self, parser):
         """Add arguments to command."""
@@ -43,6 +44,7 @@ class Command(BaseCommand):
         parser.add_argument("--workspaces", action="store_true")
         parser.add_argument("--v2_roles", action="store_true")
         parser.add_argument("--role_bindings", action="store_true")
+        parser.add_argument("--role_binding_groups", action="store_true")
         parser.add_argument("--force-create-relationships", action="store_true")
 
     def handle(self, *args, **options):
@@ -69,6 +71,11 @@ class Command(BaseCommand):
             logger.info("*** Seeding V2 Role bindings... ***")
             role_binding_seeding()
             logger.info("*** V2 Role bindings seeding completed. ***\n")
+
+        if options["role_binding_groups"] or seed_all:
+            logger.info("*** Seeding V2 Role binding groups... ***")
+            role_binding_group_seeding()
+            logger.info("*** V2 Role binding groups seeding completed. ***\n")
 
         if options["groups"] or seed_all:
             logger.info("*** Seeding groups... ***")
