@@ -18,7 +18,7 @@
 import logging
 
 from django.core.management.base import BaseCommand
-from management.seeds import group_seeding, permission_seeding, role_seeding, workspace_seeding
+from management.seeds import group_seeding, permission_seeding, role_seeding, v2_role_seeding, workspace_seeding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Command(BaseCommand):
     """Command class for running seeds."""
 
-    help = "Runs the seeding for roles, workspaces, permissions and groups"
+    help = "Runs the seeding for roles, V2 roles, workspaces, permissions and groups"
 
     def add_arguments(self, parser):
         """Add arguments to command."""
@@ -34,6 +34,7 @@ class Command(BaseCommand):
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
         parser.add_argument("--workspaces", action="store_true")
+        parser.add_argument("--v2_roles", action="store_true")
         parser.add_argument("--force-create-relationships", action="store_true")
 
     def handle(self, *args, **options):
@@ -50,6 +51,11 @@ class Command(BaseCommand):
             logger.info(f"Running with force-create-relationships: {options.get('force_create_relationships', False)}")
             role_seeding(options.get("force_create_relationships", False))
             logger.info("*** Role seeding completed. ***\n")
+
+        if options["v2_roles"] or seed_all:
+            logger.info("*** Seeding V2 Roles... ***")
+            v2_role_seeding()
+            logger.info("*** V2 Roles seeding completed. ***\n")
 
         if options["groups"] or seed_all:
             logger.info("*** Seeding groups... ***")

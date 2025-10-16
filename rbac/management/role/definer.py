@@ -32,6 +32,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleBinding, RoleV2, SeededRoleV2
 
 
 from api.models import Tenant
@@ -126,11 +127,14 @@ def _make_role(data, force_create_relationships=False):
 
 
 def _update_or_create_roles(roles, force_create_relationships=False):
-    """Update or create roles from list."""
+    """Update or create roles from list (for V1 or V2)."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(role_json, force_create_relationships)
+            if "type" in role_json:
+                role = _make_v2_role(role_json)
+            else:
+                role = _make_role(role_json, force_create_relationships)
             current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
@@ -254,3 +258,76 @@ def delete_permission(permission: Permission):
             dual_write_handler.replicate_update_system_role()
         else:
             dual_write_handler.replicate_new_or_updated_role(role)
+
+
+def _make_v2_role(data):
+    """Create the v2 role object in the database."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    name = data.pop("name")
+    role_type = data.pop("type")
+    description = data.get("description", None)
+    permissions_list = data.get("permissions", [])
+    children_list = data.get("children", [])
+
+    # Map type string to model class
+    model_type = {
+        "platform": PlatformRoleV2,
+        "custom": CustomRoleV2,
+        "seeded": SeededRoleV2,
+    }
+
+    model_class = model_type.get(role_type)
+    if not model_class:
+        raise ValueError(f"Invalid role type: {role_type}. Must be one of: {list(model_type.keys())}")
+
+    # Create or get the role
+    role, created = model_class.objects.get_or_create(name=name, description=description, tenant=public_tenant)
+
+    if created:
+        logger.info("Created v2 %s role: %s", role_type, name)
+    else:
+        # Update description if changed
+        if role.description != description:
+            role.description = description
+            role.save()
+            logger.info("Updated v2 %s role: %s", role_type, name)
+        else:
+            logger.info("No change in v2 %s role: %s", role_type, name)
+
+    # Handle permissions - clear existing and add new ones
+    if permissions_list:
+        role.permissions.clear()
+        for perm_string in permissions_list:
+            permission, _ = Permission.objects.get_or_create(permission=perm_string, tenant=public_tenant)
+            role.permissions.add(permission)
+        logger.info("Added %d permissions to role %s", len(permissions_list), name)
+
+    # Handle children - lookup child roles by name and add them
+    if children_list:
+        role.children.clear()
+        for child_name in children_list:
+            try:
+                child_role = RoleV2.objects.get(name=child_name, tenant=public_tenant)
+                role.children.add(child_role)
+            except RoleV2.DoesNotExist:
+                logger.warning(
+                    f"Child role '{child_name}' not found for parent '{name}'. Will be added when child is created."
+                )
+        logger.info("Added %d children to role %s", role.children.count(), name)
+
+    return role
+
+
+def seed_v2_roles():
+    """Update or create V2 roles types."""
+    roles_file = os.path.join(settings.BASE_DIR, "management", "role", "definitions", "rbac_v2_roles_local_test.json")
+    if not os.path.isfile(roles_file):
+        raise FileNotFoundError(f"Roles file does not exist: {roles_file}")
+
+    current_role_ids = set()
+    with transaction.atomic():
+        with open(roles_file) as json_file:
+            data = json.load(json_file)
+            role_list = data.get("roles")
+            file_role_ids = _update_or_create_roles(role_list)
+            current_role_ids.update(file_role_ids)
