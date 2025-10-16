@@ -735,72 +735,6 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
 
-    @override_settings(TENANT_SCOPE_PERMISSIONS="app1:organization:admin")
-    def test_tenant_scope_role_parent_relationships(self):
-        """Test that roles with tenant scope permissions get correct parent relationships."""
-        # Permission defined in TENANT_SCOPE_PERMISSIONS which should map to tenant scope
-        permissions = ["app1:organization:admin"]
-
-        # Test platform_default role at tenant scope
-        role = self.given_v1_system_role("test_role1", permissions=permissions, platform_default=True)
-
-        # Verify parent relationship with platform default tenant role
-        platform_default_parent_relations = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)),
-                relation("child"),
-                subject("rbac", "role", str(role.uuid)),
-            )
-        )
-        self.assertEqual(len(platform_default_parent_relations), 1)
-
-        # Test admin_default role at tenant scope
-        role2 = self.given_v1_system_role("test_role2", permissions=permissions, admin_default=True)
-
-        # Verify parent relationship with admin default tenant role
-        admin_default_parent_relations = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role", str(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)),
-                relation("child"),
-                subject("rbac", "role", str(role2.uuid)),
-            )
-        )
-        self.assertEqual(len(admin_default_parent_relations), 1)
-
-    @override_settings(ROOT_SCOPE_PERMISSIONS="app1:workspace:admin")
-    def test_root_scope_role_parent_relationships(self):
-        """Test that roles with root scope permissions get correct parent relationships."""
-        # Permission defined in ROOT_SCOPE_PERMISSIONS which should map to root scope
-        platform_default_group, admin_default_group = seed_group()
-        platform_default = str(platform_default_group.policies.get().uuid)
-        admin_default = str(admin_default_group.policies.get().uuid)
-        permissions = ["app1:workspace:admin"]
-
-        role = self.given_v1_system_role("test_role1", permissions=permissions, platform_default=True)
-
-        # Verify parent relationship with platform default root workspace role
-        platform_default_parent_relations = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role", str(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID)),
-                relation("child"),
-                subject("rbac", "role", str(role.uuid)),
-            )
-        )
-        self.assertEqual(len(platform_default_parent_relations), 1)
-
-        # Test admin_default role at root scope
-        role2 = self.given_v1_system_role("test_role2", permissions=permissions, admin_default=True)
-
-        # Verify parent relationship with admin default root workspace role
-        admin_default_parent_relations = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role", str(settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID)),
-                relation("child"),
-                subject("rbac", "role", str(role2.uuid)),
-            )
-        )
-        self.assertEqual(len(admin_default_parent_relations), 1)
-
     def test_system_role_grants_access_to_default_workspace(self):
         """Create role binding only when system role is bound to group."""
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
@@ -1016,151 +950,446 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 0)
 
-    def test_updating_platform_role_root_to_default_relationship(self):
-        """Test that updating a platform default role changes its parent relationship appropriately."""
-        platform_default_group, admin_default_group = seed_group()
-        platform_default = str(platform_default_group.policies.get().uuid)
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        TENANT_SCOPE_PERMISSIONS="app1:*:*",
+        SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="root-policy-uuid",
+        SYSTEM_DEFAULT_TENANT_ROLE_UUID="tenant-policy-uuid",
+    )
+    def test_updating_platform_role_root_to_tenant_relationship(self):
+        """Test that updating a platform default role from root scope to tenant scope updates the parent relationship."""
+        platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+        platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
 
         # Create a platform default role with a permission that yields ROOT scope
         role = self.given_v1_system_role(
-            "update_platform_role",
-            permissions=["app1:workspace:admin"],
+            "update_platform_role_root_to_tenant",
+            permissions=["inventory:*:*"],
             platform_default=True,
         )
 
-        initial_tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
-        self.assertEqual(len(initial_tuples), 2)
-
-        # Update role permissions to a permission that gives DEFAULT scope
-        dual_write_handler = SeedingRelationApiDualWriteHandler(
-            role=role, replicator=InMemoryRelationReplicator(self.tuples)
-        )
-        dual_write_handler.prepare_for_update()
-        role = self.fixture.update_custom_role(
-            role,
-            resource_access=self.fixture.workspace_access(default=["inventory:hosts:read"]),
-        )
-        dual_write_handler.replicate_update_system_role()
-
-        # After update, relationship should switch to the platform default policy UUID
-        updated_tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role", platform_default),
-                relation("child"),
-                subject("rbac", "role", str(role.uuid)),
-            )
-        )
-        self.assertEqual(len(updated_tuples), 1)
-
-    def test_updating_admin_role_root_to_default_relationship(self):
-        """Test that updating a platform default role changes its parent relationship appropriately."""
-        platform_default_group, admin_default_group = seed_group()
-        admin_default = str(admin_default_group.policies.get().uuid)
-
-        # Create a platform default role with a permission that yields ROOT scope
-        role = self.given_v1_system_role(
-            "update_platform_role",
-            permissions=["app1:workspace:admin"],
-            admin_default=True,
-        )
-
-        initial_tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
-        self.assertEqual(len(initial_tuples), 2)
-
-        # Update role permissions to a permission that gives DEFAULT scope
-        dual_write_handler = SeedingRelationApiDualWriteHandler(
-            role=role, replicator=InMemoryRelationReplicator(self.tuples)
-        )
-        dual_write_handler.prepare_for_update()
-        role = self.fixture.update_custom_role(
-            role,
-            resource_access=self.fixture.workspace_access(default=["inventory:hosts:read"]),
-        )
-        dual_write_handler.replicate_update_system_role()
-
-        # After update, relationship should switch to the platform default policy UUID
-        updated_tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role", admin_default),
-                relation("child"),
-                subject("rbac", "role", str(role.uuid)),
-            )
-        )
-        self.assertEqual(len(updated_tuples), 1)
-
-    def test_updating_platform_role_default_to_root_relationship(self):
-        """Test that updating a platform default role from default scope to root scope updates the parent relationship accordingly."""
-        # Seed the groups and get the platform default policy UUID
-        platform_default_group, admin_default_group = seed_group()
-        platform_default = str(platform_default_group.policies.get().uuid)
-
-        # Create a platform default role with a permission that yields DEFAULT scope
-        role = self.given_v1_system_role(
-            "update_platform_role_flip", permissions=["inventory:hosts:read"], platform_default=True
-        )
-
-        # Initially, the role's highest scope should be DEFAULT, so the parent is the default platform policy
+        # Initially, parent should be the platform root role
         initial_tuples = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role", platform_default), relation("child"), subject("rbac", "role", str(role.uuid))
+                resource("rbac", "role", platform_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
             )
         )
         self.assertEqual(len(initial_tuples), 1)
-
-        # Now update the role with a permission that yields ROOT scope
+        # Prepare for update
         dual_write_handler = SeedingRelationApiDualWriteHandler(
             role=role, replicator=InMemoryRelationReplicator(self.tuples)
         )
         dual_write_handler.prepare_for_update()
+        role.admin_default = False
+        # Update role with a permission that yields TENANT scope
         role = self.fixture.update_custom_role(
-            role, resource_access=self.fixture.workspace_access(default=["app1:workspace:admin"])
+            role,
+            resource_access=self.fixture.workspace_access(tenant_scope_permissions=["app1:organization:admin"]),
         )
         dual_write_handler.replicate_update_system_role()
 
-        # After update, the role's highest scope should be ROOT, so the parent relationship should
-        # use SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
-        updated_tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
-        self.assertEqual(len(updated_tuples), 2)
-
-    def test_updating_admin_role_default_to_root_relationship(self):
-        """Test that updating a platform default role from default scope to root scope updates the parent relationship accordingly."""
-        # Seed the groups and get the platform default policy UUID
-        platform_default_group, admin_default_group = seed_group()
-        admin_default = str(admin_default_group.policies.get().uuid)
-
-        # Create a platform default role with a permission that yields DEFAULT scope
-        # 'inventory:hosts:read' is assumed not to be in ROOT_SCOPE_PERMISSIONS
-        role = self.given_v1_system_role(
-            "update_platform_role_flip",
-            permissions=["inventory:hosts:read"],
-            admin_default=True,
-        )
-
-        # Initially, the role's highest scope should be DEFAULT, so the parent is the default platform policy
-        initial_tuples = self.tuples.find_tuples(
+        # After update, parent should be the platform tenant role
+        updated_tuples = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role", admin_default),
+                resource("rbac", "role", platform_tenant_uuid),
                 relation("child"),
                 subject("rbac", "role", str(role.uuid)),
             )
         )
-        self.assertEqual(len(initial_tuples), 2)
+        self.assertEqual(len(updated_tuples), 1)
+        deleted_tuple = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(deleted_tuple), 0)
 
-        # Now update the role with a permission that yields ROOT scope
+    @override_settings(
+        TENANT_SCOPE_PERMISSIONS="app1:*:*",
+        SYSTEM_DEFAULT_TENANT_ROLE_UUID="tenant-policy-uuid",
+    )
+    def test_updating_platform_role_default_to_tenant_relationship(self):
+        """Test that updating a platform default role from default scope to tenant scope updates the parent relationship."""
+        platform_default_group, admin_default_group = seed_group()
+        platform_default_uuid = str(platform_default_group.policies.get().uuid)
+        platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+
+        # Create a platform default role with a permission that yields DEFAULT scope
+        role = self.given_v1_system_role(
+            "update_platform_role_default_to_tenant",
+            permissions=["inventory:hosts:read"],
+            platform_default=True,
+        )
+
+        # Initially, parent should be the platform default role
+        initial_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(initial_tuples), 1)
+        # Prepare for update
         dual_write_handler = SeedingRelationApiDualWriteHandler(
             role=role, replicator=InMemoryRelationReplicator(self.tuples)
         )
         dual_write_handler.prepare_for_update()
+
+        # Update role with a permission that yields TENANT scope
         role = self.fixture.update_custom_role(
             role,
-            resource_access=self.fixture.workspace_access(default=["app1:workspace:admin"]),
+            resource_access=self.fixture.workspace_access(tenant_scope_permissions=["app1:*:*"]),
         )
         dual_write_handler.replicate_update_system_role()
 
-        # After update, the role's highest scope should be ROOT, so the parent relationship should
-        updated_tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
-        print("updated_tuples", updated_tuples)
-        self.assertEqual(len(updated_tuples), 2)
+        # After update, parent should be the platform tenant role
+        updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_tenant_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(updated_tuples), 1)
+        deleted_tuple = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(deleted_tuple), 0)
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="root-policy-uuid",
+    )
+    def test_updating_platform_role_default_to_root_relationship(self):
+        """Test that updating a platform default role from default scope to root scope updates the parent relationship."""
+        platform_default_group, admin_default_group = seed_group()
+        platform_default_uuid = str(platform_default_group.policies.get().uuid)
+        platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+
+        # Create a platform default role with a permission that yields DEFAULT scope
+        role = self.given_v1_system_role(
+            "update_platform_role_default_to_root",
+            permissions=["app1:hosts:read"],
+            platform_default=True,
+        )
+
+        # Initially, parent should be the platform default role
+        initial_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(initial_tuples), 1)
+        # Prepare for update
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.prepare_for_update()
+
+        # Update role with a permission that yields ROOT scope
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(root_scope_permission=["inventory:*:*"]),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        # After update, parent should be the platform root role
+        updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(updated_tuples), 1)
+        deleted_tuple = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(deleted_tuple), 0)
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        TENANT_SCOPE_PERMISSIONS="app1:*:*",
+        SYSTEM_ADMIN_WORKSPACE_ROLE_UUID="root-policy-uuid",
+        SYSTEM_ADMIN_TENANT_ROLE_UUID="tenant-policy-uuid",
+    )
+    def test_updating_admin_role_root_to_tenant_relationship(self):
+        """Test that updating a admin default role from root scope to tenant scope updates the parent relationship."""
+        platform_default_group, admin_default_group = seed_group()
+        admin_root_uuid = settings.SYSTEM_ADMIN_WORKSPACE_ROLE_UUID
+        admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+        # Create a admin default role with a permission that yields ROOT scope
+        role = self.given_v1_system_role(
+            "update_admin_root_to_tenant",
+            permissions=["inventory:*:*"],
+            platform_default=True,
+            admin_default=True,
+        )
+
+        # Initially, parent should be the admin root role
+        initial_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(initial_tuples), 1)
+        # Prepare for update
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.prepare_for_update()
+
+        # Update role with a permission that yields TENANT scope only
+        role.admin_default = False
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(tenant_scope_permissions=["app1:organization:admin"]),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        # After update, parent should be the admin tenant role
+        updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_tenant_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(updated_tuples), 1)
+        deleted_tuple = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(deleted_tuple), 0)
+
+    @override_settings(
+        TENANT_SCOPE_PERMISSIONS="app1:*:*",
+        SYSTEM_ADMIN_TENANT_ROLE_UUID="tenant-policy-uuid",
+    )
+    def test_updating_admin_role_default_to_tenant_relationship(self):
+        """Test that updating a admin default role from default scope to tenant scope updates the parent relationship."""
+        platform_default_group, admin_default_group = seed_group()
+        admin_default_uuid = str(admin_default_group.policies.get().uuid)
+        admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+        # Create a admin default role with a permission that yields DEFAULT scope
+        role = self.given_v1_system_role(
+            "update_admin_default_role_to_tenant",
+            permissions=["inventory:hosts:read"],  # Assumed to be in DEFAULT scope
+            admin_default=True,
+        )
+
+        # Initially, parent should be the admin default role
+        initial_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(initial_tuples), 1)
+        # Prepare for update
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.prepare_for_update()
+
+        # Update role with a permission that yields TENANT scope
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(tenant_scope_permissions=["app1:*:*"]),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        # After update, parent should be the admin tenant role
+        updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_tenant_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(updated_tuples), 1)
+        deleted_tuple = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(deleted_tuple), 0)
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="root-policy-uuid",
+    )
+    def test_updating_admin_role_default_to_root_relationship(self):
+        """Test that updating a admin default role from default scope to root scope updates the parent relationship."""
+        platform_default_group, admin_default_group = seed_group()
+        admin_default_uuid = str(admin_default_group.policies.get().uuid)
+        admin_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+
+        # Create a admin default role with a permission that yields DEFAULT scope
+        role = self.given_v1_system_role(
+            "update_platform_role_default_to_tenant",
+            permissions=["app1:hosts:read"],
+            admin_default=True,
+        )
+
+        # Initially, parent should be the admin default role
+        initial_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(initial_tuples), 1)
+        # Prepare for update
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.prepare_for_update()
+        # Update role with a permission that yields ROOT scope
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(root_scope_permission=["inventory:*:*"]),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        # After update, parent should be the admin root role
+        updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(updated_tuples), 1)
+
+        deleted_tuple = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_default_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(deleted_tuple), 0)
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="root-policy-uuid",
+        SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="root-admin-policy-uuid",
+    )
+    def test_both_platform_admin_root_relationship(self):
+        """Test that updating both platform and admin default role from default scope to root scope updates the parent relationship."""
+        platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+        admin_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+
+        role = self.given_v1_system_role("r1", ["app1:hosts:read"], platform_default=True, admin_default=True)
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEqual(len(tuples), 3)
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.prepare_for_update()
+        # Update role with a permission that yields ROOT scope
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(
+                root_scope_permission=["inventory:*:*"],
+            ),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        platform_updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(platform_updated_tuples), 1)
+
+        admin_updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(admin_updated_tuples), 1)
+
+    @override_settings(
+        TENANT_SCOPE_PERMISSIONS="app1:*:*",
+        SYSTEM_ADMIN_TENANT_ROLE_UUID="tenant-admin-policy-uuid",
+        SYSTEM_DEFAULT_TENANT_ROLE_UUID="tenant-policy-uuid",
+    )
+    def test_both_platform_admin_tenant_relationship(self):
+        """Test that updating both platform and admin default role from default scope to tenant scope updates the parent relationship."""
+        platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+        admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+        role = self.given_v1_system_role("r1", ["app1:hosts:read"], platform_default=True, admin_default=True)
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEqual(len(tuples), 3)
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role=role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.prepare_for_update()
+        # Update role with a permission that yields tenant scope
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self.fixture.workspace_access(
+                root_scope_permission=["app1:*:*"],
+            ),
+        )
+        dual_write_handler.replicate_update_system_role()
+
+        platform_updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_tenant_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(platform_updated_tuples), 1)
+
+        admin_updated_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_tenant_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(admin_updated_tuples), 1)
 
 
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
