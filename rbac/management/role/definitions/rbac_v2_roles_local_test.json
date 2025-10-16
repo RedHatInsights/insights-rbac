@@ -1,0 +1,143 @@
+{
+    "roles": [
+        {
+            "name": "Platform Administrator",
+            "description": "Platform-level administrator role with full access across all services. Can delegate access through seeded roles.",
+            "type": "platform",
+            "permissions": [
+                "rbac:*:*",
+                "inventory:*:*",
+                "approval:*:*"
+            ],
+            "children": [
+                "Inventory Administrator",
+                "Approval Administrator",
+                "User Access Administrator"
+            ]
+        },
+        {
+            "name": "Platform Viewer",
+            "description": "Platform-level read-only role with view access across all services.",
+            "type": "platform",
+            "permissions": [
+                "rbac:principal:read",
+                "rbac:group:read",
+                "rbac:role:read",
+                "inventory:hosts:read",
+                "inventory:groups:read",
+                "approval:requests:read"
+            ],
+            "children": [
+                "Inventory Viewer",
+                "Approval Viewer"
+            ]
+        },
+        {
+            "name": "Inventory Administrator",
+            "description": "Full administrative access to inventory management including hosts and groups.",
+            "type": "seeded",
+            "permissions": [
+                "inventory:*:*",
+                "inventory:hosts:read",
+                "inventory:hosts:write",
+                "inventory:groups:read",
+                "inventory:groups:write"
+            ]
+        },
+        {
+            "name": "Inventory Viewer",
+            "description": "Read-only access to inventory hosts and groups.",
+            "type": "seeded",
+            "permissions": [
+                "inventory:hosts:read",
+                "inventory:groups:read"
+            ]
+        },
+        {
+            "name": "Inventory Host Manager",
+            "description": "Manage inventory hosts but not groups.",
+            "type": "seeded",
+            "permissions": [
+                "inventory:hosts:read",
+                "inventory:hosts:write"
+            ]
+        },
+        {
+            "name": "Approval Administrator",
+            "description": "Full administrative access to approval workflows, requests, and templates.",
+            "type": "seeded",
+            "permissions": [
+                "approval:workflows:create",
+                "approval:workflows:read",
+                "approval:workflows:update",
+                "approval:workflows:delete",
+                "approval:workflows:link",
+                "approval:workflows:unlink",
+                "approval:requests:create",
+                "approval:requests:read",
+                "approval:actions:create",
+                "approval:actions:read",
+                "approval:templates:read"
+            ]
+        },
+        {
+            "name": "Approval Viewer",
+            "description": "Read-only access to approval requests and workflows.",
+            "type": "seeded",
+            "permissions": [
+                "approval:requests:read",
+                "approval:workflows:read",
+                "approval:templates:read"
+            ]
+        },
+        {
+            "name": "Approval Request Manager",
+            "description": "Create and view approval requests.",
+            "type": "seeded",
+            "permissions": [
+                "approval:requests:create",
+                "approval:requests:read",
+                "approval:actions:create",
+                "approval:actions:read"
+            ]
+        },
+        {
+            "name": "User Access Administrator",
+            "description": "Full access to configure and manage user access to services. Can manage roles, groups, and principals.",
+            "type": "seeded",
+            "permissions": [
+                "rbac:*:*"
+            ]
+        },
+        {
+            "name": "User Access Group Manager",
+            "description": "Manage user access groups and group membership.",
+            "type": "seeded",
+            "permissions": [
+                "rbac:group:read",
+                "rbac:group:write",
+                "rbac:principal:read"
+            ]
+        },
+        {
+            "name": "User Access Role Manager",
+            "description": "Manage user access roles and role assignments.",
+            "type": "seeded",
+            "permissions": [
+                "rbac:role:read",
+                "rbac:role:write",
+                "rbac:principal:read"
+            ]
+        },
+        {
+            "name": "User Access Viewer",
+            "description": "Read-only access to user access configuration including roles, groups, and principals.",
+            "type": "seeded",
+            "permissions": [
+                "rbac:principal:read",
+                "rbac:group:read",
+                "rbac:role:read"
+            ]
+        }
+    ]
+}

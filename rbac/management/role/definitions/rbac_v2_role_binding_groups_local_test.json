@@ -1,0 +1,76 @@
+{
+  "role_binding_groups": [
+    {
+      "binding": "platform-admin-default-workspace",
+      "groups": [
+        "Default admin access"
+      ]
+    },
+    {
+      "binding": "platform-viewer-default-workspace",
+      "groups": [
+        "Default access"
+      ]
+    },
+    {
+      "binding": "inventory-admin-inventory-workspace",
+      "groups": [
+        "Default admin access"
+      ]
+    },
+    {
+      "binding": "inventory-viewer-inventory-workspace",
+      "groups": [
+        "Default access"
+      ]
+    },
+    {
+      "binding": "inventory-host-manager-inventory-workspace",
+      "groups": [
+        "Default access"
+      ]
+    },
+    {
+      "binding": "approval-admin-approval-workspace",
+      "groups": [
+        "Default admin access"
+      ]
+    },
+    {
+      "binding": "approval-viewer-approval-workspace",
+      "groups": [
+        "Default access"
+      ]
+    },
+    {
+      "binding": "approval-request-manager-approval-workspace",
+      "groups": [
+        "Default access"
+      ]
+    },
+    {
+      "binding": "user-access-admin-default-workspace",
+      "groups": [
+        "Default admin access"
+      ]
+    },
+    {
+      "binding": "user-access-group-manager-default-workspace",
+      "groups": [
+        "Default admin access"
+      ]
+    },
+    {
+      "binding": "user-access-role-manager-default-workspace",
+      "groups": [
+        "Default admin access"
+      ]
+    },
+    {
+      "binding": "user-access-viewer-default-workspace",
+      "groups": [
+        "Default access"
+      ]
+    }
+  ]
+}
