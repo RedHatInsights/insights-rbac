@@ -303,18 +303,17 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
         if self._can_use_non_default_scope():
             # If the role could be bound to a non-default scope, we have to handle two cases:
-            # * An existing role binding that has not been migrated. Here, the role would still be bound to the
+            # * An existing role binding that has not been migrated. Here, the role would still be bound in the
             #   default workspace, and we have to remove it from there.
             # * A role binding that has been migrated, or a role binding that was added after scope started being
-            #   respected. Here, we have ot remove it from the correct scope.
+            #   respected. Here, we have to remove it from the correct scope.
             # We could even have both, if a new role binding is created while scope is being respected but before the
             # old role bindings have been pruned. We have no a priori way to distinguish between these two cases,
-            # so we always have to check both.
+            # so we always have to check at least the default workspace and the correct resource.
             #
-            # Note that this does not handle the case where a role changes from a non-default scope to a different
-            # scope. At time of writing (2025-10-06), this is expected to be handled during seeding for system roles
-            # (which are currently the only roles that can be bound in non-default scope).
-            for scope in {Scope.DEFAULT, self._resource_service.scope_for_role(role)}:
+            # In order to handle both cases (as well as the case where the scope of the role has changed since it was
+            # assigned), always attempt to remove the role from all scopes.
+            for scope in Scope:
                 do_update(scope)
         else:
             do_update(Scope.DEFAULT)

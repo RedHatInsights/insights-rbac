@@ -861,10 +861,12 @@ class DualWriteGroupTestCase(DualWriteTestCase):
     def test_custom_default_group_remove_scope_changed(self):
         """Test that removing a role with changed scope from a custom default group removes the old relations."""
         Role.objects.public_tenant_only().delete()
-        platform_role = self.given_v1_system_role("platform", ["root:resource:verb"], platform_default=True)
+        platform_role = self.given_v1_system_role(
+            "platform", ["app:resource:verb", "other_app:resource:verb"], platform_default=True
+        )
 
-        # Assume that the custom default group was created before scope was considered.
-        with override_settings(ROOT_SCOPE_PERMISSIONS=""):
+        # Assume that the custom default group was created while the role had root scope.
+        with override_settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
             seed_group()
             custom_group = self.given_custom_default_group()
 
@@ -873,13 +875,33 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         role_ids = [str(platform_role.uuid)]
         group_ids = [str(custom_group.uuid)]
 
-        self.expect_1_role_binding_to_workspace(
+        # A binding to the default workspace should not have been created.
+        self.expect_role_bindings_to_workspace(
+            num=0,
             workspace=self.default_workspace(),
             for_v2_roles=role_ids,
             for_groups=group_ids,
         )
 
         # A binding to the root workspace should not have been created.
+        self.expect_1_role_binding_to_workspace(
+            workspace=self.root_workspace(),
+            for_v2_roles=role_ids,
+            for_groups=group_ids,
+        )
+
+        self.expect_role_bindings_to_tenant(
+            num=0,
+            org_id=self.tenant.org_id,
+            for_v2_roles=role_ids,
+            for_groups=group_ids,
+        )
+
+        # Remove the role while it has tenant scope.
+        with override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="app:*:*"):
+            self.given_roles_unassigned_from_group(custom_group, [platform_role])
+
+        # There should still be no binding to the default workspace.
         self.expect_role_bindings_to_workspace(
             num=0,
             workspace=self.root_workspace(),
@@ -887,11 +909,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             for_groups=group_ids,
         )
 
-        # Remove the role while it has root scope.
-        with override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*"):
-            self.given_roles_unassigned_from_group(custom_group, [platform_role])
-
-        # The binding to the default workspace should have been removed.
+        # The binding to the root workspace should have been removed.
         self.expect_role_bindings_to_workspace(
             num=0,
             workspace=self.default_workspace(),
@@ -899,10 +917,10 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             for_groups=group_ids,
         )
 
-        # There should still be no binding to the root workspace.
-        self.expect_role_bindings_to_workspace(
+        # There should still be no binding to the tenant.
+        self.expect_role_bindings_to_tenant(
             num=0,
-            workspace=self.root_workspace(),
+            org_id=self.tenant.org_id,
             for_v2_roles=role_ids,
             for_groups=group_ids,
         )
