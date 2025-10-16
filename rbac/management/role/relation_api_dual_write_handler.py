@@ -151,7 +151,9 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         # create the appropriate relationship
         if self.role.admin_default:
             # parent_uuid = admin_parent_for_scope(highest_scope)
-            parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, highest_scope, GlobalPolicyIdService)
+            parent_uuid = platform_v2_role_uuid_for(
+                DefaultAccessType.ADMIN, highest_scope, GlobalPolicyIdService.shared()
+            )
             if parent_uuid:
                 create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
                 relations.append(create_parent_child_relationship)
@@ -161,7 +163,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             parent_uuid = platform_v2_role_uuid_for(
                 DefaultAccessType.USER,
                 highest_scope,
-                GlobalPolicyIdService,
+                GlobalPolicyIdService.shared(),
             )
             if parent_uuid:
                 create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
