@@ -32,7 +32,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleBinding, RoleV2, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleBinding, RoleBindingGroup, RoleV2, SeededRoleV2
 
 
 from api.models import Tenant
@@ -331,3 +331,67 @@ def seed_v2_roles():
             role_list = data.get("roles")
             file_role_ids = _update_or_create_roles(role_list)
             current_role_ids.update(file_role_ids)
+
+
+def _make_role_binding(data):
+    """Create the role binding object in the database."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    name = data.get("name")
+    role_name = data.get("role")
+    resource_type = data.get("resource_type")
+    resource_id = data.get("resource_id")
+
+    # Get the V2 role to add to role binding
+    try:
+        role = RoleV2.objects.get(name=role_name, tenant=public_tenant)
+    except RoleV2.DoesNotExist:
+        logger.error(f"Role '{role_name}' not found for role binding '{name}'. Skipping.")
+        return None
+
+    # Create the role binding object
+    role_binding, created = RoleBinding.objects.get_or_create(
+        role=role, resource_type=resource_type, resource_id=resource_id, tenant=public_tenant
+    )
+
+    if created:
+        logger.info("Created role binding '%s': %s -> %s/%s", name, role.name, resource_type, resource_id)
+    else:
+        logger.info("Role binding '%s' already exists: %s -> %s/%s", name, role.name, resource_type, resource_id)
+
+    return role_binding
+
+
+def _update_or_create_role_bindings(bindings):
+    """Update or create role bindings from list."""
+    current_binding_ids = set()
+    binding_name_map = {}
+    for binding_data in bindings:
+        try:
+            role_binding = _make_role_binding(binding_data)
+            if role_binding:
+                current_binding_ids.add(role_binding.id)
+                binding_name_map[binding_data.get("name")] = role_binding
+        except Exception as e:
+            logger.error(f"Failed to update or create role binding: {binding_data.get('name')} with error: {e}")
+    return current_binding_ids, binding_name_map
+
+
+def seed_role_bindings():
+    """Update or create V2 role bindings types."""
+    role_bindings_file = os.path.join(
+        settings.BASE_DIR, "management", "role", "definitions", "rbac_v2_role_bindings_local_test.json"
+    )
+    if not os.path.isfile(role_bindings_file):
+        raise FileNotFoundError(f"Role bindings file does not exist: {role_bindings_file}")
+
+    current_role_bindings = set()
+    binding_name_map = {}
+
+    with transaction.atomic():
+        with open(role_bindings_file) as json_file:
+            data = json.load(json_file)
+            role_bindings_list = data.get("role_bindings")
+            file_role_bindings, binding_name_map = _update_or_create_role_bindings(role_bindings_list)
+            current_role_bindings.update(file_role_bindings)
+
+    return binding_name_map

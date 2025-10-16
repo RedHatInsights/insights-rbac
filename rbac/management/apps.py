@@ -20,12 +20,20 @@ import sys
 
 from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
-from management.seeds import group_seeding, permission_seeding, role_seeding, v2_role_seeding, workspace_seeding
+from management.seeds import (
+    group_seeding,
+    permission_seeding,
+    role_binding_seeding,
+    role_seeding,
+    v2_role_seeding,
+    workspace_seeding,
+)
 
 from rbac.settings import (
     GROUP_SEEDING_ENABLED,
     PERMISSION_SEEDING_ENABLED,
     ROLE_SEEDING_ENABLED,
+    V2_ROLE_BINDING_SEEDING_ENABLED,
     V2_ROLE_SEEDING_ENABLED,
     WORKSPACE_SEEDING_ENABLED,
 )
@@ -54,6 +62,8 @@ class ManagementConfig(AppConfig):
                 workspace_seeding()
             if V2_ROLE_SEEDING_ENABLED:
                 v2_role_seeding()
+            if V2_ROLE_BINDING_SEEDING_ENABLED:
+                role_binding_seeding()
         except (OperationalError, ProgrammingError) as op_error:
             if "no such table" in str(op_error) or "does not exist" in str(op_error):
                 # skip this if we haven't created tables yet.

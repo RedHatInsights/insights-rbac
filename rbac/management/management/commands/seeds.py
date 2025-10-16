@@ -18,7 +18,14 @@
 import logging
 
 from django.core.management.base import BaseCommand
-from management.seeds import group_seeding, permission_seeding, role_seeding, v2_role_seeding, workspace_seeding
+from management.seeds import (
+    group_seeding,
+    permission_seeding,
+    role_binding_seeding,
+    role_seeding,
+    v2_role_seeding,
+    workspace_seeding,
+)
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -35,6 +42,7 @@ class Command(BaseCommand):
         parser.add_argument("--groups", action="store_true")
         parser.add_argument("--workspaces", action="store_true")
         parser.add_argument("--v2_roles", action="store_true")
+        parser.add_argument("--role_bindings", action="store_true")
         parser.add_argument("--force-create-relationships", action="store_true")
 
     def handle(self, *args, **options):
@@ -56,6 +64,11 @@ class Command(BaseCommand):
             logger.info("*** Seeding V2 Roles... ***")
             v2_role_seeding()
             logger.info("*** V2 Roles seeding completed. ***\n")
+
+        if options["role_bindings"] or seed_all:
+            logger.info("*** Seeding V2 Role bindings... ***")
+            role_binding_seeding()
+            logger.info("*** V2 Role bindings seeding completed. ***\n")
 
         if options["groups"] or seed_all:
             logger.info("*** Seeding groups... ***")

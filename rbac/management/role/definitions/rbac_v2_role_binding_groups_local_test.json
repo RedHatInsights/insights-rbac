@@ -1,0 +1,83 @@
+{
+  "role_binding_groups": [
+    {
+      "binding": "platform-admin-default-workspace",
+      "groups": [
+        "Platform Administrators",
+        "System Administrators"
+      ]
+    },
+    {
+      "binding": "platform-viewer-default-workspace",
+      "groups": [
+        "Platform Viewers",
+        "All Users"
+      ]
+    },
+    {
+      "binding": "inventory-admin-inventory-workspace",
+      "groups": [
+        "Inventory Administrators",
+        "System Administrators"
+      ]
+    },
+    {
+      "binding": "inventory-viewer-inventory-workspace",
+      "groups": [
+        "Inventory Viewers",
+        "All Users"
+      ]
+    },
+    {
+      "binding": "inventory-host-manager-inventory-workspace",
+      "groups": [
+        "Inventory Host Managers"
+      ]
+    },
+    {
+      "binding": "approval-admin-approval-workspace",
+      "groups": [
+        "Approval Administrators",
+        "System Administrators"
+      ]
+    },
+    {
+      "binding": "approval-viewer-approval-workspace",
+      "groups": [
+        "Approval Viewers"
+      ]
+    },
+    {
+      "binding": "approval-request-manager-approval-workspace",
+      "groups": [
+        "Approval Request Managers"
+      ]
+    },
+    {
+      "binding": "user-access-admin-default-workspace",
+      "groups": [
+        "RBAC Administrators",
+        "System Administrators"
+      ]
+    },
+    {
+      "binding": "user-access-group-manager-default-workspace",
+      "groups": [
+        "RBAC Group Managers"
+      ]
+    },
+    {
+      "binding": "user-access-role-manager-default-workspace",
+      "groups": [
+        "RBAC Role Managers"
+      ]
+    },
+    {
+      "binding": "user-access-viewer-default-workspace",
+      "groups": [
+        "RBAC Viewers",
+        "All Users"
+      ]
+    }
+  ]
+}

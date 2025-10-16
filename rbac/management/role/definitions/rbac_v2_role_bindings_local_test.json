@@ -1,0 +1,76 @@
+{
+  "role_bindings": [
+    {
+      "name": "platform-admin-default-workspace",
+      "role": "Platform Administrator",
+      "resource_type": "workspace",
+      "resource_id": "default"
+    },
+    {
+      "name": "platform-viewer-default-workspace",
+      "role": "Platform Viewer",
+      "resource_type": "workspace",
+      "resource_id": "default"
+    },
+    {
+      "name": "inventory-admin-inventory-workspace",
+      "role": "Inventory Administrator",
+      "resource_type": "workspace",
+      "resource_id": "inventory-workspace"
+    },
+    {
+      "name": "inventory-viewer-inventory-workspace",
+      "role": "Inventory Viewer",
+      "resource_type": "workspace",
+      "resource_id": "inventory-workspace"
+    },
+    {
+      "name": "inventory-host-manager-inventory-workspace",
+      "role": "Inventory Host Manager",
+      "resource_type": "workspace",
+      "resource_id": "inventory-workspace"
+    },
+    {
+      "name": "approval-admin-approval-workspace",
+      "role": "Approval Administrator",
+      "resource_type": "workspace",
+      "resource_id": "approval-workspace"
+    },
+    {
+      "name": "approval-viewer-approval-workspace",
+      "role": "Approval Viewer",
+      "resource_type": "workspace",
+      "resource_id": "approval-workspace"
+    },
+    {
+      "name": "approval-request-manager-approval-workspace",
+      "role": "Approval Request Manager",
+      "resource_type": "workspace",
+      "resource_id": "approval-workspace"
+    },
+    {
+      "name": "user-access-admin-default-workspace",
+      "role": "User Access Administrator",
+      "resource_type": "workspace",
+      "resource_id": "default"
+    },
+    {
+      "name": "user-access-group-manager-default-workspace",
+      "role": "User Access Group Manager",
+      "resource_type": "workspace",
+      "resource_id": "default"
+    },
+    {
+      "name": "user-access-role-manager-default-workspace",
+      "role": "User Access Role Manager",
+      "resource_type": "workspace",
+      "resource_id": "default"
+    },
+    {
+      "name": "user-access-viewer-default-workspace",
+      "role": "User Access Viewer",
+      "resource_type": "workspace",
+      "resource_id": "default"
+    }
+  ]
+}
