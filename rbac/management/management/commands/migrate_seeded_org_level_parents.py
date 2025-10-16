@@ -30,20 +30,10 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.platform import platform_v2_role_uuid_for
+from management.role.relations import role_child_relationship
 from management.tenant_mapping.model import DefaultAccessType
-from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-def _child_relationship(parent_uuid: str, child_uuid: str) -> Relationship:
-    return create_relationship(
-        resource_name=("rbac", "role"),
-        resource_id=parent_uuid,
-        subject_name=("rbac", "role"),
-        subject_id=child_uuid,
-        relation="child",
-    )
 
 
 class Command(BaseCommand):
@@ -73,7 +63,6 @@ class Command(BaseCommand):
         policy_service = GlobalPolicyIdService()
 
         for role in Role.objects.public_tenant_only().filter(Q(platform_default=True) | Q(admin_default=True)):
-            role_uuid = str(role.uuid)
             target_scope = resource_service.highest_scope_for_permissions(
                 [a.permission.permission for a in role.access.all()]
             )
@@ -84,11 +73,9 @@ class Command(BaseCommand):
             for access_type in DefaultAccessType:
                 for scope in Scope:
                     relations_to_remove.append(
-                        _child_relationship(
-                            parent_uuid=str(
-                                platform_v2_role_uuid_for(access_type, scope, policy_service=policy_service)
-                            ),
-                            child_uuid=role_uuid,
+                        role_child_relationship(
+                            parent_uuid=platform_v2_role_uuid_for(access_type, scope, policy_service=policy_service),
+                            child_uuid=role.uuid,
                         )
                     )
 
@@ -98,13 +85,13 @@ class Command(BaseCommand):
                 )
 
                 relations_to_add.append(
-                    _child_relationship(
-                        parent_uuid=str(
-                            platform_v2_role_uuid_for(
-                                DefaultAccessType.USER, target_scope, policy_service=policy_service
-                            )
+                    role_child_relationship(
+                        parent_uuid=platform_v2_role_uuid_for(
+                            DefaultAccessType.USER,
+                            target_scope,
+                            policy_service=policy_service,
                         ),
-                        child_uuid=role_uuid,
+                        child_uuid=role.uuid,
                     )
                 )
 
@@ -114,13 +101,13 @@ class Command(BaseCommand):
                 )
 
                 relations_to_add.append(
-                    _child_relationship(
-                        parent_uuid=str(
-                            platform_v2_role_uuid_for(
-                                DefaultAccessType.ADMIN, target_scope, policy_service=policy_service
-                            )
+                    role_child_relationship(
+                        parent_uuid=platform_v2_role_uuid_for(
+                            DefaultAccessType.ADMIN,
+                            target_scope,
+                            policy_service=policy_service,
                         ),
-                        child_uuid=role_uuid,
+                        child_uuid=role.uuid,
                     )
                 )
 
