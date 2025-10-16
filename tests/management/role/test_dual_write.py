@@ -1125,20 +1125,20 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="inventory:*:*",
         TENANT_SCOPE_PERMISSIONS="app1:*:*",
-        SYSTEM_ADMIN_WORKSPACE_ROLE_UUID="root-policy-uuid",
+        SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="root-policy-uuid",
         SYSTEM_ADMIN_TENANT_ROLE_UUID="tenant-policy-uuid",
     )
     def test_updating_admin_role_root_to_tenant_relationship(self):
         """Test that updating a admin default role from root scope to tenant scope updates the parent relationship."""
-        platform_default_group, admin_default_group = seed_group()
-        admin_root_uuid = settings.SYSTEM_ADMIN_WORKSPACE_ROLE_UUID
+        # platform_default_group, admin_default_group = seed_group()
+        # admin_default_uuid = str(admin_default_group.policies.get().uuid)
+        admin_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
         admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
 
         # Create a admin default role with a permission that yields ROOT scope
         role = self.given_v1_system_role(
             "update_admin_root_to_tenant",
             permissions=["inventory:*:*"],
-            platform_default=True,
             admin_default=True,
         )
 
@@ -1158,7 +1158,6 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         dual_write_handler.prepare_for_update()
 
         # Update role with a permission that yields TENANT scope only
-        role.admin_default = False
         role = self.fixture.update_custom_role(
             role,
             resource_access=self.fixture.workspace_access(tenant_scope_permissions=["app1:organization:admin"]),
