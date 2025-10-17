@@ -15,3 +15,4 @@ jobs:
           quay_repo: redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac
           commit_sha: ${{ github.sha }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          delay_minutes: 5

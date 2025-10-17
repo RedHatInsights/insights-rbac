@@ -4,9 +4,10 @@ from typing import Callable, List, Optional
 from uuid import UUID
 
 from django.conf import settings
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, QuerySet
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     PartitionKey,
@@ -14,7 +15,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.tenant_mapping.model import TenantMapping, logger
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
+from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
 from management.workspace.model import Workspace
@@ -37,8 +39,7 @@ class V2TenantBootstrapService:
     _replicator: RelationReplicator
     _user_domain = settings.PRINCIPAL_USER_DOMAIN
     _public_tenant: Optional[Tenant]
-    _platform_default_policy_uuid: Optional[str] = None
-    _admin_default_policy_uuid: Optional[str] = None
+    _policy_service: GlobalPolicyIdService
 
     def __init__(
         self,
@@ -50,6 +51,7 @@ class V2TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
         self._get_user_id = get_user_id if get_user_id else default_get_user_id
+        self._policy_service = GlobalPolicyIdService.shared()
 
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
@@ -324,10 +326,15 @@ class V2TenantBootstrapService:
         root_workspace.save(force_insert=True)
         default_workspace.save(force_insert=True)
 
-        # We do not check for custom default group here.
-        # By this point if there is a custom default group,
-        # a TenantMapping must have already been created.
-        mapping = TenantMapping.objects.create(tenant=tenant)
+        platform_default_groups = self._tenant_default_groups(tenant)
+
+        kwargs = {"tenant": tenant}
+        if platform_default_groups:
+            group_uuid = platform_default_groups[0].uuid
+            logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
+            kwargs["default_group_uuid"] = group_uuid
+
+        mapping = TenantMapping.objects.create(**kwargs)
         relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.id)))
         self._replicator.replicate(
             ReplicationEvent(
@@ -359,20 +366,40 @@ class V2TenantBootstrapService:
             )
         )
 
+    def _query_with_default_groups(self, query_set: QuerySet) -> QuerySet:
+        return query_set.prefetch_related(
+            Prefetch(
+                "group_set",
+                queryset=Group.objects.filter(platform_default=True).order_by(),
+                to_attr="_v2_bootstrap_cached_default_groups",
+            )
+        )
+
+    def _fresh_tenants_with_default_groups(self, tenants: list[Tenant]) -> list[Tenant]:
+        loaded = list(self._query_with_default_groups(Tenant.objects.filter(pk__in=(tenant.pk for tenant in tenants))))
+
+        if len(loaded) != len(tenants):
+            raise AssertionError(
+                f"Tenant set changed concurrently. Expected {len(tenants)} tenants but got {len(loaded)}."
+            )
+
+        return loaded
+
+    def _tenant_default_groups(self, tenant: Tenant) -> list[Group]:
+        default_groups = getattr(tenant, "_v2_bootstrap_cached_default_groups", None)
+
+        if default_groups is None:
+            default_groups = list(Group.objects.filter(tenant=tenant, platform_default=True).order_by())
+            tenant._v2_bootstrap_cached_default_groups = default_groups
+
+        return default_groups
+
     def _get_or_bootstrap_tenants(self, org_ids: set, ready: bool) -> list[BootstrappedTenant]:
         """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
         existing_tenants = {
             tenant.org_id: tenant
-            for tenant in Tenant.objects.filter(org_id__in=org_ids)
-            .select_related("tenant_mapping")
-            .prefetch_related(
-                Prefetch(
-                    "group_set",
-                    queryset=Group.objects.filter(platform_default=True).order_by(),
-                    to_attr="platform_default_groups",
-                )
-            )
+            for tenant in Tenant.objects.filter(org_id__in=org_ids).select_related("tenant_mapping")
         }
 
         # An existing tenant might have been bootstrapped and already has mapping and workspaces
@@ -398,15 +425,17 @@ class V2TenantBootstrapService:
         return bootstrapped_list
 
     def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
-        # Set up workspace hierarchy for Tenant
+        # Set up workspace hierarchy for Tenant.
+        tenants = self._fresh_tenants_with_default_groups(tenants)
         workspaces: list[Workspace] = []
         relationships: list[Relationship] = []
         mappings_to_create: list[TenantMapping] = []
         default_workspace_ids: list[UUID] = []
         for tenant in tenants:
+            platform_default_groups = self._tenant_default_groups(tenant)
             kwargs = {"tenant": tenant}
-            if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
-                group_uuid = tenant.platform_default_groups[0].uuid
+            if platform_default_groups:
+                group_uuid = platform_default_groups[0].uuid
                 logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
                 kwargs["default_group_uuid"] = group_uuid
             mappings_to_create.append(TenantMapping(**kwargs))
@@ -478,40 +507,6 @@ class V2TenantBootstrapService:
             create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"),
         ]
 
-    def _default_binding_tuples(
-        self, default_workspace_id, role_binding_uuid, default_role_uuid, default_group_uuid
-    ) -> List[Relationship]:
-        """
-        Create the tuples used to bootstrap default access for a Workspace.
-
-        Can be used for both default access and admin access as long as the correct arguments are provided.
-        Each of role binding, role, and group must refer to admin or default versions.
-        """
-        return [
-            create_relationship(
-                ("rbac", "workspace"),
-                default_workspace_id,
-                ("rbac", "role_binding"),
-                role_binding_uuid,
-                "binding",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                role_binding_uuid,
-                ("rbac", "role"),
-                default_role_uuid,
-                "role",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                role_binding_uuid,
-                ("rbac", "group"),
-                default_group_uuid,
-                "subject",
-                "member",
-            ),
-        ]
-
     def _bootstrap_default_access(
         self, tenant: Tenant, mapping: TenantMapping, default_workspace_id: str
     ) -> List[Relationship]:
@@ -520,18 +515,6 @@ class V2TenantBootstrapService:
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         """
-        platform_default_role_uuid = self._get_platform_default_policy_uuid()
-        admin_default_role_uuid = self._get_admin_default_policy_uuid()
-
-        if platform_default_role_uuid is None:
-            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
-
-        if admin_default_role_uuid is None:
-            logger.warning("No admin default role found for public tenant. Default access will not be set up.")
-
-        default_user_role_binding_uuid = str(mapping.default_role_binding_uuid)
-        default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
-
         tuples_to_add: List[Relationship] = []
 
         # Add default role binding IFF there is no custom default access for the tenant
@@ -544,32 +527,36 @@ class V2TenantBootstrapService:
         # 2. If tenant mapping does not exist, create it via this same bootstrap process.
         #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
         #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role_uuid and not (
-            hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups
-        ):
-            tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_user_role_binding_uuid,
-                    platform_default_role_uuid,
-                    str(mapping.default_group_uuid),
+        if not self._tenant_default_groups(tenant):
+            try:
+                tuples_to_add.extend(
+                    default_role_binding_tuples(
+                        tenant_mapping=mapping,
+                        target_workspace_uuid=default_workspace_id,
+                        access_type=DefaultAccessType.USER,
+                        policy_service=self._policy_service,
+                    )
                 )
-            )
+            except DefaultGroupNotAvailableError:
+                logger.warning("No platform default role found for public tenant. Default access will not be set up.")
         else:
             logger.info(
                 f"Not setting up default access for tenant with customized default group. org_id={tenant.org_id}"
             )
 
         # Admin role binding is not customizable
-        if admin_default_role_uuid:
+        try:
             tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_admin_role_binding_uuid,
-                    admin_default_role_uuid,
-                    str(mapping.default_admin_group_uuid),
+                default_role_binding_tuples(
+                    tenant_mapping=mapping,
+                    target_workspace_uuid=default_workspace_id,
+                    access_type=DefaultAccessType.ADMIN,
+                    policy_service=self._policy_service,
                 )
             )
+        except DefaultGroupNotAvailableError:
+            logger.warning("No admin default role found for public tenant. Default access will not be set up.")
+
         return tuples_to_add
 
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
@@ -589,24 +576,6 @@ class V2TenantBootstrapService:
         relationships.extend(self._built_in_hierarchy_tuples(default_workspace_id, root_workspace_id, tenant.org_id))
 
         return root, default, relationships
-
-    def _get_platform_default_policy_uuid(self) -> Optional[str]:
-        try:
-            if self._platform_default_policy_uuid is None:
-                policy = Group.objects.public_tenant_only().get(platform_default=True).policies.get()
-                self._platform_default_policy_uuid = str(policy.uuid)
-            return self._platform_default_policy_uuid
-        except Group.DoesNotExist:
-            return None
-
-    def _get_admin_default_policy_uuid(self) -> Optional[str]:
-        try:
-            if self._admin_default_policy_uuid is None:
-                policy = Group.objects.public_tenant_only().get(admin_default=True).policies.get()
-                self._admin_default_policy_uuid = str(policy.uuid)
-            return self._admin_default_policy_uuid
-        except Group.DoesNotExist:
-            return None
 
     def create_workspace_relationships(self, pairs):
         """

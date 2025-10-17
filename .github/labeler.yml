@@ -1,0 +1,9 @@
+# Docs: https://github.com/marketplace/actions/labeler
+
+# Add "security-compliance" label to any PR that is opened against the "security-compliance" branch
+security-compliance:
+ - base-branch: 'security-compliance'
+
+# Add "bot" label to any PR where the head branch name starts with "konflux" or "dependabot"
+bot:
+ - head-branch: ['^konflux/', '^dependabot/']

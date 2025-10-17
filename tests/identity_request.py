@@ -22,15 +22,14 @@ from base64 import b64encode
 from json import dumps as json_dumps
 from unittest.mock import Mock
 
-from django.test import TestCase, override_settings
+from django.test import TestCase, override_settings, TransactionTestCase
 from faker import Faker
 
 from api.models import Tenant
 from api.common import RH_IDENTITY_HEADER
 
 
-@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
-class IdentityRequest(TestCase):
+class BaseIdentityRequest:
     """Parent Class for IAM test cases."""
 
     fake = Faker()
@@ -145,3 +144,13 @@ class IdentityRequest(TestCase):
                 identity["identity"]["type"] = "ServiceAccount"
 
         return identity
+
+
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
+class IdentityRequest(BaseIdentityRequest, TestCase):
+    pass
+
+
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
+class TransactionalIdentityRequest(BaseIdentityRequest, TransactionTestCase):
+    pass

@@ -34,6 +34,7 @@ from api.cross_access.model import CrossAccountRequest
 from api.cross_access.util import check_cross_request_expiry
 from api.models import Tenant, User
 from management.cache import TenantCache
+from management.group.definer import add_roles
 from management.group.serializer import GroupInputSerializer
 from management.models import (
     Access,
@@ -1988,7 +1989,7 @@ class GroupViewsetTests(IdentityRequest):
 
     @patch("management.group.relation_api_dual_write_subject_handler.OutboxReplicator.replicate")
     def test_add_group_role_not_found_will_not_replicate(self, replicate_mock):
-        """Test that adding roles to a group skips ids not found, and returns success."""
+        """Test that adding roles to a group skips ids not found, and returns failure."""
         groupC = Group.objects.create(name="groupC", tenant=self.tenant)
         url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
         client = APIClient()
@@ -1996,8 +1997,7 @@ class GroupViewsetTests(IdentityRequest):
 
         response = client.post(url, test_data, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertCountEqual([], list(groupC.roles()))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         replicate_mock.assert_not_called()
 
     def test_remove_group_roles_success(self):
@@ -2036,6 +2036,70 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsNotNone(al_dict_description)
         self.assertEqual(al_dict_resource, "group")
         self.assertEqual(al_dict_action, "remove")
+
+    def test_remove_group_roles_tenant_isolation(self):
+        """Test that group role removal properly filters by tenant."""
+        # Create group with a role of the same name in different tenants
+        tenant_a = self.tenant
+        tenant_b = Tenant.objects.create(tenant_name="tenant_b", org_id="222222")
+        bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrap_service.bootstrap_tenant(tenant_b)
+
+        role_name = "test_remove_group_roles_tenant_isolation"
+        role_a = Role.objects.create(name=role_name, tenant=tenant_a)
+        role_b = Role.objects.create(name=role_name, tenant=tenant_b)
+        group_a = Group.objects.create(name="group_a", tenant=tenant_a)
+        group_b = Group.objects.create(name="group_b", tenant=tenant_b)
+
+        roles = Role.objects.filter(name=role_name)
+        add_roles(group_a, roles, tenant_a)
+        add_roles(group_b, roles, tenant_b)
+
+        # Try to remove role by ID - should remove the correct role from tenant A
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group_a.uuid})
+        url = f"{url}?roles={role_a.uuid}"
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+
+        # Should successfully remove the role from tenant A
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertCountEqual([], list(group_a.roles()))
+
+        # The role from tenant B should still exist and not be affected
+        self.assertTrue(Role.objects.filter(name=role_name, tenant=tenant_b).exists())
+        tenant_b_role = Role.objects.get(name=role_name, tenant=tenant_b)
+        self.assertEqual(tenant_b_role.name, role_name)
+
+    def test_add_group_roles_tenant_isolation(self):
+        """Test that group role addition properly filters by tenant."""
+        # Create test data
+        tenant_a = self.tenant
+        tenant_b = Tenant.objects.create(tenant_name="tenant_b", org_id="333333")
+        bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrap_service.bootstrap_tenant(tenant_b)
+
+        role_name = "test_add_group_roles_tenant_isolation"
+        role_a = Role.objects.create(name=role_name, tenant=tenant_a)
+        role_b = Role.objects.create(name=role_name, tenant=tenant_b)
+        group_a = Group.objects.create(name="group_a", tenant=tenant_a)
+
+        # Add a role from tenant A to group A (2 roles with the same name exist)
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group_a.uuid})
+        client = APIClient()
+        request_body = {"roles": [str(role_a.uuid)]}
+        response = client.post(url, request_body, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        group_roles_after_add = list(group_a.roles())
+        self.assertIn(role_a, group_roles_after_add)
+
+        # The role from Tenant B should still exist separately and not be affected
+        self.assertTrue(Role.objects.filter(name=role_name, tenant=tenant_b).exists())
+        tenant_b_role = Role.objects.get(name=role_name, tenant=tenant_b)
+        self.assertEqual(tenant_b_role.name, role_name)
+
+        # The group should not have the role from Tenant B
+        self.assertNotIn(tenant_b_role, group_roles_after_add)
 
     def test_remove_admin_default_group_roles(self):
         """Test that admin_default groups' roles are protected from removal"""
@@ -2193,7 +2257,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?roles={}".format(url, self.dummy_role_id)
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_admin_RonR(self):
         """Test that an admin user can group RBAC resources"""

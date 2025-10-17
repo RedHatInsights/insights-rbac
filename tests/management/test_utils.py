@@ -31,13 +31,16 @@ from management.utils import (
     validate_and_get_key,
     is_valid_uuid,
     value_to_list,
+    build_system_user_from_token,
 )
+from management.authorization.token_validator import ITSSOTokenValidator
 from tests.identity_request import IdentityRequest
 
 from unittest import mock
 from unittest.mock import Mock
 
 from rest_framework import serializers
+from django.test import override_settings
 
 SERVICE_ACCOUNT_KEY = "service-account"
 
@@ -51,6 +54,13 @@ class UtilsTests(IdentityRequest):
 
         # setup principal
         self.principal = Principal.objects.create(username="principalA", tenant=self.tenant)
+        service_account_uuid = str(uuid.uuid4())
+        self.service_account = Principal.objects.create(
+            username=f"service-account-{service_account_uuid}",
+            tenant=self.tenant,
+            type=Principal.Types.SERVICE_ACCOUNT,
+            service_account_id=service_account_uuid,
+        )
 
         # setup data for the principal
         self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
@@ -130,6 +140,18 @@ class UtilsTests(IdentityRequest):
         """Test that we get the correct groups for a principal."""
         groups = groups_for_principal(self.principal, self.tenant)
         self.assertCountEqual(groups, [self.groupA, self.default_group])
+
+    def test_groups_for_service_account(self):
+        """Test that we get no default groups for a service account."""
+        groups = groups_for_principal(self.service_account, self.tenant)
+        self.assertCountEqual(groups, [])
+
+    def test_groups_for_service_account_with_custom_group(self):
+        """Test that we get the correct groups for a service account with a custom group."""
+        group = Group.objects.create(name="custom group", tenant=self.tenant)
+        group.principals.add(self.service_account)
+        groups = groups_for_principal(self.service_account, self.tenant)
+        self.assertCountEqual(groups, [group])
 
     def test_policies_for_principal(self):
         """Test that we get the correct groups for a principal."""
@@ -222,6 +244,9 @@ class UtilsTests(IdentityRequest):
         client_id = uuid.uuid4()
         service_account_username = f"service-account-{client_id}"
 
+        # Ensure the service account does not exist
+        self.assertFalse(Principal.objects.filter(username=service_account_username, tenant=self.tenant).exists())
+
         request = mock.Mock()
         request.tenant = self.tenant
         request.query_params = {}
@@ -235,6 +260,100 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.service_account_id, str(client_id))
         self.assertEqual(created_service_account.type, "service-account")
         self.assertEqual(created_service_account.username, service_account_username)
+
+    @mock.patch("management.utils.PRINCIPAL_CACHE")
+    @mock.patch("management.models.Principal.objects.get")
+    def test_get_principal_cache_hit(self, mock_principal_get, mock_cache):
+        """Test that when there's a cache hit, the principal is fetched from the cache and Principal.objects.get is not called."""
+        username = "cached_user"
+
+        # Create a mock principal that will be returned from the cache.
+        cached_principal = Principal.objects.create(username=username, tenant=self.tenant)
+
+        # Mock the cache to return the principal —cache hit—.
+        mock_cache.get_principal.return_value = cached_principal
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Call the function under test.
+        result = get_principal(username=username, request=request)
+
+        # Verify that the cache was called with the correct parameters.
+        mock_cache.get_principal.assert_called_once_with(self.tenant.org_id, username)
+
+        # Verify that Principal.objects.get was NOT called —since we got a cache hit—.
+        mock_principal_get.assert_not_called()
+
+        # Verify that the returned principal is the one from the cache.
+        self.assertEqual(result, cached_principal)
+        self.assertEqual(result.username, username)
+
+    @mock.patch("management.utils.PRINCIPAL_CACHE")
+    def test_get_principal_cache_miss_and_cache(self, mock_cache):
+        """Test that when there's a cache miss, the principal gets fetched from the database and then cached."""
+        username = "database_user"
+
+        # Create a principal in the database that will be fetched when cache misses.
+        database_principal = Principal.objects.create(username=username, tenant=self.tenant)
+
+        # Mock the cache to return None —cache miss—.
+        mock_cache.get_principal.return_value = None
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Call the function under test.
+        result = get_principal(username=username, request=request)
+
+        # Verify that the cache was called first to check for existing principal
+        mock_cache.get_principal.assert_called_once_with(self.tenant.org_id, username)
+
+        # Verify that the principal was cached after being fetched from the database.
+        mock_cache.cache_principal.assert_called_once_with(org_id=self.tenant.org_id, principal=database_principal)
+
+        # Verify that the returned principal is the one from the database
+        self.assertEqual(result, database_principal)
+        self.assertEqual(result.username, username)
+
+    @mock.patch("management.utils.PRINCIPAL_CACHE")
+    @mock.patch("management.utils.verify_principal_with_proxy")
+    def test_get_principal_cache_miss_principal_created_and_cached(self, mock_verify_principal, mock_cache):
+        """Test that when there's a cache miss and the principal doesn't exist in the database, it gets created and cached."""
+        username = "new_user"
+
+        # Ensure the principal does not exist in the database.
+        self.assertFalse(Principal.objects.filter(username=username, tenant=self.tenant).exists())
+
+        # Mock the cache to return None —cache miss—.
+        mock_cache.get_principal.return_value = None
+
+        # Mock the verify_principal_with_proxy to avoid external service calls.
+        mock_verify_principal.return_value = None
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Call the function under test.
+        result = get_principal(username=username, request=request)
+
+        # Verify that the cache was called first to check for the existing principal.
+        mock_cache.get_principal.assert_called_once_with(self.tenant.org_id, username)
+
+        # Verify that the newly created principal was cached
+        mock_cache.cache_principal.assert_called_once_with(org_id=self.tenant.org_id, principal=result)
+
+        # Verify that the returned principal was created in the database
+        self.assertEqual(result.username, username)
+        self.assertEqual(result.tenant, self.tenant)
+        self.assertEqual(result.type, "user")
+
+        # Verify that the principal actually exists in the database
+        created_principal = Principal.objects.get(username=username, tenant=self.tenant)
+        self.assertEqual(created_principal, result)
 
     def test_get_principal_user_tenant_passed(self):
         """Test that user tenant is honored when it is passed to get principal."""
@@ -404,3 +523,73 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(value_to_list([1]), [1])
         self.assertEqual(value_to_list(["foo"]), ["foo"])
         self.assertEqual(value_to_list([True]), [True])
+
+
+@override_settings(
+    SYSTEM_USERS={"test-system-user": {"admin": True, "is_service_account": True, "allow_any_org": True}}
+)
+class SystemUserFromTokenTests(IdentityRequest):
+    """Test the build_system_user_from_token functionality."""
+
+    def setUp(self):
+        """Set up the build_system_user_from_token tests."""
+        super().setUp()
+        self.test_user_id = "test-system-user"
+        self.test_account = "1111111"
+        self.test_org_id = "12345"
+        self.test_request_org_id = "54321"
+
+    def _create_mock_user(self, username=None):
+        """Create a mock user."""
+        mock_user = User()
+        mock_user.user_id = self.test_user_id
+        mock_user.account = self.test_account
+        mock_user.org_id = self.test_org_id
+        if username:
+            mock_user.username = username
+        return mock_user
+
+    def _create_mock_request(self):
+        """Create a mock request."""
+        request = mock.Mock()
+        request.META = {
+            "HTTP_X_RH_RBAC_ORG_ID": self.test_request_org_id,
+            "HTTP_X_RH_RBAC_ACCOUNT": self.test_request_org_id,
+        }
+        return request
+
+    def _assert_system_user_fields(self, result_user, expected_username):
+        """Assert that the system user fields are set correctly."""
+        self.assertIsNotNone(result_user)
+        self.assertEqual(result_user.username, expected_username)
+        self.assertEqual(result_user.user_id, self.test_user_id)
+        self.assertEqual(result_user.org_id, self.test_request_org_id)
+        self.assertEqual(result_user.account, self.test_request_org_id)
+        self.assertTrue(result_user.system)
+        self.assertTrue(result_user.admin)
+        self.assertTrue(result_user.is_service_account)
+
+    @mock.patch.object(ITSSOTokenValidator, "get_user_from_bearer_token")
+    def test_build_system_user_from_token(self, mock_get_user):
+        """Test that fields are set when building a system user from token."""
+        mock_user = self._create_mock_user()
+        mock_get_user.return_value = mock_user
+        request = self._create_mock_request()
+
+        token_validator = ITSSOTokenValidator()
+        result_user = build_system_user_from_token(request, token_validator)
+
+        self._assert_system_user_fields(result_user, self.test_user_id)
+
+    @mock.patch.object(ITSSOTokenValidator, "get_user_from_bearer_token")
+    def test_build_system_user_from_token_username(self, mock_get_user):
+        """Test that the username is not overwritten when already set."""
+        existing_username = "foo"
+        mock_user = self._create_mock_user(username=existing_username)
+        mock_get_user.return_value = mock_user
+        request = self._create_mock_request()
+
+        token_validator = ITSSOTokenValidator()
+        result_user = build_system_user_from_token(request, token_validator)
+
+        self._assert_system_user_fields(result_user, existing_username)

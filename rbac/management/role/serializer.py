@@ -18,7 +18,8 @@
 """Serializer for role management."""
 from django.conf import settings
 from django.utils.translation import gettext as _
-from internal.utils import get_or_create_ungrouped_workspace
+from feature_flags import FEATURE_FLAGS
+from internal.utils import get_or_create_ungrouped_workspace, is_resource_a_workspace
 from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import (
@@ -75,7 +76,7 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
     def to_representation(self, instance):
         """Convert the ResourceDefinition instance to a dictionary."""
         serialized_data = super().to_representation(instance)
-        if settings.REMOVE_NULL_VALUE and instance.attributeFilter["key"] == "group.id":
+        if FEATURE_FLAGS.is_remove_null_value_enabled() and instance.attributeFilter["key"] == "group.id":
             value = instance.attributeFilter["value"]
             if isinstance(value, list) and None in value:
                 ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
@@ -110,10 +111,7 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         return hierarchy_enabled and is_access_request and self._is_workspace_filter(instance)
 
     def _is_workspace_filter(self, instance):
-        is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
-        is_workspace_resource_type = instance.resource_type == settings.WORKSPACE_RESOURCE_TYPE
-        is_workspace_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
-        return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
+        return is_resource_a_workspace(instance.application, instance.resource_type, instance.attributeFilter)
 
 
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
@@ -419,9 +417,19 @@ def obtain_groups_in(obj, request):
 
     public_tenant = Tenant.objects.get(tenant_name="public")
 
-    platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
-        policies__in=policy_ids
-    ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+    # Fix: Check if custom default group exists for tenant first
+    tenant_has_custom_default = Group.platform_default_set().filter(tenant=request.tenant).exists()
+
+    if tenant_has_custom_default:
+        # Use tenant's custom default group only
+        platform_default_groups = (
+            Group.platform_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
+        )
+    else:
+        # Fall back to public tenant's default group
+        platform_default_groups = (
+            Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+        )
 
     if username_param and scope_param != PRINCIPAL_SCOPE:
         is_org_admin = request.user_from_query.admin
@@ -431,9 +439,17 @@ def obtain_groups_in(obj, request):
     qs = assigned_groups | platform_default_groups
 
     if is_org_admin:
-        admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
-            policies__in=policy_ids
-        ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+        # Apply same fix for admin default groups
+        tenant_has_custom_admin_default = Group.admin_default_set().filter(tenant=request.tenant).exists()
+
+        if tenant_has_custom_admin_default:
+            admin_default_groups = (
+                Group.admin_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
+            )
+        else:
+            admin_default_groups = (
+                Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+            )
 
         qs = qs | admin_default_groups
 

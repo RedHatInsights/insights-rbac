@@ -16,10 +16,16 @@
 #
 
 """Utilities for Internal RBAC use."""
+import json
 import logging
+import uuid
 
+import jsonschema
+from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
+from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
+from jsonschema import validate
 from management.models import Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -106,14 +112,88 @@ def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
     """
     # fetch parent only once
     default_ws = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+
     # single select_for_update + get_or_create
     workspace, created = Workspace.objects.select_for_update().get_or_create(
         tenant=tenant,
         type=Workspace.Types.UNGROUPED_HOSTS,
         defaults={"name": Workspace.SpecialNames.UNGROUPED_HOSTS, "parent": default_ws},
     )
+
     if created:
         RelationApiDualWriteWorkspaceHandler(
             workspace, ReplicationEventType.CREATE_WORKSPACE
         ).replicate_new_workspace()
+
     return workspace
+
+
+def validate_relations_input(action, request_data) -> bool:
+    """Check if request body provided to relations tool endpoints are valid."""
+    validation_schema = RELATION_INPUT_SCHEMAS[action]
+    try:
+        validate(instance=request_data, schema=validation_schema)
+        logger.info("JSON data is valid.")
+        return True
+    except jsonschema.exceptions.ValidationError as e:
+        logger.info(f"JSON data is invalid: {e.message}")
+        return False
+    except Exception as e:
+        logger.info(f"Exception occurred when validating JSON body: {e}")
+        return False
+
+
+def validate_inventory_input(action, request_data) -> bool:
+    """Check if request body provided to inventory tool endpoints are valid."""
+    validation_schema = INVENTORY_INPUT_SCHEMAS[action]
+    try:
+        validate(instance=request_data, schema=validation_schema)
+        logger.info("JSON data is valid.")
+        return True
+    except jsonschema.exceptions.ValidationError as e:
+        logger.info(f"JSON data is invalid: {e.message}")
+        return False
+    except Exception as e:
+        logger.info(f"Exception occurred when validating JSON body: {e}")
+        return False
+
+
+def load_request_body(request) -> dict:
+    """Decode request body from json into dict structure."""
+    request_decoded = request.body.decode("utf-8")
+    req_data = json.loads(request_decoded)
+    return req_data
+
+
+def is_resource_a_workspace(application: str, resource_type: str, attributeFilter: dict) -> bool:
+    """Check if a given ResourceDefinition is a Workspace."""
+    is_workspace_application = application == settings.WORKSPACE_APPLICATION_NAME
+    is_workspace_resource_type = resource_type in settings.WORKSPACE_RESOURCE_TYPE
+    is_workspace_group_filter = attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
+    return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
+
+
+def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
+    """Get workspace id from a resource definition."""
+    operation = attributeFilter.get("operation")
+    ret = []
+    if operation == "in":
+        value = attributeFilter.get("value", [])
+        ret.extend(uuid.UUID(val) for val in value if is_str_valid_uuid(val))
+    elif operation == "equal":
+        value = attributeFilter.get("value", "")
+        if is_str_valid_uuid(value):
+            ret.append(uuid.UUID(value))
+
+    return ret
+
+
+def is_str_valid_uuid(uuid_str: str) -> bool:
+    """Check if a string can be converted to a valid UUID."""
+    if uuid_str is None or not uuid_str:
+        return False
+    try:
+        uuid.UUID(uuid_str)
+        return True
+    except ValueError:
+        return False

@@ -238,12 +238,14 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
             ],
         )
 
-    @patch("management.management.commands.utils.BOOT_STRAP_SERVICE")
-    def test_batch_import_workspace(self, mock_bss):
+    @patch("management.management.commands.utils.BOOT_STRAP_SERVICE.create_workspace_relationships")
+    def test_batch_import_workspace(self, mock_cwr):
         org_id_1 = "987654"
         workspace_id_1 = "47cd5563-0f55-4624-a182-9a69fa307c63"
         org_id_2 = "456789"
         workspace_id_2 = "7c5e11d2-0bda-4f90-ac78-2f99fc572573"
+        org_id_3 = "123456"
+        workspace_id_3 = "2c8b9e47-7c8a-40cc-81ed-326c5a41b045"
         records = [
             {
                 "account": "123456",
@@ -261,6 +263,15 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
                 "modified_on": "2025-03-18 15:19:53.509206+00:00",
                 "name": "test_group_1",
                 "org_id": org_id_2,
+                "ungrouped": "True",
+            },
+            {
+                "account": "123456",
+                "created_on": "2025-03-18 15:19:53.509203+00:00",
+                "id": workspace_id_3,
+                "modified_on": "2025-03-18 15:19:53.509206+00:00",
+                "name": "test_group_2",
+                "org_id": org_id_3,
                 "ungrouped": "True",
             },
         ]
@@ -291,15 +302,23 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
             ]
         )
         batch_import_workspace(records)
+        default_ws_3 = Workspace.objects.default(tenant=Tenant.objects.get(org_id=org_id_3))
         self.assertEqual(
-            mock_bss.create_workspace_relationships.call_args[0][0],
-            [(workspace_id_1, str(defaults[0].id)), (workspace_id_2, str(defaults[1].id))],
+            mock_cwr.call_args[0][0],
+            [
+                (workspace_id_1, str(defaults[0].id)),
+                (workspace_id_2, str(defaults[1].id)),
+                (workspace_id_3, str(default_ws_3.id)),
+            ],
         )
-        self.assertEqual(Workspace.objects.filter(id__in=[workspace_id_1, workspace_id_2]).count(), 2)
+        self.assertEqual(Workspace.objects.filter(id__in=[workspace_id_1, workspace_id_2, workspace_id_3]).count(), 3)
         self.assertEqual(Workspace.objects.get(id=workspace_id_1).parent, defaults[0])
         self.assertEqual(Workspace.objects.get(id=workspace_id_2).parent, defaults[1])
+        self.assertEqual(Workspace.objects.get(id=workspace_id_3).parent, default_ws_3)
         self.assertEqual(Workspace.objects.get(id=workspace_id_2).type, Workspace.Types.UNGROUPED_HOSTS)
         self.assertEqual(Workspace.objects.get(id=workspace_id_2).name, "Ungrouped Hosts")
+        self.assertEqual(Workspace.objects.get(id=workspace_id_3).type, Workspace.Types.UNGROUPED_HOSTS)
+        self.assertEqual(Workspace.objects.get(id=workspace_id_3).name, "Ungrouped Hosts")
         # Should be idempotent
         updated_name = "updated_name"
         updated_time = "2026-03-18 15:19:53.509206+00:00"
@@ -307,11 +326,15 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
         records[0]["modified_on"] = updated_time
         records[1]["name"] = updated_name
         records[1]["modified_on"] = updated_time
-        mock_bss.create_workspace_relationships.reset_mock()
+        mock_cwr.reset_mock()
         batch_import_workspace(records)
         self.assertEqual(
-            mock_bss.create_workspace_relationships.call_args[0][0],
-            [(workspace_id_1, str(defaults[0].id)), (workspace_id_2, str(defaults[1].id))],
+            mock_cwr.call_args[0][0],
+            [
+                (workspace_id_1, str(defaults[0].id)),
+                (workspace_id_2, str(defaults[1].id)),
+                (workspace_id_3, str(default_ws_3.id)),
+            ],
         )
         updated_ws_1 = Workspace.objects.get(id=workspace_id_1)
         self.assertEqual(updated_ws_1.name, updated_name)

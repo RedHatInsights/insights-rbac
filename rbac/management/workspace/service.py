@@ -41,6 +41,15 @@ class WorkspaceService:
                     parent_id = default.id
                 parent = Workspace.objects.get(id=parent_id)
                 self._enforce_hierarchy_depth(parent_id, request_tenant)
+                if self._check_total_workspace_count_exceeded(request_tenant):
+                    # If two transactions to create workspaces happen at the same time
+                    # both will get the okay to add the workspace
+                    # which could lead to the case where there is an extra workspace over the allowed limit
+                    # locking will have a scalability impact so better not to catch this condition
+                    raise serializers.ValidationError(
+                        "The total number of workspaces allowed for this organisation has been exceeded."
+                    )
+
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
                 dual_write_handler = RelationApiDualWriteWorkspaceHandler(
                     workspace, ReplicationEventType.CREATE_WORKSPACE
@@ -102,6 +111,21 @@ class WorkspaceService:
         dual_write_handler.replicate_deleted_workspace()
         instance.delete()
 
+    def move(self, instance: Workspace, target_workspace_id: uuid.UUID) -> Workspace:
+        """Move a workspace under new parent."""
+        self._prevent_moving_non_standard_workspace(instance)
+        self._prevent_moving_workspace_under_own_descendant(target_workspace_id, instance)
+        self._enforce_hierarchy_depth(target_workspace_id, instance.tenant)
+        self._enforce_hierarchy_depth_for_descendants(target_workspace_id, instance)
+
+        target_workspace = Workspace.objects.get(id=target_workspace_id, tenant=instance.tenant)
+        previous_parent_workspace = instance.parent
+        instance.parent = target_workspace
+        instance.save(update_fields=["parent"])
+        dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.MOVE_WORKSPACE)
+        dual_write_handler.replicate_updated_workspace(previous_parent_workspace, skip_ws_events=True)
+        return instance
+
     def _enforce_hierarchy_depth(self, target_parent_id: uuid.UUID, tenant: Tenant) -> None:
         """Enforce hierarchy depth limits on workspaces."""
         if self._exceeds_depth_limit(target_parent_id, tenant):
@@ -129,3 +153,39 @@ class WorkspaceService:
         target_parent_workspace = Workspace.objects.get(id=target_parent_id, tenant=tenant)
         max_depth_for_workspace = len(target_parent_workspace.ancestors()) + 1
         return max_depth_for_workspace > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT
+
+    def _check_total_workspace_count_exceeded(self, tenant: Tenant) -> bool:
+        """Check if the current org has exceeded the allowed amount of workspaces.
+
+        Returns True if total number of workspaces is exceeded.
+        """
+        max_limit = settings.WORKSPACE_ORG_CREATION_LIMIT
+
+        workspace_count = Workspace.objects.filter(tenant=tenant, type="standard").count()
+        return workspace_count >= max_limit
+
+    @staticmethod
+    def _enforce_hierarchy_depth_for_descendants(new_parent_id: uuid.UUID, instance: Workspace) -> None:
+        """Enforce the hierarchy depth for workspace descendant and target parent workspace."""
+        new_parent_depth = Workspace.objects.get(id=new_parent_id).ancestors().count()
+        workspace_tree_depth = instance.get_max_descendant_depth()
+        total_depth = new_parent_depth + 1 + workspace_tree_depth
+
+        if total_depth > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT:
+            message = (
+                f"Cannot move workspace: resulting hierarchy depth ({total_depth}) exceeds limit "
+                f"({settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT})."
+            )
+            raise serializers.ValidationError({"workspace": [message]})
+
+    @staticmethod
+    def _prevent_moving_non_standard_workspace(instance: Workspace) -> None:
+        """Prevent moving non-standard workspace."""
+        if instance.type != Workspace.Types.STANDARD:
+            raise serializers.ValidationError({"workspace": "Cannot move non-standard workspace."})
+
+    @staticmethod
+    def _prevent_moving_workspace_under_own_descendant(new_parent_id: uuid.UUID, instance: Workspace) -> None:
+        """Prevent moving workspace under own descendant."""
+        if instance.descendants().filter(id=new_parent_id):
+            raise serializers.ValidationError({"parent_id": "Cannot move workspace under one of its own descendants."})
