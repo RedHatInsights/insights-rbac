@@ -749,12 +749,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/PrincipalPagination"
-                    },
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrincipalPagination"
                     },
                     {
                       "$ref": "#/components/schemas/AllPrincipalsPagination"
@@ -2979,6 +2979,16 @@
             "type": "integer",
             "format": "int64",
             "example": 30
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "example": 10
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "example": 0
           }
         }
       },
@@ -3099,6 +3109,11 @@
               }
             ],
             "example": "1"
+          },
+          "org_id": {
+            "type": "string",
+            "example": "12345",
+            "nullable": true
           }
         }
       },
@@ -3148,7 +3163,7 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Principal"
                     },
@@ -3281,13 +3296,20 @@
                   "serviceAccounts": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/ServiceAccount"
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ServiceAccount"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
                     }
                   },
                   "users": {
                     "type": "array",
                     "items": {
-                      "oneOf": [
+                      "anyOf": [
                         {
                           "$ref": "#/components/schemas/Principal"
                         },
@@ -3838,21 +3860,21 @@
         ]
       },
       "ResourceDefinitionFilter": {
-          "oneOf": [
-              {
-                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
-              },
-              {
-                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
-              }
-          ]
-     },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
+          },
+          {
+            "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
+          }
+        ]
+      },
       "ResourceDefinitionFilterOperationEqual": {
         "type": "object",
         "required": [
-            "key",
-            "operation",
-            "value"
+          "key",
+          "operation",
+          "value"
         ],
         "properties": {
           "key": {
@@ -3875,9 +3897,9 @@
       "ResourceDefinitionFilterOperationIn": {
         "type": "object",
         "required": [
-            "key",
-            "operation",
-            "value"
+          "key",
+          "operation",
+          "value"
         ],
         "properties": {
           "key": {
@@ -3896,7 +3918,11 @@
               "type": "string",
               "nullable": true
             },
-            "example": ["value1", null, "value2"]
+            "example": [
+              "value1",
+              null,
+              "value2"
+            ]
           }
         }
       },
