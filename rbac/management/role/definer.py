@@ -33,6 +33,7 @@ from management.role.relation_api_dual_write_handler import (
     SeedingRelationApiDualWriteHandler,
 )
 
+
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
