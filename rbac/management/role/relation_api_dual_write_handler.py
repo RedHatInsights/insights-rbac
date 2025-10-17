@@ -24,6 +24,7 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
+from management.permission.scope_service import ImplicitResourceService, bound_model_for_scope
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
@@ -31,7 +32,8 @@ from management.relation_replicator.relation_replicator import RelationReplicato
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import BindingMapping, Role
-from migration_tool.migrate_role import migrate_role
+from migration_tool.migrate_role import migrate_role, relation_tuples_for_bindings
+from migration_tool.models import V2boundresource
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
 from migration_tool.utils import create_relationship
 
@@ -241,8 +243,11 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                     f"Tenant: {binding_tenant.id}"
                 )
 
-            self.tenant_id = binding_tenant.id
+            self.tenant = binding_tenant
+            self.root_workspace = Workspace.objects.root(tenant=binding_tenant)
             self.default_workspace = Workspace.objects.default(tenant=binding_tenant)
+
+            self.resource_service = ImplicitResourceService.from_settings()
         except Exception as e:
             logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)
@@ -268,13 +273,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 )
                 return
 
-            relations, _ = migrate_role(
-                self.role,
-                default_workspace=self.default_workspace,
-                current_bindings=self.binding_mappings.values(),
-            )
-
-            self.current_role_relations = relations
+            self.current_role_relations = relation_tuples_for_bindings(self.binding_mappings.values())
         except Exception as e:
             logger.error(f"Failed to generated relations for v2 role & role bindings: {e}")
             raise DualWriteException(e)
@@ -327,9 +326,21 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         try:
             logger.info("[Dual Write] Generate new relations from role(%s): '%s'", self.role.uuid, self.role.name)
 
+            target_model = bound_model_for_scope(
+                scope=self.resource_service.scope_for_role(self.role),
+                tenant=self.tenant,
+                root_workspace=self.root_workspace,
+                default_workspace=self.default_workspace,
+            )
+
+            target_resource = V2boundresource.try_for_model(target_model)
+
+            if target_resource is None:
+                raise ValueError(f"Expected to have V2 resource ID for model {target_model}, but got None.")
+
             relations, mappings = migrate_role(
                 self.role,
-                default_workspace=self.default_workspace,
+                default_resource=target_resource,
                 current_bindings=self.binding_mappings.values(),
             )
 

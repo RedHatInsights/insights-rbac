@@ -46,6 +46,7 @@ from migration_tool.in_memory_tuples import (
     relation,
     resource,
     subject,
+    resource_type,
 )
 
 from tests.core.test_kafka import copy_call_args
@@ -1658,6 +1659,91 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(expected_sorted, actual_sorted)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @override_settings(
+        ROLE_CREATE_ALLOW_LIST="compliance,inventory",
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        TENANT_SCOPE_PERMISSIONS="",
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_update_role_scoped(self, replicate):
+        """Test that updating a role properly updates its scope."""
+        tuples = InMemoryTuples()
+        replicate.side_effect = InMemoryRelationReplicator(tuples).replicate
+
+        # Set up
+        Permission.objects.create(permission="compliance:policy:read", tenant=self.public_tenant)
+        Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)
+
+        role_name = "test_update_role"
+        access_data = [{"permission": "compliance:policy:read", "resourceDefinitions": []}]
+        new_access_data = [{"permission": "inventory:groups:read", "resourceDefinitions": []}]
+
+        default_workspace: Workspace = Workspace.objects.default(tenant=self.tenant)
+        root_workspace: Workspace = Workspace.objects.root(tenant=self.tenant)
+
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        v1_uuid = response.data["uuid"]
+
+        default_binding = BindingMapping.objects.filter(role__uuid=v1_uuid).get()
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(default_workspace.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", default_binding.mappings["id"]),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", default_binding.mappings["id"]),
+                    relation("role"),
+                    subject("rbac", "role", str(default_binding.mappings["role"]["id"])),
+                )
+            ),
+        )
+
+        # Update the role with new access data
+        test_data = dict(response.data)
+        test_data["access"] = new_access_data
+        url = reverse("v1_management:role-detail", kwargs={"uuid": v1_uuid})
+        client = APIClient()
+
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        root_binding = BindingMapping.objects.filter(role__uuid=v1_uuid).get()
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(root_workspace.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", root_binding.mappings["id"]),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", root_binding.mappings["id"]),
+                    relation("role"),
+                    subject("rbac", "role", str(root_binding.mappings["role"]["id"])),
+                )
+            ),
+        )
 
     @override_settings(
         ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True, REMOVE_NULL_VALUE=True

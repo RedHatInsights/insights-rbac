@@ -16,11 +16,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from dataclasses import dataclass
-from typing import Iterable, Tuple, Union
+from typing import Iterable, Optional, Tuple, Union
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.principal.model import Principal
+from management.workspace.model import Workspace
 from migration_tool.utils import create_relationship
+
+from api.models import Tenant
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,26 @@ class V2boundresource:
 
     resource_type: Tuple[str, str]
     resource_id: str
+
+    @classmethod
+    def try_for_model(cls, model: Workspace | Tenant) -> Optional["V2boundresource"]:
+        """
+        Return a V2boundresource corresponding to the provided model.
+
+        This will return None if no such resource can be computed (e.g. for a Tenant without an org_id).
+        """
+        if isinstance(model, Workspace):
+            return V2boundresource(("rbac", "workspace"), str(model.id))
+
+        if isinstance(model, Tenant):
+            resource_id = model.tenant_resource_id()
+
+            if resource_id is None:
+                return None
+
+            return V2boundresource(("rbac", "tenant"), resource_id)
+
+        return None
 
 
 @dataclass(frozen=True)

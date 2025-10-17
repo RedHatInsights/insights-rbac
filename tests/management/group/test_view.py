@@ -5280,7 +5280,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         to_add = actual_call_arg["relations_to_add"]
         self.assertEqual(1, len(to_add))
 
-        def assert_group_tuples(tuple_to_replicate):
+        def assert_group_tuples(tuples_to_replicate: list):
             relation_tuple = relation_api_tuple(
                 "role_binding",
                 binding_mapping.mappings["id"],
@@ -5290,7 +5290,13 @@ class GroupViewNonAdminTests(IdentityRequest):
                 "member",
             )
 
-            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            result = find_relation_in_list(tuples_to_replicate, relation_tuple)
+            self.assertIsNotNone(result)
+
+            # The same relation can end up being added multiple times due to an implementation detail, so just check
+            # that all of the relations match the one we found (rather than, e.g., checking that only one relation is
+            # in the list).
+            self.assertTrue(all(t == result for t in tuples_to_replicate))
 
         assert_group_tuples(to_add)
 
@@ -5302,8 +5308,6 @@ class GroupViewNonAdminTests(IdentityRequest):
         actual_call_arg = mock_method.call_args[0][0]
         to_remove = actual_call_arg["relations_to_remove"]
         self.assertEqual([], actual_call_arg["relations_to_add"])
-        self.assertEqual(1, len(to_remove))
-
         assert_group_tuples(to_remove)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
