@@ -23,7 +23,7 @@ from typing import Optional
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
-from management.group.platform import GlobalPolicyIdService
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import Workspace
 from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -151,23 +151,31 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         # create the appropriate relationship
         if self.role.admin_default:
             # parent_uuid = admin_parent_for_scope(highest_scope)
-            parent_uuid = platform_v2_role_uuid_for(
-                DefaultAccessType.ADMIN, highest_scope, GlobalPolicyIdService.shared()
-            )
-            if parent_uuid:
-                create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
-                relations.append(create_parent_child_relationship)
+            try:
+                parent_uuid = platform_v2_role_uuid_for(
+                    DefaultAccessType.ADMIN, highest_scope, GlobalPolicyIdService.shared()
+                )
+                if parent_uuid:
+                    create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
+                    relations.append(create_parent_child_relationship)
+            except DefaultGroupNotAvailableError:
+                # Default groups may not exist yet during seeding, skip parent relationship
+                pass
 
         if self.role.platform_default:
             # parent_uuid = platform_parent_for_scope(highest_scope)
-            parent_uuid = platform_v2_role_uuid_for(
-                DefaultAccessType.USER,
-                highest_scope,
-                GlobalPolicyIdService.shared(),
-            )
-            if parent_uuid:
-                create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
-                relations.append(create_parent_child_relationship)
+            try:
+                parent_uuid = platform_v2_role_uuid_for(
+                    DefaultAccessType.USER,
+                    highest_scope,
+                    GlobalPolicyIdService.shared(),
+                )
+                if parent_uuid:
+                    create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
+                    relations.append(create_parent_child_relationship)
+            except DefaultGroupNotAvailableError:
+                # Default groups may not exist yet during seeding, skip parent relationship
+                pass
 
         for permission in v2_permissions:
             relations.append(
