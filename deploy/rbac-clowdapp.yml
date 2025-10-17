@@ -17,6 +17,7 @@ objects:
     database:
       name: rbac
       dbVolumeSize: medium
+      version: 16
     inMemoryDb: true
     kafkaTopics:
     - topicName: ${NOTIFICATIONS_TOPIC}
