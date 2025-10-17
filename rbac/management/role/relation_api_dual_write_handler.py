@@ -129,6 +129,49 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             [],
         )
 
+    def check_create_admin__platform_relation(self, role, role_scope, list_relations, permissions):
+        """Check system role and create admin and platform system role parent-child relationship."""
+        if role.admin_default:
+            try:
+                parent_uuid = platform_v2_role_uuid_for(
+                    DefaultAccessType.ADMIN,
+                    role_scope,
+                    GlobalPolicyIdService.shared(),
+                )
+                if parent_uuid:
+                    create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
+                    list_relations.append(create_parent_child_relationship)
+            except DefaultGroupNotAvailableError:
+                # Default groups may not exist yet during seeding, skip parent relationship
+                logging.warning(f"Default groups may not exist yet during seeding for admin scope {role_scope}")
+                pass
+
+        if role.platform_default:
+            try:
+                parent_uuid = platform_v2_role_uuid_for(
+                    DefaultAccessType.USER,
+                    role_scope,
+                    GlobalPolicyIdService.shared(),
+                )
+                if parent_uuid:
+                    create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
+                    list_relations.append(create_parent_child_relationship)
+            except DefaultGroupNotAvailableError:
+                # Default groups may not exist yet during seeding, skip parent relationship
+                logging.warning(f"Default groups may not exist yet during seeding for platform scope {role_scope}")
+                pass
+        for permission in permissions:
+            list_relations.append(
+                create_relationship(
+                    ("rbac", "role"),
+                    str(self.role.uuid),
+                    ("rbac", "principal"),
+                    str("*"),
+                    permission,
+                )
+            )
+        return list_relations
+
     def _generate_relations_for_role(self, list_all_possible_scopes=False) -> list[common_pb2.Relationship]:
         """Generate system role permissions."""
         relations = []
@@ -144,76 +187,15 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             v2_perm = v1_perm_to_v2_perm(v1_perm)
             v2_permissions.append(v2_perm)
 
-        # When deleting, generate relationships for all possible scopes to ensure cleanup of any incorrect relationships
-        if list_all_possible_scopes:
-            print("we have entered this function")
-            # Generate parent relationships for all possible scopes (DEFAULT, ROOT, TENANT)
-            # This ensures we remove both correct and incorrect parent relationships during deletion
+            # When deleting, generate relationships for all possible scopes
+        if list_all_possible_scopes is True:
             for scope in [Scope.DEFAULT, Scope.ROOT, Scope.TENANT]:
-                if self.role.admin_default:
-                    try:
-                        parent_uuid = platform_v2_role_uuid_for(
-                            DefaultAccessType.ADMIN, scope, GlobalPolicyIdService.shared()
-                        )
-                        relations.append(role_child_relationship(parent_uuid, self.role.uuid))
-                    except DefaultGroupNotAvailableError:
-                        # Default groups may not exist yet during seeding, skip parent relationship
-                        logging.warning(f"Default groups may not exist yet during seeding for admin scope {scope}")
-                        pass
-
-                if self.role.platform_default:
-                    try:
-                        parent_uuid = platform_v2_role_uuid_for(
-                            DefaultAccessType.USER, scope, GlobalPolicyIdService.shared()
-                        )
-                        relations.append(role_child_relationship(parent_uuid, self.role.uuid))
-                    except DefaultGroupNotAvailableError:
-                        # Default groups may not exist yet during seeding, skip parent relationship
-                        logging.warning(f"Default groups may not exist yet during seeding for platform scope {scope}")
-                        pass
+                relations = self.check_create_admin__platform_relation(self.role, scope, relations, v2_permissions)
         else:
             # Determine highest scope for the role's permissions
             highest_scope: Scope = self.implicit_resource_service.highest_scope_for_permissions(v1_permissions)
-            print("we have entered here")
-            # create the appropriate relationship
-            if self.role.admin_default:
-                try:
-                    parent_uuid = platform_v2_role_uuid_for(
-                        DefaultAccessType.ADMIN, highest_scope, GlobalPolicyIdService.shared()
-                    )
-                    create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
-                    relations.append(create_parent_child_relationship)
-                except DefaultGroupNotAvailableError:
-                    # Default groups may not exist yet during seeding, skip parent relationship
-                    logging.warning(f"Default groups may not exist yet during seeding for admin scope {scope}")
-                    pass
+            relations = self.check_create_admin__platform_relation(self.role, highest_scope, relations, v2_permissions)
 
-            if self.role.platform_default:
-                try:
-                    parent_uuid = platform_v2_role_uuid_for(
-                        DefaultAccessType.USER,
-                        highest_scope,
-                        GlobalPolicyIdService.shared(),
-                    )
-                    create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
-                    relations.append(create_parent_child_relationship)
-                except DefaultGroupNotAvailableError:
-                    # Default groups may not exist yet during seeding, skip parent relationship
-                    logging.warning(f"Default groups may not exist yet during seeding for platform scope {scope}")
-                    pass
-
-        for permission in v2_permissions:
-            relations.append(
-                create_relationship(
-                    ("rbac", "role"),
-                    str(self.role.uuid),
-                    ("rbac", "principal"),
-                    str("*"),
-                    permission,
-                )
-            )
-
-        print("relations", relations)
         return relations
 
     def _create_metadata_from_role(self) -> dict[str, object]:
