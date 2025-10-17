@@ -147,7 +147,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
         # The scope migration mentioned above will additionally need to handle this case.
 
         dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.CUSTOMIZE_DEFAULT_GROUP)
-        dual_write_handler.generate_relations_scoped_reset_roles(
+        dual_write_handler.generate_relations_reset_roles(
             public_default_roles, remove_default_access_from=bootstrapped_tenant.mapping
         )
         dual_write_handler.replicate()
