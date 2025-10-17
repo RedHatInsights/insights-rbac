@@ -1494,7 +1494,6 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 
         # Verify incorrect relationships now exist
         all_tuples_before_delete = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
-        print(all_tuples_before_delete)
         self.assertEqual(len(all_tuples_before_delete), 5)  # 3 correct + 2 incorrect
 
         # Delete system role - this should remove ALL parent relationships including incorrect ones
