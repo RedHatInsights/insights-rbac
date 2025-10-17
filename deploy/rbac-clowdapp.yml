@@ -900,6 +900,14 @@ objects:
               value: ${WORKSPACE_ORG_CREATION_LIMIT}
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
+            - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+            - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+              value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1152,6 +1160,20 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: workspace-data
+      - name: additional-scope-bindings-backfill
+        podSpec:
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - /opt/rbac/rbac/manage.py
+            - migrate_seeded_org_level_parents
+          env: *job_common_env_vars
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
 
 - apiVersion: v1
   kind: ConfigMap
