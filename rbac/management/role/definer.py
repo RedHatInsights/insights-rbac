@@ -156,6 +156,7 @@ def seed_roles(force_create_relationships=False):
                 current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
+    print("deleting the roles")
     roles_to_delete = Role.objects.public_tenant_only().exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
     if destructive_ok("seeding"):

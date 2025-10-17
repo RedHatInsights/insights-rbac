@@ -174,7 +174,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         else:
             # Determine highest scope for the role's permissions
             highest_scope: Scope = self.implicit_resource_service.highest_scope_for_permissions(v1_permissions)
-
+            print("we have entered here")
             # create the appropriate relationship
             if self.role.admin_default:
                 try:
