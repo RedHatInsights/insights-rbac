@@ -16,6 +16,7 @@
 #
 """Contains utilities for handling relations between V2 roles."""
 from uuid import UUID
+
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from migration_tool.utils import create_relationship
 
