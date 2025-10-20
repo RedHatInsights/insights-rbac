@@ -14,19 +14,4 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Contains utilities for handling relations between V2 roles."""
-from uuid import UUID
-
-from kessel.relations.v1beta1.common_pb2 import Relationship
-from migration_tool.utils import create_relationship
-
-
-def role_child_relationship(parent_uuid: UUID | str, child_uuid: UUID | str) -> Relationship:
-    """Get the relationship to for a parent-child relationship between the provided roles."""
-    return create_relationship(
-        resource_name=("rbac", "role"),
-        resource_id=str(parent_uuid),
-        subject_name=("rbac", "role"),
-        subject_id=str(child_uuid),
-        relation="child",
-    )
+"""Role Binding management module."""
