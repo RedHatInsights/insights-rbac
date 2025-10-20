@@ -115,9 +115,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
         )
 
         # Prefetch related groups with annotation
-        group_queryset = RoleBindingGroup.objects.prefetch_related(
-            Prefetch("group", queryset=annotated_groups)
-        )
+        group_queryset = RoleBindingGroup.objects.prefetch_related(Prefetch("group", queryset=annotated_groups))
 
         # Apply subject filtering if specified
         if subject_type == "group" and subject_id:

@@ -16,8 +16,7 @@
 #
 """Cursor-based pagination for role bindings."""
 import logging
-from datetime import datetime
-from urllib.parse import urlparse, urlencode
+from urllib.parse import urlencode, urlparse
 
 from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
@@ -54,26 +53,27 @@ class RoleBindingCursorPagination(CursorPagination):
             return None
 
         try:
-            self.offset = int(request.query_params.get('offset', 0))
+            self.offset = int(request.query_params.get("offset", 0))
         except (ValueError, TypeError):
             self.offset = 0
 
         self.count = len(data_list)
-        self.page_data = data_list[self.offset:self.offset + self.page_size]
+        # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
+        self.page_data = data_list[self.offset : self.offset + self.page_size]  # type: ignore # noqa: E203
 
         return self.page_data
 
     def get_next_link(self):
         """Create next link."""
         # Handle list pagination
-        if hasattr(self, 'offset'):
+        if hasattr(self, "offset"):
             if self.offset + self.page_size >= self.count:
                 return None
 
             # Build next link with offset, preserving other query params
             params = self.request.query_params.copy()
-            params['offset'] = self.offset + self.page_size
-            params['limit'] = self.page_size
+            params["offset"] = self.offset + self.page_size
+            params["limit"] = self.page_size
 
             url = self.request.path
             query_string = urlencode(params)
@@ -87,15 +87,15 @@ class RoleBindingCursorPagination(CursorPagination):
     def get_previous_link(self):
         """Create previous link."""
         # Handle list pagination
-        if hasattr(self, 'offset'):
+        if hasattr(self, "offset"):
             if self.offset <= 0:
                 return None
 
             # Build previous link with offset, preserving other query params
             params = self.request.query_params.copy()
             offset = max(0, self.offset - self.page_size)
-            params['offset'] = offset
-            params['limit'] = self.page_size
+            params["offset"] = offset
+            params["limit"] = self.page_size
 
             url = self.request.path
             query_string = urlencode(params)
@@ -123,7 +123,7 @@ class RoleBindingCursorPagination(CursorPagination):
         meta = {"limit": self.page_size}
 
         # Add count for list pagination
-        if hasattr(self, 'count'):
+        if hasattr(self, "count"):
             meta["count"] = self.count
 
         return Response(
