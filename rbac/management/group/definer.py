@@ -134,18 +134,6 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     tenant_default_policy.roles.set(public_default_roles)
 
     if bootstrapped_tenant:
-        # Initially bind these roles in the correct scope (as implied by their permissions).
-        #
-        # Currently (2025-10-08), this is only done when initially setting up the custom default group. If the role
-        # is subsequently removed and re-added, it will end up bound in the default workspace only (just as it would
-        # for any other group). This is acceptable, as a mass migration will already be needed to re-bind all roles
-        # in their appropriate scope, and such a custom default group will be handled during that.
-        #
-        # As an edge case, a role could be re-added (in the default scope) after it has been added here (in
-        # non-default scope) and without an intervening removal. I believe the only way for this to happen currently
-        # is by running the existing V1 -> V2 migration tool. (add_roles, below, only replicates newly added roles).
-        # The scope migration mentioned above will additionally need to handle this case.
-
         dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.CUSTOMIZE_DEFAULT_GROUP)
         dual_write_handler.generate_relations_reset_roles(
             public_default_roles, remove_default_access_from=bootstrapped_tenant.mapping
