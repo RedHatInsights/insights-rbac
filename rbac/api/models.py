@@ -17,6 +17,7 @@
 """API models for import organization."""
 from typing import Any, Optional
 
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
@@ -58,6 +59,18 @@ class Tenant(models.Model):
         if cls._public_tenant is None:
             cls._public_tenant = Tenant.objects.get(tenant_name="public")
         return cls._public_tenant
+
+    @staticmethod
+    def org_id_to_tenant_resource_id(org_id: str) -> str:
+        """Get the V2 resource ID for a tenant with the provided org_id."""
+        return f"{settings.PRINCIPAL_USER_DOMAIN}/{org_id}"
+
+    def tenant_resource_id(self) -> Optional[str]:
+        """Get the V2 resource ID for this tenant; None is returned if org_id is not available."""
+        if self.org_id is None:
+            return None
+
+        return Tenant.org_id_to_tenant_resource_id(org_id=self.org_id)
 
     class Meta:
         indexes = [

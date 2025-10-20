@@ -17,9 +17,11 @@
 """
 Tests for permission scope functionality.
 """
-from django.test import override_settings
+from django.test import TestCase, override_settings
 from typing import Tuple
-from unittest import TestCase
+
+from api.models import Tenant
+from management.models import Permission, Role
 from management.permission.scope_service import ImplicitResourceService, Scope
 from .test_model import INVALID_PERMISSIONS_V1
 
@@ -510,3 +512,82 @@ class SettingsTest(TestCase):
                 Scope.TENANT,
                 service.scope_for_permission("tenant_app:resource:verb"),
             )
+
+
+class RoleTests(TestCase):
+    service: ImplicitResourceService
+
+    public_tenant: Tenant
+    role: Role
+
+    default_permission: Permission
+    root_permission: Permission
+    tenant_permission: Permission
+
+    def setUp(self):
+        self.service = ImplicitResourceService(
+            root_scope_permissions=["root:*:*"],
+            tenant_scope_permissions=["tenant:*:*"],
+        )
+
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+
+        self.role = Role.objects.create(
+            tenant=self.public_tenant,
+            name="Test role",
+            system=True,
+        )
+
+        self.default_permission = Permission.objects.create(
+            tenant=self.public_tenant,
+            permission="default:resource:verb",
+        )
+
+        self.root_permission = Permission.objects.create(
+            tenant=self.public_tenant,
+            permission="root:resource:verb",
+        )
+
+        self.tenant_permission = Permission.objects.create(
+            tenant=self.public_tenant,
+            permission="tenant:resource:verb",
+        )
+
+    def _assert_role_scope(self, scope: Scope):
+        self.assertEqual(scope, self.service.scope_for_role(self.role))
+
+    def _create_access(self, permission: Permission, attribute_filter: dict = None):
+        access = self.role.access.create(tenant=self.public_tenant, permission=permission)
+
+        if attribute_filter is not None:
+            access.resourceDefinitions.create(tenant=self.public_tenant, attributeFilter=attribute_filter)
+
+    def test_empty(self):
+        """Test that the correct scope is returned for a role with no permissions."""
+        self._assert_role_scope(Scope.DEFAULT)
+
+    def test_default_scope(self):
+        """Test that the correct scope is returned for a role with a default-scope permissions."""
+        self._create_access(self.default_permission)
+        self._assert_role_scope(Scope.DEFAULT)
+
+    def test_root_scope(self):
+        """Test that the correct scope is returned for a role with a root-scope permission."""
+        self._create_access(self.default_permission)
+        self._create_access(self.root_permission)
+        self._assert_role_scope(Scope.ROOT)
+
+    def test_tenant_scope(self):
+        """Test that the correct scope is returned for a role with a tenant-scope permission."""
+        self._create_access(self.default_permission)
+        self._create_access(self.root_permission)
+        self._create_access(self.tenant_permission)
+        self._assert_role_scope(Scope.TENANT)
+
+    def test_resource_definition(self):
+        """Test that resource definitions do not affect the scope of a role."""
+        self._create_access(
+            self.root_permission, attribute_filter={"key": "service", "operation": "equal", "value": "something"}
+        )
+
+        self._assert_role_scope(Scope.ROOT)
