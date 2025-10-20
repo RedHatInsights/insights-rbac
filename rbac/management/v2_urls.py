@@ -16,6 +16,7 @@
 """Describes the urls and patterns for the management application."""
 from django.conf.urls import include
 from django.urls import re_path
+from management.role_binding.view import RoleBindingViewSet
 from management.views import (
     WorkspaceViewSet,
 )
@@ -24,6 +25,7 @@ from rest_framework.routers import DefaultRouter
 
 ROUTER = DefaultRouter()
 ROUTER.register(r"workspaces", WorkspaceViewSet, basename="workspace")
+ROUTER.register(r"role-bindings", RoleBindingViewSet, basename="role-bindings")
 
 # pylint: disable=invalid-name
 urlpatterns = [
