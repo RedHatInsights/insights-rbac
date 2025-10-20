@@ -150,12 +150,8 @@ class OutboxReplicator(RelationReplicator):
             "relations_to_remove": remove_json,
         }
 
-        # Only include resource_context for workspace events
-        if event_type in (
-            ReplicationEventType.CREATE_WORKSPACE,
-            ReplicationEventType.UPDATE_WORKSPACE,
-            ReplicationEventType.DELETE_WORKSPACE,
-        ):
+        # Only include resource_context for workspace create
+        if event_type == ReplicationEventType.CREATE_WORKSPACE:
             resource_context = self._build_resource_context(event_info, event_type)
             payload["resource_context"] = resource_context
 
