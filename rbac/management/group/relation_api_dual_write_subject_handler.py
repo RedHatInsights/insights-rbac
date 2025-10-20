@@ -152,20 +152,6 @@ class RelationApiDualWriteSubjectHandler:
         else:
             raise TypeError(f"Unexpected resource: {resource}")
 
-    def _v2_resource_for(self, resource: Tenant | Workspace) -> V2boundresource:
-        if isinstance(resource, Tenant):
-            resource_id = resource.tenant_resource_id()
-
-            if resource_id is None:
-                raise ValueError(f"Could not obtain resource ID from tenant: {resource}")
-
-            return V2boundresource(resource_type=("rbac", "tenant"), resource_id=resource_id)
-
-        if isinstance(resource, Workspace):
-            return V2boundresource(resource_type=("rbac", "workspace"), resource_id=str(resource.id))
-
-        raise TypeError(f"Unexpected resource: {resource}")
-
     def _update_mapping_for_system_role(
         self,
         role: Role,
@@ -184,7 +170,10 @@ class RelationApiDualWriteSubjectHandler:
             default_workspace=self.default_workspace,
         )
 
-        v2_resource = self._v2_resource_for(local_resource)
+        v2_resource = V2boundresource.try_for_model(local_resource)
+
+        if v2_resource is None:
+            raise ValueError(f"Could not obtain V2boundresource for model: {local_resource}")
 
         try:
             # We lock the binding here because we cannot lock the Role for system roles,
