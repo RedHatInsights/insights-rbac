@@ -78,8 +78,6 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     _current_role_relations: list[common_pb2.Relationship]
 
     _public_tenant: Optional[Tenant] = None
-    _platform_default_policy_uuid: Optional[str] = None
-    _admin_default_policy_uuid: Optional[str] = None
 
     def __init__(self, role: Role, replicator: Optional[RelationReplicator] = None):
         """Initialize SeedingRelationApiDualWriteHandler."""
@@ -129,7 +127,8 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             [],
         )
 
-    def _check_create_admin_platform_relation(self, role, role_scope, list_relations):
+    def _check_create_admin_platform_relation(self, role, role_scope):
+        create_relations = []
         """Check system role and create admin and platform system role parent-child relationship."""
         if role.admin_default:
             try:
@@ -140,7 +139,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 )
 
                 create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
-                list_relations.append(create_parent_child_relationship)
+                create_relations.append(create_parent_child_relationship)
             except DefaultGroupNotAvailableError:
                 # Default groups may not exist yet during seeding, skip parent relationship
                 logging.warning(f"Default groups may not exist yet during seeding for admin scope {role_scope}")
@@ -155,13 +154,13 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 )
 
                 create_parent_child_relationship = role_child_relationship(parent_uuid, self.role.uuid)
-                list_relations.append(create_parent_child_relationship)
+                create_relations.append(create_parent_child_relationship)
             except DefaultGroupNotAvailableError:
                 # Default groups may not exist yet during seeding, skip parent relationship
                 logging.warning(f"Default groups may not exist yet during seeding for platform scope {role_scope}")
                 pass
 
-        return list_relations
+        return create_relations
 
     def _generate_relations_for_role(
         self, list_all_possible_scopes_for_removal=False
@@ -169,25 +168,22 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         """Generate system role permissions."""
         relations = []
         # Gather v1 and v2 permissions for the role
-        v1_permissions: list[str] = []
         v2_permissions: list[str] = []
 
         # Gather permissions for the role in order to determine scope of role
         for access in self.role.access.all():
             v1_perm = access.permission
-            v1_perm_string = v1_perm.permission
-            v1_permissions.append(v1_perm_string)
             v2_perm = v1_perm_to_v2_perm(v1_perm)
             v2_permissions.append(v2_perm)
 
             # When deleting, generate relationships for all possible scopes
         if list_all_possible_scopes_for_removal is True:
             for scope in Scope:
-                relations = self._check_create_admin_platform_relation(self.role, scope, relations)
+                relations.extend(self._check_create_admin_platform_relation(self.role, scope))
         else:
             # Determine highest scope for the role's permissions
             highest_scope: Scope = self.implicit_resource_service.scope_for_role(self.role)
-            relations = self._check_create_admin_platform_relation(self.role, highest_scope, relations)
+            relations.extend(self._check_create_admin_platform_relation(self.role, highest_scope))
 
         for permission in v2_permissions:
             relations.append(
