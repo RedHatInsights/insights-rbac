@@ -30,7 +30,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.model import BindingMapping, Role
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
+from migration_tool.models import V2role, V2rolebinding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -66,15 +66,15 @@ class RelationApiDualWriteSubjectHandler:
     def _create_default_mapping_for_system_role(self, system_role: Role, **subject: Iterable[str]) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
-        
+
         # Determine scope-based resource for system role
         scope_service = ImplicitResourceService.from_settings()
         tenant = self.default_workspace.tenant
         root_workspace = Workspace.objects.root(tenant=tenant)
-        
+
         # Get permissions from the system role
         permissions = [access.permission.permission for access in system_role.access.all()]
-        
+
         # Determine the bound resource based on permission scopes
         bound_resource = scope_service.v2_bound_resource_for_permission(
             permissions=permissions,
@@ -82,7 +82,7 @@ class RelationApiDualWriteSubjectHandler:
             root_workspace_id=str(root_workspace.id),
             default_workspace_id=str(self.default_workspace.id),
         )
-        
+
         binding = V2rolebinding(
             str(uuid4()),
             # Assumes same role UUID for V2 system role equivalent.
