@@ -170,7 +170,6 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         # Gather v1 and v2 permissions for the role
         v2_permissions: list[str] = []
 
-        # Gather permissions for the role in order to determine scope of role
         for access in self.role.access.all():
             v1_perm = access.permission
             v2_perm = v1_perm_to_v2_perm(v1_perm)
