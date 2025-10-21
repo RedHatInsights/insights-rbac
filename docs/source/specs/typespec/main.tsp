@@ -887,3 +887,240 @@ namespace RoleBindings {
 
     ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
 }
+
+@route("/roles/")
+@tag("Roles")
+@doc("Operations about roles")
+namespace Roles {
+    enum ScopeType {
+        tenant,
+        principal
+    }
+    @example(#{
+        uuid: "550e8400-e29b-41d4-a716-446655440000",
+        name: "Tenant admin",
+        description: "Full administrative access to the tenant",
+        permissions_count: 5,
+        workspace_count: 1,
+        user_group_count: 1,
+        last_modified: "1 year ago"
+    })
+    model Role {
+        @doc("Unique identifier for the role")
+        uuid: UUID;
+
+        @doc("Name of the role")
+        @example("Tenant admin")
+        name: string;
+
+        @doc("Description of the role")
+        @example("Full administrative access to the tenant")
+        description: string;
+
+        @doc("Count of permissions associated with this role")
+        @example(5)
+        permissions_count: int64 | "Not available";
+
+        @doc("How many workspaces that role is in")
+        @example(1)
+        workspace_count: int64 | "Not available";
+
+        @doc("How many user groups that role is in")
+        @example(1)
+        user_group_count: int64 | "Not available";
+
+        @doc("When the role was last modified")
+        @example("1 year ago")
+        last_modified: string;
+    }
+
+    @example(#{
+        meta: #{
+            limit: 10
+        },
+        links: #{
+            next: "http://localhost:8000/api/rbac/v2/roles/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+            previous: null
+        },
+        data: #[
+            #{
+                uuid: "550e8400-e29b-41d4-a716-446655440000",
+                name: "Tenant admin",
+                description: "Full administrative access to the tenant",
+                permissions_count: 5,
+                workspace_count: 1,
+                user_group_count: 1,
+                last_modified: "1 year ago"
+            },
+            #{
+                uuid: "550e8400-e29b-41d4-a716-446655440001",
+                name: "Workspace admin",
+                description: "Administrative access to specific workspaces",
+                permissions_count: 4,
+                workspace_count: 1,
+                user_group_count: 1,
+                last_modified: "1 year ago"
+            },
+            #{
+                uuid: "550e8400-e29b-41d4-a716-446655440002",
+                name: "RHEL DevOps",
+                description: "DevOps access for RHEL systems",
+                permissions_count: 3,
+                workspace_count: 2,
+                user_group_count: 2,
+                last_modified: "1 year ago"
+            },
+            #{
+                uuid: "550e8400-e29b-41d4-a716-446655440003",
+                name: "Cost mgmt role",
+                description: "Cost management access",
+                permissions_count: "Not available",
+                workspace_count: "Not available",
+                user_group_count: "Not available",
+                last_modified: "1 year ago"
+            },
+            #{
+                uuid: "550e8400-e29b-41d4-a716-446655440004",
+                name: "RHEL Inventory viewer",
+                description: "Read-only access to RHEL inventory",
+                permissions_count: 1,
+                workspace_count: 1,
+                user_group_count: 1,
+                last_modified: "2 days ago"
+            }
+        ]
+    })
+    model RoleListResponse {
+        @doc("Pagination metadata")
+        meta: CursorPaginationMeta;
+
+        @doc("Pagination links")
+        links: CursorPaginationLinks;
+
+        @doc("List of roles that the user has access to")
+        data: Role[];
+    }
+
+    @doc("View a list of the roles that a user has access to under a Tenant. Supports 3 use cases: 1) Org admin viewing all tenant roles, 2) Org admin viewing specific user's roles, 3) Non-admin user viewing their own roles")
+    @summary("List Roles")
+
+    // Use Case 1: Org admin viewing all roles in tenant
+    @opExample(#{
+        parameters: #{
+            tenant_id: "12345",
+            scope: ScopeType.tenant,
+            limit: 10
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/roles/?cursor=cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
+                previous: null
+            },
+            data: #[
+                #{
+                    uuid: "550e8400-e29b-41d4-a716-446655440000",
+                    name: "Tenant admin",
+                    description: "Full administrative access to the tenant",
+                    permissions_count: 5,
+                    workspace_count: 1,
+                    user_group_count: 1,
+                    last_modified: "1 year ago"
+                },
+                #{
+                    uuid: "550e8400-e29b-41d4-a716-446655440001",
+                    name: "Workspace admin",
+                    description: "Administrative access to specific workspaces",
+                    permissions_count: 4,
+                    workspace_count: 1,
+                    user_group_count: 1,
+                    last_modified: "1 year ago"
+                }
+            ]
+        }
+    })
+
+    // Use Case 2: Org admin viewing specific user's roles
+    @opExample(#{
+        parameters: #{
+            tenant_id: "12345",
+            username: "john.doe",
+            limit: 10
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/roles/?cursor=xyz123",
+                previous: null
+            },
+            data: #[
+                #{
+                    uuid: "550e8400-e29b-41d4-a716-446655440001",
+                    name: "Workspace admin",
+                    description: "Administrative access to specific workspaces",
+                    permissions_count: 4,
+                    workspace_count: 1,
+                    user_group_count: 1,
+                    last_modified: "1 year ago"
+                },
+                #{
+                    uuid: "550e8400-e29b-41d4-a716-446655440004",
+                    name: "RHEL Inventory viewer",
+                    description: "Read-only access to RHEL inventory",
+                    permissions_count: 1,
+                    workspace_count: 1,
+                    user_group_count: 1,
+                    last_modified: "2 days ago"
+                }
+            ]
+        }
+    })
+
+    // Use Case 3: Non-admin user viewing their own roles
+    @opExample(#{
+        parameters: #{
+            tenant_id: "12345",
+            scope: ScopeType.principal,
+            limit: 10
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: null,
+                previous: null
+            },
+            data: #[
+                #{
+                    uuid: "550e8400-e29b-41d4-a716-446655440004",
+                    name: "RHEL Inventory viewer",
+                    description: "Read-only access to RHEL inventory",
+                    permissions_count: 1,
+                    workspace_count: 1,
+                    user_group_count: 1,
+                    last_modified: "2 days ago"
+                }
+            ]
+        }
+    })
+    @get op list(
+        @doc("Tenant ID to filter roles for")
+        @query tenant_id: string;
+
+        @query limit?: int64 = 10;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: string;
+
+        @doc("Parameter for filtering resource by scope. 'tenant' shows all roles in tenant (admin view), 'principal' shows only roles assigned to current user or specified username")
+        @query scope?: ScopeType = ScopeType.tenant;
+
+        @doc("Unique username of the principal to obtain roles for (only available for admins, and if supplied, takes precedence over the identity header)")
+        @query username?: string;
+    ): RoleListResponse | Problems.CommonProblems;
+}
