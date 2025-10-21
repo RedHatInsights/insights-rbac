@@ -970,6 +970,12 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[str(group.uuid)])
 
+        # Verify BindingMapping records were created for both resources
+        mappings = BindingMapping.objects.filter(role=role)
+        self.assertEqual(mappings.count(), 2, "Should have 2 BindingMapping records")
+        resource_ids = {m.resource_id for m in mappings}
+        self.assertEqual(resource_ids, {self.default_workspace(), "ws_2"})
+
     def test_add_permissions_to_role(self):
         """Modify the role in place when adding permissions."""
         role = self.given_v1_role(
@@ -977,6 +983,10 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
+
+        # Get initial BindingMapping IDs to verify they're updated, not recreated
+        initial_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
+        self.assertEqual(len(initial_mappings), 2, "Should start with 2 BindingMapping records")
 
         self.given_update_to_v1_role(
             role,
@@ -997,6 +1007,15 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
 
+        # Verify BindingMapping records were updated (same IDs) not recreated
+        updated_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
+        self.assertEqual(len(updated_mappings), 2, "Should still have 2 BindingMapping records")
+        self.assertEqual(
+            initial_mappings,
+            updated_mappings,
+            "BindingMapping IDs should remain the same (updated, not recreated)",
+        )
+
     def test_remove_permissions_from_role(self):
         """Modify the role in place when removing permissions."""
         role = self.given_v1_role(
@@ -1004,6 +1023,10 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
+
+        # Get initial BindingMapping IDs
+        initial_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
+        self.assertEqual(len(initial_mappings), 2)
 
         self.given_update_to_v1_role(
             role,
@@ -1021,6 +1044,11 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[str(group.uuid)]
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
+
+        # Verify BindingMapping records were updated with new permissions
+        updated_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
+        self.assertEqual(len(updated_mappings), 2)
+        self.assertEqual(initial_mappings, updated_mappings, "BindingMapping IDs should remain the same")
 
     def test_remove_permissions_from_role_back_to_original(self):
         """Modify the role in place when removing permissions, consolidating roles."""
@@ -1083,21 +1111,30 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_remove_resource_removes_role_binding(self):
         """Remove the role binding when removing the resource from attribute filter."""
-        role = self.given_v1_role(
+        v1_role = self.given_v1_role(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
+        # Verify initial state: 2 BindingMappings
+        initial_mappings = BindingMapping.objects.filter(role=v1_role)
+        self.assertEqual(initial_mappings.count(), 2, "Should start with 2 BindingMapping records")
+
         self.given_update_to_v1_role(
-            role,
+            v1_role,
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        v2_role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
 
         self.expect_num_role_bindings(1)
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role], for_groups=[])
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[v2_role], for_groups=[])
+
+        # Verify BindingMapping for default workspace was removed
+        remaining_mappings = BindingMapping.objects.filter(role=v1_role)
+        self.assertEqual(remaining_mappings.count(), 1, "Should have only 1 BindingMapping after removal")
+        self.assertEqual(remaining_mappings.first().resource_id, "ws_2")
 
     def test_two_roles_with_same_resource_permissions_create_two_v2_roles(self):
         """Create two v2 roles when two roles have the same resource permissions across different resources."""

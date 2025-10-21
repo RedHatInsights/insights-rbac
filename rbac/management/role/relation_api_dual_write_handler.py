@@ -31,6 +31,7 @@ from management.relation_replicator.relation_replicator import RelationReplicato
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import BindingMapping, Role
+from management.role.relations import role_child_relationship
 from migration_tool.migrate_role import migrate_role
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
 from migration_tool.utils import create_relationship
@@ -132,13 +133,9 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
         # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
         if self.role.admin_default and admin_default:
-            relations.append(
-                create_relationship(("rbac", "role"), admin_default, ("rbac", "role"), str(self.role.uuid), "child")
-            )
+            relations.append(role_child_relationship(parent_uuid=admin_default, child_uuid=str(self.role.uuid)))
         if self.role.platform_default and platform_default:
-            relations.append(
-                create_relationship(("rbac", "role"), platform_default, ("rbac", "role"), str(self.role.uuid), "child")
-            )
+            relations.append(role_child_relationship(parent_uuid=platform_default, child_uuid=str(self.role.uuid)))
 
         permissions = list()
         for access in self.role.access.all():
