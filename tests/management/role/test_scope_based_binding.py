@@ -65,15 +65,15 @@ class ScopeBasedBindingIntegrationTests(IdentityRequest):
         )
 
         # Create permissions for different scopes
-        self.tenant_perm = Permission.objects.create(
+        self.tenant_perm, _ = Permission.objects.get_or_create(
             permission="rbac:role:read",
             tenant=self.tenant,
         )
-        self.root_perm = Permission.objects.create(
+        self.root_perm, _ = Permission.objects.get_or_create(
             permission="advisor:recommendation:read",
             tenant=self.tenant,
         )
-        self.default_perm = Permission.objects.create(
+        self.default_perm, _ = Permission.objects.get_or_create(
             permission="inventory:host:read",
             tenant=self.tenant,
         )
@@ -186,7 +186,7 @@ class ScopeBasedBindingIntegrationTests(IdentityRequest):
     def test_wildcard_permissions_match_scope(self):
         """Test that wildcard permissions are correctly matched to scope."""
         # Create permissions with wildcards
-        wildcard_perm = Permission.objects.create(
+        wildcard_perm, _ = Permission.objects.get_or_create(
             permission="cost-management:*:*",
             tenant=self.tenant,
         )
@@ -209,7 +209,7 @@ class ScopeBasedBindingIntegrationTests(IdentityRequest):
     def test_unconfigured_app_binds_to_default(self):
         """Test that unconfigured apps bind to default workspace."""
         # Create permission for an app not in scope configuration
-        unconfigured_perm = Permission.objects.create(
+        unconfigured_perm, _ = Permission.objects.get_or_create(
             permission="patch:advisory:read",
             tenant=self.tenant,
         )
@@ -240,7 +240,7 @@ class ScopeBasedBindingIntegrationTests(IdentityRequest):
         4. Verify default workspace binding is replaced with root workspace binding
         """
         # Step 1: Create role with default-scoped permission
-        default_perm = Permission.objects.create(
+        default_perm, _ = Permission.objects.get_or_create(
             permission="inventory:host:read",
             tenant=self.tenant,
         )
@@ -263,7 +263,7 @@ class ScopeBasedBindingIntegrationTests(IdentityRequest):
         initial_mapping.save()
 
         # Step 3: Update role to add ROOT-scoped permission
-        root_perm = Permission.objects.create(
+        root_perm, _ = Permission.objects.get_or_create(
             permission="advisor:recommendation:read",
             tenant=self.tenant,
         )

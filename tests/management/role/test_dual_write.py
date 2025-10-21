@@ -1111,28 +1111,28 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_remove_resource_removes_role_binding(self):
         """Remove the role binding when removing the resource from attribute filter."""
-        role = self.given_v1_role(
+        v1_role = self.given_v1_role(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
         # Verify initial state: 2 BindingMappings
-        initial_mappings = BindingMapping.objects.filter(role=role)
+        initial_mappings = BindingMapping.objects.filter(role=v1_role)
         self.assertEqual(initial_mappings.count(), 2, "Should start with 2 BindingMapping records")
 
         self.given_update_to_v1_role(
-            role,
+            v1_role,
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        v2_role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
 
         self.expect_num_role_bindings(1)
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role], for_groups=[])
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[v2_role], for_groups=[])
 
         # Verify BindingMapping for default workspace was removed
-        remaining_mappings = BindingMapping.objects.filter(role=role)
+        remaining_mappings = BindingMapping.objects.filter(role=v1_role)
         self.assertEqual(remaining_mappings.count(), 1, "Should have only 1 BindingMapping after removal")
         self.assertEqual(remaining_mappings.first().resource_id, "ws_2")
 

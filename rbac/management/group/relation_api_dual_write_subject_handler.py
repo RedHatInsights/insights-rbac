@@ -22,6 +22,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from management.models import Workspace
+from management.permission.scope_service import ImplicitResourceService
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -65,11 +66,28 @@ class RelationApiDualWriteSubjectHandler:
     def _create_default_mapping_for_system_role(self, system_role: Role, **subject: Iterable[str]) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
+        
+        # Determine scope-based resource for system role
+        scope_service = ImplicitResourceService.from_settings()
+        tenant = self.default_workspace.tenant
+        root_workspace = Workspace.objects.root(tenant=tenant)
+        
+        # Get permissions from the system role
+        permissions = [access.permission.permission for access in system_role.access.all()]
+        
+        # Determine the bound resource based on permission scopes
+        bound_resource = scope_service.v2_bound_resource_for_permission(
+            permissions=permissions,
+            tenant_org_id=tenant.org_id,
+            root_workspace_id=str(root_workspace.id),
+            default_workspace_id=str(self.default_workspace.id),
+        )
+        
         binding = V2rolebinding(
             str(uuid4()),
             # Assumes same role UUID for V2 system role equivalent.
             V2role.for_system_role(str(system_role.uuid)),
-            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
+            bound_resource,
             **subject,
         )
         mapping = BindingMapping.for_role_binding(binding, system_role)
