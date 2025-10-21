@@ -170,9 +170,51 @@ class DynamicFieldsSerializer(serializers.Serializer):
 
 
 class RoleBindingBySubjectSerializer(DynamicFieldsSerializer):
-    """Serializer for role bindings grouped by subject."""
+    """Serializer for role bindings grouped by subject.
 
-    last_modified = serializers.DateTimeField(read_only=True, source="modified")
-    subject = SubjectSerializer(read_only=True)
-    roles = RoleSerializer(many=True, read_only=True)
-    resource = ResourceSerializer(read_only=True)
+    This serializer works with Group objects that have been annotated with
+    role binding information via the _build_group_queryset method.
+    """
+
+    last_modified = serializers.DateTimeField(read_only=True, source="latest_modified")
+    subject = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+
+    def get_subject(self, group):
+        """Extract subject information from the Group object."""
+        return {
+            "id": group.uuid,
+            "type": "group",
+            "group": {
+                "name": group.name,
+                "description": group.description,
+                "user_count": group.principalCount,
+            },
+        }
+
+    def get_roles(self, group):
+        """Extract roles from the prefetched role bindings."""
+        roles = []
+        seen_role_ids = set()
+
+        # Access the prefetched filtered_bindings
+        if hasattr(group, "filtered_bindings"):
+            for binding_group in group.filtered_bindings:
+                role = binding_group.binding.role
+                if role and role.uuid not in seen_role_ids:
+                    roles.append({"uuid": role.uuid, "name": role.name})
+                    seen_role_ids.add(role.uuid)
+
+        return roles
+
+    def get_resource(self, group):
+        """Extract resource information from the request context."""
+        request = self.context.get("request")
+        if request:
+            return {
+                "id": request.resource_id,
+                "name": request.resource_name,
+                "type": request.resource_type,
+            }
+        return None

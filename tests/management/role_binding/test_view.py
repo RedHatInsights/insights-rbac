@@ -134,7 +134,7 @@ class RoleBindingViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_list_by_subject_with_pagination(self):
-        """Test pagination works correctly."""
+        """Test pagination works correctly with cursor pagination."""
         url = reverse("v2_management:role-bindings-by-subject")
         client = APIClient()
 
@@ -148,6 +148,8 @@ class RoleBindingViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data["meta"]["limit"], 5)
+        # Cursor pagination doesn't include count
+        self.assertNotIn("count", data["meta"])
         self.assertIn("next", data["links"])
         self.assertIn("previous", data["links"])
 

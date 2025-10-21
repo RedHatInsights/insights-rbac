@@ -16,7 +16,7 @@
 #
 """Cursor-based pagination for role bindings."""
 import logging
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlparse
 
 from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
@@ -25,84 +25,21 @@ logger = logging.getLogger(__name__)
 
 
 class RoleBindingCursorPagination(CursorPagination):
-    """Cursor-based pagination for role bindings.
-
-    This pagination class supports both querysets and lists.
-    For lists (e.g., grouped data), it falls back to offset-based pagination
-    while maintaining the cursor pagination interface.
-    """
+    """Cursor-based pagination for role bindings."""
 
     page_size = 10
     page_size_query_param = "limit"
     max_page_size = 1000
     cursor_query_param = "cursor"
-    ordering = "-modified"  # Default ordering by modification date
-
-    def paginate_queryset(self, queryset, request, view=None):
-        """Paginate the queryset or list."""
-        if isinstance(queryset, list):
-            return self._paginate_list(queryset, request, view)
-
-        return super().paginate_queryset(queryset, request, view)
-
-    def _paginate_list(self, data_list, request, view=None):
-        """Handle pagination for lists (e.g., grouped data)."""
-        self.request = request
-        self.page_size = self.get_page_size(request)
-        if not self.page_size:
-            return None
-
-        try:
-            self.offset = int(request.query_params.get("offset", 0))
-        except (ValueError, TypeError):
-            self.offset = 0
-
-        self.count = len(data_list)
-        # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
-        self.page_data = data_list[self.offset : self.offset + self.page_size]  # type: ignore # noqa: E203
-
-        return self.page_data
+    ordering = "-latest_modified"  # Default ordering by latest modification date
 
     def get_next_link(self):
-        """Create next link."""
-        # Handle list pagination
-        if hasattr(self, "offset"):
-            if self.offset + self.page_size >= self.count:
-                return None
-
-            # Build next link with offset, preserving other query params
-            params = self.request.query_params.copy()
-            params["offset"] = self.offset + self.page_size
-            params["limit"] = self.page_size
-
-            url = self.request.path
-            query_string = urlencode(params)
-            link = f"{url}?{query_string}"
-            return self.link_rewrite(self.request, link)
-
-        # Standard cursor pagination
+        """Create next link with partial URL rewrite."""
         next_link = super().get_next_link()
         return self.link_rewrite(self.request, next_link)
 
     def get_previous_link(self):
-        """Create previous link."""
-        # Handle list pagination
-        if hasattr(self, "offset"):
-            if self.offset <= 0:
-                return None
-
-            # Build previous link with offset, preserving other query params
-            params = self.request.query_params.copy()
-            offset = max(0, self.offset - self.page_size)
-            params["offset"] = offset
-            params["limit"] = self.page_size
-
-            url = self.request.path
-            query_string = urlencode(params)
-            link = f"{url}?{query_string}"
-            return self.link_rewrite(self.request, link)
-
-        # Standard cursor pagination
+        """Create previous link with partial URL rewrite."""
         previous_link = super().get_previous_link()
         return self.link_rewrite(self.request, previous_link)
 
@@ -120,15 +57,9 @@ class RoleBindingCursorPagination(CursorPagination):
 
     def get_paginated_response(self, data):
         """Override pagination output to match OpenAPI spec."""
-        meta = {"limit": self.page_size}
-
-        # Add count for list pagination
-        if hasattr(self, "count"):
-            meta["count"] = self.count
-
         return Response(
             {
-                "meta": meta,
+                "meta": {"limit": self.page_size},
                 "links": {
                     "next": self.get_next_link(),
                     "previous": self.get_previous_link(),

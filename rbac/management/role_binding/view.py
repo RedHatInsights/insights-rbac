@@ -17,7 +17,7 @@
 """View for role binding management."""
 import logging
 
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Max, Prefetch, Q
 from management.base_viewsets import BaseV2ViewSet
 from management.models import Group
 from management.permissions.workspace_access import WorkspaceAccessPermission
@@ -75,8 +75,8 @@ class RoleBindingViewSet(BaseV2ViewSet):
         fields = request.query_params.get("fields")
         order_by = request.query_params.get("order_by")
 
-        # Build queryset
-        queryset = self._build_queryset(
+        # Build queryset of groups with role binding data
+        queryset = self._build_group_queryset(
             resource_id=resource_id,
             resource_type=resource_type,
             subject_type=subject_type,
@@ -87,47 +87,70 @@ class RoleBindingViewSet(BaseV2ViewSet):
         # Apply ordering
         if order_by:
             queryset = self._apply_ordering(queryset, order_by)
+        else:
+            # Default ordering for cursor pagination
+            queryset = queryset.order_by("-latest_modified")
 
-        # Get resource details
-        resource_name = self._get_resource_name(resource_id, resource_type, request.tenant)
-
-        # Group by subject
-        grouped_data = self._group_by_subject(queryset, resource_id, resource_name, resource_type, request.tenant)
+        # Store resource info in request context for serializer
+        request.resource_id = resource_id
+        request.resource_type = resource_type
+        request.resource_name = self._get_resource_name(resource_id, resource_type, request.tenant)
 
         # Paginate results
-        page = self.paginate_queryset(grouped_data)
+        page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = self.get_serializer(page, many=True, fields=fields)
+            serializer = self.get_serializer(page, many=True, fields=fields, context={"request": request})
             return self.get_paginated_response(serializer.data)
 
-        serializer = self.get_serializer(grouped_data, many=True, fields=fields)
+        serializer = self.get_serializer(queryset, many=True, fields=fields, context={"request": request})
         return Response(serializer.data)
 
-    def _build_queryset(self, resource_id, resource_type, subject_type, subject_id, tenant):
-        """Build the base queryset with filters."""
-        queryset = RoleBinding.objects.filter(
-            tenant=tenant, resource_type=resource_type, resource_id=resource_id
-        ).select_related("role")
+    def _build_group_queryset(self, resource_id, resource_type, subject_type, subject_id, tenant):
+        """Build a queryset of groups with their role bindings for the specified resource.
 
-        # Create annotated Group queryset
-        annotated_groups = Group.objects.annotate(
-            principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True)
-        )
+        Returns a queryset of Group objects annotated with:
+        - principalCount: Count of user principals in the group
+        - latest_modified: Latest modification timestamp from associated roles
 
-        # Prefetch related groups with annotation
-        group_queryset = RoleBindingGroup.objects.prefetch_related(Prefetch("group", queryset=annotated_groups))
+        Each group will have prefetched role bindings filtered by resource.
+        """
+        # Start with groups that have bindings to the specified resource
+        queryset = Group.objects.filter(
+            tenant=tenant,
+            rolebindinggroup__binding__resource_type=resource_type,
+            rolebindinggroup__binding__resource_id=resource_id,
+        ).distinct()
 
         # Apply subject filtering if specified
         if subject_type == "group" and subject_id:
-            group_queryset = group_queryset.filter(group__uuid=subject_id)
-        elif subject_type == "group":
-            # If only type is specified, we just filter to groups (which is all we have in group_entries)
-            pass
+            queryset = queryset.filter(uuid=subject_id)
         elif subject_id and not subject_type:
             # If subject_id is provided without type, try to match on group uuid
-            group_queryset = group_queryset.filter(group__uuid=subject_id)
+            queryset = queryset.filter(uuid=subject_id)
 
-        queryset = queryset.prefetch_related(Prefetch("group_entries", queryset=group_queryset))
+        # Annotate with principal count
+        queryset = queryset.annotate(
+            principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True)
+        )
+
+        # Prefetch the role bindings for this resource with their roles
+        binding_queryset = RoleBinding.objects.filter(
+            resource_type=resource_type, resource_id=resource_id
+        ).select_related("role")
+
+        # Prefetch the join table entries with the filtered bindings
+        rolebinding_group_queryset = RoleBindingGroup.objects.filter(
+            binding__resource_type=resource_type, binding__resource_id=resource_id
+        ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
+
+        queryset = queryset.prefetch_related(
+            Prefetch("rolebindinggroup_set", queryset=rolebinding_group_queryset, to_attr="filtered_bindings")
+        )
+
+        # Annotate with latest modified timestamp from roles
+        queryset = queryset.annotate(
+            latest_modified=Max("rolebindinggroup__binding__role__modified")
+        )
 
         return queryset
 
@@ -141,56 +164,6 @@ class RoleBindingViewSet(BaseV2ViewSet):
                 logger.warning(f"Workspace {resource_id} not found for tenant {tenant}")
                 return None
         return None
-
-    def _group_by_subject(self, queryset, resource_id, resource_name, resource_type, tenant):
-        """Group role bindings by subject.
-
-        Returns a list of dictionaries with subject, roles, resource, and metadata.
-        """
-        # Dictionary to hold grouped data: subject_key -> binding data
-        grouped = {}
-
-        for binding in queryset:
-            # Get all groups for this binding
-            for group_entry in binding.group_entries.all():
-                group = group_entry.group
-                subject_key = f"group_{group.uuid}"
-
-                if subject_key not in grouped:
-                    # Use the role's modified timestamp
-                    modified_time = binding.role.modified if binding.role else None
-
-                    grouped[subject_key] = {
-                        "modified": modified_time,
-                        "subject": {
-                            "id": group.uuid,
-                            "type": "group",
-                            "group": {
-                                "name": group.name,
-                                "description": group.description,
-                                "principalCount": group.principalCount,
-                            },
-                        },
-                        "roles": [],
-                        "resource": {
-                            "id": resource_id,
-                            "name": resource_name,
-                            "type": resource_type,
-                        },
-                    }
-
-                # Add role data
-                role_data = {"uuid": binding.role.uuid, "name": binding.role.name}
-                if role_data not in grouped[subject_key]["roles"]:
-                    grouped[subject_key]["roles"].append(role_data)
-
-                # Update modified timestamp to the latest role modified time
-                if binding.role and binding.role.modified:
-                    current_modified = grouped[subject_key].get("modified")
-                    if not current_modified or binding.role.modified > current_modified:
-                        grouped[subject_key]["modified"] = binding.role.modified
-
-        return list(grouped.values())
 
     def _apply_ordering(self, queryset, order_by):
         """Apply ordering to queryset."""
