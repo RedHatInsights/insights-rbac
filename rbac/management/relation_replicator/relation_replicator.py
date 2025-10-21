@@ -92,7 +92,7 @@ class ReplicationEvent:
         self.remove = remove
         self.event_info = info
 
-    def resource_context(self) -> Dict[str, str] | None:
+    def resource_context(self) -> Dict[str, object] | None:
         """
         Build resource context if applicable.
 
@@ -133,7 +133,7 @@ class ReplicationEventResourceContext:
         self.org_id = org_id
         self.event_type = event_type
 
-    def to_json(self) -> Dict[str, str]:
+    def to_json(self) -> Dict[str, object]:
         """Convert to JSON dictionary."""
         return {
             "resource_type": self.resource_type,

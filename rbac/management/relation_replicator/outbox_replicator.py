@@ -22,6 +22,7 @@ from typing import Any, Dict, List, NotRequired, Optional, Protocol, TypedDict
 
 from django.db import transaction
 from google.protobuf import json_format
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
 from management.relation_replicator.relation_replicator import (
     AggregateTypes,
@@ -75,7 +76,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event)
+        payload = self._build_replication_event(event, event.add, event.remove)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -89,16 +90,15 @@ class OutboxReplicator(RelationReplicator):
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
     def _build_replication_event(
-        self,
-        event: ReplicationEvent,
+        self, event: ReplicationEvent, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
     ) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
-        for relation in event.add:
+        for relation in relations_to_add:
             add_json.append(json_format.MessageToDict(relation))
 
         remove_json: list[dict[str, Any]] = []
-        for relation in event.remove:
+        for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
         payload: ReplicationEventPayload = {
