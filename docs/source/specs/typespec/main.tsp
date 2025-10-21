@@ -31,7 +31,7 @@ model Timestamps {
 scalar UUID extends string;
 
 model CursorPaginationMeta {
-    @doc("Limit of returned objects")
+    @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
     limit: int64 = 10;
 }
@@ -53,7 +53,7 @@ model OffsetPaginationMeta {
     @example(10)
     count: int64;
 
-    @doc("Limit of returned objects")
+    @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
     limit: int64 = 10;
 
@@ -314,10 +314,6 @@ namespace Workspaces {
         @key id: UUID = "Workspace ID of moved workspace";
         parent_id: UUID = "New parent ID of moved workspace";
     }
-
-
-
-
 
     model Pagination {
         @doc("Pagination metadata")
