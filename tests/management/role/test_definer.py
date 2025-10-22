@@ -524,3 +524,42 @@ class RoleDefinerTests(IdentityRequest):
         seed_roles()
 
         self.assertFalse(Role.objects.get(pk=custom.pk).system)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "test_seeding_role", "display_name": "Test Seeding Role", "system": true, "version": 1, "platform_default": true, "access": [{"permission": "inventory:hosts:read"}]}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_generate_relations_for_role(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_replicate,
+    ):
+        """Test that seed_roles generates relations for roles using _generate_relations_for_role."""
+        # Mock the file system to return our test role config
+        mock_listdir.return_value = ["test_role.json"]
+        mock_isfile.return_value = True
+
+        # Ensure the permission exists
+        Permission.objects.get_or_create(permission="inventory:hosts:read", tenant=self.public_tenant)
+
+        # Call seed_roles which should trigger _generate_relations_for_role
+        seed_roles()
+
+        # Verify the role was created
+        role = Role.objects.get(name="test_seeding_role", tenant=self.public_tenant)
+        self.assertTrue(role.system)
+        self.assertTrue(role.platform_default)
+
+        # Verify that replicate was called (which means _generate_relations_for_role was executed)
+        self.assertTrue(mock_replicate.called)
+
+        # Verify the replication event was for creating a system role
+        self.assertTrue(
+            any(self.is_create_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )

@@ -142,6 +142,11 @@ class AccessViewTests(IdentityRequest):
         Workspace.objects.filter(type=Workspace.Types.STANDARD).delete()
         Workspace.objects.filter(type=Workspace.Types.DEFAULT).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
+        # Clear the principal cache for the test tenant to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     def create_role(self, role_name, headers, in_access_data=None):
         """Create a role."""
@@ -184,6 +189,7 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
         return role
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     def test_get_access_success(self):
         """Test that we can obtain the expected access without pagination."""
         role_name = "roleA"
@@ -324,6 +330,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("offset"), 0)
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     def test_get_access_to_return_unique_records(self):
         """Test that we can obtain the expected access without pagination."""
         role_name = "roleA"
@@ -365,6 +372,7 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch("rbac.middleware.FEATURE_FLAGS.is_add_ungrouped_hosts_id_enabled", return_value=False)
     @patch("rbac.middleware.FEATURE_FLAGS.is_remove_null_value_enabled", return_value=False)
     def test_get_access_replace_null_value(
@@ -441,6 +449,7 @@ class AccessViewTests(IdentityRequest):
                     self.assertEqual(resourceDef.get("value"), [str(ungrouped_hosts_id), "uuid"])
                     break
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch("rbac.middleware.FEATURE_FLAGS.is_add_ungrouped_hosts_id_enabled", return_value=True)
     @patch("rbac.middleware.FEATURE_FLAGS.is_remove_null_value_enabled", return_value=True)
     def test_get_access_with_attribute_filter_value_of_none(
@@ -604,6 +613,7 @@ class AccessViewTests(IdentityRequest):
         permissions = [access["permission"] for access in response.data.get("data")]
         self.assertListEqual(permissions, ["test:assigned:permission1", "test:assigned:permission2"])
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -645,6 +655,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.data.get("meta").get("limit"), 2)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -684,6 +695,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -727,6 +739,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 0)
         self.assertEqual(response.data.get("meta").get("limit"), 0)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -770,6 +783,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 0)
         self.assertEqual(response.data.get("meta").get("limit"), 0)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch("management.cache.AccessCache.save_policy", return_value=None)
     @patch("management.cache.AccessCache.get_policy", return_value=None)
     @patch(
@@ -904,6 +918,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
         self.assertEqual(response.data["meta"]["count"], 2)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -947,6 +962,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 0)
         self.assertEqual(response.data.get("meta").get("limit"), 0)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
@@ -1006,6 +1022,7 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @override_settings(ROLE_CREATE_ALLOW_LIST="app")
     @patch("management.cache.AccessCache.get_policy", return_value=None)
     @patch("management.cache.AccessCache.save_policy", return_value=None)
     @patch(
