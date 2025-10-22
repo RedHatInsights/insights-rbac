@@ -205,6 +205,9 @@ class GroupViewSet(
             # We have to modify the starting queryset to support locking because
             # FOR UPDATE statement cannot be used with GROUP BY statement
             # and by default this uses GROUP BY for counts.
+            #
+            # When removing a group, this must also be locked in the case where the removed group is a custom default
+            # access group. See try_lock_tenants_for_bootstrap.
             group_query_set = get_group_queryset(
                 self.request, self.args, self.kwargs, base_query=Group.objects.all()
             ).select_for_update()
