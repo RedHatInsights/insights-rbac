@@ -18,11 +18,10 @@
 """RelationReplicator which writes to the outbox table."""
 
 import logging
-from typing import Any, Dict, List, Optional, Protocol, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, Protocol, TypedDict
 
 from django.db import transaction
 from google.protobuf import json_format
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
 from management.relation_replicator.relation_replicator import (
     AggregateTypes,
@@ -55,6 +54,7 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+    resource_context: NotRequired[Dict[str, object]]
 
 
 class WorkspaceEventPayload(TypedDict):
@@ -75,7 +75,7 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove)
+        payload = self._build_replication_event(event)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
     def replicate_workspace(self, event: WorkspaceEvent):
@@ -88,19 +88,26 @@ class OutboxReplicator(RelationReplicator):
         )
         self._save_workspace_event(payload, event.event_type, str(event.partition_key))
 
-    def _build_replication_event(
-        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship], org_id: str
-    ) -> ReplicationEventPayload:
+    def _build_replication_event(self, event: ReplicationEvent) -> ReplicationEventPayload:
         """Build replication event."""
         add_json: list[dict[str, Any]] = []
-        for relation in relations_to_add:
+        for relation in event.add:
             add_json.append(json_format.MessageToDict(relation))
 
         remove_json: list[dict[str, Any]] = []
-        for relation in relations_to_remove:
+        for relation in event.remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json, "org_id": org_id}
+        payload: ReplicationEventPayload = {
+            "relations_to_add": add_json,
+            "relations_to_remove": remove_json,
+        }
+
+        resource_context = event.resource_context()
+        if resource_context:
+            payload["resource_context"] = resource_context
+
+        return payload
 
     def _save_replication_event(
         self,

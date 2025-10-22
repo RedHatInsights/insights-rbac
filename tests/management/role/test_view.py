@@ -290,6 +290,11 @@ class RoleViewsetTests(IdentityRequest):
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
         cached_tenants.delete_tenant(test_tenant_org_id)
+        # Clear principal cache to avoid stale data between tests
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -2526,6 +2531,11 @@ class RoleViewNonAdminTests(IdentityRequest):
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
         cached_tenants.delete_tenant(test_tenant_org_id)
+        # Clear principal cache to avoid stale data between tests
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @staticmethod
     def _create_group_with_user_access_admin_role(tenant):

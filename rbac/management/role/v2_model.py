@@ -21,7 +21,7 @@ import uuid_utils.compat as uuid
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
-from management.models import Permission, Role
+from management.models import Group, Permission, Role
 from management.rbac_fields import AutoDateTimeField
 from rest_framework import serializers
 
@@ -143,6 +143,34 @@ class PlatformRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 
     _expected_type = RoleV2.Types.PLATFORM
     objects = TypedRoleV2Manager(role_type=_expected_type)
+
+
+class RoleBinding(TenantAwareModel):
+    """A role binding."""
+
+    uuid = models.UUIDField(default=uuid.uuid7, editable=False, unique=True, null=False)
+    role = models.ForeignKey(RoleV2, on_delete=models.CASCADE, related_name="bindings")
+
+    resource_type = models.CharField(max_length=256, null=False)
+    resource_id = models.CharField(max_length=256, null=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["role", "resource_type", "resource_id", "tenant"],
+                name="unique role binding per role resource pair per tenant",
+            ),
+        ]
+
+
+class RoleBindingGroup(models.Model):
+    """The relationship between a RoleBinding and one of its group subjects."""
+
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="role_binding_entries")
+    binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="group_entries")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["group", "binding"], name="unique group binding pair")]
 
 
 def validate_role_children_on_m2m_change(sender, instance, action, pk_set, **kwargs):

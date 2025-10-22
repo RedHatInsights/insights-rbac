@@ -119,6 +119,10 @@ class BaseInternalViewsetTests(IdentityRequest):
         Role.objects.all().delete()
         Policy.objects.all().delete()
         logging.disable(self._prior_logging_disable_level)
+        # Clear the principal cache to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
 @override_settings(
@@ -1884,6 +1888,14 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         super().setUp()
 
         self.API_PATH = "/_private/api/utils/user_lookup/"
+
+    def tearDown(self):
+        """Tear down user lookup tests."""
+        super().tearDown()
+        # Clear the principal cache for the test tenant to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("12345")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",

@@ -17,7 +17,7 @@
 """Test OutboxReplicator."""
 
 import logging
-
+from uuid import uuid4
 from django.test import TestCase, override_settings
 from google.protobuf import json_format
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
@@ -96,6 +96,31 @@ class OutboxReplicatorTest(TestCase):
             },
         )
         self.assertEqual(logged_event.aggregatetype, "relations-replication-event")
+
+    def test_replicate_sets_resource_type_and_id_from_identifiers_for_workspace(self):
+        """Test that resource_type and resource_id are set correctly based on resource identifiers for workspace event."""
+
+        principal_to_group = create_relationship(
+            ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
+        )
+
+        # Test workspace resource type
+        workspace_id = uuid4()
+        event = ReplicationEvent(
+            add=[principal_to_group],
+            remove=[],
+            event_type=ReplicationEventType.CREATE_WORKSPACE,
+            info={"workspace_id": workspace_id, "org_id": "123456"},
+            partition_key=PartitionKey.byEnvironment(),
+        )
+        self.replicator.replicate(event)
+
+        logged_event = self.log[0]
+        self.assertIn("resource_type", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_type"], "Workspace")
+        self.assertIn("resource_id", logged_event.payload["resource_context"])
+        self.assertEqual(logged_event.payload["resource_context"]["resource_id"], str(workspace_id))
+        self.assertNotIn("workspace_id", logged_event.payload["resource_context"])
 
     def test_replicate_empty_event_warns_instead_of_saving(self):
         """Test replicate with empty event warns."""
