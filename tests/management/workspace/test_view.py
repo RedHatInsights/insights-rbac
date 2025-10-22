@@ -131,8 +131,12 @@ class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
 
     def tearDown(self):
         """Tear down group model tests."""
+        from management.utils import PRINCIPAL_CACHE
+
         Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
+        # Clear principal cache to avoid test isolation issues
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
 class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspaceViewTests):
@@ -176,6 +180,15 @@ class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspa
             "parent_id": self.standard_workspace.id,
         }
         self.standard_sub_workspace = self.service.create(validated_data_standard_sub_ws, self.tenant)
+
+    def tearDown(self):
+        """Tear down workspace model tests."""
+        from management.utils import PRINCIPAL_CACHE
+
+        Workspace.objects.update(parent=None)
+        Workspace.objects.all().delete()
+        # Clear principal cache to avoid test isolation issues
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
@@ -2435,6 +2448,7 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
+@override_settings(V2_APIS_ENABLED=False)
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
     def test_get_workspace_list(self):
         """Test for accessing v2 APIs which should be disabled by default."""
