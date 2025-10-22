@@ -67,7 +67,14 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._policy_service = GlobalPolicyIdService.shared()
 
             default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
-            super().__init__(default_workspace, event_type, replicator)
+            root_workspace = Workspace.objects.root(tenant_id=self.group.tenant_id)
+
+            super().__init__(
+                default_workspace=default_workspace,
+                root_workspace=root_workspace,
+                event_type=event_type,
+                replicator=replicator,
+            )
         except Exception as e:
             logger.error(f"Initialization of RelationApiDualWriteGroupHandler failed: {e}")
             raise DualWriteException(e)
