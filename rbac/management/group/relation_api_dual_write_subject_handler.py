@@ -40,6 +40,7 @@ class RelationApiDualWriteSubjectHandler:
     def __init__(
         self,
         default_workspace: Workspace,
+        root_workspace: Workspace,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
     ):
@@ -51,6 +52,7 @@ class RelationApiDualWriteSubjectHandler:
             self.relations_to_add = []
             self.relations_to_remove = []
             self.default_workspace = default_workspace
+            self.root_workspace = root_workspace
             self.event_type = event_type
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
