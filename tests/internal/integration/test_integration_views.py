@@ -96,6 +96,10 @@ class IntegrationViewsTests(IdentityRequest):
         Group.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        # Clear the principal cache to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",

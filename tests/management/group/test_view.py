@@ -273,6 +273,11 @@ class GroupViewsetTests(IdentityRequest):
         Policy.objects.all().delete()
         Workspace.objects.filter(parent__isnull=False).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
+        # Clear the principal cache for the test tenant to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -4425,6 +4430,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         Policy.objects.all().delete()
         Workspace.objects.filter(parent__isnull=False).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
+        # Clear the principal cache for the test tenant to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @staticmethod
     def _create_group_with_user_access_administrator_role(tenant: Tenant) -> Group:
