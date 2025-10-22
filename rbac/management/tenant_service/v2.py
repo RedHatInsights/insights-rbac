@@ -1,6 +1,7 @@
 """V2 implementation of Tenant bootstrapping."""
 
-from typing import Callable, List, Optional
+import dataclasses
+from typing import Callable, Iterable, List, Optional
 
 from django.conf import settings
 from django.db.models import Prefetch, Q, QuerySet
@@ -31,6 +32,114 @@ def default_get_user_id(user: User):
     if user.user_id is None:
         raise ValueError(f"Cannot update user without user_id. username={user.username}")
     return user.user_id
+
+
+@dataclasses.dataclass(frozen=True)
+class TenantBootstrapLock:
+    """
+    Contains a tenant's locked TenantMapping and custom default group (if any).
+
+    This is returned from functions that take a tenant's bootstrap lock.
+    """
+
+    tenant_mapping: TenantMapping
+    custom_default_group: Optional[Group]
+
+
+def try_lock_tenants_for_bootstrap(tenants: Iterable[Tenant]) -> dict[Tenant, Optional[TenantBootstrapLock]]:
+    """
+    Lock the provided tenants in order to prevent concurrent V2 bootstrapping.
+
+    In particular, this locks the tenant's TenantMapping and custom default group (if any). The returned dict
+    is keyed by tenant id and contains a TenantBootstrapLock for each bootstrapped tenant. (It contains None for each
+    tenant without a TenantMapping).
+
+    This lock prevents the following from happening concurrently:
+    * V2 bootstrapping of the tenant.
+    * Creation of a custom default group for the tenant (since clone_default_group_in_public_schema holds this lock).
+    * Deletion of a custom default group for the tenant (since any custom default group is locked).
+    """
+    tenants = list(tenants)
+
+    if any(t.pk is None for t in tenants):
+        raise ValueError("Cannot lock unsaved tenant")
+
+    if any(t.tenant_name == "public" for t in tenants):
+        raise ValueError("Cannot lock public tenant")
+
+    mappings: dict[int, TenantMapping] = {
+        m.tenant_id: m for m in TenantMapping.objects.select_for_update().filter(tenant__in=tenants)
+    }
+
+    # This prevents concurrent deletion of a custom default group because GroupViewSet uses select_for_update in
+    # get_queryset when removing a group.
+    #
+    # Note that if new code that removes a custom default group is added, it must also ensure that it locks the
+    # group. Locking the group here (but not *before* deletion) is insufficient because the deletion code could
+    # concurrently replicate the removal of the group and the restoration of default access.
+    #
+    # Let T be a tenant with custom default group G. Consider transactions A (deleting a custom default group), B (also
+    # deleting the same group), and C (creating a new custom default group), assuming a custom default group already
+    # exists:
+    #
+    # A: Creates outbox message for deleting G (and restoring platform default access for T).
+    # B: Creates outbox message for deleting G (and restoring platform default access for T).
+    # B: Deletes custom default group G.
+    # B: Commits.
+    # C: Locks T for bootstrap.
+    # C: Creates a new custom default group G'.
+    # C: Creates outbox message for creating G' (and removing platform default access for T).
+    # A: Attempts to delete G (to no effect, since it's already deleted).
+    # A: Commits.
+    #
+    # Transaction A commits its platform default access restoration last, so tenant T will end up both having a custom
+    # default access group G' *and* having platform default access (or, at best, the restoration and removal of
+    # platform default access are unordered). This would result in inconsistency. Locking G before replicating the
+    # platform default access restoration would prevent this issue by serializing A and B.
+
+    default_groups: dict[int, Group] = {
+        g.tenant_id: g for g in Group.objects.select_for_update().filter(platform_default=True, tenant__in=tenants)
+    }
+
+    result: dict[Tenant, Optional[TenantBootstrapLock]] = {}
+
+    for tenant in tenants:
+        mapping = mappings.get(tenant.id)
+
+        if mapping is None:
+            result[tenant] = None
+            continue
+
+        result[tenant] = TenantBootstrapLock(
+            tenant_mapping=mapping, custom_default_group=default_groups.get(tenant.id)
+        )
+
+    return result
+
+
+class TenantNotBootstrappedError(Exception):
+    """Raised when a tenant is required to have been bootstrapped but has not been."""
+
+    pass
+
+
+def try_lock_tenant_for_bootstrap(tenant: Tenant) -> Optional[TenantBootstrapLock]:
+    """Attempt to lock a single tenant, as if by try_lock_tenants_for_bootstrap."""
+    return try_lock_tenants_for_bootstrap([tenant])[tenant]
+
+
+def lock_tenant_for_bootstrap(tenant: Tenant) -> TenantBootstrapLock:
+    """
+    Lock a single tenant, as if by try_lock_tenant_for_bootstrap.
+
+    This throws TenantNotBootstrappedError if the tenant is not bootstrapped.
+    """
+    result = try_lock_tenant_for_bootstrap(tenant)
+
+    if result is None:
+        raise TenantNotBootstrappedError(f"Tenant {tenant} not bootstrapped.")
+
+    return result
 
 
 class V2TenantBootstrapService:
@@ -65,13 +174,15 @@ class V2TenantBootstrapService:
         If [force] is True, will re-bootstrap the tenant if already bootstrapped.
         This does not change the RBAC data that already exists, but will replicate to Relations.
         """
-        try:
-            mapping = TenantMapping.objects.get(tenant=tenant)
-            if force:
-                self._replicate_bootstrap(tenant, mapping)
-            return BootstrappedTenant(tenant=tenant, mapping=mapping)
-        except TenantMapping.DoesNotExist:
+        lock_result = try_lock_tenant_for_bootstrap(tenant)
+
+        if lock_result is None:
             return self._bootstrap_tenant(tenant)
+
+        if force:
+            self._replicate_bootstrap(tenant, lock_result.tenant_mapping)
+
+        return BootstrappedTenant(tenant=tenant, mapping=lock_result.tenant_mapping)
 
     def create_ungrouped_workspace(self, org_id) -> Workspace:
         """Util for creating ungrouped workspace. Can be removed once ungrouped workspace has gone."""
@@ -421,20 +532,23 @@ class V2TenantBootstrapService:
     def _get_or_bootstrap_tenants(self, org_ids: set, ready: bool) -> list[BootstrappedTenant]:
         """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
-        existing_tenants = {
-            tenant.org_id: tenant
-            for tenant in Tenant.objects.filter(org_id__in=org_ids).select_related("tenant_mapping")
+        existing_tenants: dict[str, Tenant] = {
+            tenant.org_id: tenant for tenant in Tenant.objects.filter(org_id__in=org_ids)
         }
+
+        tenant_locks = try_lock_tenants_for_bootstrap(existing_tenants.values())
 
         # An existing tenant might have been bootstrapped and already has mapping and workspaces
         tenants_to_bootstrap: list[Tenant] = []
         bootstrapped_list: list[BootstrappedTenant] = []
         for tenant in existing_tenants.values():
-            if not hasattr(tenant, "tenant_mapping"):
+            lock = tenant_locks[tenant]
+
+            if lock is None:
                 tenants_to_bootstrap.append(tenant)
             else:
                 logger.info(f"Tenant already bootstrapped. org_id={tenant.org_id}")
-                bootstrapped_list.append(BootstrappedTenant(tenant, tenant.tenant_mapping))
+                bootstrapped_list.append(BootstrappedTenant(tenant, lock.tenant_mapping))
         # Create new tenants
         new_tenants = [
             Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=ready)
