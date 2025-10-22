@@ -19,6 +19,7 @@ import logging
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.platform import GlobalPolicyIdService
+from management.permission.scope_service import Scope
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from migration_tool.utils import create_relationship
 
@@ -51,7 +52,7 @@ def default_role_binding_tuples(
     The optional policy_cache argument can be used to prevent redundant policy UUID lookups across calls.
     """
     default_group_uuid = str(tenant_mapping.group_uuid_for(access_type))
-    role_binding_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type))
+    role_binding_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type, Scope.DEFAULT))
 
     # Always add the relationship from the role binding to the target resource.
     relationships = [
