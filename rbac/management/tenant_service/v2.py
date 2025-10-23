@@ -471,7 +471,11 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
-                info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
+                info={
+                    "num_tenants": len(tenants),
+                    "first_org_id": tenants[0].org_id if tenants else None,
+                    "org_id": tenants[0].org_id if tenants else "",
+                },
                 partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
