@@ -18,13 +18,16 @@
 import json
 import random
 import string
-from unittest import skip
+
 from uuid import uuid4
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import OperationalError
 from django.test.utils import override_settings
 from django.urls import clear_url_caches
 from importlib import reload
+from psycopg2.errors import DeadlockDetected, SerializationFailure
 from unittest.mock import patch
 from django.urls import reverse
 from rest_framework import status
@@ -2046,6 +2049,193 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         # The error message should come from our PermissionDenied exception
         self.assertIn("You do not have write access to the target workspace", str(response.data))
+
+    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    def test_move_retry_success_after_serialization_failure(self, mock_serializer_move):
+        """
+        Test that move operation succeeds after SerializationFailure on first attempt.
+
+        The retry=3 parameter in @pgtransaction.atomic should automatically retry
+        when SerializationFailure occurs. This test verifies that after an initial
+        failure, the operation succeeds on retry.
+        """
+        # Mock to fail once with SerializationFailure, then succeed
+        # Note: Django wraps psycopg2 errors in OperationalError
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        success_response = {
+            "id": str(self.test_workspace.id),
+            "name": self.test_workspace.name,
+            "parent_id": str(self.default_workspace.id),
+        }
+
+        # First call raises error, second call succeeds
+        mock_serializer_move.side_effect = [serialization_error, success_response]
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify success after retry
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], str(self.test_workspace.id))
+        self.assertEqual(response.data["parent_id"], str(self.default_workspace.id))
+
+        # Verify the method was called twice (initial + 1 retry)
+        self.assertEqual(mock_serializer_move.call_count, 2)
+
+    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    def test_move_retry_exhausted_after_three_failures(self, mock_serializer_move):
+        """
+        Test that move operation returns 409 CONFLICT after all retry attempts fail.
+
+        The retry=3 parameter means: 1 initial attempt + 3 retries = 4 total attempts.
+        If all attempts fail with SerializationFailure, the exception should propagate
+        and be caught by the move() method, returning a 409 response.
+        """
+        # Mock to always fail with SerializationFailure
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        mock_serializer_move.side_effect = serialization_error
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify returns 409 CONFLICT after all retries exhausted
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("Too many concurrent updates", str(response.data["detail"]))
+
+        # Verify the method was called 4 times (1 initial + 3 retries)
+        self.assertEqual(mock_serializer_move.call_count, 4)
+
+    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    def test_move_retry_success_on_third_attempt(self, mock_serializer_move):
+        """
+        Test that move succeeds on the 4th and final attempt (3rd retry).
+
+        This verifies the retry mechanism continues trying until success
+        or all attempts are exhausted.
+        """
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        success_response = {
+            "id": str(self.test_workspace.id),
+            "name": self.test_workspace.name,
+            "parent_id": str(self.default_workspace.id),
+        }
+
+        # Fail 3 times, succeed on 4th attempt (final retry)
+        mock_serializer_move.side_effect = [
+            serialization_error,
+            serialization_error,
+            serialization_error,
+            success_response,
+        ]
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify success on 4th attempt (3rd retry)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], str(self.test_workspace.id))
+
+        # Verify the method was called 4 times before succeeding
+        self.assertEqual(mock_serializer_move.call_count, 4)
+
+    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    def test_move_retry_deadlock_detected(self, mock_serializer_move):
+        """
+        Test that DeadlockDetected errors are also retried by the retry mechanism.
+
+        According to django-pgtransaction documentation, the retry parameter
+        handles both SerializationFailure and DeadlockDetected errors.
+        """
+        # Mock to fail with DeadlockDetected, then succeed
+        deadlock_error = OperationalError("deadlock detected")
+        deadlock_error.__cause__ = DeadlockDetected("deadlock detected")
+
+        success_response = {
+            "id": str(self.test_workspace.id),
+            "name": self.test_workspace.name,
+            "parent_id": str(self.default_workspace.id),
+        }
+
+        mock_serializer_move.side_effect = [deadlock_error, success_response]
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify success after retry
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify retry happened
+        self.assertEqual(mock_serializer_move.call_count, 2)
+
+    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    def test_move_retry_deadlock_exhausted(self, mock_serializer_move):
+        """
+        Test that DeadlockDetected returns 500 error after all retries exhausted.
+
+        Unlike SerializationFailure (409), DeadlockDetected should return 500
+        as it indicates a more serious internal server error.
+        The retry=3 parameter means 1 initial + 3 retries = 4 total attempts.
+        """
+        deadlock_error = OperationalError("deadlock detected")
+        deadlock_error.__cause__ = DeadlockDetected("deadlock detected")
+
+        mock_serializer_move.side_effect = deadlock_error
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify returns 500 INTERNAL SERVER ERROR for deadlock
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn("Internal server error", str(response.data["detail"]))
+
+        # Verify all retry attempts were made (1 initial + 3 retries = 4 total)
+        self.assertEqual(mock_serializer_move.call_count, 4)
+
+    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    def test_move_no_retry_on_validation_error(self, mock_serializer_move):
+        """
+        Test that ValidationError does not trigger retries.
+
+        Only SerializationFailure and DeadlockDetected should be retried.
+        Other errors like ValidationError should fail immediately without retry.
+        """
+
+        # Mock to raise ValidationError
+        validation_error = ValidationError("Validation failed")
+        mock_serializer_move.side_effect = validation_error
+
+        # Execute
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify it fails immediately with 400 BAD REQUEST
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Verify the method was only called once (no retries for ValidationError)
+        self.assertEqual(mock_serializer_move.call_count, 1)
 
 
 @override_settings(V2_APIS_ENABLED=True)
