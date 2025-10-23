@@ -197,7 +197,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         return relations
 
     def _create_metadata_from_role(self) -> dict[str, object]:
-        return {"role_uuid": self.role.uuid}
+        return {"role_uuid": self.role.uuid, "org_id": str(self.role.tenant.org_id)}
 
     def _replicate(
         self,

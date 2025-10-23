@@ -72,6 +72,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
                         "user_id": str(self.cross_account_request.user_id),
                         "roles": [role.uuid for role in self.cross_account_request.roles.all()],
                         "target_org": self.cross_account_request.target_org,
+                        "org_id": self.cross_account_request.target_org,
                     },
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.relations_to_remove,

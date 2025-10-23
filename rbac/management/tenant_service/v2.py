@@ -232,7 +232,11 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_EXTERNAL_USER_UPDATE,
-                info={"num_users": len(users), "first_user_id": users[0].user_id if users else None},
+                info={
+                    "num_users": len(users),
+                    "first_user_id": users[0].user_id if users else None,
+                    "org_id": users[0].org_id if users else "",
+                },
                 partition_key=PartitionKey.byEnvironment(),
                 add=tuples_to_add,
                 remove=tuples_to_remove,
@@ -584,6 +588,15 @@ class V2TenantBootstrapService:
         Input: pairs - List of tuples of (resource_id, subject_id)
         """
         relationships = []
+        # Get org_id from first workspace if available
+        org_id = ""
+        if pairs:
+            from management.models import Workspace
+
+            workspace = Workspace.objects.filter(id=pairs[0][0]).first()
+            if workspace:
+                org_id = str(workspace.tenant.org_id)
+
         for pair in pairs:
             relationship = create_relationship(
                 ("rbac", "workspace"),
@@ -596,7 +609,7 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.WORKSPACE_IMPORT,
-                info={},
+                info={"org_id": org_id},
                 partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
