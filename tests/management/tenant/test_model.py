@@ -463,7 +463,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             (ws_id_1, root_id),
             (ws_id_2, default_id),
         ]
-        self.service.create_workspace_relationships(pairs)
+        self.service.create_workspace_relationships(pairs, org_id="test-org-123")
         self.assertEqual(
             1,
             self.tuples.count_tuples(

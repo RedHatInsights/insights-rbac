@@ -174,6 +174,7 @@ def batch_import_workspace(records):
         for workspace in parent_workspaces:
             parent_workspace_dict[workspace.tenant.org_id] = workspace
 
+        pairs_by_org = {}  # Group pairs by org_id
         for record in records:
             is_ungrouped = record["ungrouped"].lower() == "true"
             parent = parent_workspace_dict.get(record["org_id"])
@@ -205,7 +206,16 @@ def batch_import_workspace(records):
                     modified=record["modified_on"],
                 )
                 workspaces.append(workspace)
-            pairs.append((str(workspace.id), str(parent.id)))
+
+            # Group pairs by org_id
+            org_id = record["org_id"]
+            if org_id not in pairs_by_org:
+                pairs_by_org[org_id] = []
+            pairs_by_org[org_id].append((str(workspace.id), str(parent.id)))
+
         Workspace.objects.bulk_create(workspaces)
         Workspace.objects.bulk_update(workspaces_to_update, ["name", "modified"])
-        BOOT_STRAP_SERVICE.create_workspace_relationships(pairs)
+
+        # Create workspace relationships grouped by org_id
+        for org_id, pairs in pairs_by_org.items():
+            BOOT_STRAP_SERVICE.create_workspace_relationships(pairs, org_id)

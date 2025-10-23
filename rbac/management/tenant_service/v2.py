@@ -593,28 +593,21 @@ class V2TenantBootstrapService:
 
         return root, default, relationships
 
-    def create_workspace_relationships(self, pairs):
+    def create_workspace_relationships(self, pairs, org_id: str):
         """
         Util for bulk creating workspace relationships based on pairs.
 
         Input: pairs - List of tuples of (resource_id, subject_id)
+               org_id - Organization ID for the workspaces
         """
         if not pairs:
             logger.info("No workspace relationship pairs to create. Skipping replication.")
             return
 
-        relationships = []
-        # Get org_id from first workspace if available
-        org_id = ""
-        from management.models import Workspace
-
-        workspace = Workspace.objects.filter(id=pairs[0][0]).first()
-        if workspace:
-            org_id = str(workspace.tenant.org_id)
-
         if not org_id:
-            logger.warning("Skipping WORKSPACE_IMPORT replication: no valid org_id found for workspace")
-            return
+            raise ValueError("org_id is required for creating workspace relationships")
+
+        relationships = []
 
         for pair in pairs:
             relationship = create_relationship(
