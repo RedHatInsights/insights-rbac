@@ -641,11 +641,6 @@ class RBACKafkaConsumer:
             resource_context = debezium_msg.payload.get("resource_context")
             org_id = resource_context["org_id"]
 
-            if not org_id or org_id == "unknown":
-                logger.error(f"Missing or invalid org_id in payload: {org_id}")
-                messages_processed_total.labels(message_type="relations", status="missing_org_id").inc()
-                return False
-
             logger.info(
                 f"Processing relations message - org_id: {org_id}, "
                 f"aggregateid: {debezium_msg.aggregateid}, "
