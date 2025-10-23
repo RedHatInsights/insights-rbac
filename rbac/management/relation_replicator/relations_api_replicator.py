@@ -58,6 +58,24 @@ class RelationsApiReplicator(RelationReplicator):
                     f"relationships: {relationships}"
                 )
 
+    def _delete_relationships(self, relationships):
+        with grpc.insecure_channel(settings.RELATION_API_SERVER) as channel:
+            stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
+
+            request = relation_tuples_pb2.DeleteTuplesRequest(
+                tuples=relationships,
+            )
+            try:
+                response = stub.DeleteTuples(request)
+                return response
+            except grpc.RpcError as err:
+                error = GRPCError(err)
+                logger.error(
+                    "Failed to delete relationships from the relation API server: "
+                    f"error code {error.code}, reason {error.reason}"
+                    f"relationships: {relationships}"
+                )
+
 
 class GRPCError:
     """A wrapper for a gRPC error."""

@@ -28,8 +28,12 @@ from typing import Any, Dict, List, Optional
 from django.conf import settings
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
+from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from prometheus_client import Counter, Histogram
 
+from api.models import Tenant
+
+relations_api_replication = RelationsApiReplicator()
 logger = logging.getLogger("rbac.core.kafka_consumer")
 
 # Metrics
@@ -207,6 +211,23 @@ class MessageValidator:
             if not relations_to_add and not relations_to_remove:
                 logger.warning("Both relations_to_add and relations_to_remove are empty - this may indicate a bug")
                 validation_errors_total.labels(error_type="empty_relations").inc()
+                return False
+
+            # Validate resource_context exists and contains org_id
+            resource_context = payload.get("resource_context")
+            if not resource_context:
+                logger.error("Missing required field 'resource_context' in replication message")
+                validation_errors_total.labels(error_type="missing_resource_context").inc()
+                return False
+
+            if not isinstance(resource_context, dict):
+                logger.error("resource_context must be a dictionary")
+                validation_errors_total.labels(error_type="invalid_resource_context_type").inc()
+                return False
+
+            if "org_id" not in resource_context:
+                logger.error("Missing required field 'org_id' in resource_context")
+                validation_errors_total.labels(error_type="missing_org_id_in_context").inc()
                 return False
 
             # Validate structure of relations
@@ -633,15 +654,45 @@ class RBACKafkaConsumer:
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
 
+            # Extract the org_id from resource context
+            resource_context = debezium_msg.payload.get("resource_context")
+            org_id = resource_context["org_id"]
+
             logger.info(
-                f"Processing relations message - aggregateid: {debezium_msg.aggregateid}, "
+                f"Processing relations message - org_id: {org_id}, "
+                f"aggregateid: {debezium_msg.aggregateid}, "
                 f"event_type: {debezium_msg.event_type}, "
                 f"relations_to_add: {len(replication_msg.relations_to_add)}, "
                 f"relations_to_remove: {len(replication_msg.relations_to_remove)}"
             )
 
-            # TODO: Add actual processing logic here
-            # This is where you would integrate with the relation replication system
+            # Get tenant by org_id
+            try:
+                tenant = Tenant.objects.get(org_id=org_id)
+            except Tenant.DoesNotExist:
+                logger.error(f"Tenant not found for org_id: {org_id}")
+                messages_processed_total.labels(message_type="relations", status="tenant_not_found").inc()
+                return False
+
+            # Do tuple deletes for relationships
+            relations_api_replication._delete_relationships(relationships=replication_msg.relations_to_remove)
+
+            # Write relationships and get response with consistency token
+            replication_response = relations_api_replication._write_relationships(
+                relationships=replication_msg.relations_to_add
+            )
+
+            # Extract consistency token from response
+            if replication_response and hasattr(replication_response, "consistency_token"):
+                token = replication_response.consistency_token.token
+
+                # Update tenant with consistency token
+                tenant.relations_consistency_token = token
+                tenant.save()
+
+                logger.info(f"Updated consistency token for org_id {org_id}: {token}")
+            else:
+                logger.warning(f"No consistency token in response for org_id {org_id}")
 
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True

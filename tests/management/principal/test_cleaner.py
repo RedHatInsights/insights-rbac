@@ -978,7 +978,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"group_uuid": custom_group_uuid, "org_id": str(self.group.tenant.org_id)},
+                info={"user_id": self.principal.user_id, "org_id": str(self.group.tenant.org_id)},
                 partition_key=PartitionKey.byEnvironment(),
                 remove=[],
                 add=[relationship],
