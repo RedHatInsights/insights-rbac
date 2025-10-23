@@ -229,19 +229,27 @@ class V2TenantBootstrapService:
             )
             Principal.objects.bulk_update(principals_to_update, ["user_id"])
 
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BULK_EXTERNAL_USER_UPDATE,
-                info={
-                    "num_users": len(users),
-                    "first_user_id": users[0].user_id if users else None,
-                    "org_id": users[0].org_id if users else "",
-                },
-                partition_key=PartitionKey.byEnvironment(),
-                add=tuples_to_add,
-                remove=tuples_to_remove,
+        # Only replicate if there are actual changes and valid org_ids
+        if tuples_to_add or tuples_to_remove:
+            # Get org_id from the first valid org_id in the set
+            org_id = next(iter(org_ids)) if org_ids else ""
+            if not org_id:
+                logger.warning("Skipping BULK_EXTERNAL_USER_UPDATE replication: no valid org_id found")
+                return
+
+            self._replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.BULK_EXTERNAL_USER_UPDATE,
+                    info={
+                        "num_users": len(users),
+                        "first_user_id": users[0].user_id if users else None,
+                        "org_id": org_id,
+                    },
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=tuples_to_add,
+                    remove=tuples_to_remove,
+                )
             )
-        )
 
     def _disable_user_in_tenant(self, user: User):
         """Disable a user in a tenant."""
@@ -587,15 +595,22 @@ class V2TenantBootstrapService:
 
         Input: pairs - List of tuples of (resource_id, subject_id)
         """
+        if not pairs:
+            logger.info("No workspace relationship pairs to create. Skipping replication.")
+            return
+
         relationships = []
         # Get org_id from first workspace if available
         org_id = ""
-        if pairs:
-            from management.models import Workspace
+        from management.models import Workspace
 
-            workspace = Workspace.objects.filter(id=pairs[0][0]).first()
-            if workspace:
-                org_id = str(workspace.tenant.org_id)
+        workspace = Workspace.objects.filter(id=pairs[0][0]).first()
+        if workspace:
+            org_id = str(workspace.tenant.org_id)
+
+        if not org_id:
+            logger.warning("Skipping WORKSPACE_IMPORT replication: no valid org_id found for workspace")
+            return
 
         for pair in pairs:
             relationship = create_relationship(
@@ -606,11 +621,13 @@ class V2TenantBootstrapService:
                 "parent",
             )
             relationships.append(relationship)
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.WORKSPACE_IMPORT,
-                info={"org_id": org_id},
-                partition_key=PartitionKey.byEnvironment(),
-                add=relationships,
+
+        if relationships:
+            self._replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.WORKSPACE_IMPORT,
+                    info={"org_id": org_id},
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=relationships,
+                )
             )
-        )
