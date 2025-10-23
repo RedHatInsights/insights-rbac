@@ -6,7 +6,7 @@
     "@typespec/compiler": "^0.66.0"
   },
   "devDependencies": {
-    "@typespec/compiler": "^0.66.0"
+    "@typespec/compiler": "^0.67.0"
   },
   "private": true,
   "dependencies": {
