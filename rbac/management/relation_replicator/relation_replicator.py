@@ -18,6 +18,7 @@
 """Class to handle Dual Write API related operations."""
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Dict
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
@@ -90,6 +91,56 @@ class ReplicationEvent:
         self.add = add
         self.remove = remove
         self.event_info = info
+
+    def resource_context(self) -> Dict[str, object] | None:
+        """
+        Build resource context if applicable.
+
+        Currently only builds context for CREATE_WORKSPACE events.
+
+        Returns:
+            Dictionary with resource context or None if not applicable
+        """
+        if self.event_type == ReplicationEventType.CREATE_WORKSPACE and "workspace_id" in self.event_info:
+            context = ReplicationEventResourceContext(
+                resource_type="Workspace",
+                resource_id=str(self.event_info["workspace_id"]),
+                org_id=str(self.event_info.get("org_id", "")),
+                event_type=self.event_type.value,
+            )
+            return context.to_json()
+        return None
+
+
+class ReplicationEventResourceContext:
+    """Replication event resource context."""
+
+    resource_type: str
+    resource_id: str
+    org_id: str
+    event_type: str
+
+    def __init__(
+        self,
+        resource_type: str,
+        resource_id: str,
+        org_id: str,
+        event_type: str,
+    ):
+        """Initialize ReplicationEventResourceContext."""
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        self.org_id = org_id
+        self.event_type = event_type
+
+    def to_json(self) -> Dict[str, object]:
+        """Convert to JSON dictionary."""
+        return {
+            "resource_type": self.resource_type,
+            "resource_id": self.resource_id,
+            "org_id": self.org_id,
+            "event_type": self.event_type,
+        }
 
 
 class WorkspaceEvent:

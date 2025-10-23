@@ -14,8 +14,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Describes the urls and patterns for the management application."""
-from django.conf.urls import include
-from django.urls import re_path
+from django.urls import include, path
 from management.views import (
     AccessView,
     AuditLogViewSet,
@@ -35,7 +34,7 @@ ROUTER.register(r"auditlogs", AuditLogViewSet)
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    re_path(r"^principals/$", PrincipalView.as_view(), name="principals"),
-    re_path(r"^access/$", AccessView.as_view(), name="access"),
-    re_path(r"^", include(ROUTER.urls)),
+    path("principals/", PrincipalView.as_view(), name="principals"),
+    path("access/", AccessView.as_view(), name="access"),
+    path("", include(ROUTER.urls)),
 ]

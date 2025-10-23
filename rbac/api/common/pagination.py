@@ -100,3 +100,18 @@ class WSGIRequestResultsSetPagination(StandardResultsSetPagination):
         """Get limit from query params."""
         request.query_params = request.GET
         return super().get_limit(request)
+
+
+class V2ResultsSetPagination(StandardResultsSetPagination):
+    """V2 pagination class."""
+
+    NO_LIMIT_ENFORCED_VALUE = "-1"
+
+    def paginate_queryset(self, queryset, request, view=None):
+        """Override paginate_queryset for V2."""
+        request_limit = request.query_params.get(self.limit_query_param)
+        if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
+            self.max_limit = None
+            self.default_limit = queryset.count()
+
+        return super().paginate_queryset(queryset, request, view)

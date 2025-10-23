@@ -169,7 +169,6 @@ TIME_ZONE = "UTC"
 
 USE_I18N = True
 
-USE_L10N = True
 
 USE_TZ = True
 
@@ -190,7 +189,14 @@ STATIC_URL = "{}/static/".format(API_PATH_PREFIX.rstrip("/"))
 
 STATICFILES_DIRS = [os.path.join(BASE_DIR, "..", "docs/source/specs")]
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 INTERNAL_IPS = ["127.0.0.1"]
 

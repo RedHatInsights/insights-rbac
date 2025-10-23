@@ -19,8 +19,11 @@ from enum import IntEnum
 from typing import Iterable
 
 from django.conf import settings
+from management.models import Role, Workspace
 from management.permission.model import PermissionValue
 from migration_tool.models import V2boundresource
+
+from api.models import Tenant
 
 
 class Scope(IntEnum):
@@ -38,6 +41,30 @@ class Scope(IntEnum):
     DEFAULT = 1
     ROOT = 2
     TENANT = 3
+
+
+def bound_model_for_scope(
+    scope: Scope,
+    tenant: Tenant,
+    root_workspace: Workspace,
+    default_workspace: Workspace,
+) -> Tenant | Workspace:
+    """Get the model corresponding the provided scope."""
+    # TODO: we could retrieve the default and root workspaces from the tenant here (or only do so if None is passed).
+    # This is not done here because no current use case requires it.
+    assert root_workspace.tenant == tenant
+    assert default_workspace.tenant == tenant
+
+    if scope == Scope.TENANT:
+        return tenant
+
+    if scope == Scope.ROOT:
+        return root_workspace
+
+    if scope == Scope.DEFAULT:
+        return default_workspace
+
+    raise ValueError(f"Unexpected scope: {scope}")
 
 
 class ImplicitResourceService:
@@ -146,6 +173,11 @@ class ImplicitResourceService:
             (self.scope_for_permission(permission) for permission in permissions),
             default=Scope.DEFAULT,
         )
+
+    def scope_for_role(self, role: Role) -> Scope:
+        """Return the implicit scope for a role based on its permissions."""
+        # TODO: this may need to eventually take into account resource definitions for custom roles.
+        return self.highest_scope_for_permissions(a.permission.permission for a in role.access.all())
 
     def v2_bound_resource_for_permission(
         self,

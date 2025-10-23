@@ -1,5 +1,5 @@
 #
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2025 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,6 +14,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Configuration for the api app."""
+"""Contains utilities for handling relations between V2 roles."""
+from uuid import UUID
 
-API_VERSION = 1
+from kessel.relations.v1beta1.common_pb2 import Relationship
+from migration_tool.utils import create_relationship
+
+
+def role_child_relationship(parent_uuid: UUID | str, child_uuid: UUID | str) -> Relationship:
+    """Get the relationship to for a parent-child relationship between the provided roles."""
+    return create_relationship(
+        resource_name=("rbac", "role"),
+        resource_id=str(parent_uuid),
+        subject_name=("rbac", "role"),
+        subject_id=str(child_uuid),
+        relation="child",
+    )
