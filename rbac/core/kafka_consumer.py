@@ -637,8 +637,9 @@ class RBACKafkaConsumer:
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
 
-            # Extract org_id from payload
-            org_id = debezium_msg.payload.get("org_id")
+            # Extract the org_id from resource context
+            resource_context = debezium_msg.payload.get("resource_context")
+            org_id = resource_context["org_id"]
 
             if not org_id or org_id == "unknown":
                 logger.error(f"Missing or invalid org_id in payload: {org_id}")
@@ -660,6 +661,9 @@ class RBACKafkaConsumer:
                 logger.error(f"Tenant not found for org_id: {org_id}")
                 messages_processed_total.labels(message_type="relations", status="tenant_not_found").inc()
                 return False
+
+            # Do tuple deletes for relationships
+            relations_api_replication._delete_relationships(relationships=replication_msg.relations_to_remove)
 
             # Write relationships and get response with consistency token
             replication_response = relations_api_replication._write_relationships(
