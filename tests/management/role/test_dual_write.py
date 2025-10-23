@@ -2173,10 +2173,13 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.expect_binding_absent(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_absent(tenant, v2_role_id=v2_role_id, group_id=group_id)
 
+        # Put the existing permission into root scope, then try removing it.
         with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
             self.given_update_to_v1_role(role, default=[])
 
         # At this point, we expect no role bindings to exist (and thus there is no V2 role ID to check).
+        # We expect to have successfully removed the existing role binding despite the scope of the role having
+        # changed since it was created.
         self.assertFalse(BindingMapping.objects.filter(role=role).exists())
         self.assertEqual(0, len(self.tuples.find_tuples(relation("binding"))))
 
