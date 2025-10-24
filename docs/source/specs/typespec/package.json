@@ -11,7 +11,7 @@
   "private": true,
   "dependencies": {
     "@typespec/http": "^0.66.0",
-    "@typespec/json-schema": "^0.66.0",
+    "@typespec/json-schema": "^1.0.0",
     "@typespec/openapi3": "^0.66.0",
     "@typespec/rest": "^0.66.0",
     "@typespec/versioning": "^0.66.0"
