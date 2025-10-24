@@ -24,11 +24,13 @@ from django.conf import settings
 
 from management.group.definer import seed_group, set_system_flag_before_update
 from management.group.model import Group
+from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
 )
 from management.models import Workspace
 from management.permission.model import Permission
+from management.permission.scope_service import Scope
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -43,11 +45,12 @@ from management.role.model import (
     Role,
     SourceKey,
 )
+from management.role.platform import platform_v2_role_uuid_for
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.tenant_mapping.model import TenantMapping
+from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -841,29 +844,50 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         do_boostrap(bootstrap_service, self.tenant)
 
         mapping: TenantMapping = self.tenant.tenant_mapping
-        platform_default_policy: Policy = Policy.objects.get(
-            group=Group.objects.get(tenant=self.fixture.public_tenant, platform_default=True)
+        policy_service = GlobalPolicyIdService()
+
+        default_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service=policy_service)
         )
+        root_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.ROOT, policy_service=policy_service)
+        )
+        tenant_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.TENANT, policy_service=policy_service)
+        )
+
+        def assert_default_bindings(num: int):
+            self.expect_role_bindings_to_workspace(
+                num=num,
+                workspace=self.default_workspace(self.tenant),
+                for_v2_roles=[default_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
+
+            self.expect_role_bindings_to_workspace(
+                num=num,
+                workspace=self.root_workspace(self.tenant),
+                for_v2_roles=[root_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
+
+            self.expect_role_bindings_to_tenant(
+                num=num,
+                org_id=self.tenant.org_id,
+                for_v2_roles=[tenant_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
 
         # Ensure that we actually use the correct default group UUID.
         self.assertEqual(default_group.uuid, mapping.default_group_uuid)
 
         # After bootstrap, no default role binding should exist, since a custom default access group exists.
-        self.expect_role_bindings_to_workspace(
-            num=0,
-            workspace=self.default_workspace(self.tenant),
-            for_v2_roles=[str(platform_default_policy.uuid)],
-            for_groups=[mapping.default_group_uuid],
-        )
+        assert_default_bindings(0)
 
         self.given_group_removed(default_group)
 
         # Once we have removed the default group, the default role binding should be restored.
-        self.expect_1_role_binding_to_workspace(
-            workspace=self.default_workspace(self.tenant),
-            for_v2_roles=[str(platform_default_policy.uuid)],
-            for_groups=[mapping.default_group_uuid],
-        )
+        assert_default_bindings(1)
 
     def test_custom_default_group_before_single_bootstrap(self):
         def do_bootstrap(bootstrap_service: V2TenantBootstrapService, tenant: Tenant):
