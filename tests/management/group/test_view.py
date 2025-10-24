@@ -1498,9 +1498,14 @@ class GroupViewsetTests(IdentityRequest):
             test_data = {"roles": [system_role.uuid, self.dummy_role_id]}
 
             response = client.post(url, test_data, format="json", **self.headers)
-            actual_call_arg = mock_method.call_args_list[0][0][0]
-            to_remove = actual_call_arg["relations_to_remove"]
-            to_add = actual_call_arg["relations_to_add"]
+
+            # Here, we look at all of the calls because there may be multiple replication events.
+
+            to_remove = [
+                relation for args in mock_method.call_args_list for relation in args[0][0]["relations_to_remove"]
+            ]
+
+            to_add = [relation for args in mock_method.call_args_list for relation in args[0][0]["relations_to_add"]]
 
             tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
 
