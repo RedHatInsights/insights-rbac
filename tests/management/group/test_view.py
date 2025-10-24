@@ -1463,8 +1463,6 @@ class GroupViewsetTests(IdentityRequest):
         with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("v1_management:group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
-            test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
-
             org_id = self.customer_data["org_id"]
 
             default_role = Role.objects.create(
@@ -1481,23 +1479,46 @@ class GroupViewsetTests(IdentityRequest):
                 permission=Permission.objects.create(tenant=self.public_tenant, permission="root:resource:verb"),
             )
 
+            # We use a system role for this test because the test roles created in setUp do not go through the normal
+            # role creation machinery, and thus are not in the expected state for use with relations (e.g. the custom
+            # roles will have no BindingMappings created).
+            system_role = Role.objects.create(
+                name="system_role",
+                description="A default role for a group.",
+                platform_default=False,
+                system=True,
+                tenant=self.public_tenant,
+            )
+
             self.defGroup.policies.first().roles.add(default_role)
+
             self.assertTrue(self.defGroup.system)
             self.assertEqual(self.defGroup.roles().count(), 1)
+
+            test_data = {"roles": [system_role.uuid, self.dummy_role_id]}
+
             response = client.post(url, test_data, format="json", **self.headers)
             actual_call_arg = mock_method.call_args_list[0][0][0]
             to_remove = actual_call_arg["relations_to_remove"]
             to_add = actual_call_arg["relations_to_add"]
 
-            binding_mapping = BindingMapping.objects.get(
-                role=default_role, resource_type_name="workspace", resource_id=self.root_workspace.id
-            )
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
 
             # New platform default role for tenant created
             custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
 
+            # Check the binding mapping for the default role that should have been propagated to the group.
+
+            default_binding_mapping = BindingMapping.objects.get(
+                role=default_role, resource_type_name="workspace", resource_id=self.root_workspace.id
+            )
+
             relation_tuple = relation_api_tuple(
-                "role_binding", binding_mapping.mappings["id"], "role", "role", str(default_role.uuid)
+                "role_binding",
+                default_binding_mapping.mappings["id"],
+                "role",
+                "role",
+                str(default_role.uuid),
             )
 
             self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
@@ -1507,14 +1528,14 @@ class GroupViewsetTests(IdentityRequest):
                 str(self.root_workspace.id),
                 "binding",
                 "role_binding",
-                str(binding_mapping.mappings["id"]),
+                str(default_binding_mapping.mappings["id"]),
             )
 
             self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
             relation_tuple = relation_api_tuple(
                 "role_binding",
-                binding_mapping.mappings["id"],
+                default_binding_mapping.mappings["id"],
                 "subject",
                 "group",
                 str(custom_default_group.uuid),
@@ -1523,8 +1544,6 @@ class GroupViewsetTests(IdentityRequest):
 
             self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
-            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
-
             relation_tuple = relation_api_tuple(
                 "workspace",
                 str(self.default_workspace.id),
@@ -1532,7 +1551,45 @@ class GroupViewsetTests(IdentityRequest):
                 "role_binding",
                 str(tenant_mapping.default_role_binding_uuid),
             )
+
             self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
+
+            added_binding_mapping = BindingMapping.objects.get(
+                role=system_role, resource_type_name="workspace", resource_id=self.default_workspace.id
+            )
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                str(added_binding_mapping.mappings["id"]),
+                "role",
+                "role",
+                str(added_binding_mapping.mappings["role"]["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            # The added role should be bound in the default workspace because it has no permissions (and thus has the
+            # DEFAULT scope).
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(added_binding_mapping.mappings["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                added_binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
             # Original platform default role does not change
             self.defGroup.refresh_from_db()
@@ -1586,8 +1643,8 @@ class GroupViewsetTests(IdentityRequest):
                                     "uuid": str(custom_default_group.uuid),
                                     "operation": "added",
                                     "role": {
-                                        "uuid": str(self.roleB.uuid),
-                                        "name": self.roleB.name,
+                                        "uuid": str(system_role.uuid),
+                                        "name": system_role.name,
                                     },
                                 },
                             }
