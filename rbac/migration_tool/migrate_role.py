@@ -19,16 +19,13 @@ from typing import Iterable
 
 from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role
-from management.workspace.model import Workspace
-from migration_tool.models import V2rolebinding
+from migration_tool.models import V2boundresource, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
 
 
-def get_kessel_relation_tuples(
+def _get_kessel_relation_tuples(
     v2_role_bindings: Iterable[V2rolebinding],
-    default_workspace: Workspace,
 ) -> list[common_pb2.Relationship]:
-    """Generate a set of relationships and BindingMappings for the given set of v2 role bindings."""
     relationships: list[common_pb2.Relationship] = list()
 
     for v2_role_binding in v2_role_bindings:
@@ -37,9 +34,14 @@ def get_kessel_relation_tuples(
     return relationships
 
 
+def relation_tuples_for_bindings(bindings: Iterable[BindingMapping]) -> list[common_pb2.Relationship]:
+    """Generate a set of relationships for a given set of BindingMappings."""
+    return _get_kessel_relation_tuples([m.get_role_binding() for m in bindings])
+
+
 def migrate_role(
     role: Role,
-    default_workspace: Workspace,
+    default_resource: V2boundresource,
     current_bindings: Iterable[BindingMapping] = [],
 ) -> tuple[list[common_pb2.Relationship], list[BindingMapping]]:
     """
@@ -48,6 +50,6 @@ def migrate_role(
     The mappings are returned so that we can reconstitute the corresponding tuples for a given role.
     This is needed so we can remove those tuples when the role changes if needed.
     """
-    v2_role_bindings = v1_role_to_v2_bindings(role, default_workspace, current_bindings)
-    relationships = get_kessel_relation_tuples([m.get_role_binding() for m in v2_role_bindings], default_workspace)
+    v2_role_bindings = v1_role_to_v2_bindings(role, default_resource, current_bindings)
+    relationships = relation_tuples_for_bindings(v2_role_bindings)
     return relationships, v2_role_bindings
