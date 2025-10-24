@@ -529,7 +529,8 @@ namespace Workspaces {
       }
     )
     @route("{id}/")
-    @patch op patch(
+    @patch(#{implicitOptionality: true})
+    op patch(
         @doc("Unique identification")
         @path id: UUID;
         @body body: PatchWorkspaceRequest
