@@ -36,6 +36,7 @@ class ReplicationEventType(str, Enum):
     CREATE_SYSTEM_ROLE = "create_system_role"
     UPDATE_SYSTEM_ROLE = "update_system_role"
     DELETE_SYSTEM_ROLE = "delete_system_role"
+    REBIND_SYSTEM_ROLE_SCOPES = "rebind_system_role_scopes"
     CREATE_CUSTOM_ROLE = "create_custom_role"
     UPDATE_CUSTOM_ROLE = "update_custom_role"
     DELETE_CUSTOM_ROLE = "delete_custom_role"
