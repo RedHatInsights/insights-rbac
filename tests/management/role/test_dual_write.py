@@ -128,12 +128,10 @@ class DualWriteTestCase(TestCase):
         return V2boundresource(("rbac", "workspace"), self.root_workspace(tenant))
 
     def tenant_resource(self, tenant: Optional[Tenant] = None) -> V2boundresource:
-        tenant = tenant if tenant is not None else self.tenant
+        if tenant is None:
+            tenant = self.tenant
 
-        resource = V2boundresource.try_for_model(tenant)
-        self.assertIsNotNone(resource)
-
-        return resource
+        return V2boundresource.for_model(tenant)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
