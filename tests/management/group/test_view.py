@@ -1034,17 +1034,38 @@ class GroupViewsetTests(IdentityRequest):
 
         to_add = actual_call_arg["relations_to_add"]
 
-        tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+        tenant_mapping: TenantMapping = TenantMapping.objects.get(tenant=self.tenant)
 
         def assert_group_tuples(tuple_to_replicate):
-            relation_tuple = relation_api_tuple(
-                "workspace",
-                str(self.default_workspace.id),
-                "binding",
-                "role_binding",
-                str(tenant_mapping.default_role_binding_uuid),
-            )
-            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            relation_tuples = [
+                relation_api_tuple(
+                    "workspace",
+                    str(self.default_workspace.id),
+                    "binding",
+                    "role_binding",
+                    str(tenant_mapping.default_role_binding_uuid),
+                ),
+                relation_api_tuple(
+                    "workspace",
+                    str(self.root_workspace.id),
+                    "binding",
+                    "role_binding",
+                    str(tenant_mapping.root_scope_default_role_binding_uuid),
+                ),
+                relation_api_tuple(
+                    "tenant",
+                    self.tenant.tenant_resource_id(),
+                    "binding",
+                    "role_binding",
+                    str(tenant_mapping.tenant_scope_default_role_binding_uuid),
+                ),
+            ]
+
+            for relation_tuple in relation_tuples:
+                self.assertIsNotNone(
+                    find_relation_in_list(tuple_to_replicate, relation_tuple),
+                    f"Missing relation: {relation_tuple}",
+                )
 
         assert_group_tuples(to_add)
 
