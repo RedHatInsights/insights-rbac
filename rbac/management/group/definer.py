@@ -177,7 +177,8 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     # Custom roles are locked to prevent resources from being added/removed concurrently,
     # in the case that the Roles had _no_ resources specified to begin with.
     # This should not be necessary for system roles.
-    custom_roles = roles.filter(tenant=tenant).select_for_update()
+    # Lock in consistent order (by ID) to prevent deadlocks
+    custom_roles = roles.filter(tenant=tenant).order_by("id").select_for_update()
 
     added_roles: list[Role] = []
 
@@ -228,7 +229,8 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     # Custom roles are locked to prevent resources from being added/removed concurrently,
     # in the case that the Roles had _no_ resources specified to begin with.
     # This should not be necessary for system roles.
-    custom_roles = roles.filter(tenant=tenant).select_for_update()
+    # Lock in consistent order (by ID) to prevent deadlocks
+    custom_roles = roles.filter(tenant=tenant).order_by("id").select_for_update()
 
     removed_roles: list[Role] = []
 

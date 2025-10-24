@@ -37,7 +37,7 @@ class LoggingReplicator(RelationReplicator):
 
 def stringify_spicedb_relationship(rel: common_pb2.Relationship):
     """Stringify a relationship for logging."""
-    return (
-        f"{rel.resource.type.name}:{rel.resource.id}#{rel.relation}@{rel.subject.subject.type.name}:"
-        f"{rel.subject.subject.id}"
-    )
+    subject_str = f"{rel.subject.subject.type.name}:{rel.subject.subject.id}"
+    if rel.subject.relation:
+        subject_str = f"{subject_str}#{rel.subject.relation}"
+    return f"{rel.resource.type.name}:{rel.resource.id}#{rel.relation}@{subject_str}"
