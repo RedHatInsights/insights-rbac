@@ -15,15 +15,138 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Utils for workspace model."""
+import logging
+from typing import Optional
 from uuid import UUID
 
+from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
+from management.permissions.workspace_inventory_access import (
+    WorkspaceInventoryAccessChecker,
+)
+from management.principal.model import Principal
 from management.utils import get_principal_from_request, roles_for_principal
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.serializers import ValidationError
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+# Map HTTP methods to workspace permissions
+PERM_MAP = {
+    "GET": "view",
+    "POST": "create",
+    "PUT": "edit",
+    "PATCH": "edit",
+    "DELETE": "delete",
+}
+
+
+def _get_default_workspace_id(request) -> Optional[str]:
+    """
+    Get the default workspace ID for a tenant.
+
+    Args:
+        request: The HTTP request object containing tenant information
+
+    Returns:
+        Optional[str]: The default workspace ID, or None if it doesn't exist
+    """
+    try:
+        return str(Workspace.objects.default(tenant_id=request.tenant).id)
+    except Workspace.DoesNotExist:
+        logger.warning(f"No default workspace for tenant {request.tenant}")
+        return None
+
+
+def permission_from_request(request) -> str:
+    """
+    Determine the permission/relation from the HTTP request method.
+
+    Maps HTTP methods to workspace permissions:
+    - GET -> view
+    - POST -> create
+    - PUT/PATCH -> edit (or 'move' if moving workspace to different parent)
+    - DELETE -> delete
+
+    Note: The 'move' permission is a special case of 'edit' that occurs when
+    changing a workspace's parent. To detect this, check if the request data
+    contains a 'parent_id' or 'parent' field change.
+
+    Args:
+        request: The HTTP request object
+
+    Returns:
+        str: The permission/relation name (view, create, edit, move, delete)
+
+    Raises:
+        PermissionDenied: If the HTTP method is not supported
+    """
+    method = request.method.upper()
+
+    if method not in PERM_MAP:
+        logger.error(f"Unsupported HTTP method: {method}")
+        raise PermissionDenied(f"Unsupported HTTP method: {method}")
+
+    perm = PERM_MAP[method]
+
+    # Check if this is a move operation (changing parent)
+    if (
+        perm == "edit"
+        and hasattr(request, "data")
+        and (request.data.get("parent_id") is not None or request.data.get("parent") is not None)
+    ):
+        return "move"
+
+    return perm
+
+
+def workspace_from_request(request, view=None) -> Optional[str]:
+    """
+    Get workspace ID from request and fetch if exists or get default workspace.
+
+    Determines the target workspace for permission checking:
+    - For POST (create): checks parent_id in request.data, falls back to default workspace
+    - For detail operations: uses pk from view.kwargs
+    - For list operations (GET without pk): returns None (list all accessible)
+
+    Args:
+        request: The HTTP request object
+        view: The view object (optional, contains kwargs with pk)
+
+    Returns:
+        Optional[str]: The workspace ID to check permissions against, or None for list operations
+    """
+    # Get lookup key from view (defaults to "pk")
+    # Note: view.lookup_url_kwarg might be None, so we need to handle that
+    lookup = getattr(view, "lookup_url_kwarg", None) or "pk" if view else "pk"
+    pk = getattr(view, "kwargs", {}).get(lookup) if view else None
+
+    # For POST (create): prefer explicit parent_id, else default
+    if request.method == "POST":
+        parent_id = request.data.get("parent_id") if hasattr(request, "data") else None
+        if parent_id:
+            return parent_id
+        default_id = _get_default_workspace_id(request)
+        if default_id:
+            logger.debug(f"No parent_id provided for workspace creation, using default workspace: {default_id}")
+        return default_id
+
+    # For GET: list (None) vs detail (pk)
+    if request.method == "GET":
+        return pk
+
+    # All other methods (PUT/PATCH/DELETE) operate on existing pk
+    return pk or _get_default_workspace_id(request)
 
 
 def is_user_allowed(request, required_operation, target_workspace):
     """Check if the user is allowed to perform the required permission on the target workspace."""
+    # Check if access check v2 is enabled
+    v2_enabled = FEATURE_FLAGS.is_workspace_access_check_v2_enabled()
+    if v2_enabled:
+        return is_user_allowed_v2(request, required_operation, target_workspace)
+
+    # Original implementation
     root_workspace_id = str(Workspace.objects.root(tenant_id=request.tenant).id)
     is_get_action = request.method == "GET"
     if target_workspace is None:
@@ -39,10 +162,46 @@ def is_user_allowed(request, required_operation, target_workspace):
         for valid_operation in allowed_operations:
             valid_perm_tuples.add((f"inventory:{valid_resource}:{valid_operation}", target_workspace))
     tuple_set = workspace_permission_tuple_set(request, root_workspace_id, is_get_action)
+
     if is_get_action:
         # Get the set of permission tuples for later filter
         request.permission_tuples = tuple_set
     return any(valid_perm_tuple in tuple_set for valid_perm_tuple in valid_perm_tuples)
+
+
+def is_user_allowed_v2(request, required_operation, target_workspace):
+    """
+    Check if the user is allowed to perform the required permission on the target workspace using Inventory API.
+
+    This is the v2 implementation using Inventory API for permission checks.
+
+    Args:
+        request: The HTTP request object
+        required_operation: The operation/relation to check (view, create, edit, move, delete)
+        target_workspace: The workspace ID to check, or None for list operations
+
+    Returns:
+        bool: True if the user has permission, False otherwise
+    """
+    principal = get_principal_from_request(request)
+    # Format principal ID as required by Inventory API (e.g., "localhost/username")
+    principal_id = Principal.user_id_to_principal_resource_id(principal.user_id)
+    # Create the Inventory API checker
+    checker = WorkspaceInventoryAccessChecker()
+
+    # Use the required_operation directly (already determined by permission_from_request)
+    relation = required_operation
+
+    # For list operations (None workspace_id), get all accessible workspaces
+    if target_workspace is None:
+        # Lookup accessible workspaces using StreamedListObjects
+        accessible_workspace_ids = checker.lookup_accessible_workspaces(principal_id=principal_id, relation=relation)
+        # Store permission tuples for later filtering
+        request.permission_tuples = [(None, ws_id) for ws_id in accessible_workspace_ids]
+        return len(accessible_workspace_ids) > 0
+
+    # For specific workspace operations, check access for that workspace
+    return checker.check_workspace_access(workspace_id=target_workspace, principal_id=principal_id, relation=relation)
 
 
 def get_access_permission_tuples(access, tenant, root_workspace_id, is_get_action):
@@ -73,7 +232,9 @@ def workspace_permission_tuple_set(request, root_workspace_id, is_get_action):
         },
     )
     accesses = Access.objects.filter(
-        role__in=roles, permission__application="inventory", permission__resource_type__in=["groups", "*"]
+        role__in=roles,
+        permission__application="inventory",
+        permission__resource_type__in=["groups", "*"],
     )
     tuple_set = set()
     for access in accesses:
