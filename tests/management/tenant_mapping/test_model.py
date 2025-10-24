@@ -14,9 +14,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+import uuid
 
 from django.test import TestCase
 
+from management.permission.scope_service import Scope
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from tests.management.role.test_dual_write import RbacFixture
 
@@ -40,13 +42,52 @@ class TenantMappingTests(TestCase):
             self.tenant_mapping.group_uuid_for(DefaultAccessType.ADMIN),
         )
 
+    def test_default_role_binding_uuid_for_complete(self):
+        binding_uuids = set()
+
+        for access_type in DefaultAccessType:
+            for scope in Scope:
+                try:
+                    binding_uuid = self.tenant_mapping.default_role_binding_uuid_for(access_type, scope)
+                except Exception as e:
+                    self.fail(
+                        f"Unable to get binding UUID for access type {access_type.name} and scope {scope.name}: {e}"
+                    )
+
+                self.assertIsInstance(binding_uuid, uuid.UUID)
+
+                if binding_uuid in binding_uuids:
+                    self.fail(f"Got duplicate binding UUID: {binding_uuid}")
+
+                binding_uuids.add(binding_uuid)
+
     def test_default_role_binding_uuid_for(self):
         self.assertEqual(
             self.tenant_mapping.default_role_binding_uuid,
-            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.USER),
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.USER, Scope.DEFAULT),
+        )
+
+        self.assertEqual(
+            self.tenant_mapping.root_scope_default_role_binding_uuid,
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.USER, Scope.ROOT),
+        )
+
+        self.assertEqual(
+            self.tenant_mapping.tenant_scope_default_role_binding_uuid,
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.USER, Scope.TENANT),
         )
 
         self.assertEqual(
             self.tenant_mapping.default_admin_role_binding_uuid,
-            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.ADMIN),
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.ADMIN, Scope.DEFAULT),
+        )
+
+        self.assertEqual(
+            self.tenant_mapping.root_scope_default_admin_role_binding_uuid,
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.ADMIN, Scope.ROOT),
+        )
+
+        self.assertEqual(
+            self.tenant_mapping.tenant_scope_default_admin_role_binding_uuid,
+            self.tenant_mapping.default_role_binding_uuid_for(DefaultAccessType.ADMIN, Scope.TENANT),
         )
