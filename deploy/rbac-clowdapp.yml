@@ -641,6 +641,9 @@ objects:
     - name: rbac-kafka-consumer
       minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
       maxReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
+      metadata:
+        annotations:
+          ignore-check.kube-linter.io/minimum-three-replicas: "A single consumer guarantees events are processed in the exact order they happened, maintaining the integrity and consistency."
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         command: ["/opt/rbac/rbac/manage.py", "launch-rbac-kafka-consumer"]
