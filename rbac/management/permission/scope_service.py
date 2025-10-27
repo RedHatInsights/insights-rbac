@@ -15,8 +15,9 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper for determining workspace/tenant binding levels for permissions."""
+import dataclasses
 from enum import IntEnum
-from typing import Iterable
+from typing import Iterable, Self
 
 from django.conf import settings
 from management.models import Role, Workspace
@@ -41,6 +42,46 @@ class Scope(IntEnum):
     DEFAULT = 1
     ROOT = 2
     TENANT = 3
+
+
+@dataclasses.dataclass(frozen=True)
+class TenantScopeResources:
+    """Contains the V2 resources to which default role bindings are bound for a given tenant."""
+
+    tenant: V2boundresource
+    root_workspace: V2boundresource
+    default_workspace: V2boundresource
+
+    @classmethod
+    def for_models(cls, tenant: Tenant, root_workspace: Workspace, default_workspace: Workspace) -> Self:
+        """Create a new instance with resources for the provided models."""
+        return cls(
+            tenant=V2boundresource.for_model(tenant),
+            root_workspace=V2boundresource.for_model(root_workspace),
+            default_workspace=V2boundresource.for_model(default_workspace),
+        )
+
+    @classmethod
+    def for_tenant(cls, tenant: Tenant) -> Self:
+        """Create a new instance with resources for the provided tenant (fetching models as needed)."""
+        return cls.for_models(
+            tenant=tenant,
+            root_workspace=Workspace.objects.root(tenant=tenant),
+            default_workspace=Workspace.objects.default(tenant=tenant),
+        )
+
+    def resource_for(self, scope: Scope) -> V2boundresource:
+        """Return the resource to which role bindings in the given scope should be bound."""
+        if scope == Scope.TENANT:
+            return self.tenant
+
+        if scope == Scope.ROOT:
+            return self.root_workspace
+
+        if scope == Scope.DEFAULT:
+            return self.default_workspace
+
+        raise ValueError(f"Unexpected scope: {scope}")
 
 
 def bound_model_for_scope(

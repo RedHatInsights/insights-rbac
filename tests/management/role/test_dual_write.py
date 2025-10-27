@@ -24,11 +24,13 @@ from django.conf import settings
 
 from management.group.definer import seed_group, set_system_flag_before_update
 from management.group.model import Group
+from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
 )
 from management.models import Workspace
 from management.permission.model import Permission
+from management.permission.scope_service import Scope
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -43,11 +45,12 @@ from management.role.model import (
     Role,
     SourceKey,
 )
+from management.role.platform import platform_v2_role_uuid_for
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.tenant_mapping.model import TenantMapping
+from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -72,6 +75,8 @@ from api.cross_access.relation_api_dual_write_cross_access_handler import (
 from api.cross_access.util import create_cross_principal
 from api.models import Tenant, User
 from unittest.mock import patch
+
+from migration_tool.models import V2boundresource
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -109,6 +114,24 @@ class DualWriteTestCase(TestCase):
         tenant = tenant if tenant is not None else self.tenant
         default = Workspace.objects.default(tenant=tenant)
         return str(default.id)
+
+    def root_workspace(self, tenant: Optional[Tenant] = None) -> str:
+        """Return the root workspace ID."""
+        tenant = tenant if tenant is not None else self.tenant
+        root = Workspace.objects.root(tenant=tenant)
+        return str(root.id)
+
+    def default_workspace_resource(self, tenant: Optional[Tenant] = None) -> V2boundresource:
+        return V2boundresource(("rbac", "workspace"), self.default_workspace(tenant))
+
+    def root_workspace_resource(self, tenant: Optional[Tenant] = None) -> V2boundresource:
+        return V2boundresource(("rbac", "workspace"), self.root_workspace(tenant))
+
+    def tenant_resource(self, tenant: Optional[Tenant] = None) -> V2boundresource:
+        if tenant is None:
+            tenant = self.tenant
+
+        return V2boundresource.for_model(tenant)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -173,6 +196,11 @@ class DualWriteTestCase(TestCase):
         )
         dual_write.replicate_new_principals(principals)
         return group, principals
+
+    def given_custom_default_group(self) -> Group:
+        with patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate") as replicate:
+            replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+            return self.fixture.custom_default_group(self.tenant)
 
     def given_car(self, user_id: str, roles: list[Role], old_format=True):
         create_cross_principal(user_id, target_org=self.tenant.org_id)
@@ -312,17 +340,16 @@ class DualWriteTestCase(TestCase):
             f"Expected exactly {num} role bindings, but got {num_role_bindings}.\n" f"Role bindings: {role_bindings}",
         )
 
-    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
-        """Assert there is a role binding with the given roles and groups."""
-        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
-
-    def expect_role_bindings_to_workspace(
-        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    def expect_role_bindings_to_resource(
+        self, num: int, target: V2boundresource, for_v2_roles: list[str], for_groups: list[str]
     ):
-        """Assert there is [num] role bindings with the given roles and groups."""
+        """Assert there are [num] role bindings with the given roles and groups."""
         # Find all bindings for the given workspace
         resources = self.tuples.find_tuples_grouped(
-            all_of(resource("rbac", "workspace", workspace), relation("binding")),
+            all_of(
+                resource(target.resource_type[0], target.resource_type[1], target.resource_id),
+                relation("binding"),
+            ),
             group_by=lambda t: (
                 t.resource_type_namespace,
                 t.resource_type_name,
@@ -363,12 +390,89 @@ class DualWriteTestCase(TestCase):
         self.assertEqual(
             num_role_bindings,
             num,
-            f"Expected exactly 1 role binding against workspace {workspace} "
+            f"Expected exactly {num} role binding{"s" if num != 1 else ""} against resource {target} "
             f"with roles {for_v2_roles} and groups {for_groups}, "
             f"but got {len(role_bindings)}.\n"
             f"Matched role bindings: {role_bindings}.\n"
             f"Unmatched role bindings: {unmatched}",
         )
+
+    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding with the given roles and groups."""
+        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
+
+    def expect_role_bindings_to_workspace(
+        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    ):
+        """Assert there are [num] role bindings for the given workspace with the given roles and groups."""
+        self.expect_role_bindings_to_resource(
+            num=num,
+            target=V2boundresource(("rbac", "workspace"), workspace),
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_1_role_binding_to_tenant(self, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding for the given workspace with the given roles and groups."""
+        self.expect_role_bindings_to_tenant(
+            num=1,
+            org_id=org_id,
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_role_bindings_to_tenant(self, num: int, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding for the given tenant with the given roles and groups."""
+        self.expect_role_bindings_to_resource(
+            num=num,
+            target=V2boundresource(("rbac", "tenant"), Tenant.org_id_to_tenant_resource_id(org_id)),
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_binding_present(self, target: V2boundresource, v2_role_id: str, group_id: str):
+        """Assert that a role binding (and associated BindingMapping) exist for the given resource, role, and group."""
+        self.expect_role_bindings_to_resource(
+            num=1,
+            target=target,
+            for_v2_roles=[v2_role_id],
+            for_groups=[group_id],
+        )
+
+        mapping = BindingMapping.objects.get(
+            resource_type_namespace=target.resource_type[0],
+            resource_type_name=target.resource_type[1],
+            resource_id=target.resource_id,
+            mappings__role__id=v2_role_id,
+        )
+
+        self.assertIn(group_id, mapping.mappings["groups"])
+
+    def expect_binding_absent(self, target: V2boundresource, v2_role_id: str, group_id: str):
+        """Assert that a role binding (and BindingMapping) do not exist for the given resource, role, and group."""
+        self.expect_role_bindings_to_resource(
+            num=0,
+            target=target,
+            for_v2_roles=[v2_role_id],
+            for_groups=[group_id],
+        )
+
+        mappings = list(
+            BindingMapping.objects.filter(
+                resource_type_namespace=target.resource_type[0],
+                resource_type_name=target.resource_type[1],
+                resource_id=target.resource_id,
+                mappings__role__id=v2_role_id,
+            )
+        )
+
+        self.assertLessEqual(len(mappings), 1)
+
+        if len(mappings) == 0:
+            return
+
+        mapping = mappings[0]
+        self.assertNotIn(group_id, mapping.mappings["groups"])
 
 
 class DualWriteGroupTestCase(DualWriteTestCase):
@@ -738,29 +842,50 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         do_boostrap(bootstrap_service, self.tenant)
 
         mapping: TenantMapping = self.tenant.tenant_mapping
-        platform_default_policy: Policy = Policy.objects.get(
-            group=Group.objects.get(tenant=self.fixture.public_tenant, platform_default=True)
+        policy_service = GlobalPolicyIdService()
+
+        default_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service=policy_service)
         )
+        root_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.ROOT, policy_service=policy_service)
+        )
+        tenant_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.TENANT, policy_service=policy_service)
+        )
+
+        def assert_default_bindings(num: int):
+            self.expect_role_bindings_to_workspace(
+                num=num,
+                workspace=self.default_workspace(self.tenant),
+                for_v2_roles=[default_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
+
+            self.expect_role_bindings_to_workspace(
+                num=num,
+                workspace=self.root_workspace(self.tenant),
+                for_v2_roles=[root_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
+
+            self.expect_role_bindings_to_tenant(
+                num=num,
+                org_id=self.tenant.org_id,
+                for_v2_roles=[tenant_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
 
         # Ensure that we actually use the correct default group UUID.
         self.assertEqual(default_group.uuid, mapping.default_group_uuid)
 
         # After bootstrap, no default role binding should exist, since a custom default access group exists.
-        self.expect_role_bindings_to_workspace(
-            num=0,
-            workspace=self.default_workspace(self.tenant),
-            for_v2_roles=[str(platform_default_policy.uuid)],
-            for_groups=[mapping.default_group_uuid],
-        )
+        assert_default_bindings(0)
 
         self.given_group_removed(default_group)
 
         # Once we have removed the default group, the default role binding should be restored.
-        self.expect_1_role_binding_to_workspace(
-            workspace=self.default_workspace(self.tenant),
-            for_v2_roles=[str(platform_default_policy.uuid)],
-            for_groups=[mapping.default_group_uuid],
-        )
+        assert_default_bindings(1)
 
     def test_custom_default_group_before_single_bootstrap(self):
         def do_bootstrap(bootstrap_service: V2TenantBootstrapService, tenant: Tenant):
@@ -2201,7 +2326,7 @@ class RbacFixture:
         return group, principals
 
     def custom_default_group(self, tenant: Tenant) -> Group:
-        return set_system_flag_before_update(self.default_group, tenant, None)  # type: ignore
+        return set_system_flag_before_update(Group.objects.get(pk=self.default_group.pk), tenant, None)  # type: ignore
 
     def root_workspace(self, tenant: Tenant) -> Workspace:
         return Workspace.objects.root(tenant=tenant)

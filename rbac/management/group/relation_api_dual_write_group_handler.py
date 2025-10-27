@@ -24,6 +24,7 @@ from management.group.model import Group
 from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
+from management.permission.scope_service import TenantScopeResources
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -67,7 +68,14 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._policy_service = GlobalPolicyIdService.shared()
 
             default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
-            super().__init__(default_workspace, event_type, replicator)
+            root_workspace = Workspace.objects.root(tenant_id=self.group.tenant_id)
+
+            super().__init__(
+                default_workspace=default_workspace,
+                root_workspace=root_workspace,
+                event_type=event_type,
+                replicator=replicator,
+            )
         except Exception as e:
             logger.error(f"Initialization of RelationApiDualWriteGroupHandler failed: {e}")
             raise DualWriteException(e)
@@ -278,7 +286,11 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
         return default_role_binding_tuples(
             tenant_mapping=mapping,
-            target_workspace_uuid=str(self.default_workspace.id),
+            target_resources=TenantScopeResources.for_models(
+                tenant=self.group.tenant,
+                root_workspace=self.root_workspace,
+                default_workspace=self.default_workspace,
+            ),
             access_type=DefaultAccessType.USER,
             resource_binding_only=resource_binding_only,
             policy_service=self._policy_service,

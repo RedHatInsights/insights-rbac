@@ -50,9 +50,17 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
 
         try:
             self.cross_account_request = cross_account_request
+
             tenant = Tenant.objects.get(org_id=self.cross_account_request.target_org)
             default_workspace = Workspace.objects.default(tenant=tenant)
-            super().__init__(default_workspace, event_type, replicator)
+            root_workspace = Workspace.objects.root(tenant=tenant)
+
+            super().__init__(
+                default_workspace=default_workspace,
+                root_workspace=root_workspace,
+                event_type=event_type,
+                replicator=replicator,
+            )
         except Exception as e:
             logger.error(
                 f"Error initializing RelationApiDualWriteCrossAccessHandler for request id: "
