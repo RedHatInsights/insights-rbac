@@ -794,8 +794,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 self.switch_to_new_tenant(name=f"test-{index}", org_id=f"test-{index}")
                 custom_group = self.given_custom_default_group()
 
-                target = V2boundresource.try_for_model(target_for(self.tenant))
-                self.assertIsNotNone(target)
+                target = V2boundresource.for_model(target_for(self.tenant))
 
                 role_id = str(platform_role.uuid)
                 group_id = str(custom_group.uuid)

@@ -357,10 +357,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 default_workspace=self.default_workspace,
             )
 
-            target_resource = V2boundresource.try_for_model(target_model)
-
-            if target_resource is None:
-                raise ValueError(f"Expected to have V2 resource ID for model {target_model}, but got None.")
+            target_resource = V2boundresource.for_model(target_model)
 
             relations, mappings = migrate_role(
                 self.role,

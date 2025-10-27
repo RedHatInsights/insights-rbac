@@ -170,10 +170,7 @@ class RelationApiDualWriteSubjectHandler:
             default_workspace=self.default_workspace,
         )
 
-        v2_resource = V2boundresource.try_for_model(local_resource)
-
-        if v2_resource is None:
-            raise ValueError(f"Could not obtain V2boundresource for model: {local_resource}")
+        v2_resource = V2boundresource.for_model(local_resource)
 
         try:
             # We lock the binding here because we cannot lock the Role for system roles,
