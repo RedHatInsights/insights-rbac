@@ -87,7 +87,7 @@ class SystemRole:
 
 def v1_role_to_v2_bindings(
     v1_role: Role,
-    default_workspace: Workspace,
+    default_resource: V2boundresource,
     role_bindings: Iterable[BindingMapping],
 ) -> list[BindingMapping]:
     """Convert a V1 role to a set of V2 role bindings."""
@@ -153,7 +153,7 @@ def v1_role_to_v2_bindings(
         if default:
             add_element(
                 perm_groupings,
-                V2boundresource(("rbac", "workspace"), str(default_workspace.id)),
+                default_resource,
                 v2_perm,
                 collection=set,
             )

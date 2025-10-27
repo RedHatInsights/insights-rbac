@@ -22,6 +22,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from management.models import Workspace
+from management.permission.scope_service import Scope, bound_model_for_scope
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -31,6 +32,8 @@ from management.relation_replicator.relation_replicator import (
 from management.role.model import BindingMapping, Role
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
+from api.models import Tenant
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -39,8 +42,9 @@ class RelationApiDualWriteSubjectHandler:
 
     def __init__(
         self,
-        default_workspace: Workspace,
+        tenant: Tenant,
         root_workspace: Workspace,
+        default_workspace: Workspace,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
     ):
@@ -51,10 +55,22 @@ class RelationApiDualWriteSubjectHandler:
         try:
             self.relations_to_add = []
             self.relations_to_remove = []
-            self.default_workspace = default_workspace
+
+            self.tenant = tenant
             self.root_workspace = root_workspace
+            self.default_workspace = default_workspace
+
+            if self.root_workspace.tenant != self.tenant:
+                raise ValueError(
+                    f"Expected root workspace to be from tenant {self.tenant}, but got {self.root_workspace.tenant}"
+                )
+
+            if self.default_workspace.tenant != self.tenant:
+                raise ValueError(
+                    f"Expected root workspace to be from tenant {self.tenant}, but got {self.default_workspace.tenant}"
+                )
+
             self.event_type = event_type
-            self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
         except Exception as e:
             logger.error(f"Initialization of RelationApiDualWriteSubjectHandler failed: {e}")
@@ -64,14 +80,19 @@ class RelationApiDualWriteSubjectHandler:
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
 
-    def _create_default_mapping_for_system_role(self, system_role: Role, **subject: Iterable[str]) -> BindingMapping:
+    def _create_default_mapping_for_system_role(
+        self,
+        system_role: Role,
+        resource: V2boundresource,
+        **subject: Iterable[str],
+    ) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
         binding = V2rolebinding(
             str(uuid4()),
             # Assumes same role UUID for V2 system role equivalent.
             V2role.for_system_role(str(system_role.uuid)),
-            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
+            resource,
             **subject,
         )
         mapping = BindingMapping.for_role_binding(binding, system_role)
@@ -81,8 +102,9 @@ class RelationApiDualWriteSubjectHandler:
     def _update_mapping_for_role(
         self,
         role: Role,
+        scope: Scope,
         update_mapping: Callable[[BindingMapping], None],
-        create_default_mapping_for_system_role: Optional[Callable[[], BindingMapping]],
+        create_default_mapping_for_system_role: Optional[Callable[[V2boundresource], BindingMapping]],
     ):
         """
         Update mapping for role using callbacks based on current state.
@@ -96,9 +118,10 @@ class RelationApiDualWriteSubjectHandler:
         if role.system:
             self._update_mapping_for_system_role(
                 role,
+                scope=scope,
                 update_mapping=update_mapping,
                 create_default_mapping_for_system_role=create_default_mapping_for_system_role,
-                default_workspace_locked=False,
+                resource_locked=False,
             )
         else:
             # NOTE: The custom Role MUST be locked before this point in Read Committed isolation.
@@ -121,15 +144,33 @@ class RelationApiDualWriteSubjectHandler:
                 update_mapping(mapping)
                 mapping.save(force_update=True)
 
+    def _lock_resource_for_update(self, resource: Tenant | Workspace):
+        if isinstance(resource, Tenant):
+            Tenant.objects.select_for_update().get(pk=resource.pk)
+        elif isinstance(resource, Workspace):
+            Workspace.objects.select_for_update().get(pk=resource.pk)
+        else:
+            raise TypeError(f"Unexpected resource: {resource}")
+
     def _update_mapping_for_system_role(
         self,
         role: Role,
+        scope: Scope,
         update_mapping: Callable[[BindingMapping], None],
-        create_default_mapping_for_system_role: Optional[Callable[[], BindingMapping]],
-        default_workspace_locked: bool = False,
+        create_default_mapping_for_system_role: Optional[Callable[[V2boundresource], BindingMapping]],
+        resource_locked: bool = False,
     ):
         if role.system is False:
             raise DualWriteException("Expected system role.")
+
+        local_resource = bound_model_for_scope(
+            scope=scope,
+            tenant=self.tenant,
+            root_workspace=self.root_workspace,
+            default_workspace=self.default_workspace,
+        )
+
+        v2_resource = V2boundresource.for_model(local_resource)
 
         try:
             # We lock the binding here because we cannot lock the Role for system roles,
@@ -140,9 +181,9 @@ class RelationApiDualWriteSubjectHandler:
                 BindingMapping.objects.select_for_update()
                 .filter(
                     role=role,
-                    resource_type_namespace="rbac",
-                    resource_type_name="workspace",
-                    resource_id=str(self.default_workspace.id),
+                    resource_type_namespace=v2_resource.resource_type[0],
+                    resource_type_name=v2_resource.resource_type[1],
+                    resource_id=v2_resource.resource_id,
                 )
                 .get()
             )
@@ -157,23 +198,24 @@ class RelationApiDualWriteSubjectHandler:
         except BindingMapping.DoesNotExist:
             # create_default_mapping_for_system_role is None if e.g. the role is being removed.
             if create_default_mapping_for_system_role is not None:
-                if not default_workspace_locked:
-                    # Lock the workspace to prevent concurrent creation of the same mapping.
-                    Workspace.objects.select_for_update().get(pk=self.default_workspace.pk)
+                if not resource_locked:
+                    # Lock the resource to prevent concurrent creation of the same mapping.
+                    self._lock_resource_for_update(local_resource)
                     # Recurse in case the workspace was locked by another process
                     # and now the mapping exists.
                     # We need to query and also lock the existing mapping in that case,
                     # just like normal.
                     self._update_mapping_for_system_role(
                         role,
+                        scope=scope,
                         update_mapping=update_mapping,
                         create_default_mapping_for_system_role=create_default_mapping_for_system_role,
                         # This prevents infinite recursion.
-                        default_workspace_locked=True,
+                        resource_locked=True,
                     )
                 else:
-                    # Workspace is locked, so it's safe to create the mapping.
+                    # The resource is locked, so it's safe to create the mapping.
                     # This method must only be called here,
                     # otherwise we can end up with extra untracked mapping tuples.
-                    mapping = create_default_mapping_for_system_role()
+                    mapping = create_default_mapping_for_system_role(v2_resource)
                     mapping.save(force_insert=True)

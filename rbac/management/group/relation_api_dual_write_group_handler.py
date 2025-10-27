@@ -24,7 +24,11 @@ from management.group.model import Group
 from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
-from management.permission.scope_service import TenantScopeResources
+from management.permission.scope_service import (
+    ImplicitResourceService,
+    Scope,
+    TenantScopeResources,
+)
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -48,12 +52,14 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     group: Group
     _expected_empty_relation_reason = None
     _policy_service: GlobalPolicyIdService
+    _resource_service: ImplicitResourceService
 
     def __init__(
         self,
         group,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
+        resource_service: Optional[ImplicitResourceService] = None,
     ):
         """Initialize RelationApiDualWriteGroupHandler."""
         if not self.replication_enabled():
@@ -67,10 +73,17 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._tenant_mapping = None
             self._policy_service = GlobalPolicyIdService.shared()
 
-            default_workspace = Workspace.objects.default(tenant_id=self.group.tenant_id)
-            root_workspace = Workspace.objects.root(tenant_id=self.group.tenant_id)
+            if resource_service is not None:
+                self._resource_service = resource_service
+            else:
+                self._resource_service = ImplicitResourceService.from_settings()
+
+            tenant = Tenant.objects.get(id=self.group.tenant_id)
+            default_workspace = Workspace.objects.default(tenant=tenant)
+            root_workspace = Workspace.objects.root(tenant=tenant)
 
             super().__init__(
+                tenant=tenant,
                 default_workspace=default_workspace,
                 root_workspace=root_workspace,
                 event_type=event_type,
@@ -140,36 +153,6 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             logger.error(f"Replication event failed for group: {self.group.uuid}: {e}")
             raise DualWriteException(e)
 
-    # TODO: this can be removed after the migrator
-    def generate_relations_to_add_roles(
-        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
-    ):
-        """
-        Generate relations to add roles.
-
-        This method is **NOT** idempotent. Adding the same role multiple times adds the group multiple times to the
-        BindingMapping for the [roles].
-        """
-        if not self.replication_enabled():
-            return
-
-        def add_group_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
-
-        for role in roles:
-            self._update_mapping_for_role(
-                role,
-                update_mapping=add_group_to_binding,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, groups=frozenset([str(self.group.uuid)])
-                ),
-            )
-
-        if remove_default_access_from is not None:
-            self.relations_to_remove.extend(
-                self._default_binding(resource_binding_only=True, mapping=remove_default_access_from)
-            )
-
     def generate_relations_reset_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
     ):
@@ -199,11 +182,19 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         # Add back subject
         # Replicate this addition
         for role in roles:
+            # Note that we do not attempt to handle the case where the scope has changed. At time of writing
+            # (2025-10-08), this case is expected to be handled during seeding for system roles. It is unclear how
+            # custom roles should be handled.
+            scope = self._resource_service.scope_for_role(role)
+
             self._update_mapping_for_role(
                 role,
+                scope=scope,
                 update_mapping=reset_mapping,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, groups=frozenset([str(self.group.uuid)])
+                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
+                    system_role=role,
+                    resource=resource,
+                    groups=frozenset([str(self.group.uuid)]),
                 ),
             )
 
@@ -233,9 +224,29 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             if removal is not None:
                 self.relations_to_remove.append(removal)
 
-        self._update_mapping_for_role(
-            role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=None
-        )
+        # There are several cases we have to handle here.
+        #
+        # First, the scope of the role could have changed since it was initially assigned, since we have no way of
+        # knowing what scopes a role previously had.
+        #
+        # Second, if the role could be bound to a non-default scope, so we have to handle two cases (even if the scope
+        # of the role hasn't changed):
+        # * An existing role binding that has not been migrated. Here, the role would still be bound in the default
+        #   workspace, and we have to remove it from there.
+        # * A role binding that has been migrated, or a role binding that was added after scope started being
+        #   respected. Here, we have to remove it from the correct scope.
+        # We could even have both, if a new role binding is created while scope is being respected but before the old
+        # role bindings have been pruned. We have no a priori way to distinguish between these two cases,
+        # so we always have to check at least the default workspace and the correct resource.
+        #
+        # In order to handle all these cases, we always attempt to remove the role from all scopes.
+        for scope in Scope:
+            self._update_mapping_for_role(
+                role,
+                scope=scope,
+                update_mapping=remove_group_from_binding,
+                create_default_mapping_for_system_role=None,
+            )
 
     def prepare_to_delete_group(self, roles):
         """Generate relations to delete."""
