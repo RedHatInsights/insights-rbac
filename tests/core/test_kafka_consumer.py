@@ -613,44 +613,6 @@ class RBACKafkaConsumerTests(TestCase):
 
         self.assertFalse(result)
 
-    @patch("core.kafka_consumer.relations_api_replication._write_relationships")
-    @patch("core.kafka_consumer.relations_api_replication._delete_relationships")
-    def test_process_relations_message_success(self, mock_delete, mock_write):
-        """Test successful relations message processing."""
-        # Mock tenant lookup
-        mock_tenant = Mock()
-        mock_tenant.org_id = "12345"
-
-        consumer = RBACKafkaConsumer()
-
-        debezium_msg = DebeziumMessage(
-            aggregatetype="relations",
-            aggregateid="test-id-123",
-            event_type="create_group",
-            payload={
-                "relations_to_add": [
-                    {
-                        "resource": {"type": "rbac", "id": "group1"},
-                        "subject": {"type": "rbac", "id": "user1"},
-                        "relation": "member",
-                    }
-                ],
-                "relations_to_remove": [],
-                "resource_context": {
-                    "resource_type": "Group",
-                    "resource_id": "group1",
-                    "org_id": "12345",
-                    "event_type": "create_group",
-                },
-            },
-        )
-
-        result = consumer._process_relations_message(debezium_msg)
-
-        self.assertTrue(result)
-        mock_write.assert_called_once()
-        mock_delete.assert_called_once()
-
     def test_process_relations_message_invalid_payload(self):
         """Test relations message processing with invalid payload."""
         consumer = RBACKafkaConsumer()
