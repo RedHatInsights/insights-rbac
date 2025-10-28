@@ -221,6 +221,10 @@ class V2TenantBootstrapService:
             sub_tuples_to_add, sub_tuples_to_remove = self._default_group_tuple_edits(user, mapping)
             tuples_to_add.extend(sub_tuples_to_add)
             tuples_to_remove.extend(sub_tuples_to_remove)
+
+        # Get org_id from the first valid org_id in the set
+        org_id = next(iter(org_ids)) if org_ids else ""
+
         # Bulk update existing principals
         if principals_to_update:
             logger.info(
@@ -228,9 +232,6 @@ class V2TenantBootstrapService:
                 f"found_users={len(existing_principal_dict)} total_users_in_batch={len(users)}"
             )
             Principal.objects.bulk_update(principals_to_update, ["user_id"])
-
-            # Get org_id from the first valid org_id in the set
-            org_id = next(iter(org_ids)) if org_ids else ""
 
         self._replicator.replicate(
             ReplicationEvent(
