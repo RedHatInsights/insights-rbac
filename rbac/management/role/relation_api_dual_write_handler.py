@@ -226,18 +226,6 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations."""
 
-    @classmethod
-    def for_system_role_event(
-        cls,
-        role: Role,
-        # TODO: may want to include Policy instead?
-        tenant: Tenant,
-        event_type: ReplicationEventType,
-        replicator: Optional[RelationReplicator] = None,
-    ):
-        """Create a RelationApiDualWriteHandler for assigning / unassigning a system role for a group."""
-        return cls(role, event_type, replicator, tenant)
-
     def __init__(
         self,
         role: Role,
