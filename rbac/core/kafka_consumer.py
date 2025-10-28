@@ -28,8 +28,12 @@ from typing import Any, Dict, List, Optional
 from django.conf import settings
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
+from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from prometheus_client import Counter, Histogram
 
+from api.models import Tenant
+
+relations_api_replication = RelationsApiReplicator()
 logger = logging.getLogger("rbac.core.kafka_consumer")
 
 # Metrics
@@ -630,19 +634,63 @@ class RBACKafkaConsumer:
                 messages_processed_total.labels(message_type="relations", status="validation_failed").inc()
                 return False
 
+            # Extract the org_id from resource context
+            resource_context = debezium_msg.payload.get("resource_context")
+            org_id = resource_context["org_id"]
+
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
 
             logger.info(
-                f"Processing relations message - aggregateid: {debezium_msg.aggregateid}, "
+                f"Processing relations message - org_id: {org_id}, "
+                f"aggregateid: {debezium_msg.aggregateid}, "
                 f"event_type: {debezium_msg.event_type}, "
                 f"relations_to_add: {len(replication_msg.relations_to_add)}, "
                 f"relations_to_remove: {len(replication_msg.relations_to_remove)}"
             )
 
-            # TODO: Add actual processing logic here
-            # This is where you would integrate with the relation replication system
+            # Get tenant by org_id
+            try:
+                tenant = Tenant.objects.get(org_id=org_id)
+            except Tenant.DoesNotExist:
+                logger.error(f"Tenant not found for org_id: {org_id}")
+                messages_processed_total.labels(message_type="relations", status="tenant_not_found").inc()
+                return False
 
+            # Do tuple deletes for relationships
+            replication_delete_response = relations_api_replication._delete_relationships(
+                relationships=replication_msg.relations_to_remove
+            )
+
+            # Do tuple writes for relationships
+            replication_write_response = relations_api_replication._write_relationships(
+                relationships=replication_msg.relations_to_add
+            )
+
+            # Extract consistency token from write response and try to set this first
+            if replication_write_response and hasattr(replication_write_response, "consistency_token"):
+                token = replication_write_response.consistency_token.token
+
+                # Update tenant with write consistency token
+                tenant.relations_consistency_token = token
+                tenant.save()
+
+                logger.info(f"Updated consistency token for org_id {org_id}: {token}")
+            # Use the token from the delete response and set this as fallback for consistency token
+            elif replication_delete_response and hasattr(replication_delete_response, "consistency_token"):
+                logger.info(f"No consistency token in write response for org_id {org_id}, using delete response token")
+                token = replication_delete_response.consistency_token.token
+                # Update tenant with delete consistency token
+                tenant.relations_consistency_token = token
+                tenant.save()
+
+                logger.info(f"Updated consistency token for org_id {org_id}: {token}")
+            else:
+                logger.warning(
+                    f"No consistency token in either write or delete response - "
+                    f"org_id: {org_id}, "
+                    f"aggregateid: {debezium_msg.aggregateid}"
+                )
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True
 
