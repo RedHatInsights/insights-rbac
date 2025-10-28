@@ -236,7 +236,7 @@ class ImplicitResourceService:
         scope = self.highest_scope_for_permissions(permissions)
 
         if scope == Scope.TENANT:
-            tenant_resource_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{tenant_org_id}"
+            tenant_resource_id = Tenant.org_id_to_tenant_resource_id(tenant_org_id)
             return V2boundresource(resource_type=("rbac", "tenant"), resource_id=tenant_resource_id)
         elif scope == Scope.ROOT:
             return V2boundresource(resource_type=("rbac", "workspace"), resource_id=root_workspace_id)

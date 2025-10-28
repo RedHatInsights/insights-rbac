@@ -88,6 +88,7 @@ class RelationApiDualWriteSubjectHandler:
     ) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
+
         binding = V2rolebinding(
             str(uuid4()),
             # Assumes same role UUID for V2 system role equivalent.
