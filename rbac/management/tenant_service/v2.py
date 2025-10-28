@@ -290,7 +290,14 @@ class V2TenantBootstrapService:
                     f"org_id={user.org_id}"
                 )
             org_ids.add(user.org_id)
-        bootstrapped_list = self._get_or_bootstrap_tenants(org_ids, ready_tenants)
+
+        bootstrapped_list = self._get_or_bootstrap_tenants(
+            org_ids=org_ids,
+            ready=ready_tenants,
+            account_number_by_org_id={},
+            bulk=True,
+        )
+
         bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
 
         tuples_to_add = []
@@ -412,63 +419,33 @@ class V2TenantBootstrapService:
     def _get_or_bootstrap_tenant(
         self, org_id: str, ready: bool, account_number: Optional[str] = None
     ) -> BootstrappedTenant:
-        tenant_name = f"org{org_id}"
-        tenant, _ = Tenant.objects.get_or_create(
-            org_id=org_id,
-            defaults={"ready": ready, "account_id": account_number, "tenant_name": tenant_name},
+        bootstrapped_tenants = self._get_or_bootstrap_tenants(
+            org_ids={org_id},
+            ready=ready,
+            account_number_by_org_id={org_id: account_number},
+            bulk=False,
         )
-        try:
-            mapping = TenantMapping.objects.get(tenant=tenant)
-            logger.info(f"Tenant already bootstrapped. org_id={tenant.org_id}")
-            return BootstrappedTenant(
-                tenant=tenant,
-                mapping=mapping,
-            )
-        except TenantMapping.DoesNotExist:
-            bootstrap = self._bootstrap_tenant(tenant)
-            return bootstrap
+
+        assert len(bootstrapped_tenants) == 1
+        return bootstrapped_tenants[0]
 
     def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
-        if tenant.tenant_name == "public":
-            raise ValueError("Cannot bootstrap public tenant.")
+        bootstrapped_tenants, relationships = self._bootstrap_tenants_no_replicate([tenant])
+        assert len(bootstrapped_tenants) == 1
 
-        # Set up workspace hierarchy for Tenant
-        root_workspace, default_workspace, relationships = self._built_in_workspaces(tenant)
-        root_workspace.save(force_insert=True)
-        default_workspace.save(force_insert=True)
-
-        platform_default_groups = self._tenant_default_groups(tenant)
-
-        kwargs = {"tenant": tenant}
-        if platform_default_groups:
-            group_uuid = platform_default_groups[0].uuid
-            logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
-            kwargs["default_group_uuid"] = group_uuid
-
-        mapping = TenantMapping.objects.create(**kwargs)
-
-        relationships.extend(
-            self._bootstrap_default_access(
-                tenant,
-                mapping,
-                TenantScopeResources.for_models(
-                    tenant=tenant,
-                    root_workspace=root_workspace,
-                    default_workspace=default_workspace,
-                ),
-            )
-        )
+        bootstrapped_tenant = bootstrapped_tenants[0]
+        assert bootstrapped_tenant.default_workspace is not None
 
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"org_id": tenant.org_id, "default_workspace_id": str(default_workspace.id)},
+                info={"org_id": tenant.org_id, "default_workspace_id": str(bootstrapped_tenant.default_workspace.id)},
                 partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
         )
 
-        return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
+        return bootstrapped_tenant
 
     def _replicate_bootstrap(self, tenant: Tenant, mapping: TenantMapping):
         """Replicate the bootstrapping of a tenant."""
@@ -529,7 +506,16 @@ class V2TenantBootstrapService:
 
         return default_groups
 
-    def _get_or_bootstrap_tenants(self, org_ids: set, ready: bool) -> list[BootstrappedTenant]:
+    def _get_or_bootstrap_tenants(
+        self,
+        org_ids: set,
+        ready: bool,
+        account_number_by_org_id: dict[str, Optional[str]],
+        bulk: bool,
+    ) -> list[BootstrappedTenant]:
+        if not bulk and len(org_ids) != 1:
+            raise ValueError("Bulk bootstrapping is required unless exactly one org_id is present.")
+
         """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
         existing_tenants: dict[str, Tenant] = {
@@ -541,6 +527,7 @@ class V2TenantBootstrapService:
         # An existing tenant might have been bootstrapped and already has mapping and workspaces
         tenants_to_bootstrap: list[Tenant] = []
         bootstrapped_list: list[BootstrappedTenant] = []
+
         for tenant in existing_tenants.values():
             lock = tenant_locks[tenant]
 
@@ -549,21 +536,58 @@ class V2TenantBootstrapService:
             else:
                 logger.info(f"Tenant already bootstrapped. org_id={tenant.org_id}")
                 bootstrapped_list.append(BootstrappedTenant(tenant, lock.tenant_mapping))
+
         # Create new tenants
         new_tenants = [
-            Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=ready)
+            Tenant(
+                tenant_name=f"org{org_id}",
+                org_id=org_id,
+                ready=ready,
+                account_id=account_number_by_org_id.get(org_id),
+            )
             for org_id in org_ids
             if org_id not in existing_tenants
         ]
+
         if new_tenants:
             new_tenants = Tenant.objects.bulk_create(new_tenants)
             tenants_to_bootstrap.extend(new_tenants)
+
         if tenants_to_bootstrap:
-            bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+            # These two strategies will result in the same structure and relationships, but the created
+            # ReplicationEvent will have different metadata. We accept the flag in order to preserve the existing
+            # behavior while reusing the rest of the logic.
+            if bulk:
+                bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+            else:
+                # If we're not using bulk bootstrapping, there must only be one tenant, so there can only be one
+                # tenant to bootstrap.
+                assert len(tenants_to_bootstrap) == 1
+                bootstrapped_list.append(self._bootstrap_tenant(tenants_to_bootstrap[0]))
+
         return bootstrapped_list
 
     def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
+        bootstrapped, relationships = self._bootstrap_tenants_no_replicate(tenants)
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
+                info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
+                partition_key=PartitionKey.byEnvironment(),
+                add=relationships,
+            )
+        )
+
+        return bootstrapped
+
+    def _bootstrap_tenants_no_replicate(
+        self, tenants: list[Tenant]
+    ) -> tuple[list[BootstrappedTenant], list[Relationship]]:
         # Set up workspace hierarchy for Tenant.
+        if any(t.tenant_name == "public" for t in tenants):
+            raise ValueError("Cannot bootstrap public tenant.")
+
         tenants = self._fresh_tenants_with_default_groups(tenants)
         relationships: list[Relationship] = []
         mappings_to_create: list[TenantMapping] = []
@@ -607,17 +631,16 @@ class V2TenantBootstrapService:
                 )
             )
 
-            bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
-
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
-                info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
-                partition_key=PartitionKey.byEnvironment(),
-                add=relationships,
+            bootstrapped_tenants.append(
+                BootstrappedTenant(
+                    tenant=tenant,
+                    mapping=mapping,
+                    default_workspace=default_workspace,
+                    root_workspace=root_workspace,
+                )
             )
-        )
-        return bootstrapped_tenants
+
+        return bootstrapped_tenants, relationships
 
     def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[Relationship], list[Relationship]]:
         """Get the tuples to add and remove for a user."""
