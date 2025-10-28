@@ -2200,6 +2200,69 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.expect_binding_absent(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_present(tenant, v2_role_id=v2_role_id, group_id=group_id)
 
+    def test_role_with_mixed_resource_definitions_creates_multiple_bindings(self):
+        """
+        Test that a role with both scope-based permissions and workspace resource definitions creates multiple bindings.
+
+        Scenario:
+        - ROOT scope permission (advisor:recommendation:read) without resource definition → binds to root workspace
+        - DEFAULT scope permission (inventory:groups:write) without resource definition → binds to root workspace (merged)
+        - DEFAULT scope permission (inventory:groups:read) with specific workspace resource definition → binds to that workspace
+
+        Expected: TWO separate bindings (one for root, one for specific workspace)
+        """
+        # Create a specific workspace for the resource definition
+        specific_workspace = Workspace.objects.create(
+            name="Specific Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.fixture.root_workspace(self.tenant),
+        )
+        specific_ws_id = str(specific_workspace.id)
+
+        # Create role with mixed permissions
+        with self.settings(ROOT_SCOPE_PERMISSIONS="advisor:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            role = self.given_v1_role(
+                "mixed_resource_role",
+                default=["advisor:recommendation:read", "inventory:groups:write"],
+                **{specific_ws_id: ["inventory:groups:read"]},
+            )
+
+        # Verify 2 BindingMappings created (one per resource)
+        mappings = BindingMapping.objects.filter(role=role)
+        self.assertEqual(mappings.count(), 2, "Should have 2 BindingMapping records")
+
+        # Get the V2 role IDs for each binding
+        root_binding = mappings.get(resource_id=self.root_workspace())
+        specific_binding = mappings.get(resource_id=specific_ws_id)
+
+        root_role_id = root_binding.mappings["role"]["id"]
+        specific_role_id = specific_binding.mappings["role"]["id"]
+
+        # Verify root workspace binding exists with correct permissions
+        self.expect_1_role_binding_to_workspace(
+            self.root_workspace(),
+            for_v2_roles=[root_role_id],
+            for_groups=[],
+        )
+        root_role_binding = root_binding.get_role_binding()
+        self.assertIn("advisor_recommendation_read", root_role_binding.role.permissions)
+        self.assertIn("inventory_groups_write", root_role_binding.role.permissions)
+
+        # Verify specific workspace binding exists with correct permissions
+        self.expect_1_role_binding_to_workspace(
+            specific_ws_id,
+            for_v2_roles=[specific_role_id],
+            for_groups=[],
+        )
+        specific_role_binding = specific_binding.get_role_binding()
+        self.assertIn("inventory_groups_read", specific_role_binding.role.permissions)
+
+        # Verify the two bindings have different V2 roles (different permission sets)
+        self.assertNotEqual(
+            root_role_id, specific_role_id, "Different permission sets should create different V2 roles"
+        )
+
 
 class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
 
