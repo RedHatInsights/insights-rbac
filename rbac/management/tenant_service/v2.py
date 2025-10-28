@@ -229,10 +229,17 @@ class V2TenantBootstrapService:
             )
             Principal.objects.bulk_update(principals_to_update, ["user_id"])
 
+            # Get org_id from the first valid org_id in the set
+            org_id = next(iter(org_ids)) if org_ids else ""
+
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_EXTERNAL_USER_UPDATE,
-                info={"num_users": len(users), "first_user_id": users[0].user_id if users else None},
+                info={
+                    "num_users": len(users),
+                    "first_user_id": users[0].user_id if users else None,
+                    "org_id": org_id,
+                },
                 partition_key=PartitionKey.byEnvironment(),
                 add=tuples_to_add,
                 remove=tuples_to_remove,
@@ -498,7 +505,11 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
-                info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
+                info={
+                    "num_tenants": len(tenants),
+                    "first_org_id": tenants[0].org_id if tenants else None,
+                    "org_id": tenants[0].org_id if tenants else "",
+                },
                 partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
@@ -619,11 +630,12 @@ class V2TenantBootstrapService:
 
         return root, default, relationships
 
-    def create_workspace_relationships(self, pairs):
+    def create_workspace_relationships(self, pairs, org_id: str):
         """
         Util for bulk creating workspace relationships based on pairs.
 
         Input: pairs - List of tuples of (resource_id, subject_id)
+               org_id - Organization ID for the workspaces
         """
         relationships = []
         for pair in pairs:
@@ -638,7 +650,7 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.WORKSPACE_IMPORT,
-                info={},
+                info={"org_id": org_id},
                 partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )

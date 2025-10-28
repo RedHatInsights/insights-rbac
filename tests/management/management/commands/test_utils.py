@@ -303,14 +303,21 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
         )
         batch_import_workspace(records)
         default_ws_3 = Workspace.objects.default(tenant=Tenant.objects.get(org_id=org_id_3))
-        self.assertEqual(
-            mock_cwr.call_args[0][0],
-            [
-                (workspace_id_1, str(defaults[0].id)),
-                (workspace_id_2, str(defaults[1].id)),
-                (workspace_id_3, str(default_ws_3.id)),
-            ],
-        )
+        # create_workspace_relationships is now called once per org_id
+        self.assertEqual(mock_cwr.call_count, 3)
+        # Extract all calls and sort by workspace_id for consistent comparison
+        all_pairs = []
+        for call in mock_cwr.call_args_list:
+            pairs, org_id = call[0]
+            all_pairs.extend(pairs)
+        all_pairs.sort(key=lambda x: x[0])
+        expected_pairs = [
+            (workspace_id_1, str(defaults[0].id)),
+            (workspace_id_2, str(defaults[1].id)),
+            (workspace_id_3, str(default_ws_3.id)),
+        ]
+        expected_pairs.sort(key=lambda x: x[0])
+        self.assertEqual(all_pairs, expected_pairs)
         self.assertEqual(Workspace.objects.filter(id__in=[workspace_id_1, workspace_id_2, workspace_id_3]).count(), 3)
         self.assertEqual(Workspace.objects.get(id=workspace_id_1).parent, defaults[0])
         self.assertEqual(Workspace.objects.get(id=workspace_id_2).parent, defaults[1])
@@ -328,14 +335,15 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
         records[1]["modified_on"] = updated_time
         mock_cwr.reset_mock()
         batch_import_workspace(records)
-        self.assertEqual(
-            mock_cwr.call_args[0][0],
-            [
-                (workspace_id_1, str(defaults[0].id)),
-                (workspace_id_2, str(defaults[1].id)),
-                (workspace_id_3, str(default_ws_3.id)),
-            ],
-        )
+        # Verify idempotency - should still call once per org_id
+        self.assertEqual(mock_cwr.call_count, 3)
+        # Extract all calls and sort by workspace_id for consistent comparison
+        all_pairs = []
+        for call in mock_cwr.call_args_list:
+            pairs, org_id = call[0]
+            all_pairs.extend(pairs)
+        all_pairs.sort(key=lambda x: x[0])
+        self.assertEqual(all_pairs, expected_pairs)
         updated_ws_1 = Workspace.objects.get(id=workspace_id_1)
         self.assertEqual(updated_ws_1.name, updated_name)
         self.assertEqual(updated_ws_1.modified, datetime.fromisoformat(updated_time))

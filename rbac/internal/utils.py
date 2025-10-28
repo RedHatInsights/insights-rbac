@@ -76,11 +76,14 @@ def delete_bindings(bindings):
             - relations (list): A list of tuples representing the relations to be removed.
     """
     replicator = OutboxReplicator()
+    # Get org_id from first binding's role tenant
+    org_id = str(bindings.first().role.tenant.org_id) if bindings.exists() else ""
     info = {
         "mappings": [binding.mappings for binding in bindings],
         "role_ids": [binding.role_id for binding in bindings],
         "resource_ids": [binding.resource_id for binding in bindings],
         "resource_types": [binding.resource_type_name for binding in bindings],
+        "org_id": org_id,
     }
     if bindings:
         with transaction.atomic():
