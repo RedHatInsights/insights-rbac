@@ -618,23 +618,23 @@ class RoleDefinerTests(IdentityRequest):
         default_platform_default_uuid = policy_cache.platform_default_policy_uuid()
         default_admin_default_uuid = policy_cache.admin_default_policy_uuid()
         root_platform_default_uuid = UUID(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID)
+        tenant_platform_default_uuid = UUID(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)
         tenant_admin_default_uuid = UUID(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)
 
         initial_count = len(tuples)
 
-        # Note that default_role and root_role are platform_default, while tenant_role is admin_default.
-        default_role = Role.objects.public_tenant_only().get(name="Notifications viewer")
-        root_role = Role.objects.public_tenant_only().get(name="Approval Approver")
-        tenant_role = Role.objects.public_tenant_only().get(name="Inventory Groups Administrator")
+        # Note that notifications_role and approval_role are platform_default, while inventory_role is admin_default.
+        notifications_role = Role.objects.public_tenant_only().get(name="Notifications viewer")
+        approval_role = Role.objects.public_tenant_only().get(name="Approval Approver")
+        inventory_role = Role.objects.public_tenant_only().get(name="Inventory Groups Administrator")
 
         # Assert that seed_role creates relations in the default scope.
-        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=default_role.uuid)
-        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=root_role.uuid)
-        self._assert_child(tuples, parent_uuid=default_admin_default_uuid, child_uuid=tenant_role.uuid)
-
-        # The settings used above assign root_role to root workspace scope and tenant_role to tenant scope.
+        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=notifications_role.uuid)
+        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=approval_role.uuid)
+        self._assert_child(tuples, parent_uuid=default_admin_default_uuid, child_uuid=inventory_role.uuid)
 
         # Force updating the existing relationships even though the role version numbers have not changed.
+        # This puts approval_role in root scope and inventory_role in tenant scope.
         with self.settings(
             ROOT_SCOPE_PERMISSIONS="approval:actions:create",
             TENANT_SCOPE_PERMISSIONS="inventory:*:*",
@@ -642,13 +642,30 @@ class RoleDefinerTests(IdentityRequest):
             seed_roles(force_update_relationships=True)
 
         # Assert that relations for non-default-scope roles were removed.
-        self._assert_not_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=root_role.uuid)
-        self._assert_not_child(tuples, parent_uuid=default_admin_default_uuid, child_uuid=tenant_role.uuid)
+        self._assert_not_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=approval_role.uuid)
+        self._assert_not_child(tuples, parent_uuid=default_admin_default_uuid, child_uuid=inventory_role.uuid)
 
         # Assert that we end up with the correct relations.
-        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=default_role.uuid)
-        self._assert_child(tuples, parent_uuid=root_platform_default_uuid, child_uuid=root_role.uuid)
-        self._assert_child(tuples, parent_uuid=tenant_admin_default_uuid, child_uuid=tenant_role.uuid)
+        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=notifications_role.uuid)
+        self._assert_child(tuples, parent_uuid=root_platform_default_uuid, child_uuid=approval_role.uuid)
+        self._assert_child(tuples, parent_uuid=tenant_admin_default_uuid, child_uuid=inventory_role.uuid)
 
-        final_count = len(tuples)
-        self.assertEqual(initial_count, final_count, "Expected overall number of tuples not to change.")
+        self.assertEqual(initial_count, len(tuples), "Expected overall number of tuples not to change.")
+
+        # Check that we can also move roles between non-default scopes.
+        # This puts both approval_role and inventory_role in tenant scope.
+        with self.settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="approval:actions:create,inventory:*:*",
+        ):
+            seed_roles(force_update_relationships=True)
+
+        # Assert that relations for non-default-scope roles were removed.
+        self._assert_not_child(tuples, parent_uuid=root_platform_default_uuid, child_uuid=approval_role.uuid)
+
+        # Assert that we end up with the correct relations.
+        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=notifications_role.uuid)
+        self._assert_child(tuples, parent_uuid=tenant_platform_default_uuid, child_uuid=approval_role.uuid)
+        self._assert_child(tuples, parent_uuid=tenant_admin_default_uuid, child_uuid=inventory_role.uuid)
+
+        self.assertEqual(initial_count, len(tuples), "Expected overall number of tuples not to change.")
