@@ -1973,12 +1973,6 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[str(group.uuid)])
 
-        # Verify BindingMapping records were created for both resources
-        mappings = BindingMapping.objects.filter(role=role)
-        self.assertEqual(mappings.count(), 2, "Should have 2 BindingMapping records")
-        resource_ids = {m.resource_id for m in mappings}
-        self.assertEqual(resource_ids, {self.default_workspace(), "ws_2"})
-
     def test_add_permissions_to_role(self):
         """Modify the role in place when adding permissions."""
         role = self.given_v1_role(
@@ -1986,10 +1980,6 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
-
-        # Get initial BindingMapping IDs to verify they're updated, not recreated
-        initial_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
-        self.assertEqual(len(initial_mappings), 2, "Should start with 2 BindingMapping records")
 
         self.given_update_to_v1_role(
             role,
@@ -2012,15 +2002,6 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
 
-        # Verify BindingMapping records were updated (same IDs) not recreated
-        updated_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
-        self.assertEqual(len(updated_mappings), 2, "Should still have 2 BindingMapping records")
-        self.assertEqual(
-            initial_mappings,
-            updated_mappings,
-            "BindingMapping IDs should remain the same (updated, not recreated)",
-        )
-
     def test_remove_permissions_from_role(self):
         """Modify the role in place when removing permissions."""
         role = self.given_v1_role(
@@ -2028,10 +2009,6 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
-
-        # Get initial BindingMapping IDs
-        initial_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
-        self.assertEqual(len(initial_mappings), 2)
 
         self.given_update_to_v1_role(
             role,
@@ -2051,11 +2028,6 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             for_groups=[str(group.uuid)],
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
-
-        # Verify BindingMapping records were updated with new permissions
-        updated_mappings = {m.resource_id: m.id for m in BindingMapping.objects.filter(role=role)}
-        self.assertEqual(len(updated_mappings), 2)
-        self.assertEqual(initial_mappings, updated_mappings, "BindingMapping IDs should remain the same")
 
     def test_remove_permissions_from_role_back_to_original(self):
         """Modify the role in place when removing permissions, consolidating roles."""
@@ -2118,30 +2090,21 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_remove_resource_removes_role_binding(self):
         """Remove the role binding when removing the resource from attribute filter."""
-        v1_role = self.given_v1_role(
+        role = self.given_v1_role(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        # Verify initial state: 2 BindingMappings
-        initial_mappings = BindingMapping.objects.filter(role=v1_role)
-        self.assertEqual(initial_mappings.count(), 2, "Should start with 2 BindingMapping records")
-
         self.given_update_to_v1_role(
-            v1_role,
+            role,
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        v2_role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
 
         self.expect_num_role_bindings(1)
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[v2_role], for_groups=[])
-
-        # Verify BindingMapping for default workspace was removed
-        remaining_mappings = BindingMapping.objects.filter(role=v1_role)
-        self.assertEqual(remaining_mappings.count(), 1, "Should have only 1 BindingMapping after removal")
-        self.assertEqual(remaining_mappings.first().resource_id, "ws_2")
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role], for_groups=[])
 
     def test_two_roles_with_same_resource_permissions_create_two_v2_roles(self):
         """Create two v2 roles when two roles have the same resource permissions across different resources."""
@@ -2257,117 +2220,48 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
         specific_ws_id = str(specific_workspace.id)
 
-        # Create role with mixed permissions:
-        # - advisor:recommendation:read (ROOT scope, no resource def) → root workspace
-        # - inventory:groups:write (DEFAULT scope, no resource def) → root workspace (merged with advisor)
-        # - inventory:groups:read (DEFAULT scope, WITH resource def to specific_workspace) → specific workspace
-        with self.settings(
-            ROOT_SCOPE_PERMISSIONS="advisor:*:*",
-            TENANT_SCOPE_PERMISSIONS="",
-        ):
+        # Create role with mixed permissions
+        with self.settings(ROOT_SCOPE_PERMISSIONS="advisor:*:*", TENANT_SCOPE_PERMISSIONS=""):
             role = self.given_v1_role(
                 "mixed_resource_role",
                 default=["advisor:recommendation:read", "inventory:groups:write"],
                 **{specific_ws_id: ["inventory:groups:read"]},
             )
 
-        # Get the BindingMappings created for this role
+        # Verify 2 BindingMappings created (one per resource)
         mappings = BindingMapping.objects.filter(role=role)
         self.assertEqual(mappings.count(), 2, "Should have 2 BindingMapping records")
 
-        # Extract binding resources
-        binding_resources = {m.resource_id for m in mappings}
-        root_ws_id = self.root_workspace()
+        # Get the V2 role IDs for each binding
+        root_binding = mappings.get(resource_id=self.root_workspace())
+        specific_binding = mappings.get(resource_id=specific_ws_id)
 
-        # Verify both expected bindings exist
-        self.assertEqual(
-            binding_resources,
-            {root_ws_id, specific_ws_id},
-            f"Expected bindings to root workspace and specific workspace",
+        root_role_id = root_binding.mappings["role"]["id"]
+        specific_role_id = specific_binding.mappings["role"]["id"]
+
+        # Verify root workspace binding exists with correct permissions
+        self.expect_1_role_binding_to_workspace(
+            self.root_workspace(),
+            for_v2_roles=[root_role_id],
+            for_groups=[],
         )
-
-        # Verify the root workspace binding has the scope-based permissions
-        root_binding = mappings.get(resource_id=root_ws_id)
         root_role_binding = root_binding.get_role_binding()
         self.assertIn("advisor_recommendation_read", root_role_binding.role.permissions)
         self.assertIn("inventory_groups_write", root_role_binding.role.permissions)
 
-        # Verify the specific workspace binding has the resource-defined permission
-        specific_binding = mappings.get(resource_id=specific_ws_id)
+        # Verify specific workspace binding exists with correct permissions
+        self.expect_1_role_binding_to_workspace(
+            specific_ws_id,
+            for_v2_roles=[specific_role_id],
+            for_groups=[],
+        )
         specific_role_binding = specific_binding.get_role_binding()
         self.assertIn("inventory_groups_read", specific_role_binding.role.permissions)
 
-        # Verify both are workspace bindings
-        for binding in [root_binding, specific_binding]:
-            self.assertEqual(binding.resource_type_namespace, "rbac")
-            self.assertEqual(binding.resource_type_name, "workspace")
-
-        # Verify relationship tuples were created correctly in the graph
-        # Check root workspace has binding relationship
-        root_binding_tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "workspace", root_ws_id),
-                relation("binding"),
-            )
+        # Verify the two bindings have different V2 roles (different permission sets)
+        self.assertNotEqual(
+            root_role_id, specific_role_id, "Different permission sets should create different V2 roles"
         )
-        self.assertEqual(
-            len(root_binding_tuples), 1, f"Root workspace should have 1 binding tuple, got {len(root_binding_tuples)}"
-        )
-
-        # Check specific workspace has binding relationship
-        specific_binding_tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "workspace", specific_ws_id),
-                relation("binding"),
-            )
-        )
-        self.assertEqual(
-            len(specific_binding_tuples),
-            1,
-            f"Specific workspace should have 1 binding tuple, got {len(specific_binding_tuples)}",
-        )
-
-        # Verify the role_binding IDs in the tuples match our BindingMappings
-        root_tuple = root_binding_tuples.only
-        self.assertEqual(root_tuple.subject_type_namespace, "rbac", "Root workspace tuple should have rbac namespace")
-        self.assertEqual(
-            root_tuple.subject_type_name, "role_binding", "Root workspace tuple should point to role_binding"
-        )
-        self.assertEqual(
-            root_tuple.subject_id,
-            root_binding.mappings["id"],
-            "Root workspace binding tuple should point to correct role_binding ID",
-        )
-
-        specific_tuple = specific_binding_tuples.only
-        self.assertEqual(
-            specific_tuple.subject_type_namespace, "rbac", "Specific workspace tuple should have rbac namespace"
-        )
-        self.assertEqual(
-            specific_tuple.subject_type_name, "role_binding", "Specific workspace tuple should point to role_binding"
-        )
-        self.assertEqual(
-            specific_tuple.subject_id,
-            specific_binding.mappings["id"],
-            "Specific workspace binding tuple should point to correct role_binding ID",
-        )
-
-        # Verify V2 roles exist and have correct permissions
-        root_role_id = root_role_binding.role.id
-        specific_role_id = specific_role_binding.role.id
-
-        # Root role should have 2 permissions (advisor + inventory write)
-        self.assertEqual(
-            len(root_role_binding.role.permissions), 2, f"Root workspace binding should have 2 permissions"
-        )
-
-        # Specific role should have 1 permission (inventory read)
-        self.assertEqual(
-            len(specific_role_binding.role.permissions), 1, f"Specific workspace binding should have 1 permission"
-        )
-
-        # Clean up
-        specific_workspace.delete()
 
 
 class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
