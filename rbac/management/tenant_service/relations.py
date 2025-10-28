@@ -19,24 +19,17 @@ import logging
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.platform import GlobalPolicyIdService
+from management.permission.scope_service import Scope, TenantScopeResources
+from management.role.platform import platform_v2_role_uuid_for
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _role_uuid_for(access_type: DefaultAccessType, policy_cache: GlobalPolicyIdService) -> str:
-    if access_type == DefaultAccessType.USER:
-        return str(policy_cache.platform_default_policy_uuid())
-    elif access_type == DefaultAccessType.ADMIN:
-        return str(policy_cache.admin_default_policy_uuid())
-    else:
-        raise AssertionError(f"Access type should already have been validated: {access_type}")
-
-
 def default_role_binding_tuples(
     tenant_mapping: TenantMapping,
-    target_workspace_uuid: str,
+    target_resources: TenantScopeResources,
     access_type: DefaultAccessType,
     policy_service: GlobalPolicyIdService,
     resource_binding_only: bool = False,
@@ -51,42 +44,47 @@ def default_role_binding_tuples(
     The optional policy_cache argument can be used to prevent redundant policy UUID lookups across calls.
     """
     default_group_uuid = str(tenant_mapping.group_uuid_for(access_type))
-    role_binding_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type))
 
-    # Always add the relationship from the role binding to the target resource.
-    relationships = [
-        create_relationship(
-            ("rbac", "workspace"),
-            target_workspace_uuid,
-            ("rbac", "role_binding"),
-            role_binding_uuid,
-            "binding",
+    relationships: list[Relationship] = []
+
+    for scope in Scope:
+        # Always add the relationship from the role binding to the target resource.
+        role_binding_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type, scope))
+        target = target_resources.resource_for(scope)
+
+        relationships.append(
+            create_relationship(
+                target.resource_type,
+                target.resource_id,
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                "binding",
+            )
         )
-    ]
 
-    # Only add the remaining relationships if requested.
-    if not resource_binding_only:
-        # Since computing the role UUID can throw, only do it if necessary.
-        default_role_uuid = _role_uuid_for(access_type, policy_service)
+        # Only add the remaining relationships if requested.
+        if not resource_binding_only:
+            # Since computing the role UUID can throw, only do it if necessary.
+            default_role_uuid = str(platform_v2_role_uuid_for(access_type, scope, policy_service=policy_service))
 
-        relationships.extend(
-            [
-                create_relationship(
-                    ("rbac", "role_binding"),
-                    role_binding_uuid,
-                    ("rbac", "role"),
-                    default_role_uuid,
-                    "role",
-                ),
-                create_relationship(
-                    ("rbac", "role_binding"),
-                    role_binding_uuid,
-                    ("rbac", "group"),
-                    default_group_uuid,
-                    "subject",
-                    "member",
-                ),
-            ]
-        )
+            relationships.extend(
+                [
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        role_binding_uuid,
+                        ("rbac", "role"),
+                        default_role_uuid,
+                        "role",
+                    ),
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        role_binding_uuid,
+                        ("rbac", "group"),
+                        default_group_uuid,
+                        "subject",
+                        "member",
+                    ),
+                ]
+            )
 
     return relationships

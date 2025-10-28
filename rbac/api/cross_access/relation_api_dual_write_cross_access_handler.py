@@ -21,6 +21,7 @@ from typing import Iterable, Optional
 
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
+from management.permission.scope_service import Scope
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
     PartitionKey,
@@ -50,9 +51,18 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
 
         try:
             self.cross_account_request = cross_account_request
+
             tenant = Tenant.objects.get(org_id=self.cross_account_request.target_org)
             default_workspace = Workspace.objects.default(tenant=tenant)
-            super().__init__(default_workspace, event_type, replicator)
+            root_workspace = Workspace.objects.root(tenant=tenant)
+
+            super().__init__(
+                tenant=tenant,
+                default_workspace=default_workspace,
+                root_workspace=root_workspace,
+                event_type=event_type,
+                replicator=replicator,
+            )
         except Exception as e:
             logger.error(
                 f"Error initializing RelationApiDualWriteCrossAccessHandler for request id: "
@@ -96,9 +106,12 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         for role in roles:
             self._update_mapping_for_system_role(
                 role,
+                scope=Scope.DEFAULT,
                 update_mapping=add_principal_to_binding,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, users={str(source_key): user_id}
+                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
+                    system_role=role,
+                    resource=resource,
+                    users={str(source_key): user_id},
                 ),
             )
 
@@ -116,9 +129,12 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         for role in roles:
             self._update_mapping_for_system_role(
                 role,
+                scope=Scope.DEFAULT,
                 update_mapping=add_principal_to_binding,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, users={str(source_key): user_id}
+                create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
+                    system_role=role,
+                    resource=resource,
+                    users={str(source_key): user_id},
                 ),
             )
 
@@ -143,5 +159,8 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
 
         for role in roles:
             self._update_mapping_for_system_role(
-                role, update_mapping=remove_principal_from_binding, create_default_mapping_for_system_role=None
+                role,
+                scope=Scope.DEFAULT,
+                update_mapping=remove_principal_from_binding,
+                create_default_mapping_for_system_role=None,
             )

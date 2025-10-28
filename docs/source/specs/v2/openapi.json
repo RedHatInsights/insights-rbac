@@ -1301,7 +1301,7 @@
           "limit": {
             "type": "integer",
             "format": "int64",
-            "description": "Limit of returned objects",
+            "description": "Limit of returned objects. Use -1 to return all objects.",
             "example": 10,
             "default": 10
           }
@@ -1363,7 +1363,7 @@
           "limit": {
             "type": "integer",
             "format": "int64",
-            "description": "Limit of returned objects",
+            "description": "Limit of returned objects. Use -1 to return all objects.",
             "example": 10,
             "default": 10
           },
