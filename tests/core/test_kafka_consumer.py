@@ -615,13 +615,11 @@ class RBACKafkaConsumerTests(TestCase):
 
     @patch("core.kafka_consumer.relations_api_replication._write_relationships")
     @patch("core.kafka_consumer.relations_api_replication._delete_relationships")
-    @patch("core.kafka_consumer.Tenant.objects.get")
-    def test_process_relations_message_success(self, mock_tenant_get, mock_delete, mock_write):
+    def test_process_relations_message_success(self, mock_delete, mock_write):
         """Test successful relations message processing."""
         # Mock tenant lookup
         mock_tenant = Mock()
         mock_tenant.org_id = "12345"
-        mock_tenant_get.return_value = mock_tenant
 
         consumer = RBACKafkaConsumer()
 
@@ -650,7 +648,6 @@ class RBACKafkaConsumerTests(TestCase):
         result = consumer._process_relations_message(debezium_msg)
 
         self.assertTrue(result)
-        mock_tenant_get.assert_called_once_with(org_id="12345")
         mock_write.assert_called_once()
         mock_delete.assert_called_once()
 

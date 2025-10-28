@@ -96,9 +96,7 @@ class ReplicationEvent:
         self.event_info = info
 
     def resource_context(self) -> Dict[str, object] | None:
-        """
-        Builds context for all replication events that have identifiable resources.
-        """
+        """Build context for all replication events that have identifiable resources."""
         # Map event types to (resource_type, id_field) tuples
         event_mapping = {
             # Workspace events
