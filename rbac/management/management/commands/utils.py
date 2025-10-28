@@ -211,7 +211,7 @@ def batch_import_workspace(records):
             org_id = record["org_id"]
             if org_id not in pairs_by_org:
                 pairs_by_org[org_id] = []
-            pairs_by_org[org_id].append((str(workspace.id), str(parent.id)))
+            pairs_by_org[org_id].append((record["id"], str(parent.id)))
 
         Workspace.objects.bulk_create(workspaces)
         Workspace.objects.bulk_update(workspaces_to_update, ["name", "modified"])
