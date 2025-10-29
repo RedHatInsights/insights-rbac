@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "06ca2701d18e9d7de8c52ab149b49d945255b070233cfbcd5e898c5ed30729ad"
+            "sha256": "cf1a8909dc555355792f57dfc606fbd0891e9423166cb797ecb15c7371878362"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -193,7 +193,7 @@
                 "sha256:fc7de24befaeae77ba923797c7c87834c73648a05a4bde34b3b7e5588973a453",
                 "sha256:fe562eb1a64e67dd297ccc4f5addea2501664954f2692b69a76449ec7913ecbf"
             ],
-            "markers": "python_full_version >= '3.9' and platform_python_implementation != 'PyPy'",
+            "markers": "python_version >= '3.9'",
             "version": "==2.0.0"
         },
         "charset-normalizer": {
@@ -516,6 +516,7 @@
                 "sha256:9bbbeef3442586effb124d1ca032cfb8fb7acd8754ab79b55facd2b8f3ab2802",
                 "sha256:f8f944bcb9723339b0ef58a73840f3c61bc91b69bf7368464906120b55804473"
             ],
+            "markers": "python_version >= '3.7'",
             "version": "==2.42.0"
         },
         "googleapis-common-protos": {
@@ -740,11 +741,11 @@
         },
         "kafka-python": {
             "hashes": [
-                "sha256:205953e581c0371cada35bebdacc58ac7dee6c3f9e8d95b9a6a0a7bacc054ca0",
-                "sha256:6765c25440046cdadeb9c31469566be259d50802d27d4f8aae86d9ae755b78e2"
+                "sha256:84c0993cd4f7f2f01e92d8104ea9bdf631aff72fc5e6ea62eb3bdf1d56528fc3",
+                "sha256:e0f480a45f3814cb0eb705b8b4f61069e1be61dae0d8c69d0f1f2da33eea1bd5"
             ],
             "index": "pypi",
-            "version": "==2.1.5"
+            "version": "==2.2.15"
         },
         "kessel-sdk": {
             "extras": [
@@ -1087,7 +1088,7 @@
                 "sha256:78816d4f24add8f10a06d6f05b4d424ad9e96cfebf68a4ddc99c65c0720d00c2",
                 "sha256:e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934"
             ],
-            "markers": "implementation_name != 'PyPy'",
+            "markers": "python_version >= '3.8'",
             "version": "==2.23"
         },
         "python-dateutil": {
@@ -1147,6 +1148,7 @@
                 "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36",
                 "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9"
             ],
+            "markers": "python_version >= '3.4'",
             "version": "==2.0.0"
         },
         "rpds-py": {
@@ -1356,7 +1358,7 @@
                 "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8",
                 "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"
             ],
-            "markers": "python_version >= '3.9'",
+            "markers": "python_version >= '2'",
             "version": "==2025.2"
         },
         "tzlocal": {
@@ -1680,7 +1682,7 @@
                 "sha256:fc7de24befaeae77ba923797c7c87834c73648a05a4bde34b3b7e5588973a453",
                 "sha256:fe562eb1a64e67dd297ccc4f5addea2501664954f2692b69a76449ec7913ecbf"
             ],
-            "markers": "python_full_version >= '3.9' and platform_python_implementation != 'PyPy'",
+            "markers": "python_version >= '3.9'",
             "version": "==2.0.0"
         },
         "cfgv": {
@@ -2371,7 +2373,7 @@
                 "sha256:78816d4f24add8f10a06d6f05b4d424ad9e96cfebf68a4ddc99c65c0720d00c2",
                 "sha256:e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934"
             ],
-            "markers": "implementation_name != 'PyPy'",
+            "markers": "python_version >= '3.8'",
             "version": "==2.23"
         },
         "pydocstyle": {
@@ -2632,7 +2634,7 @@
                 "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8",
                 "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"
             ],
-            "markers": "python_version >= '3.9'",
+            "markers": "python_version >= '2'",
             "version": "==2025.2"
         },
         "urllib3": {
