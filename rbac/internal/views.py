@@ -79,6 +79,7 @@ from management.role.model import Access
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    migrate_binding_scope_in_worker,
     migrate_data_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -2125,3 +2126,24 @@ def send_kafka_test_message(request):
     except Exception as e:
         logger.error(f"Error sending test Kafka message: {e}")
         return JsonResponse({"error": "Error sending test message", "detail": str(e)}, status=500)
+
+
+def migrate_binding_scope(request):
+    """View method for running binding scope migration.
+
+    POST /_private/api/utils/migrate_binding_scope/
+
+    Migrates all role bindings to the correct scope based on permission scopes.
+    Iterates through roles (not binding mappings) and uses dual write handlers.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
+
+    logger.info(f"Running binding scope migration: {request.method} {request.user.username}")
+
+    migrate_binding_scope_in_worker.delay()
+
+    return JsonResponse(
+        {"message": "Binding scope migration is running in a background worker."},
+        status=202,
+    )

@@ -20,6 +20,7 @@ from typing import Optional, Tuple
 import uuid
 
 from django.conf import settings
+from unittest.mock import patch
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
@@ -50,11 +51,17 @@ class V2TenantBootstrapServiceTest(TestCase):
     fixture: RbacFixture
 
     def setUp(self):
+        # Clear any existing state first
         self.tuples = InMemoryTuples()
-        self.service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples))
+        self.replicator = InMemoryRelationReplicator(self.tuples)
+        self.service = V2TenantBootstrapService(self.replicator)
         self.fixture = RbacFixture(self.service)
         self.fixture.new_system_role("System Role", ["app1:foo:read"], platform_default=True)
         self.default_group, self.admin_group = seed_group()
+
+    def tearDown(self):
+        self.tuples.clear()
+        super().tearDown()
 
     def test_prevents_bootstrapping_public_tenant(self):
         with self.assertRaises(ValueError):
@@ -253,7 +260,10 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
-    def test_bulk_adding_updating_users(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator")
+    def test_bulk_adding_updating_users(self, mock_outbox_replicator):
+        # Redirect all OutboxReplicator instances to use our test's InMemoryRelationReplicator
+        mock_outbox_replicator.return_value = self.replicator
         bootstrapped = self.fixture.new_tenant(org_id="o1")
         self.tuples.clear()
 
