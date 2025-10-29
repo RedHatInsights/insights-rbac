@@ -24,7 +24,7 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import Workspace
-from management.permission.scope_service import ImplicitResourceService, Scope
+from management.permission.scope_service import ImplicitResourceService, Scope, bound_model_for_scope
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
@@ -35,7 +35,8 @@ from management.role.model import BindingMapping, Role
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.relations import role_child_relationship
 from management.tenant_mapping.model import DefaultAccessType
-from migration_tool.migrate_role import migrate_role
+from migration_tool.migrate_role import migrate_role, relation_tuples_for_bindings
+from migration_tool.models import V2boundresource
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
 from migration_tool.utils import create_relationship
 
@@ -225,18 +226,6 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations."""
 
-    @classmethod
-    def for_system_role_event(
-        cls,
-        role: Role,
-        # TODO: may want to include Policy instead?
-        tenant: Tenant,
-        event_type: ReplicationEventType,
-        replicator: Optional[RelationReplicator] = None,
-    ):
-        """Create a RelationApiDualWriteHandler for assigning / unassigning a system role for a group."""
-        return cls(role, event_type, replicator, tenant)
-
     def __init__(
         self,
         role: Role,
@@ -266,8 +255,11 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                     f"Tenant: {binding_tenant.id}"
                 )
 
-            self.tenant_id = binding_tenant.id
+            self.tenant = binding_tenant
+            self.root_workspace = Workspace.objects.root(tenant=binding_tenant)
             self.default_workspace = Workspace.objects.default(tenant=binding_tenant)
+
+            self.resource_service = ImplicitResourceService.from_settings()
         except Exception as e:
             logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)
@@ -293,13 +285,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 )
                 return
 
-            relations, _ = migrate_role(
-                self.role,
-                default_workspace=self.default_workspace,
-                current_bindings=self.binding_mappings.values(),
-            )
-
-            self.current_role_relations = relations
+            self.current_role_relations = relation_tuples_for_bindings(self.binding_mappings.values())
         except Exception as e:
             logger.error(f"Failed to generated relations for v2 role & role bindings: {e}")
             raise DualWriteException(e)
@@ -352,9 +338,18 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         try:
             logger.info("[Dual Write] Generate new relations from role(%s): '%s'", self.role.uuid, self.role.name)
 
+            target_model = bound_model_for_scope(
+                scope=self.resource_service.scope_for_role(self.role),
+                tenant=self.tenant,
+                root_workspace=self.root_workspace,
+                default_workspace=self.default_workspace,
+            )
+
+            target_resource = V2boundresource.for_model(target_model)
+
             relations, mappings = migrate_role(
                 self.role,
-                default_workspace=self.default_workspace,
+                default_resource=target_resource,
                 current_bindings=self.binding_mappings.values(),
             )
 
