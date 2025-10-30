@@ -663,24 +663,17 @@ class RBACKafkaConsumer:
             )
 
             # Do tuple writes for relationships
-            replication_write_response = relations_api_replication._write_relationships(
+            replication_add_response = relations_api_replication._write_relationships(
                 relationships=replication_msg.relations_to_add
             )
 
-            # Extract consistency token from write response and try to set this first
-            if replication_write_response and hasattr(replication_write_response, "consistency_token"):
-                token = replication_write_response.consistency_token.token
+            # Extract consistency token from responses
+            token = getattr(replication_add_response.consistency_token, "token", None) or getattr(
+                replication_delete_response.consistency_token, "token", None
+            )
 
-                # Update tenant with write consistency token
-                tenant.relations_consistency_token = token
-                tenant.save()
-
-                logger.info(f"Updated consistency token for org_id {org_id}: {token}")
-            # Use the token from the delete response and set this as fallback for consistency token
-            elif replication_delete_response and hasattr(replication_delete_response, "consistency_token"):
-                logger.info(f"No consistency token in write response for org_id {org_id}, using delete response token")
-                token = replication_delete_response.consistency_token.token
-                # Update tenant with delete consistency token
+            if token:
+                # Update tenant with consistency token
                 tenant.relations_consistency_token = token
                 tenant.save()
 
