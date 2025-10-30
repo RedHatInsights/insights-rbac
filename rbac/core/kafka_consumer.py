@@ -218,6 +218,7 @@ class MessageValidator:
             if not isinstance(resource_context, dict):
                 logger.error("resource_context must be a dictionary")
                 validation_errors_total.labels(error_type="invalid_resource_context_type").inc()
+                return False
 
             if "org_id" not in resource_context:
                 logger.error("Missing required field 'org_id' in resource_context")
