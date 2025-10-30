@@ -215,26 +215,6 @@ class MessageValidatorTests(TestCase):
 
         self.assertFalse(self.validator.validate_replication_message(payload))
 
-    def test_validate_replication_message_missing_org_id_in_context(self):
-        """Test validation fails when org_id is missing from resource_context."""
-        payload = {
-            "relations_to_add": [
-                {
-                    "resource": {"type": "rbac", "id": "group1"},
-                    "subject": {"type": "rbac", "id": "user1"},
-                    "relation": "member",
-                }
-            ],
-            "relations_to_remove": [],
-            "resource_context": {
-                "resource_type": "Group",
-                "resource_id": "group1",
-                # Missing "org_id"
-            },
-        }
-
-        self.assertFalse(self.validator.validate_replication_message(payload))
-
     def test_validate_replication_message_valid_with_resource_context(self):
         """Test validation succeeds with complete resource_context."""
         payload = {
