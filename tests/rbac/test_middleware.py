@@ -20,7 +20,7 @@ from functools import partial
 import json
 import os
 from typing import Tuple
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 from django.http import Http404, QueryDict, HttpResponse
 from django.test.utils import override_settings
 from importlib import reload
@@ -30,14 +30,14 @@ from django.urls import reverse
 
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.urls import clear_url_caches, get_resolver, resolve
+from django.urls import clear_url_caches
 from joserfc.jwt import Token
 
-from api.common import RH_IDENTITY_HEADER, RH_RBAC_ORG_ID
+from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
 from management.authorization.invalid_token import InvalidTokenError
-from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
+from management.authorization.token_validator import TokenValidator
 from management.cache import TenantCache
 from management.group.definer import seed_group
 from management.tenant_mapping.model import TenantMapping
@@ -183,7 +183,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
     def test_process_status(self):
         """Test that the request gets a user."""
-        mock_request = Mock(path="/api/v1/status/")
+        mock_request = Mock(path="/api/rbac/v1/status/")
         middleware = IdentityHeaderMiddleware(get_response=Mock())
         middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
@@ -477,6 +477,61 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
             request.GET = test_case
 
             self.assertEqual(middleware.should_load_user_permissions(request, user), False)
+
+
+class NoIdentityHeaderMiddleware(IdentityRequest):
+    """Tests for public endpoints."""
+
+    def test_no_identity_or_service_headers_returns_401(self):
+        """Test that a request without an identity header returns a 401."""
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        response = client.get(url, {})
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_with_identity_header_returns_200(self):
+        """Test that a request with an identity header returns a 200."""
+        url = reverse("v1_management:group-list")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_no_identity_public_endpoints_returns_200(self):
+        """
+        Test that a request without an identity header returns a 200 for specific endpoints.
+            /api/rbac/v1/status/
+            /api/rbac/v1/openapi.json
+            /metrics
+        """
+        urls = [
+            reverse("v1_api:server-status"),
+            reverse("v1_api:openapi"),
+            "/metrics",
+        ]
+        client = APIClient()
+        for url in urls:
+            response = client.get(url, {})
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_no_identity_faked_public_endpoints_returns_401(self):
+        """
+        Test that a request to a faked endpoint that contains partly substrings
+        of public endpoints returns a 401 without an identity header.
+        """
+        urls = [
+            "/api/rbac/v1/groups/status/",
+            "/api/rbac/v1/groups/openapi.json",
+            "/api/rbac/v1/groups/metrics",
+            "/api/v1/secretstatus",
+            "/status/",
+        ]
+        client = APIClient()
+        for url in urls:
+            response = client.get(url, {})
+            self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 @override_settings(SERVICE_PSKS={"catalog": {"secret": "abc123"}})
