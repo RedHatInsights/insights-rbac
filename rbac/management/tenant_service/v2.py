@@ -51,7 +51,7 @@ def try_lock_tenants_for_bootstrap(tenants: Iterable[Tenant]) -> dict[Tenant, Op
     Lock the provided tenants in order to prevent concurrent V2 bootstrapping.
 
     In particular, this locks the tenant's TenantMapping and custom default group (if any). The returned dict
-    is keyed by tenant id and contains a TenantBootstrapLock for each bootstrapped tenant. (It contains None for each
+    is keyed by each tenant and contains a TenantBootstrapLock for each bootstrapped tenant. (It contains None for each
     tenant without a TenantMapping).
 
     This lock prevents the following from happening concurrently:
