@@ -221,7 +221,6 @@ class V2TenantBootstrapService:
             sub_tuples_to_add, sub_tuples_to_remove = self._default_group_tuple_edits(user, mapping)
             tuples_to_add.extend(sub_tuples_to_add)
             tuples_to_remove.extend(sub_tuples_to_remove)
-
         # Bulk update existing principals
         if principals_to_update:
             logger.info(
@@ -625,7 +624,6 @@ class V2TenantBootstrapService:
         Util for bulk creating workspace relationships based on pairs.
 
         Input: pairs - List of tuples of (resource_id, subject_id)
-               org_id - Organization ID for the workspaces
         """
         relationships = []
         for pair in pairs:
