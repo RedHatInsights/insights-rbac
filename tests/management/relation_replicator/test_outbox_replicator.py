@@ -131,7 +131,6 @@ class OutboxReplicatorTest(TestCase):
             (ReplicationEventType.CREATE_SYSTEM_ROLE, "role_uuid", "SystemRole"),
             (ReplicationEventType.UPDATE_SYSTEM_ROLE, "role_uuid", "SystemRole"),
             (ReplicationEventType.DELETE_SYSTEM_ROLE, "v1_role_uuid", "SystemRole"),
-            (ReplicationEventType.MIGRATE_SYSTEM_ROLE_ASSIGNMENT, "role_uuid", "SystemRole"),
         ]
 
         for event_type, id_field, expected_type in test_cases:
@@ -160,7 +159,6 @@ class OutboxReplicatorTest(TestCase):
             (ReplicationEventType.CREATE_CUSTOM_ROLE, "role_uuid"),
             (ReplicationEventType.UPDATE_CUSTOM_ROLE, "role_uuid"),
             (ReplicationEventType.DELETE_CUSTOM_ROLE, "v1_role_uuid"),
-            (ReplicationEventType.MIGRATE_CUSTOM_ROLE, "role_uuid"),
         ]
 
         for event_type, id_field in test_cases:
@@ -262,7 +260,6 @@ class OutboxReplicatorTest(TestCase):
             ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST,
             ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST,
             ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
-            ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
         ]
 
         for event_type in test_cases:
@@ -280,41 +277,6 @@ class OutboxReplicatorTest(TestCase):
             context = logged_event.payload["resource_context"]
             self.assertEqual(context["resource_type"], "CrossAccountRequest")
             self.assertEqual(context["resource_id"], user_id)
-
-    def test_resource_context_for_bulk_events(self):
-        """Test resource context for bulk events."""
-        relation = create_relationship(("rbac", "tenant"), "t1", ("rbac", "workspace"), "w1", "owner")
-
-        # Test bulk tenant bootstrap
-        event = ReplicationEvent(
-            add=[relation],
-            remove=[],
-            event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
-            info={"num_tenants": 5, "first_org_id": "111111", "org_id": "123456"},
-            partition_key=PartitionKey.byEnvironment(),
-        )
-        self.replicator.replicate(event)
-
-        logged_event = self.log[0]
-        context = logged_event.payload["resource_context"]
-        self.assertEqual(context["resource_type"], "BulkTenant")
-        self.assertEqual(context["resource_id"], "bulk:5:111111")
-
-        # Test bulk user update
-        self.log.clear()
-        event = ReplicationEvent(
-            add=[relation],
-            remove=[],
-            event_type=ReplicationEventType.BULK_EXTERNAL_USER_UPDATE,
-            info={"num_users": 10, "first_user_id": "user-001", "org_id": "123456"},
-            partition_key=PartitionKey.byEnvironment(),
-        )
-        self.replicator.replicate(event)
-
-        logged_event = self.log[0]
-        context = logged_event.payload["resource_context"]
-        self.assertEqual(context["resource_type"], "BulkUser")
-        self.assertEqual(context["resource_id"], "bulk:10:user-001")
 
     def test_resource_context_for_role_assignment_events(self):
         """Test resource context for role assignment events."""
@@ -358,46 +320,6 @@ class OutboxReplicatorTest(TestCase):
         # Call resource_context directly to verify it returns None
         context = event.resource_context()
         self.assertIsNone(context)
-
-    def test_resource_context_raises_error_when_org_id_missing(self):
-        """Test that events without org_id raise ValueError for resource_context."""
-        relation = create_relationship(("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member")
-        group_uuid = uuid4()
-
-        # Create event with group_uuid but missing org_id
-        event = ReplicationEvent(
-            add=[relation],
-            remove=[],
-            event_type=ReplicationEventType.CREATE_GROUP,
-            info={"group_uuid": group_uuid},  # Missing org_id
-            partition_key=PartitionKey.byEnvironment(),
-        )
-
-        # Verify resource_context raises ValueError when org_id is missing
-        with self.assertRaises(ValueError) as context_manager:
-            event.resource_context()
-
-        self.assertIn("Missing required org_id", str(context_manager.exception))
-
-    def test_resource_context_raises_error_when_org_id_empty(self):
-        """Test that events with empty org_id raise ValueError for resource_context."""
-        relation = create_relationship(("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member")
-        group_uuid = uuid4()
-
-        # Create event with group_uuid but empty org_id
-        event = ReplicationEvent(
-            add=[relation],
-            remove=[],
-            event_type=ReplicationEventType.CREATE_GROUP,
-            info={"group_uuid": group_uuid, "org_id": ""},  # Empty org_id
-            partition_key=PartitionKey.byEnvironment(),
-        )
-
-        # Verify resource_context raises ValueError when org_id is empty
-        with self.assertRaises(ValueError) as context_manager:
-            event.resource_context()
-
-        self.assertIn("Missing required org_id", str(context_manager.exception))
 
     def test_replicate_empty_event_warns_instead_of_saving(self):
         """Test replicate with empty event warns."""

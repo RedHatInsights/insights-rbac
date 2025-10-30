@@ -109,12 +109,10 @@ class ReplicationEvent:
             ReplicationEventType.CREATE_SYSTEM_ROLE: ("SystemRole", "role_uuid"),
             ReplicationEventType.UPDATE_SYSTEM_ROLE: ("SystemRole", "role_uuid"),
             ReplicationEventType.DELETE_SYSTEM_ROLE: ("SystemRole", "v1_role_uuid"),
-            ReplicationEventType.MIGRATE_SYSTEM_ROLE_ASSIGNMENT: ("SystemRole", "role_uuid"),
             # Custom role events
             ReplicationEventType.CREATE_CUSTOM_ROLE: ("CustomRole", "role_uuid"),
             ReplicationEventType.UPDATE_CUSTOM_ROLE: ("CustomRole", "role_uuid"),
             ReplicationEventType.DELETE_CUSTOM_ROLE: ("CustomRole", "v1_role_uuid"),
-            ReplicationEventType.MIGRATE_CUSTOM_ROLE: ("CustomRole", "role_uuid"),
             # Role assignment events
             ReplicationEventType.ASSIGN_ROLE: ("RoleAssignment", "role_uuid"),
             ReplicationEventType.UNASSIGN_ROLE: ("RoleAssignment", "role_uuid"),
@@ -134,25 +132,9 @@ class ReplicationEvent:
             ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
             ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
             ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
-            ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
-            # Migration and special events
-            ReplicationEventType.MIGRATE_TENANT_GROUPS: ("TenantGroups", "org_id"),
-            ReplicationEventType.DELETE_BINDING_MAPPINGS: ("BindingMappings", "org_id"),
-            ReplicationEventType.WORKSPACE_IMPORT: ("WorkspaceImport", "org_id"),
         }
 
-        # Handle bulk events separately
-        if self.event_type == ReplicationEventType.BULK_BOOTSTRAP_TENANT:
-            num = self.event_info.get("num_tenants", 0)
-            first = self.event_info.get("first_org_id", "")
-            resource_id = f"bulk:{num}:{first}"
-            resource_type = "BulkTenant"
-        elif self.event_type == ReplicationEventType.BULK_EXTERNAL_USER_UPDATE:
-            num = self.event_info.get("num_users", 0)
-            first = self.event_info.get("first_user_id", "")
-            resource_id = f"bulk:{num}:{first}"
-            resource_type = "BulkUser"
-        elif self.event_type in event_mapping:
+        if self.event_type in event_mapping:
             resource_type, id_field = event_mapping[self.event_type]
             resource_id = str(self.event_info.get(id_field, ""))
         else:

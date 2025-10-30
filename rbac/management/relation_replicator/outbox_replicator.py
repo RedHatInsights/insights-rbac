@@ -224,7 +224,3 @@ class InMemoryLog:
     def log(self, outbox: Outbox):
         """Log the given outbox event."""
         self._log.append(outbox)
-
-    def clear(self):
-        """Clear all logged events."""
-        self._log.clear()
