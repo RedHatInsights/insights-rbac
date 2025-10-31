@@ -121,6 +121,9 @@ shell:
 seeds:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py seeds
 
+seeds-force-update:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py seeds --force-update-relations
+
 show-migrations:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py showmigrations api management
 
