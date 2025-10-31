@@ -32,6 +32,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.role.v2_model import SeededRoleV2
 
 
 from api.models import Tenant
@@ -121,6 +122,8 @@ def _make_role(data, force_create_relationships=False):
     else:
         if role.version != defaults["version"]:
             dual_write_handler.replicate_update_system_role()
+
+    _seed_v2_role_from_v1(role, display_name, defaults["description"], public_tenant, created)
 
     return role
 
@@ -254,3 +257,34 @@ def delete_permission(permission: Permission):
             dual_write_handler.replicate_update_system_role()
         else:
             dual_write_handler.replicate_new_or_updated_role(role)
+
+
+def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, v1_was_created):
+    """Create or update V2 role from V1 role during seeding."""
+    try:
+        v2_role, v2_created = SeededRoleV2.objects.get_or_create(
+            name=display_name,
+            tenant=public_tenant,
+            defaults={
+                "description": description,
+                "v1_source": v1_role,
+            },
+        )
+
+        if not v2_created:
+            v2_role.description = description
+            v2_role.v1_source = v1_role
+            v2_role.save()
+            v2_role.permissions.clear()
+            logger.info("Updated V2 system role %s.", display_name)
+        else:
+            logger.info("Created V2 system role %s.", display_name)
+
+        v1_permissions = [access.permission for access in v1_role.access.all()]
+        if v1_permissions:
+            v2_role.permissions.set(v1_permissions)
+            logger.info("Added %d permissions to V2 role %s.", len(v1_permissions), display_name)
+        return v2_role
+    except Exception as e:
+        logger.error(f"Failed to seed V2 role for {display_name}: {e}")
+        return None
