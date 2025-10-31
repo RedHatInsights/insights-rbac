@@ -24,7 +24,7 @@ from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from management.group.platform import GlobalPolicyIdService
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
@@ -291,14 +291,30 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         scope = resource_service.scope_for_role(v1_role)
 
         if v1_role.platform_default:
-            platform_role = platform_roles[(DefaultAccessType.USER, scope)]
-            platform_role.children.add(v2_role)
-            logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
+            platform_role = platform_roles.get((DefaultAccessType.USER, scope))
+            if platform_role:
+                platform_role.children.add(v2_role)
+                logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
+            else:
+                logger.warning(
+                    "Platform role for %s %s scope not available. Skipping child relationship for %s",
+                    DefaultAccessType.USER.value,
+                    scope.value,
+                    display_name,
+                )
 
         if v1_role.admin_default:
-            admin_platform_role = platform_roles[(DefaultAccessType.ADMIN, scope)]
-            admin_platform_role.children.add(v2_role)
-            logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
+            admin_platform_role = platform_roles.get((DefaultAccessType.ADMIN, scope))
+            if admin_platform_role:
+                admin_platform_role.children.add(v2_role)
+                logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
+            else:
+                logger.warning(
+                    "Platform role for %s %s scope not available. Skipping child relationship for %s",
+                    DefaultAccessType.ADMIN.value,
+                    scope.value,
+                    display_name,
+                )
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
@@ -314,25 +330,33 @@ def _seed_platform_roles():
 
     for access_type in [DefaultAccessType.USER, DefaultAccessType.ADMIN]:
         for scope in [Scope.DEFAULT, Scope.ROOT, Scope.TENANT]:
-            uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
+            try:
+                uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
 
-            role_name = f"{access_type.value.capitalize()} {scope.value.capitalize()} Platform Role"
-            description = f"Platform default role for {access_type.value} access at {scope.value} scope"
+                role_name = f"{access_type.value.capitalize()} {scope.value.capitalize()} Platform Role"
+                description = f"Platform default role for {access_type.value} access at {scope.value} scope"
 
-            platform_role, created = PlatformRoleV2.objects.update_or_create(
-                uuid=uuid,
-                defaults={
-                    "name": role_name,
-                    "description": description,
-                    "tenant": public_tenant,
-                },
-            )
+                platform_role, created = PlatformRoleV2.objects.update_or_create(
+                    uuid=uuid,
+                    defaults={
+                        "name": role_name,
+                        "description": description,
+                        "tenant": public_tenant,
+                    },
+                )
 
-            if created:
-                logger.info("Created platform role: %s", role_name)
-            else:
-                logger.info("Updated platform role: %s", role_name)
+                if created:
+                    logger.info("Created platform role: %s", role_name)
+                else:
+                    logger.info("Updated platform role: %s", role_name)
 
-            platform_roles[(access_type, scope)] = platform_role
+                platform_roles[(access_type, scope)] = platform_role
+            except DefaultGroupNotAvailableError:
+                logger.warning(
+                    "Default groups may not exist yet during seeding. "
+                    "Skipping platform role creation for %s %s scope",
+                    access_type.value,
+                    scope.value,
+                )
 
     return platform_roles
