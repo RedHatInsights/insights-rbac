@@ -333,7 +333,7 @@ def _seed_platform_roles():
             try:
                 uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
 
-                role_name = f"{access_type.value.capitalize()} {scope.value.capitalize()} Platform Role"
+                role_name = f"{access_type.value.capitalize()} {scope.value} Platform Role"
                 description = f"Platform default role for {access_type.value} access at {scope.value} scope"
 
                 platform_role, created = PlatformRoleV2.objects.update_or_create(
