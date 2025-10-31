@@ -1008,6 +1008,7 @@ def clean_binding_mapping(request, binding_id):
                             event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
                             info={
                                 "users": mapping.mappings["users"],
+                                "org_id": str(mapping.role.tenant.org_id),
                             },
                             partition_key=PartitionKey.byEnvironment(),
                             remove=relations_to_remove,
@@ -1041,6 +1042,7 @@ def clean_binding_mapping(request, binding_id):
                             event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
                             info={
                                 "groups": missing_groups,
+                                "org_id": str(mapping.role.tenant.org_id),
                             },
                             partition_key=PartitionKey.byEnvironment(),
                             remove=relations_to_remove,

@@ -206,6 +206,7 @@ def batch_import_workspace(records):
                 )
                 workspaces.append(workspace)
             pairs.append((str(workspace.id), str(parent.id)))
+
         Workspace.objects.bulk_create(workspaces)
         Workspace.objects.bulk_update(workspaces_to_update, ["name", "modified"])
         BOOT_STRAP_SERVICE.create_workspace_relationships(pairs)
