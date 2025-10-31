@@ -39,7 +39,7 @@ from management.policy.model import Policy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Role
-from management.tenant_service.v2 import V2TenantBootstrapService
+from management.tenant_service.v2 import V2TenantBootstrapService, lock_tenant_for_bootstrap
 from management.utils import clear_pk
 from rest_framework import serializers
 
@@ -105,10 +105,17 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     if settings.V2_BOOTSTRAP_TENANT:
         tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
-        mapping = bootstrapped_tenant.mapping
+
+        # This prevents concurrent bootstrapping (which creating a custom default group would interfere with) and
+        # deletion of an existing custom default group.
+        lock = lock_tenant_for_bootstrap(tenant)
+
+        if lock.custom_default_group is not None:
+            raise ValueError(f"Cannot create custom default group when one already exists for tenant: {tenant}.")
+
         # Mapping is always present with V2
-        assert mapping is not None
-        group_uuid = mapping.default_group_uuid
+        assert lock.tenant_mapping is not None
+        group_uuid = lock.tenant_mapping.default_group_uuid
     else:
         group_uuid = uuid4()
 
