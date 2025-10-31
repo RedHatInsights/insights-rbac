@@ -24,16 +24,19 @@ from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from management.group.platform import GlobalPolicyIdService
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
+from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
+from management.role.platform import platform_v2_role_uuid_for
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v2_model import SeededRoleV2
-
+from management.role.v2_model import PlatformRoleV2, SeededRoleV2
+from management.tenant_mapping.model import DefaultAccessType
 
 from api.models import Tenant
 
@@ -67,7 +70,7 @@ def _add_ext_relation_if_it_exists(external_relation, role):
     )
 
 
-def _make_role(data, force_create_relationships=False):
+def _make_role(data, force_create_relationships=False, platform_roles=None):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     name = data.pop("name")
@@ -123,17 +126,17 @@ def _make_role(data, force_create_relationships=False):
         if role.version != defaults["version"]:
             dual_write_handler.replicate_update_system_role()
 
-    _seed_v2_role_from_v1(role, display_name, defaults["description"], public_tenant, created)
+    _seed_v2_role_from_v1(role, display_name, defaults["description"], public_tenant, platform_roles)
 
     return role
 
 
-def _update_or_create_roles(roles, force_create_relationships=False):
+def _update_or_create_roles(roles, force_create_relationships=False, platform_roles=None):
     """Update or create roles from list."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(role_json, force_create_relationships)
+            role = _make_role(role_json, force_create_relationships, platform_roles)
             current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
@@ -149,13 +152,14 @@ def seed_roles(force_create_relationships=False):
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
     current_role_ids = set()
+    platform_roles = _seed_platform_roles()
     with transaction.atomic():
         for role_file_name in role_files:
             role_file_path = os.path.join(roles_directory, role_file_name)
             with open(role_file_path) as json_file:
                 data = json.load(json_file)
                 role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(role_list, force_create_relationships)
+                file_role_ids = _update_or_create_roles(role_list, force_create_relationships, platform_roles)
                 current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
@@ -259,32 +263,76 @@ def delete_permission(permission: Permission):
             dual_write_handler.replicate_new_or_updated_role(role)
 
 
-def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, v1_was_created):
+def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles):
     """Create or update V2 role from V1 role during seeding."""
     try:
-        v2_role, v2_created = SeededRoleV2.objects.get_or_create(
-            name=display_name,
-            tenant=public_tenant,
+        v2_role, v2_created = SeededRoleV2.objects.update_or_create(
+            uuid=v1_role.uuid,
             defaults={
+                "name": display_name,
                 "description": description,
+                "tenant": public_tenant,
                 "v1_source": v1_role,
             },
         )
 
-        if not v2_created:
-            v2_role.description = description
-            v2_role.v1_source = v1_role
-            v2_role.save()
-            v2_role.permissions.clear()
-            logger.info("Updated V2 system role %s.", display_name)
-        else:
+        if v2_created:
             logger.info("Created V2 system role %s.", display_name)
+        else:
+            logger.info("Updated V2 system role %s.", display_name)
 
+        v2_role.permissions.clear()
         v1_permissions = [access.permission for access in v1_role.access.all()]
         if v1_permissions:
             v2_role.permissions.set(v1_permissions)
             logger.info("Added %d permissions to V2 role %s.", len(v1_permissions), display_name)
+
+        resource_service = ImplicitResourceService.from_settings()
+        scope = resource_service.scope_for_role(v1_role)
+
+        if v1_role.platform_default:
+            platform_role = platform_roles[(DefaultAccessType.USER, scope)]
+            platform_role.children.add(v2_role)
+            logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
+
+        if v1_role.admin_default:
+            admin_platform_role = platform_roles[(DefaultAccessType.ADMIN, scope)]
+            admin_platform_role.children.add(v2_role)
+            logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
         return None
+
+
+def _seed_platform_roles():
+    """Create the 6 platform roles (3 scopes × 2 access types)."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    policy_service = GlobalPolicyIdService.shared()
+
+    platform_roles = {}
+
+    for access_type in [DefaultAccessType.USER, DefaultAccessType.ADMIN]:
+        for scope in [Scope.DEFAULT, Scope.ROOT, Scope.TENANT]:
+            uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
+
+            role_name = f"{access_type.value.capitalize()} {scope.value.capitalize()} Platform Role"
+            description = f"Platform default role for {access_type.value} access at {scope.value} scope"
+
+            platform_role, created = PlatformRoleV2.objects.update_or_create(
+                uuid=uuid,
+                defaults={
+                    "name": role_name,
+                    "description": description,
+                    "tenant": public_tenant,
+                },
+            )
+
+            if created:
+                logger.info("Created platform role: %s", role_name)
+            else:
+                logger.info("Updated platform role: %s", role_name)
+
+            platform_roles[(access_type, scope)] = platform_role
+
+    return platform_roles
