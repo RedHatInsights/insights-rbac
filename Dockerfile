@@ -47,6 +47,7 @@ RUN INSTALL_PKGS="python3.12 python3.12-devel glibc-langpack-en libpq-devel gcc 
 # local builds to install the dev dependencies
 ARG PIPENV_DEV=False
 ARG USER_ID=1001
+ARG GROUP_ID=1001
 
 # Create a Python virtual environment for use by any application to avoid
 # potential conflicts with Python packages preinstalled in the main Python
@@ -77,7 +78,8 @@ ENV \
     # Add the rbac virtual env bin to the front of PATH.
     # This activates the virtual env for all subsequent python calls.
     PATH="$VIRTUAL_ENV/bin:$PATH" \
-    PROMETHEUS_MULTIPROC_DIR=/tmp
+    PROMETHEUS_MULTIPROC_DIR=/tmp \
+    LOG_DIRECTORY=/tmp
 
 # copy the src files into the workdir
 COPY . .
@@ -85,21 +87,22 @@ COPY . .
 # unleash cache dir
 RUN mkdir -p /tmp/unleash_cache && chmod -R 777 /tmp/unleash_cache
 
-# create the rbac user
+# create the rbac group and user with non-root group privileges
 RUN \
-    adduser rbac -u ${USER_ID} -g 0 && \
-    chmod ug+rw ${APP_ROOT} ${APP_HOME} ${APP_HOME}/static /tmp
-USER rbac
+    groupadd -g ${GROUP_ID} rbac && \
+    adduser rbac -u ${USER_ID} -g ${GROUP_ID} && \
+    chown -R ${USER_ID}:${GROUP_ID} ${APP_ROOT} ${APP_HOME} /tmp/unleash_cache && \
+    chmod -R ug+rwX ${APP_ROOT} ${APP_HOME} ${APP_HOME}/static /tmp
+USER ${USER_ID}:${GROUP_ID}
 
 
 # create the static files
 RUN \
     python rbac/manage.py collectstatic --noinput && \
-    # This `app.log` file is created during the `collectstatic` step. We need to
-    # remove it else the random OCP user will not be able to access it. This file
-    # will be recreated by the Pod when the application starts.
-    rm ${APP_HOME}/app.log && \
-    rm /tmp/counter*
+    # Remove the app.log file created during collectstatic.
+    # The application will create a new one in /tmp at runtime.
+    rm -f ${APP_HOME}/app.log && \
+    rm -f /tmp/counter* /tmp/app.log
 EXPOSE 8080
 
 # GIT_COMMIT is added during build in `build_deploy.sh`
