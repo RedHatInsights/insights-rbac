@@ -19,6 +19,7 @@
 import json
 import logging
 import uuid
+from typing import Optional
 
 import requests
 from core.utils import destructive_ok
@@ -548,18 +549,47 @@ def run_seeds(request):
     POST /_private/api/seeds/run/?seed_types=permissions,roles,groups
     """
     if request.method == "POST":
-        args = {}
-        option_key = "seed_types"
+        type_option = "seed_types"
+        force_create_option = "force_create_relationships"
+        force_update_option = "force_update_relationships"
+
+        valid_options = [type_option, force_create_option, force_update_option]
         valid_values = ["permissions", "roles", "groups"]
-        seed_types_param = request.GET.get(option_key)
+
+        for option in request.GET.keys():
+            if option not in valid_options:
+                return HttpResponse(f"Valid query parameters: {valid_options}.", status=400)
+
+        args = {}
+        seed_types_param = request.GET.get(type_option)
+
         if seed_types_param:
             seed_types = seed_types_param.split(",")
             if not all([value in valid_values for value in seed_types]):
-                return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+                return HttpResponse(f'Valid options for "{type_option}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
+
+        for option in [force_create_option, force_update_option]:
+            value: Optional[str] = request.GET.get(option)
+
+            if value is not None:
+                if value == "true":
+                    args[option] = True
+                elif value == "false":
+                    args[option] = False
+                else:
+                    return HttpResponse(f'Valid options for "{option}": {["true", "false"]}.', status=400)
+
+        if args.get(force_create_option, False) and args.get(force_update_option, False):
+            return HttpResponse(
+                f"{force_create_option} and {force_update_option} cannot both be set to true.", status=400
+            )
+
         logger.info(f"Running seeds: {request.method} {request.user.username}")
         run_seeds_in_worker.delay(args)
+
         return HttpResponse("Seeds are running in a background worker.", status=202)
+
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 

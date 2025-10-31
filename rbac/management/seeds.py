@@ -23,22 +23,26 @@ from management.cache import AccessCache
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def role_seeding(force_create_relationships=False):
+def role_seeding(force_create_relationships: bool = False, force_update_relationships: bool = False):
     """Execute role seeding."""
-    run_seeds("role", force_create_relationships)
+    _run_seeds(
+        "role",
+        force_create_relationships=force_create_relationships,
+        force_update_relationships=force_update_relationships,
+    )
 
 
 def group_seeding():
     """Execute group seeding."""
-    run_seeds("group")
+    _run_seeds("group")
 
 
 def permission_seeding():
     """Execute permission seeding."""
-    run_seeds("permission")
+    _run_seeds("permission")
 
 
-def run_seeds(seed_type, force_create_relationships=False):
+def _run_seeds(seed_type, **kwargs):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from management.group.definer import seed_group
@@ -48,10 +52,7 @@ def run_seeds(seed_type, force_create_relationships=False):
 
     try:
         logger.info(f"Seeding {seed_type} changes.")
-        if force_create_relationships:
-            seed_functions[seed_type](force_create_relationships)
-        else:
-            seed_functions[seed_type]()
+        seed_functions[seed_type](**kwargs)
         logger.info(f"Finished seeding {seed_type}.")
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")

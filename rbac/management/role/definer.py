@@ -16,6 +16,7 @@
 #
 
 """Handler for system defined roles."""
+import dataclasses
 import json
 import logging
 import os
@@ -66,7 +67,17 @@ def _add_ext_relation_if_it_exists(external_relation, role):
     )
 
 
-def _make_role(data, force_create_relationships=False):
+@dataclasses.dataclass
+class _SeedRolesConfig:
+    force_create_relationships: bool
+    force_update_relationships: bool
+
+    def __post_init__(self):
+        if self.force_create_relationships and self.force_update_relationships:
+            raise ValueError("force_create_relationships and force_update_relationships cannot both be True")
+
+
+def _make_role(data, config: _SeedRolesConfig):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     name = data.pop("name")
@@ -80,6 +91,7 @@ def _make_role(data, force_create_relationships=False):
         admin_default=data.get("admin_default", False),
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=public_tenant)
+    updated = False
 
     dual_write_handler = SeedingRelationApiDualWriteHandler(role)
     if created:
@@ -89,7 +101,8 @@ def _make_role(data, force_create_relationships=False):
         logger.info("Created system role %s.", name)
         role_obj_change_notification_handler(role, "created")
     else:
-        if role.version != defaults["version"]:
+        if config.force_update_relationships or (role.version != defaults["version"]):
+            updated = True
             dual_write_handler.prepare_for_update()
             Role.objects.public_tenant_only().filter(name=name).update(
                 **defaults, display_name=display_name, modified=timezone.now()
@@ -98,7 +111,7 @@ def _make_role(data, force_create_relationships=False):
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
         else:
-            if force_create_relationships:
+            if config.force_create_relationships:
                 dual_write_handler.replicate_new_system_role()
                 logger.info("Replicated system role %s", name)
                 return role
@@ -116,28 +129,29 @@ def _make_role(data, force_create_relationships=False):
 
     _add_ext_relation_if_it_exists(data.get("external"), role)
 
+    assert not (created and updated)
+
     if created:
         dual_write_handler.replicate_new_system_role()
-    else:
-        if role.version != defaults["version"]:
-            dual_write_handler.replicate_update_system_role()
+    elif updated:
+        dual_write_handler.replicate_update_system_role()
 
     return role
 
 
-def _update_or_create_roles(roles, force_create_relationships=False):
+def _update_or_create_roles(roles, config: _SeedRolesConfig):
     """Update or create roles from list."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(role_json, force_create_relationships)
+            role = _make_role(role_json, config=config)
             current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
     return current_role_ids
 
 
-def seed_roles(force_create_relationships=False):
+def seed_roles(force_create_relationships=False, force_update_relationships=False):
     """Update or create system defined roles."""
     roles_directory = os.path.join(settings.BASE_DIR, "management", "role", "definitions")
     role_files = [
@@ -152,7 +166,13 @@ def seed_roles(force_create_relationships=False):
             with open(role_file_path) as json_file:
                 data = json.load(json_file)
                 role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(role_list, force_create_relationships)
+                file_role_ids = _update_or_create_roles(
+                    role_list,
+                    _SeedRolesConfig(
+                        force_create_relationships=force_create_relationships,
+                        force_update_relationships=force_update_relationships,
+                    ),
+                )
                 current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
