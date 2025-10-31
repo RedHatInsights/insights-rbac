@@ -178,7 +178,8 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
                     _SeedRolesConfig(
                         force_create_relationships=force_create_relationships,
                         force_update_relationships=force_update_relationships,
-                    ), platform_roles=None
+                    ),
+                    platform_roles=None,
                 )
                 current_role_ids.update(file_role_ids)
 
