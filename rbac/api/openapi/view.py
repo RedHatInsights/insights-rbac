@@ -16,17 +16,21 @@
 #
 
 """View for openapi documentation."""
-import gzip
 import json
+import logging
+import os
 
-from rest_framework import permissions
+from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes, renderer_classes
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
-from rbac.settings import STATIC_ROOT
+from rbac.settings import BASE_DIR
 
-OPENAPI_FILE_NAME = "openapi.json.gz"
+logger = logging.getLogger(__name__)
+
+OPENAPI_FILE_PATH = os.path.join(BASE_DIR, "..", "docs/source/specs")
+OPENAPI_FILE_NAME = "openapi.json"
 
 
 @api_view(["GET"])
@@ -34,7 +38,35 @@ OPENAPI_FILE_NAME = "openapi.json.gz"
 @renderer_classes((JSONRenderer,))
 def openapi(request):
     """Provide the openapi information."""
-    openapidoc = "{}/{}".format(STATIC_ROOT, OPENAPI_FILE_NAME)
-    with gzip.open(openapidoc) as api_file:
-        data = json.load(api_file)
-        return Response(data)
+    openapidoc = os.path.join(OPENAPI_FILE_PATH, OPENAPI_FILE_NAME)
+
+    try:
+        with open(openapidoc, encoding="utf-8") as api_file:
+            data = json.load(api_file)
+            return Response(data)
+    except FileNotFoundError:
+        logger.error(f"OpenAPI specification file not found at {openapidoc}")
+        return Response(
+            {
+                "errors": [
+                    {
+                        "detail": "OpenAPI specification file not found.",
+                        "status": "500",
+                    }
+                ]
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in OpenAPI specification file: {e}")
+        return Response(
+            {
+                "errors": [
+                    {
+                        "detail": "OpenAPI specification file contains invalid JSON.",
+                        "status": "500",
+                    }
+                ]
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

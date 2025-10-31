@@ -581,6 +581,39 @@
         }
       }
     },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Status"
+        ],
+        "summary": "Get the OpenAPI specification",
+        "description": "Returns the OpenAPI specification document for this API",
+        "operationId": "getOpenAPISpec",
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "OpenAPI 3.0 specification"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/principals/": {
       "get": {
         "tags": [
