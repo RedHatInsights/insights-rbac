@@ -17,6 +17,7 @@
 """Seeds command."""
 import logging
 
+from django.core.management import CommandError
 from django.core.management.base import BaseCommand
 from management.seeds import group_seeding, permission_seeding, role_seeding
 
@@ -34,10 +35,17 @@ class Command(BaseCommand):
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
         parser.add_argument("--force-create-relationships", action="store_true")
+        parser.add_argument("--force-update-relationships", action="store_true")
 
     def handle(self, *args, **options):
         """Handle method for command."""
         seed_all = not (options["permissions"] or options["roles"] or options["groups"])
+
+        force_create_relationships = options.get("force_create_relationships", False)
+        force_update_relationships = options.get("force_update_relationships", False)
+
+        if force_create_relationships and force_update_relationships:
+            raise CommandError("Relationships cannot be both forcibly created and forcibly updated!", returncode=1)
 
         if options["permissions"] or seed_all:
             logger.info("*** Seeding permissions... ***")
@@ -46,8 +54,14 @@ class Command(BaseCommand):
 
         if options["roles"] or seed_all:
             logger.info("*** Seeding roles... ***")
-            logger.info(f"Running with force-create-relationships: {options.get('force_create_relationships', False)}")
-            role_seeding(options.get("force_create_relationships", False))
+            logger.info(f"Running with force-create-relationships: {force_create_relationships}")
+            logger.info(f"Running with force-update-relationships: {force_update_relationships}")
+
+            role_seeding(
+                force_create_relationships=force_create_relationships,
+                force_update_relationships=force_update_relationships,
+            )
+
             logger.info("*** Role seeding completed. ***\n")
 
         if options["groups"] or seed_all:
