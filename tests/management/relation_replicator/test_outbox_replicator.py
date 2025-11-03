@@ -93,6 +93,10 @@ class OutboxReplicatorTest(TestCase):
                     json_format.MessageToDict(principal_to_group_remove1),
                     json_format.MessageToDict(principal_to_group_remove2),
                 ],
+                "resource_context": {
+                    "org_id": "",
+                    "event_type": "add_principals_to_group",
+                },
             },
         )
         self.assertEqual(logged_event.aggregatetype, "relations-replication-event")
