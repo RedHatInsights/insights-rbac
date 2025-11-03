@@ -128,12 +128,12 @@ class OutboxReplicatorTest(TestCase):
         role_uuid = uuid4()
 
         test_cases = [
-            (ReplicationEventType.CREATE_SYSTEM_ROLE, "role_uuid", "SystemRole"),
-            (ReplicationEventType.UPDATE_SYSTEM_ROLE, "role_uuid", "SystemRole"),
-            (ReplicationEventType.DELETE_SYSTEM_ROLE, "v1_role_uuid", "SystemRole"),
+            (ReplicationEventType.CREATE_SYSTEM_ROLE, "role_uuid"),
+            (ReplicationEventType.UPDATE_SYSTEM_ROLE, "role_uuid"),
+            (ReplicationEventType.DELETE_SYSTEM_ROLE, "v1_role_uuid"),
         ]
 
-        for event_type, id_field, expected_type in test_cases:
+        for event_type, id_field in test_cases:
             self.log.clear()
             event = ReplicationEvent(
                 add=[relation],
@@ -146,9 +146,10 @@ class OutboxReplicatorTest(TestCase):
 
             logged_event = self.log[0]
             context = logged_event.payload["resource_context"]
-            self.assertEqual(context["resource_type"], expected_type)
-            self.assertEqual(context["resource_id"], str(role_uuid))
             self.assertEqual(context["org_id"], "123456")
+            self.assertEqual(context["event_type"], event_type.value)
+            self.assertNotIn("resource_type", context)
+            self.assertNotIn("resource_id", context)
 
     def test_resource_context_for_custom_role_events(self):
         """Test resource context for custom role events."""
@@ -174,8 +175,10 @@ class OutboxReplicatorTest(TestCase):
 
             logged_event = self.log[0]
             context = logged_event.payload["resource_context"]
-            self.assertEqual(context["resource_type"], "CustomRole")
-            self.assertEqual(context["resource_id"], str(role_uuid))
+            self.assertEqual(context["org_id"], "123456")
+            self.assertEqual(context["event_type"], event_type.value)
+            self.assertNotIn("resource_type", context)
+            self.assertNotIn("resource_id", context)
 
     def test_resource_context_for_group_events(self):
         """Test resource context for group events."""
@@ -204,8 +207,10 @@ class OutboxReplicatorTest(TestCase):
 
             logged_event = self.log[0]
             context = logged_event.payload["resource_context"]
-            self.assertEqual(context["resource_type"], "Group")
-            self.assertEqual(context["resource_id"], str(group_uuid))
+            self.assertEqual(context["org_id"], "123456")
+            self.assertEqual(context["event_type"], event_type.value)
+            self.assertNotIn("resource_type", context)
+            self.assertNotIn("resource_id", context)
 
     def test_resource_context_for_user_events(self):
         """Test resource context for user events."""
@@ -230,8 +235,10 @@ class OutboxReplicatorTest(TestCase):
 
             logged_event = self.log[0]
             context = logged_event.payload["resource_context"]
-            self.assertEqual(context["resource_type"], "User")
-            self.assertEqual(context["resource_id"], user_id)
+            self.assertEqual(context["org_id"], "123456")
+            self.assertEqual(context["event_type"], event_type.value)
+            self.assertNotIn("resource_type", context)
+            self.assertNotIn("resource_id", context)
 
     def test_resource_context_for_tenant_events(self):
         """Test resource context for tenant events."""
@@ -248,8 +255,10 @@ class OutboxReplicatorTest(TestCase):
 
         logged_event = self.log[0]
         context = logged_event.payload["resource_context"]
-        self.assertEqual(context["resource_type"], "Tenant")
         self.assertEqual(context["org_id"], "123456")
+        self.assertEqual(context["event_type"], ReplicationEventType.BOOTSTRAP_TENANT.value)
+        self.assertNotIn("resource_type", context)
+        self.assertNotIn("resource_id", context)
 
     def test_resource_context_for_cross_account_events(self):
         """Test resource context for cross-account request events."""
@@ -275,8 +284,10 @@ class OutboxReplicatorTest(TestCase):
 
             logged_event = self.log[0]
             context = logged_event.payload["resource_context"]
-            self.assertEqual(context["resource_type"], "CrossAccountRequest")
-            self.assertEqual(context["resource_id"], user_id)
+            self.assertEqual(context["org_id"], "123456")
+            self.assertEqual(context["event_type"], event_type.value)
+            self.assertNotIn("resource_type", context)
+            self.assertNotIn("resource_id", context)
 
     def test_resource_context_for_role_assignment_events(self):
         """Test resource context for role assignment events."""
@@ -301,25 +312,46 @@ class OutboxReplicatorTest(TestCase):
 
             logged_event = self.log[0]
             context = logged_event.payload["resource_context"]
-            self.assertEqual(context["resource_type"], "RoleAssignment")
-            self.assertEqual(context["resource_id"], str(role_uuid))
+            self.assertEqual(context["org_id"], "123456")
+            self.assertEqual(context["event_type"], event_type.value)
+            self.assertNotIn("resource_type", context)
+            self.assertNotIn("resource_id", context)
 
-    def test_resource_context_returns_none_for_unsupported_events(self):
-        """Test that events without resource context return None."""
-        relation = create_relationship(("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member")
+    def test_resource_context_returns_none_for_create_workspace_without_workspace_id(self):
+        """Test that CREATE_WORKSPACE event without workspace_id returns None."""
+        relation = create_relationship(("rbac", "workspace"), "w1", ("rbac", "principal"), "localhost/p1", "member")
 
-        # Create a replication event without org_id or resource identifiers
+        # Create a CREATE_WORKSPACE event without workspace_id
         event = ReplicationEvent(
             add=[relation],
             remove=[],
-            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
-            info={},  # Empty info
+            event_type=ReplicationEventType.CREATE_WORKSPACE,
+            info={"org_id": "123456"},  # Has org_id but missing workspace_id
             partition_key=PartitionKey.byEnvironment(),
         )
 
         # Call resource_context directly to verify it returns None
         context = event.resource_context()
         self.assertIsNone(context)
+
+    def test_resource_context_with_missing_org_id(self):
+        """Test that events without org_id still return context with empty org_id."""
+        relation = create_relationship(("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member")
+
+        # Create a replication event without org_id
+        event = ReplicationEvent(
+            add=[relation],
+            remove=[],
+            event_type=ReplicationEventType.CREATE_GROUP,
+            info={},  # Empty info - no org_id
+            partition_key=PartitionKey.byEnvironment(),
+        )
+
+        # Call resource_context directly to verify it returns context with empty org_id
+        context = event.resource_context()
+        self.assertIsNotNone(context)
+        self.assertEqual(context["org_id"], "")
+        self.assertEqual(context["event_type"], ReplicationEventType.CREATE_GROUP.value)
 
     def test_replicate_empty_event_warns_instead_of_saving(self):
         """Test replicate with empty event warns."""
