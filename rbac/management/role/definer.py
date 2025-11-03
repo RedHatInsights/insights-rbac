@@ -323,6 +323,12 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
                     scope.value,
                     display_name,
                 )
+        else:
+            logger.warning(
+                "V1 Role is not platform default. Removing child relationship for %s if it exists.",
+                display_name,
+            )
+            platform_role.children.discard(v2_role)
 
         if v1_role.admin_default:
             admin_platform_role = platform_roles.get((DefaultAccessType.ADMIN, scope))
@@ -336,6 +342,12 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
                     scope.value,
                     display_name,
                 )
+        else:
+            logger.warning(
+                "V1 Role is not admin. Removing child relationship for %s if it exists.",
+                display_name,
+            )
+            admin_platform_role.children.discard(v2_role)
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
