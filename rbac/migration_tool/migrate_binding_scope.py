@@ -21,19 +21,10 @@ from django.conf import settings
 from django.db import transaction
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
-from management.models import BindingMapping, Workspace
-from management.permission.scope_service import ImplicitResourceService, bound_model_for_scope
 from management.relation_replicator.outbox_replicator import OutboxReplicator
-from management.relation_replicator.relation_replicator import (
-    RelationReplicator,
-    ReplicationEvent,
-    ReplicationEventType,
-)
+from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
 from management.role.model import Role
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
-from migration_tool.models import V2boundresource
-
-from api.models import Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -91,90 +82,23 @@ def migrate_system_role_bindings_for_group(group: Group, replicator: RelationRep
         group, ReplicationEventType.MIGRATE_BINDING_SCOPE, replicator=replicator
     )
 
-    # This will create or update bindings at correct scope for all system roles
+    if not dual_write_handler.replication_enabled():
+        logger.info(f"Skipping migration for group {group.uuid} ({group.name}) because replication is disabled")
+        return 0
+
+    # First remove existing bindings (including wrong-scoped ones) before re-adding correct assignments.
+    dual_write_handler.generate_relations_to_remove_roles(system_roles)
+    bindings_cleaned = len(dual_write_handler.relations_to_remove)
+    dual_write_handler.replicate()
+
+    # Rehydrate handler to reset relation buffers before creating correct bindings.
+    dual_write_handler = RelationApiDualWriteGroupHandler(
+        group, ReplicationEventType.MIGRATE_BINDING_SCOPE, replicator=replicator
+    )
     dual_write_handler.generate_relations_reset_roles(system_roles)
     dual_write_handler.replicate()
 
-    # Now clean up: remove this group from any wrong-scoped bindings
-    # Get tenant and workspaces once (all bindings are for this group's tenant)
-    tenant = group.tenant
-    root_ws = Workspace.objects.root(tenant=tenant)
-    default_ws = Workspace.objects.default(tenant=tenant)
-    tenant_resource_id = Tenant.org_id_to_tenant_resource_id(tenant.org_id)
-
-    service = ImplicitResourceService.from_settings()
-    bindings_cleaned = 0
-
-    for role in system_roles:
-        scope = service.scope_for_role(role)
-
-        # Determine correct scope for this tenant
-        target_model = bound_model_for_scope(scope, tenant, root_ws, default_ws)
-        target_resource = V2boundresource.for_model(target_model)
-
-        # Build list of possible resource IDs (all scopes for this tenant)
-        possible_resource_ids = [
-            tenant_resource_id,  # Tenant resource ID
-            str(root_ws.id),  # Root workspace
-            str(default_ws.id),  # Default workspace
-        ]
-
-        # Find wrong-scoped bindings: exclude the correct one
-        wrong_scoped_bindings = BindingMapping.objects.filter(
-            role=role, resource_id__in=possible_resource_ids
-        ).exclude(
-            resource_type_namespace=target_resource.resource_type[0],
-            resource_type_name=target_resource.resource_type[1],
-            resource_id=target_resource.resource_id,
-        )
-
-        # Remove this group from each wrong-scoped binding
-        for binding in wrong_scoped_bindings:
-            groups_list = binding.mappings.get("groups", [])
-            if str(group.uuid) in groups_list:
-                # Get old tuples before modification
-                old_tuples = binding.as_tuples()
-
-                # Remove this group
-                groups_list.remove(str(group.uuid))
-                binding.mappings["groups"] = groups_list
-                binding.save()
-
-                # TODO: The users for cross account requests are not migrated
-                # so we keep the wrong scope binding, will deal with it later.
-                if binding.is_unassigned():
-                    # No groups/users left - delete the binding
-                    new_tuples = []
-                    binding.delete()
-                    logger.info(
-                        f"Deleted empty wrong-scoped binding {binding.id} for role {role.uuid} "
-                        f"at {binding.resource_type_name}:{binding.resource_id}"
-                    )
-                else:
-                    # Still has other groups/users - just update tuples
-                    new_tuples = binding.as_tuples()
-                    logger.info(
-                        f"Removed group {group.uuid} from wrong-scoped binding {binding.id} "
-                        f"at {binding.resource_type_name}:{binding.resource_id}"
-                    )
-
-                # Replicate the change
-                event = ReplicationEvent(
-                    event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
-                    add=new_tuples,
-                    remove=old_tuples,
-                    partition_key=role,
-                    info={
-                        "role_uuid": str(role.uuid),
-                        "group_uuid": str(group.uuid),
-                        "binding_id": binding.id,
-                        "action": "remove_group_from_wrong_scope",
-                    },
-                )
-                replicator.replicate(event)
-                bindings_cleaned += 1
-
-    logger.info(f"Cleaned {bindings_cleaned} wrong-scoped bindings for group {group.uuid} ({group.name})")
+    logger.info(f"Processed {bindings_cleaned} binding/group relation removals for group {group.uuid} ({group.name})")
     return bindings_cleaned
 
 

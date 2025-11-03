@@ -543,42 +543,50 @@ class SystemRoleBindingMigrationTest(TestCase):
         self.assertIn(str(groupA.uuid), final_groups, "GroupA should be assigned")
         self.assertIn(str(groupB.uuid), final_groups, "GroupB should be assigned (merged from wrong binding)")
 
-        # Verify AFTER: Exact 4 tuples exist for correct-binding
+        # Verify tuple structure after migration
+        # Note: Migration creates new binding IDs, so we verify structure without hardcoded IDs
 
-        # Get the role UUID for verification
+        # Get the role UUID and final binding ID for verification
         role_uuid_str = str(system_role.uuid)
+        final_binding_id = final_binding.mappings["id"]
 
         # 1. Verify wrong-binding tuples are REMOVED
         wrong_binding_tuples_after = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", "wrong-binding")))
         self.assertEqual(len(wrong_binding_tuples_after), 0, "Wrong-binding tuples should be deleted")
 
-        # 2. Verify EXACTLY 4 tuples exist:
+        # 2. Verify old correct-binding tuples are REMOVED (replaced with new binding ID)
+        old_correct_binding_tuples = self.tuples.find_tuples(
+            all_of(resource("rbac", "role_binding", "correct-binding"))
+        )
+        self.assertEqual(len(old_correct_binding_tuples), 0, "Old correct-binding tuples should be replaced")
+
+        # 3. Verify EXACTLY 4 tuples exist for the new binding:
         self.assertEqual(len(self.tuples), 4, "Should have exactly 4 tuples after migration")
 
-        # Tuple 1: workspace:root#binding@role_binding:correct-binding
+        # Tuple 1: workspace:root#binding@role_binding:<new-id>
         tuple1 = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "workspace", str(self.root_workspace.id)),
                 relation("binding"),
-                subject("rbac", "role_binding", "correct-binding"),
+                subject("rbac", "role_binding", final_binding_id),
             )
         )
-        self.assertEqual(len(tuple1), 1, "Should have workspace:root#binding@role_binding:correct-binding")
+        self.assertEqual(len(tuple1), 1, f"Should have workspace:root#binding@role_binding:{final_binding_id}")
 
-        # Tuple 2: role_binding:correct-binding#role@role:<uuid>
+        # Tuple 2: role_binding:<new-id>#role@role:<uuid>
         tuple2 = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role_binding", "correct-binding"),
+                resource("rbac", "role_binding", final_binding_id),
                 relation("role"),
                 subject("rbac", "role", role_uuid_str),
             )
         )
-        self.assertEqual(len(tuple2), 1, f"Should have role_binding:correct-binding#role@role:{role_uuid_str}")
+        self.assertEqual(len(tuple2), 1, f"Should have role_binding:{final_binding_id}#role@role:{role_uuid_str}")
 
-        # Tuple 3 & 4: role_binding:correct-binding#subject@group:<groupA/groupB>
+        # Tuple 3 & 4: role_binding:<new-id>#subject@group:<groupA/groupB>
         all_group_tuples = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role_binding", "correct-binding"),
+                resource("rbac", "role_binding", final_binding_id),
                 relation("subject"),
             )
         )
