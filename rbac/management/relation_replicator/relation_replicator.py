@@ -97,94 +97,49 @@ class ReplicationEvent:
 
     def resource_context(self) -> Dict[str, object] | None:
         """Build context for all replication events that have identifiable resources."""
-        # Map event types to (resource_type, id_field) tuples
-        event_mapping = {
-            # Workspace events
-            ReplicationEventType.CREATE_WORKSPACE: ("Workspace", "workspace_id"),
-            ReplicationEventType.UPDATE_WORKSPACE: ("Workspace", "workspace_id"),
-            ReplicationEventType.DELETE_WORKSPACE: ("Workspace", "workspace_id"),
-            ReplicationEventType.MOVE_WORKSPACE: ("Workspace", "workspace_id"),
-            ReplicationEventType.CREATE_UNGROUPED_HOSTS_WORKSPACE: ("Workspace", "ungrouped_hosts_id"),
-            # System role events
-            ReplicationEventType.CREATE_SYSTEM_ROLE: ("SystemRole", "role_uuid"),
-            ReplicationEventType.UPDATE_SYSTEM_ROLE: ("SystemRole", "role_uuid"),
-            ReplicationEventType.DELETE_SYSTEM_ROLE: ("SystemRole", "v1_role_uuid"),
-            # Custom role events
-            ReplicationEventType.CREATE_CUSTOM_ROLE: ("CustomRole", "role_uuid"),
-            ReplicationEventType.UPDATE_CUSTOM_ROLE: ("CustomRole", "role_uuid"),
-            ReplicationEventType.DELETE_CUSTOM_ROLE: ("CustomRole", "v1_role_uuid"),
-            # Role assignment events
-            ReplicationEventType.ASSIGN_ROLE: ("RoleAssignment", "role_uuid"),
-            ReplicationEventType.UNASSIGN_ROLE: ("RoleAssignment", "role_uuid"),
-            # Group events
-            ReplicationEventType.CREATE_GROUP: ("Group", "group_uuid"),
-            ReplicationEventType.UPDATE_GROUP: ("Group", "group_uuid"),
-            ReplicationEventType.DELETE_GROUP: ("Group", "group_uuid"),
-            ReplicationEventType.ADD_PRINCIPALS_TO_GROUP: ("Group", "group_uuid"),
-            ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP: ("Group", "group_uuid"),
-            ReplicationEventType.CUSTOMIZE_DEFAULT_GROUP: ("Group", "group_uuid"),
-            # User events
-            ReplicationEventType.EXTERNAL_USER_UPDATE: ("User", "user_id"),
-            ReplicationEventType.EXTERNAL_USER_DISABLE: ("User", "user_id"),
-            # Tenant events
-            ReplicationEventType.BOOTSTRAP_TENANT: ("Tenant", "org_id"),
-            # Cross-account events
-            ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
-            ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
-            ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
-        }
-
-        if self.event_type == ReplicationEventType.CREATE_WORKSPACE and "workspace_id" in self.event_info:
-            resource_type = "Workspace"
-            resource_id = str(self.event_info["workspace_id"])
-            org_id = str(self.event_info.get("org_id", ""))
-        elif self.event_type in event_mapping:
-            resource_type, id_field = event_mapping[self.event_type]
-            resource_id = str(self.event_info.get(id_field, ""))
-        else:
-            return None
-
-        if not resource_id:
-            logger.warning(
-                f"Missing resource_id for {self.event_type.value} event. "
-                f"Expected field '{id_field if self.event_type in event_mapping else 'N/A'}' in event_info. "
-                f"event_info: {self.event_info}"
-            )
-            return None
-
-        # Validate org_id exists
+        # Validate org_id exists for all events
         org_id = str(self.event_info.get("org_id", ""))
         if not org_id:
-            error_msg = (
-                f"Missing required org_id for {self.event_type.value} event. "
-                f"resource_type: {resource_type}, resource_id: {resource_id}, event_info: {self.event_info}"
+            logger.warning(
+                f"Missing required org_id for {self.event_type.value} event. " f"event_info: {self.event_info}"
             )
 
-            logger.warn(error_msg)
+        if self.event_type == ReplicationEventType.CREATE_WORKSPACE:
+            if "workspace_id" not in self.event_info:
+                logger.warning(f"Missing workspace_id for CREATE_WORKSPACE event. " f"event_info: {self.event_info}")
+                return None
 
-        context = ReplicationEventResourceContext(
-            resource_type=resource_type,
-            resource_id=resource_id,
-            org_id=org_id,
-            event_type=self.event_type.value,
-        )
-        return context.to_json()
+            resource_id = str(self.event_info["workspace_id"])
+            context = ReplicationEventResourceContext(
+                resource_type="Workspace",
+                resource_id=resource_id,
+                org_id=org_id,
+                event_type=self.event_type.value,
+            )
+            return context.to_json()
+
+        else:
+            context = ReplicationEventResourceContext(
+                org_id=org_id,
+                event_type=self.event_type.value,
+            )
+            return context.to_json()
 
 
 class ReplicationEventResourceContext:
     """Replication event resource context."""
 
-    resource_type: str
-    resource_id: str
+    resource_type: str | None
+    resource_id: str | None
     org_id: str
     event_type: str
 
     def __init__(
         self,
-        resource_type: str,
-        resource_id: str,
         org_id: str,
         event_type: str,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
     ):
         """Initialize ReplicationEventResourceContext."""
         self.resource_type = resource_type
@@ -194,12 +149,17 @@ class ReplicationEventResourceContext:
 
     def to_json(self) -> Dict[str, object]:
         """Convert to JSON dictionary."""
-        return {
-            "resource_type": self.resource_type,
-            "resource_id": self.resource_id,
+        result: Dict[str, object] = {
             "org_id": self.org_id,
             "event_type": self.event_type,
         }
+        # Only include resource_type if it's present
+        if self.resource_type is not None:
+            result["resource_type"] = self.resource_type
+        # Only include resource_id if it's present
+        if self.resource_id is not None:
+            result["resource_id"] = self.resource_id
+        return result
 
 
 class WorkspaceEvent:
