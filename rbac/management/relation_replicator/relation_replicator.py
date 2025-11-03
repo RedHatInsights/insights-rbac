@@ -134,7 +134,11 @@ class ReplicationEvent:
             ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST: ("CrossAccountRequest", "user_id"),
         }
 
-        if self.event_type in event_mapping:
+        if self.event_type == ReplicationEventType.CREATE_WORKSPACE and "workspace_id" in self.event_info:
+            resource_type = ("Workspace",)
+            resource_id = (str(self.event_info["workspace_id"]),)
+            org_id = (str(self.event_info.get("org_id", "")),)
+        elif self.event_type in event_mapping:
             resource_type, id_field = event_mapping[self.event_type]
             resource_id = str(self.event_info.get(id_field, ""))
         else:
@@ -156,8 +160,7 @@ class ReplicationEvent:
                 f"resource_type: {resource_type}, resource_id: {resource_id}, event_info: {self.event_info}"
             )
 
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            logger.warn(error_msg)
 
         context = ReplicationEventResourceContext(
             resource_type=resource_type,
