@@ -349,8 +349,8 @@ def _seed_platform_roles():
 
     platform_roles = {}
 
-    for access_type in [DefaultAccessType.USER, DefaultAccessType.ADMIN]:
-        for scope in [Scope.DEFAULT, Scope.ROOT, Scope.TENANT]:
+    for access_type in DefaultAccessType:
+        for scope in Scope:
             try:
                 uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
 
