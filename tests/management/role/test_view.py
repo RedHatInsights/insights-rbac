@@ -65,15 +65,20 @@ def normalize_and_sort(json_obj):
     return json_obj
 
 
-def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id):
+def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id, org_id=None, event_type="create_custom_role"):
     """Create a replication event for a v1 role."""
-    return {
+    event = {
         "relations_to_add": relation_api_tuples_for_v1_role(
             v1_role_uuid=v1_role_uuid,
             bound_workspace_id=bound_workspace_id,
         ),
         "relations_to_remove": [],
+        "resource_context": {
+            "org_id": org_id or "",
+            "event_type": event_type,
+        },
     }
+    return event
 
 
 def relation_api_tuples_for_v1_role(v1_role_uuid, bound_workspace_id):
@@ -509,7 +514,12 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
+        replication_event = replication_event_for_v1_role(
+            response.data.get("uuid"),
+            str(self.default_workspace.id),
+            org_id=self.customer_data["org_id"],
+            event_type="create_custom_role",
+        )
 
         mock_method.assert_called_once()
         actual_call_arg = mock_method.call_args[0][0]
@@ -1656,7 +1666,12 @@ class RoleViewsetTests(IdentityRequest):
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
 
         response = client.put(url, test_data, format="json", **self.headers)
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
+        replication_event = replication_event_for_v1_role(
+            response.data.get("uuid"),
+            str(self.default_workspace.id),
+            org_id=self.customer_data["org_id"],
+            event_type="update_custom_role",
+        )
         replication_event["relations_to_remove"] = current_relations
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
