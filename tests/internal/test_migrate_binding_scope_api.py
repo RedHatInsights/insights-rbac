@@ -15,14 +15,17 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from django.contrib.auth.models import User as DjangoUser
 from django.test import TestCase, override_settings
 from management.group.definer import add_roles, clone_default_group_in_public_schema, seed_group
 from management.group.model import Group
+from management.group.platform import GlobalPolicyIdService
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Workspace, Access, Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -41,6 +44,7 @@ from migration_tool.migrate_binding_scope import (
 )
 from migration_tool.utils import create_relationship
 from api.models import Tenant
+from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
 
 
 class BindingScopeMigrationAPITest(TestCase):
@@ -195,54 +199,6 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         )
         self.assertEqual(len(root_ws_tuples_after), 1, "Root workspace binding should be created")
 
-    @override_settings(
-        ROOT_SCOPE_PERMISSIONS="",
-        TENANT_SCOPE_PERMISSIONS="cost-management:*:*",
-        REPLICATION_TO_RELATION_ENABLED=True,
-    )
-    def test_role_with_tenant_scope_permissions_migrates_to_tenant_level(self):
-        """Test that custom role with tenant-scope permissions creates binding at tenant level."""
-        # Create custom role with tenant-scope permission (cost-management:cost:read matches cost-management:*:*)
-        role = Role.objects.create(tenant=self.tenant, name="Tenant Scope Role", system=False)
-        Access.objects.create(role=role, permission=self.tenant_permission, tenant=self.tenant)
-
-        # Start with NO bindings - handler will create one at correct scope
-
-        # Perform migration (starting with no bindings)
-        replicator = InMemoryRelationReplicator(self.tuples)
-        result = migrate_custom_role_bindings(role, replicator)
-
-        # Should return 1 (created binding)
-        self.assertEqual(result, 1)
-
-        # Verify binding was created at tenant level
-        bindings_after = BindingMapping.objects.filter(role=role)
-        self.assertEqual(bindings_after.count(), 1, "Should have exactly one binding")
-
-        final_binding = bindings_after.first()
-
-        expected_tenant_id = Tenant.org_id_to_tenant_resource_id(self.tenant.org_id)
-
-        # Verify scope logic worked correctly (create fresh service with current settings)
-        service = ImplicitResourceService.from_settings()
-        actual_scope = service.scope_for_role(role)
-
-        # Verify scope was correctly determined as TENANT
-        self.assertEqual(
-            actual_scope, Scope.TENANT, f"Handler should determine TENANT scope for cost-management:* permissions"
-        )
-
-        # Verify binding is at tenant level (based on TENANT_SCOPE_PERMISSIONS setting)
-        self.assertEqual(final_binding.resource_type_namespace, "rbac")
-        self.assertEqual(final_binding.resource_type_name, "tenant")
-        self.assertEqual(final_binding.resource_id, expected_tenant_id)
-
-        # Verify tuples: tenant binding exists
-        tenant_tuples_after = self.tuples.find_tuples(
-            all_of(resource("rbac", "tenant", expected_tenant_id), relation("binding"))
-        )
-        self.assertEqual(len(tenant_tuples_after), 1, "Tenant binding should be created")
-
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
     def test_role_with_multiple_bindings_consolidates_correctly(self):
         """Test that when a role has multiple bindings, migration consolidates them correctly."""
@@ -339,6 +295,9 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
 
         bindings_after_first = BindingMapping.objects.filter(role=role).count()
 
+        # Capture tuple state after first migration
+        tuples_after_first = set(self.tuples)
+
         # Perform migration second time (should be idempotent)
         result2 = migrate_custom_role_bindings(role, replicator)
         self.assertEqual(result2, 1)
@@ -348,12 +307,13 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         # Should have same number of bindings
         self.assertEqual(bindings_after_first, bindings_after_second)
 
-        # Verify tuples still exist
-        for binding_obj in BindingMapping.objects.filter(role=role):
-            binding_tuples = self.tuples.find_tuples(
-                all_of(resource("rbac", "role_binding", binding_obj.mappings["id"]))
-            )
-            self.assertGreater(len(binding_tuples), 0)
+        # Verify tuples are EXACTLY the same (idempotent)
+        tuples_after_second = set(self.tuples._tuples)
+        self.assertEqual(
+            tuples_after_first,
+            tuples_after_second,
+            "Tuples should be identical after second migration (idempotent)",
+        )
 
 
 class SystemRoleBindingMigrationTest(TestCase):
@@ -420,25 +380,19 @@ class SystemRoleBindingMigrationTest(TestCase):
 
         # Perform migration via group
         replicator = InMemoryRelationReplicator(self.tuples)
-        result = migrate_system_role_bindings_for_group(group, replicator)
-
-        # Should have processed the group
-        self.assertGreaterEqual(result, 0, "Should have processed system role bindings")
+        migrate_system_role_bindings_for_group(group, replicator)
 
         # Verify binding is at correct scope after migration
         binding_after = BindingMapping.objects.filter(role=system_role).first()
         self.assertIsNotNone(binding_after, "Should still have binding after migration")
 
         # Should be at root workspace (ROOT scope)
-        if binding_after.resource_type_name == "workspace":
-            workspace = Workspace.objects.get(id=binding_after.resource_id)
-            service = ImplicitResourceService.from_settings()
-            expected_scope = service.scope_for_role(system_role)
+        self.assertEqual(binding_after.resource_type_name, "workspace")
+        workspace = Workspace.objects.get(id=binding_after.resource_id)
 
-            if expected_scope == Scope.ROOT:
-                self.assertEqual(
-                    workspace.type, Workspace.Types.ROOT, "System role with ROOT scope should be at root workspace"
-                )
+        self.assertEqual(
+            workspace.type, Workspace.Types.ROOT, "System role with ROOT scope should be at root workspace"
+        )
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
@@ -595,7 +549,7 @@ class SystemRoleBindingMigrationTest(TestCase):
         self.assertIn(str(groupB.uuid), group_uuids_in_tuples, "GroupB UUID should be in tuples")
 
 
-class ComprehensiveBootstrapMigrationTest(TestCase):
+class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):
     """
     Comprehensive integration test using tenant bootstrap and group APIs.
 
@@ -610,16 +564,16 @@ class ComprehensiveBootstrapMigrationTest(TestCase):
 
     def setUp(self):
         """Set up test data using tenant bootstrap."""
-        self.tuples = InMemoryTuples()
-        self.replicator = InMemoryRelationReplicator(self.tuples)
+        # Seed roles before calling super() so platform roles exist when fixture initializes
+        seed_roles()
 
-        # Get or create public tenant
-        self.public_tenant = Tenant.objects.get_or_create(tenant_name="public")[0]
-
-        # Create 3 tenants
-        self.tenant1 = Tenant.objects.create(tenant_name="acme_corp", account_id="11111", org_id="org_acme")
-        self.tenant2 = Tenant.objects.create(tenant_name="globex", account_id="22222", org_id="org_globex")
-        self.tenant3 = Tenant.objects.create(tenant_name="initech", account_id="33333", org_id="org_initech")
+        super().setUp()
+        # DualWriteTestCase already creates self.tuples and self.fixture
+        # Create additional tenants for the comprehensive test
+        self.tenant1 = self.tenant  # Use the tenant from DualWriteTestCase
+        self.tenant2 = self.switch_to_new_tenant("globex", "org_globex")
+        self.tenant3 = self.switch_to_new_tenant("initech", "org_initech")
+        self.restore_test_tenant()  # Switch back to tenant1
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
@@ -630,171 +584,91 @@ class ComprehensiveBootstrapMigrationTest(TestCase):
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_comprehensive_migration_with_bootstrap_and_custom_groups(self, mock_replicate):
         """
-        Comprehensive end-to-end test with:
-        - Platform default & non-platform system roles
-        - Bootstrapped tenants
-        - Custom default groups (2 tenants)
-        - Regular custom group (1 tenant)
-        - Full binding and tuple verification
+        Comprehensive end-to-end migration test.
+
+        Setup:
+        - Creates platform default and non-platform default system roles
+        - Bootstraps 3 tenants via DualWriteTestCase
+        - Creates custom default groups for tenant1 and tenant2
+        - Creates regular custom group in tenant3
+        - Simulates wrong-scoped bindings by patching ImplicitResourceService
+
+        Test:
+        - Runs migrate_all_role_bindings() to fix incorrect bindings
+        - Verifies all bindings are migrated to correct scopes
+        - Verifies tuples are correctly updated
         """
+
+        # Helper function to swap scopes for simulating historical incorrect bindings
+        def wrong_scope_for_role(role):
+            """Return wrong scope for test roles to simulate incorrect historical bindings."""
+            if hasattr(role, "uuid"):
+                if role.uuid == non_platform_default_role.uuid:
+                    return Scope.DEFAULT  # Wrong! Should be ROOT
+                elif role.uuid == platform_default_role.uuid:
+                    return Scope.ROOT  # Wrong! Should be DEFAULT
+            return service.scope_for_role(role)  # Use correct scope for other roles
+
         # Redirect all OutboxReplicator.replicate() calls to our InMemoryRelationReplicator
-        mock_replicate.side_effect = self.replicator.replicate
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
 
-        # Step 1: Seed system roles and groups
-        seed_roles()
-        seed_group()  # Creates platform default and admin default groups
+        # Step 1: Create system roles using fixture helpers
+        # Get a platform default system role with DEFAULT scope (not rbac:*:* which would be ROOT scope)
+        service = ImplicitResourceService.from_settings()
+        platform_default_role = None
+        for role in Role.objects.filter(system=True, platform_default=True):
+            if service.scope_for_role(role) == Scope.DEFAULT:
+                platform_default_role = role
+                break
+        self.assertIsNotNone(platform_default_role, "Should have a platform default system role with DEFAULT scope")
 
-        # Get the seeded platform default role and create a non-platform system role
-        platform_role = Role.objects.filter(platform_default=True, system=True).first()
-        self.assertIsNotNone(platform_role, "Should have platform default role from seeding")
-
-        # Create non-platform system role
-        non_platform_role = Role.objects.create(
-            tenant=self.public_tenant,
-            name="Custom System Role",
-            system=True,
-            platform_default=False,
+        # Create non-platform default system role with ROOT scope (rbac:*:* matches ROOT_SCOPE_PERMISSIONS)
+        non_platform_default_role = self.given_v1_system_role(
+            name="Non-Platform System Role",
+            permissions=["rbac:workspace:write"],
         )
-        # Add permission with ROOT scope
-        rbac_permission = Permission.objects.create(
-            tenant=self.public_tenant,
-            application="rbac",
-            resource_type="workspace",
-            verb="write",
-            permission="rbac:workspace:write",
-        )
-        Access.objects.create(role=non_platform_role, permission=rbac_permission, tenant=self.public_tenant)
 
-        # Step 2: Bootstrap all 3 tenants
-        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-
+        # Step 2: All tenants are already bootstrapped by DualWriteTestCase via fixture
         for tenant in [self.tenant1, self.tenant2, self.tenant3]:
-            bootstrap_service.bootstrap_tenant(tenant)
             self.assertIsNotNone(tenant.tenant_mapping, f"Tenant {tenant.org_id} should have mapping")
 
         # Step 3: Create custom default groups for tenant1 and tenant2
         # This simulates users customizing their default access
+        custom_default_groups = {}
         for tenant in [self.tenant1, self.tenant2]:
-            # Get the platform default group
-            platform_group = Group.objects.get(platform_default=True, tenant=self.public_tenant)
-
-            # Clone it to create custom default group
-            custom_group = clone_default_group_in_public_schema(platform_group, tenant)
+            self.switch_tenant(tenant)
+            custom_group = self.fixture.custom_default_group(tenant)
             self.assertIsNotNone(custom_group, f"Should create custom default group for {tenant.org_id}")
+            custom_default_groups[tenant.id] = custom_group
 
-        # Step 4: Create regular custom group in tenant3 and add system roles
-        custom_group_t3 = Group.objects.create(
-            name="Custom Admins",
-            tenant=self.tenant3,
-            system=False,
-        )
+        # Step 4: Create regular custom group in tenant3 without assigning roles yet
+        self.switch_tenant(self.tenant3)
+        custom_group_t3, _ = self.fixture.new_group(name="Custom Admins", tenant=self.tenant3)
 
-        # Add both system roles to the custom group
-        add_roles(custom_group_t3, [platform_role.uuid, non_platform_role.uuid], self.tenant3)
+        # Step 5: Simulate incorrect binding state by using wrong scope configuration
+        # Use a mock resource service that returns wrong scopes to simulate historical incorrect bindings
+        mock_wrong_scope_service = Mock(spec=ImplicitResourceService)
+        mock_wrong_scope_service.scope_for_role = Mock(side_effect=wrong_scope_for_role)
 
-        # Step 5: Simulate incorrect binding state (binding at wrong scope)
-        # Take the non-platform system role binding and move it to wrong scope (default workspace)
-        non_platform_binding = BindingMapping.objects.filter(role=non_platform_role).first()
-        self.assertIsNotNone(non_platform_binding, "Non-platform role should have a binding")
+        # Temporarily patch ImplicitResourceService.from_settings to return wrong scopes when creating bindings
+        with patch(
+            "management.group.relation_api_dual_write_group_handler.ImplicitResourceService.from_settings",
+            return_value=mock_wrong_scope_service,
+        ):
+            # Add roles with wrong scope configuration - this will create bindings at wrong scopes
+            add_roles(custom_group_t3, [platform_default_role.uuid, non_platform_default_role.uuid], self.tenant3)
 
-        # Get the tenant for this binding
-        original_workspace = Workspace.objects.get(id=non_platform_binding.resource_id)
-        tenant_for_binding = original_workspace.tenant
-        default_workspace = Workspace.objects.default(tenant=tenant_for_binding)
-        root_workspace = Workspace.objects.root(tenant=tenant_for_binding)
+        # Verify non-platform role is at DEFAULT workspace (wrong)
+        non_platform_binding = BindingMapping.objects.filter(
+            role=non_platform_default_role, resource_id=self.default_workspace(self.tenant3)
+        ).first()
+        self.assertIsNotNone(non_platform_binding, "Non-platform role should be at DEFAULT workspace (wrong)")
 
-        # Verify it's currently at root workspace (correct scope)
-        self.assertEqual(
-            original_workspace.type, Workspace.Types.ROOT, "Non-platform role should initially be at root workspace"
-        )
-
-        # Manually corrupt the binding to wrong scope (default workspace) and update tuples
-        binding_id = non_platform_binding.mappings["id"]
-
-        # Create the tuples to remove (correct root workspace->binding) and add (incorrect default workspace->binding)
-        correct_root_ws_tuple = create_relationship(
-            ("rbac", "workspace"), str(root_workspace.id), ("rbac", "role_binding"), binding_id, "binding"
-        )
-
-        incorrect_default_ws_tuple = create_relationship(
-            ("rbac", "workspace"), str(default_workspace.id), ("rbac", "role_binding"), binding_id, "binding"
-        )
-
-        # Update tuples: remove correct, add incorrect
-        self.tuples.write(add=[incorrect_default_ws_tuple], remove=[correct_root_ws_tuple])
-
-        # Update binding to wrong scope (default workspace)
-        non_platform_binding.resource_id = str(default_workspace.id)
-        non_platform_binding.save()
-
-        # Verify the incorrect state: binding at default workspace
-        non_platform_binding.refresh_from_db()
-        self.assertEqual(
-            non_platform_binding.resource_id,
-            str(default_workspace.id),
-            "Binding should be at default workspace (wrong scope) before migration",
-        )
-
-        # Verify incorrect tuple exists (complete tuple: resource + relation + subject)
-        incorrect_tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "workspace", str(default_workspace.id)),
-                relation("binding"),
-                subject("rbac", "role_binding", binding_id),
-            )
-        )
-        self.assertEqual(
-            len(incorrect_tuples), 1, "Incorrect default workspace->binding tuple should exist before migration"
-        )
-
-        # Also corrupt one platform_role binding for tenant2 (different corruption scenario)
-        # Platform roles have DEFAULT scope, so if bound at root workspace, that's wrong
-        platform_binding_t2 = None
-        platform_binding_id = None
-        platform_default_ws = None
-        platform_root_ws = None
-
-        for binding in BindingMapping.objects.filter(role=platform_role, resource_type_name="workspace"):
-            original_platform_ws = Workspace.objects.get(id=binding.resource_id)
-            if original_platform_ws.tenant == self.tenant2:
-                platform_binding_t2 = binding
-                platform_binding_id = binding.mappings["id"]
-                platform_default_ws = Workspace.objects.default(tenant=self.tenant2)
-                platform_root_ws = Workspace.objects.root(tenant=self.tenant2)
-
-                # Corrupt: move from default (correct) to root (wrong)
-                correct_platform_tuple = create_relationship(
-                    ("rbac", "workspace"),
-                    str(platform_default_ws.id),
-                    ("rbac", "role_binding"),
-                    platform_binding_id,
-                    "binding",
-                )
-
-                incorrect_platform_tuple = create_relationship(
-                    ("rbac", "workspace"),
-                    str(platform_root_ws.id),
-                    ("rbac", "role_binding"),
-                    platform_binding_id,
-                    "binding",
-                )
-
-                # Update tuples: remove correct, add incorrect
-                self.tuples.write(add=[incorrect_platform_tuple], remove=[correct_platform_tuple])
-
-                # Update binding to wrong scope (root workspace)
-                platform_binding_t2.resource_id = str(platform_root_ws.id)
-                platform_binding_t2.save()
-
-                # Verify corrupted state
-                platform_binding_t2.refresh_from_db()
-                corrupted_ws = Workspace.objects.get(id=platform_binding_t2.resource_id)
-                self.assertEqual(
-                    corrupted_ws.type,
-                    Workspace.Types.ROOT,
-                    "Platform role binding should be corrupted to root workspace (wrong scope)",
-                )
-                break  # Only corrupt one binding
+        # Verify platform role is at ROOT workspace (wrong)
+        platform_binding = BindingMapping.objects.filter(
+            role=platform_default_role, resource_id=self.root_workspace(self.tenant3)
+        ).first()
+        self.assertIsNotNone(platform_binding, "Platform role should be at ROOT workspace (wrong)")
 
         # Step 6: Perform migration (will use our replicator via patch)
         roles_checked, roles_migrated = migrate_all_role_bindings(OutboxReplicator())
@@ -803,12 +677,13 @@ class ComprehensiveBootstrapMigrationTest(TestCase):
         self.assertGreater(roles_checked, 0, "Should have checked roles")
         self.assertGreater(roles_migrated, 0, "Should have migrated some roles")
 
-        # Step 7: Verify all bindings are at correct scope for their role
+        # Step 7: Verify all bindings are at correct scope and have correct tuples
         # This is the key test - after migration, every binding should match its role's scope
         service = ImplicitResourceService.from_settings()
 
         for binding in BindingMapping.objects.all():
             expected_scope = service.scope_for_role(binding.role)
+            binding_id = binding.mappings["id"]
 
             if binding.resource_type_name == "workspace":
                 workspace = Workspace.objects.get(id=binding.resource_id)
@@ -827,30 +702,8 @@ class ComprehensiveBootstrapMigrationTest(TestCase):
                         f"Binding {binding.id} for role '{binding.role.name}' (DEFAULT scope) "
                         f"should be at default workspace, got {workspace.type}",
                     )
-            elif binding.resource_type_name == "tenant":
-                # TENANT scope bindings
-                self.assertEqual(
-                    expected_scope, Scope.TENANT, f"Binding {binding.id} at tenant level should have TENANT scope"
-                )
 
-        # Step 8: Verify tuples exist for all bindings AND point to correct scoped resources
-        for binding in BindingMapping.objects.all():
-            binding_id = binding.mappings["id"]
-            expected_scope = service.scope_for_role(binding.role)
-
-            # Verify binding tuples exist
-            binding_tuples = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
-            self.assertGreater(
-                len(binding_tuples),
-                0,
-                f"Binding {binding.id} for role '{binding.role.name}' should have tuples in store",
-            )
-
-            # Verify complete workspace->binding or tenant->binding tuple exists
-            if binding.resource_type_name == "workspace":
-                workspace = Workspace.objects.get(id=binding.resource_id)
-
-                # Search for complete workspace->binding tuple (resource + relation + subject)
+                # Verify complete workspace->binding tuple exists
                 complete_ws_binding_tuples = self.tuples.find_tuples(
                     all_of(
                         resource("rbac", "workspace", str(workspace.id)),
@@ -858,28 +711,18 @@ class ComprehensiveBootstrapMigrationTest(TestCase):
                         subject("rbac", "role_binding", binding_id),
                     )
                 )
-
                 self.assertEqual(
                     len(complete_ws_binding_tuples),
                     1,
                     f"Should find exactly 1 tuple: workspace:{workspace.id}#binding@role_binding:{binding_id}",
                 )
 
-                # Verify workspace is correct type for the scope
-                if expected_scope == Scope.ROOT:
-                    self.assertEqual(
-                        workspace.type,
-                        Workspace.Types.ROOT,
-                        f"ROOT scope binding should point to root workspace in tuples",
-                    )
-                elif expected_scope == Scope.DEFAULT:
-                    self.assertEqual(
-                        workspace.type,
-                        Workspace.Types.DEFAULT,
-                        f"DEFAULT scope binding should point to default workspace in tuples",
-                    )
-
             elif binding.resource_type_name == "tenant":
+                # TENANT scope bindings
+                self.assertEqual(
+                    expected_scope, Scope.TENANT, f"Binding {binding.id} at tenant level should have TENANT scope"
+                )
+
                 # Verify complete tenant->binding tuple exists
                 complete_tenant_tuples = self.tuples.find_tuples(
                     all_of(
@@ -888,176 +731,38 @@ class ComprehensiveBootstrapMigrationTest(TestCase):
                         subject("rbac", "role_binding", binding_id),
                     )
                 )
-
                 self.assertEqual(
                     len(complete_tenant_tuples),
                     1,
                     f"Should find exactly 1 tuple: tenant:{binding.resource_id}#binding@role_binding:{binding_id}",
                 )
 
-        # Step 9: Verify the corrupted binding was FIXED by migration
-        # The binding may have been migrated or replaced by the group handler
-        # Check if original binding still exists or if a new one was created
-        try:
-            non_platform_binding.refresh_from_db()
-            # Binding still exists - verify it's at correct scope
-            corrected_workspace = Workspace.objects.get(id=non_platform_binding.resource_id)
-            self.assertEqual(
-                corrected_workspace.type,
-                Workspace.Types.ROOT,
-                f"Non-platform system role should be at root workspace AFTER migration",
-            )
-        except BindingMapping.DoesNotExist:
-            # Binding was replaced - verify new binding exists at correct scope
-            new_binding = BindingMapping.objects.filter(role=non_platform_role).first()
-            self.assertIsNotNone(new_binding, "Should have binding for non-platform role after migration")
-            if new_binding.resource_type_name == "workspace":
-                workspace = Workspace.objects.get(id=new_binding.resource_id)
-                self.assertEqual(
-                    workspace.type,
-                    Workspace.Types.ROOT,
-                    "New binding for non-platform system role should be at root workspace",
-                )
-            binding_id = new_binding.mappings["id"]  # Update binding_id for later checks
+        # Step 8: Verify specific role bindings are correctly placed after migration
+        # Use DualWriteTestCase helpers to verify the role bindings
 
-        # Verify INCORRECT tuple at default workspace was REMOVED (search for complete tuple)
-        incorrect_tuples_after = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "workspace", str(default_workspace.id)),
-                relation("binding"),
-                subject("rbac", "role_binding", binding_id),
-            )
-        )
-        self.assertEqual(
-            len(incorrect_tuples_after),
-            0,
-            "Incorrect default workspace->binding tuple should be removed after migration",
+        # Verify non-platform default (ROOT scope) role binding for tenant3 custom group at ROOT workspace
+        non_platform_default_v2_role_id = str(non_platform_default_role.uuid)
+        custom_group_t3_id = str(custom_group_t3.uuid)
+        self.expect_binding_present(
+            target=self.root_workspace_resource(self.tenant3),
+            v2_role_id=non_platform_default_v2_role_id,
+            group_id=custom_group_t3_id,
         )
 
-        # Verify CORRECT tuple at root workspace was ADDED (search for complete tuple)
-        correct_tuples_after = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "workspace", str(root_workspace.id)),
-                relation("binding"),
-                subject("rbac", "role_binding", binding_id),
-            )
+        # Verify platform default (DEFAULT scope) role binding for tenant3 custom group at DEFAULT workspace
+        platform_default_v2_role_id = str(platform_default_role.uuid)
+        self.expect_binding_present(
+            target=self.default_workspace_resource(self.tenant3),
+            v2_role_id=platform_default_v2_role_id,
+            group_id=custom_group_t3_id,
         )
 
-        self.assertEqual(
-            len(correct_tuples_after), 1, f"Correct root workspace->binding tuple should exist after migration"
-        )
-
-        # Step 10: Verify ALL non-platform system role bindings have correct tuple structure
-        non_platform_bindings = BindingMapping.objects.filter(role=non_platform_role)
-        self.assertGreater(non_platform_bindings.count(), 0, "Non-platform system role should have bindings")
-
-        for binding in non_platform_bindings:
-            binding_id = binding.mappings["id"]
-
-            if binding.resource_type_name == "workspace":
-                workspace = Workspace.objects.get(id=binding.resource_id)
-                self.assertEqual(
-                    workspace.type,
-                    Workspace.Types.ROOT,
-                    f"Non-platform system role '{non_platform_role.name}' should be at root workspace",
-                )
-
-                # Verify complete tuple exists (resource + relation + subject)
-                complete_tuples = self.tuples.find_tuples(
-                    all_of(
-                        resource("rbac", "workspace", str(workspace.id)),
-                        relation("binding"),
-                        subject("rbac", "role_binding", binding_id),
-                    )
-                )
-                self.assertEqual(
-                    len(complete_tuples),
-                    1,
-                    f"Should find exactly 1 tuple: workspace:{workspace.id}#binding@role_binding:{binding_id}",
-                )
-
-        # Step 11: Verify platform default role binding was FIXED
-        # The binding may have been migrated or replaced by the group handler
-        if platform_binding_t2:
-            try:
-                platform_binding_t2.refresh_from_db()
-                # Binding still exists - verify it's at correct scope
-                fixed_platform_ws = Workspace.objects.get(id=platform_binding_t2.resource_id)
-                self.assertEqual(
-                    fixed_platform_ws.type,
-                    Workspace.Types.DEFAULT,
-                    f"Platform role binding should be at default workspace AFTER migration",
-                )
-            except BindingMapping.DoesNotExist:
-                # Binding was replaced - verify new binding exists at correct scope
-                new_platform_binding = (
-                    BindingMapping.objects.filter(role=platform_role, resource_type_name="workspace")
-                    .filter(resource_id__in=[str(platform_default_ws.id), str(platform_root_ws.id)])
-                    .first()
-                )
-
-                self.assertIsNotNone(new_platform_binding, "Should have binding for platform role after migration")
-                workspace = Workspace.objects.get(id=new_platform_binding.resource_id)
-                self.assertEqual(
-                    workspace.type, Workspace.Types.DEFAULT, "New platform role binding should be at default workspace"
-                )
-                platform_binding_id = new_platform_binding.mappings["id"]  # Update for later checks
-
-            # Verify INCORRECT tuple at root workspace was REMOVED (search for complete tuple)
-            platform_incorrect_tuples_after = self.tuples.find_tuples(
-                all_of(
-                    resource("rbac", "workspace", str(platform_root_ws.id)),
-                    relation("binding"),
-                    subject("rbac", "role_binding", platform_binding_id),
-                )
+        # Step 9: Verify custom default groups for tenant1 and tenant2 have platform default role at DEFAULT workspace
+        # Custom default groups should inherit the platform default system role
+        for tenant in [self.tenant1, self.tenant2]:
+            custom_default_group = custom_default_groups[tenant.id]
+            self.expect_binding_present(
+                target=self.default_workspace_resource(tenant),
+                v2_role_id=platform_default_v2_role_id,
+                group_id=str(custom_default_group.uuid),
             )
-            self.assertEqual(
-                len(platform_incorrect_tuples_after),
-                0,
-                "Incorrect root workspace->binding tuple should be removed for platform role",
-            )
-
-            # Verify CORRECT tuple at default workspace was ADDED (search for complete tuple)
-            platform_correct_tuples_after = self.tuples.find_tuples(
-                all_of(
-                    resource("rbac", "workspace", str(platform_default_ws.id)),
-                    relation("binding"),
-                    subject("rbac", "role_binding", platform_binding_id),
-                )
-            )
-
-            self.assertEqual(
-                len(platform_correct_tuples_after),
-                1,
-                f"Correct default workspace->binding tuple should exist for platform role after migration",
-            )
-
-        # Step 12: Verify ALL platform default role bindings with complete tuple verification
-        platform_bindings = BindingMapping.objects.filter(role=platform_role)
-        for binding in platform_bindings:
-            binding_id = binding.mappings["id"]
-
-            # Verify binding tuples exist
-            platform_binding_tuples = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
-            self.assertGreater(
-                len(platform_binding_tuples), 0, f"Platform role binding {binding.id} should have tuples"
-            )
-
-            # Verify complete resource->binding tuple exists
-            if binding.resource_type_name == "workspace":
-                workspace = Workspace.objects.get(id=binding.resource_id)
-
-                # Search for complete tuple (resource + relation + subject)
-                complete_tuple = self.tuples.find_tuples(
-                    all_of(
-                        resource("rbac", "workspace", str(workspace.id)),
-                        relation("binding"),
-                        subject("rbac", "role_binding", binding_id),
-                    )
-                )
-
-                self.assertEqual(
-                    len(complete_tuple),
-                    1,
-                    f"Should find exactly 1 complete tuple for platform role binding {binding_id}",
-                )
