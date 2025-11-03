@@ -1977,8 +1977,6 @@ class RoleViewsetTests(IdentityRequest):
             "relations_to_add": [],
             "relations_to_remove": [],
             "resource_context": {
-                "resource_type": "CustomRole",
-                "resource_id": role_uuid,
                 "org_id": str(self.tenant.org_id),
                 "event_type": "delete_custom_role",
             },
@@ -2181,8 +2179,6 @@ class RoleViewsetTests(IdentityRequest):
             "relations_to_add": [],
             "relations_to_remove": [],
             "resource_context": {
-                "resource_type": "CustomRole",
-                "resource_id": role_uuid,
                 "org_id": str(self.tenant.org_id),
                 "event_type": "delete_custom_role",
             },
