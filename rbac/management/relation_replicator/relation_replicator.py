@@ -135,7 +135,7 @@ class ReplicationEvent:
         }
 
         if self.event_type == ReplicationEventType.CREATE_WORKSPACE and "workspace_id" in self.event_info:
-            resource_type = ("Workspace",)
+            resource_type = "Workspace"
             resource_id = (str(self.event_info["workspace_id"]),)
             org_id = (str(self.event_info.get("org_id", "")),)
         elif self.event_type in event_mapping:
