@@ -22,14 +22,27 @@ from unittest.mock import ANY, call, patch, mock_open
 
 from api.models import Tenant
 from management.group.definer import seed_group
-from management.group.platform import GlobalPolicyIdService
-from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.models import (
+    Access,
+    ExtRoleRelation,
+    Permission,
+    ResourceDefinition,
+    Role,
+    Group,
+    PlatformRoleV2,
+    RoleV2,
+    SeededRoleV2,
+)
+from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
-from management.role.definer import seed_roles, seed_permissions
+from management.role.definer import seed_roles, seed_permissions, _seed_platform_roles
+from management.role.platform import platform_v2_role_uuid_for
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
@@ -669,3 +682,250 @@ class RoleDefinerTests(IdentityRequest):
         self._assert_child(tuples, parent_uuid=tenant_admin_default_uuid, child_uuid=inventory_role.uuid)
 
         self.assertEqual(initial_count, len(tuples), "Expected overall number of tuples not to change.")
+
+
+class V2RoleSeedingTests(IdentityRequest):
+    """Test V2 role seeding functionality."""
+
+    def setUp(self):
+        """Set up V2 role seeding tests."""
+        super().setUp()
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        # Clear any existing platform roles and default groups
+        PlatformRoleV2.objects.all().delete()
+        SeededRoleV2.objects.all().delete()
+        GlobalPolicyIdService.clear_shared()
+
+    def tearDown(self):
+        """Clean up after tests."""
+        GlobalPolicyIdService.clear_shared()
+        super().tearDown()
+
+    def test_seed_platform_roles_creates_all_six_roles(self):
+        """Test that _seed_platform_roles creates all 6 platform roles (3 scopes × 2 access types)."""
+        # Seed default groups first
+        seed_group()
+
+        # Seed platform roles
+        platform_roles = _seed_platform_roles()
+
+        # Should have 6 platform roles (3 scopes × 2 access types)
+        self.assertEqual(len(platform_roles), 6)
+        self.assertEqual(PlatformRoleV2.objects.count(), 6)
+
+        # Verify all combinations exist
+        for access_type in DefaultAccessType:
+            for scope in Scope:
+                self.assertIn((access_type, scope), platform_roles)
+                platform_role = platform_roles[(access_type, scope)]
+                self.assertIsInstance(platform_role, PlatformRoleV2)
+                self.assertEqual(platform_role.tenant, self.public_tenant)
+
+    def test_seed_platform_roles_with_correct_names(self):
+        """Test that platform roles are created with correct names."""
+        seed_group()
+        platform_roles = _seed_platform_roles()
+
+        # Test specific role names
+        user_default_role = platform_roles[(DefaultAccessType.USER, Scope.DEFAULT)]
+        self.assertEqual(user_default_role.name, "User default Platform Role")
+        self.assertIn("user access at default scope", user_default_role.description)
+
+        admin_tenant_role = platform_roles[(DefaultAccessType.ADMIN, Scope.TENANT)]
+        self.assertEqual(admin_tenant_role.name, "Admin tenant Platform Role")
+        self.assertIn("admin access at tenant scope", admin_tenant_role.description)
+
+    def test_seed_platform_roles_auto_creates_default_groups(self):
+        """Test that _seed_platform_roles automatically creates default groups if they don't exist."""
+        Group.objects.filter(platform_default=True).delete()
+        Group.objects.filter(admin_default=True).delete()
+        GlobalPolicyIdService.clear_shared()
+
+        # Platform roles seeding should create groups automatically
+        platform_roles = _seed_platform_roles()
+
+        # Should have created 6 platform roles
+        self.assertEqual(len(platform_roles), 6)
+        self.assertEqual(PlatformRoleV2.objects.count(), 6)
+
+        # Default groups should now exist
+        self.assertTrue(Group.objects.filter(platform_default=True).exists())
+        self.assertTrue(Group.objects.filter(admin_default=True).exists())
+
+    def test_seed_platform_roles_uses_correct_uuids(self):
+        """Test that platform roles are created with correct UUIDs from settings."""
+        seed_group()
+        platform_roles = _seed_platform_roles()
+
+        # Test that root and tenant scope roles use UUIDs from settings
+        root_user_role = platform_roles[(DefaultAccessType.USER, Scope.ROOT)]
+        self.assertEqual(root_user_role.uuid, UUID(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID))
+
+        tenant_user_role = platform_roles[(DefaultAccessType.USER, Scope.TENANT)]
+        self.assertEqual(tenant_user_role.uuid, UUID(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID))
+
+        tenant_admin_role = platform_roles[(DefaultAccessType.ADMIN, Scope.TENANT)]
+        self.assertEqual(tenant_admin_role.uuid, UUID(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID))
+
+    def test_seed_platform_roles_idempotent(self):
+        """Test that _seed_platform_roles can be called multiple times."""
+        seed_group()
+
+        # First seeding
+        platform_roles_1 = _seed_platform_roles()
+        first_count = PlatformRoleV2.objects.count()
+        self.assertEqual(first_count, 6)
+
+        # Second seeding should update, not create duplicates
+        platform_roles_2 = _seed_platform_roles()
+        second_count = PlatformRoleV2.objects.count()
+        self.assertEqual(second_count, 6)
+
+        # UUIDs should be the same
+        for access_type in DefaultAccessType:
+            for scope in Scope:
+                self.assertEqual(
+                    platform_roles_1[(access_type, scope)].uuid, platform_roles_2[(access_type, scope)].uuid
+                )
+
+    def test_seed_v2_role_from_v1(self):
+        """Test that V2 roles are created from V1 roles during seeding."""
+        # Seed default groups and roles using actual role definitions
+        seed_group()
+        seed_roles()
+
+        # Get any system V1 role from the actual seeded roles
+        v1_role = Role.objects.filter(system=True, tenant=self.public_tenant).first()
+        self.assertIsNotNone(v1_role, "Should have at least one system role")
+
+        # V2 role should be created with same UUID
+        v2_role = SeededRoleV2.objects.get(uuid=v1_role.uuid)
+        self.assertEqual(v2_role.name, v1_role.display_name)
+        self.assertEqual(v2_role.tenant, self.public_tenant)
+        self.assertEqual(v2_role.v1_source, v1_role)
+
+        # V2 role should have the same permissions as V1 role
+        v1_permissions = set(access.permission for access in v1_role.access.all())
+        v2_permissions = set(v2_role.permissions.all())
+        self.assertEqual(v1_permissions, v2_permissions)
+
+    def test_platform_role_has_seeded_role_as_child(self):
+        """Test that platform roles have seeded roles as children after seeding."""
+        # Seed default groups and roles
+        seed_group()
+        seed_roles()
+
+        # Get all platform_default V1 roles
+        platform_v1_roles = Role.objects.filter(platform_default=True, tenant=self.public_tenant)
+        self.assertGreater(platform_v1_roles.count(), 0, "Should have at least one platform_default role")
+
+        # For each scope, check that the user platform role has appropriate children
+        resource_service = ImplicitResourceService.from_settings()
+        policy_service = GlobalPolicyIdService.shared()
+
+        # Check at least one scope has children
+        found_child = False
+        for scope in Scope:
+            # Get the user platform role for this scope
+            platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, scope, policy_service)
+            platform_role = PlatformRoleV2.objects.get(uuid=platform_role_uuid)
+
+            # Get children of this platform role as SeededRoleV2 instances
+            child_uuids = platform_role.children.values_list("uuid", flat=True)
+            children = SeededRoleV2.objects.filter(uuid__in=child_uuids)
+
+            if children.exists():
+                found_child = True
+                # Verify all children have platform_default V1 source
+                for child in children:
+                    self.assertIsNotNone(child.v1_source, "Child should have a V1 source")
+                    self.assertTrue(child.v1_source.platform_default, "V1 source should be platform_default")
+
+        self.assertTrue(found_child, "At least one user platform role should have children")
+
+    def test_admin_platform_role_has_admin_seeded_role_as_child(self):
+        """Test that admin platform roles have admin seeded roles as children."""
+        # Seed default groups and roles
+        seed_group()
+        seed_roles()
+
+        # Get all admin_default V1 roles
+        admin_v1_roles = Role.objects.filter(admin_default=True, tenant=self.public_tenant)
+        self.assertGreater(admin_v1_roles.count(), 0, "Should have at least one admin_default role")
+
+        # For each scope, check that the admin platform role has appropriate children
+        resource_service = ImplicitResourceService.from_settings()
+        policy_service = GlobalPolicyIdService.shared()
+
+        # Check at least one scope has children
+        found_child = False
+        for scope in Scope:
+            # Get the admin platform role for this scope
+            admin_platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, scope, policy_service)
+            admin_platform_role = PlatformRoleV2.objects.get(uuid=admin_platform_role_uuid)
+
+            # Get children of this admin platform role as SeededRoleV2 instances
+            child_uuids = admin_platform_role.children.values_list("uuid", flat=True)
+            children = SeededRoleV2.objects.filter(uuid__in=child_uuids)
+
+            if children.exists():
+                found_child = True
+                # Verify all children have admin_default V1 source
+                for child in children:
+                    self.assertIsNotNone(child.v1_source, "Child should have a V1 source")
+                    self.assertTrue(child.v1_source.admin_default, "V1 source should be admin_default")
+
+        self.assertTrue(found_child, "At least one admin platform role should have children")
+
+    def test_seed_platform_roles_handles_missing_groups_gracefully(self):
+        """Test that seeding handles missing default groups gracefully by creating them."""
+        Group.objects.filter(platform_default=True).delete()
+        Group.objects.filter(admin_default=True).delete()
+        GlobalPolicyIdService.clear_shared()
+
+        # This should not raise an exception
+        try:
+            platform_roles = _seed_platform_roles()
+            self.assertEqual(len(platform_roles), 6)
+        except DefaultGroupNotAvailableError:
+            self.fail("_seed_platform_roles should automatically create default groups")
+
+        # Verify groups were created
+        self.assertTrue(Group.objects.filter(platform_default=True).exists())
+        self.assertTrue(Group.objects.filter(admin_default=True).exists())
+
+    @patch("management.role.definer.seed_group")
+    def test_seed_platform_roles_calls_seed_group_when_needed(self, mock_seed_group):
+        """Test that _seed_platform_roles calls seed_group when default groups are missing."""
+        # Configure mock to create the groups
+        mock_seed_group.side_effect = lambda: seed_group()
+
+        Group.objects.filter(platform_default=True).delete()
+        Group.objects.filter(admin_default=True).delete()
+        GlobalPolicyIdService.clear_shared()
+
+        # Seed platform roles
+        platform_roles = _seed_platform_roles()
+
+        # seed_group should have been called when DefaultGroupNotAvailableError was raised
+        self.assertTrue(mock_seed_group.called)
+        self.assertEqual(len(platform_roles), 6)
+
+    def test_seed_roles_creates_platform_roles(self):
+        """Test that seed_roles creates platform roles during normal seeding."""
+        # Seed groups and roles
+        seed_group()
+        seed_roles()
+
+        # Platform roles should be created (6 total: 3 scopes × 2 access types)
+        self.assertGreaterEqual(PlatformRoleV2.objects.count(), 6)
+
+        # Verify all 6 expected platform roles exist
+        policy_service = GlobalPolicyIdService.shared()
+        for access_type in DefaultAccessType:
+            for scope in Scope:
+                expected_uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
+                self.assertTrue(
+                    PlatformRoleV2.objects.filter(uuid=expected_uuid).exists(),
+                    f"Platform role for {access_type.value} {scope.name} should exist",
+                )

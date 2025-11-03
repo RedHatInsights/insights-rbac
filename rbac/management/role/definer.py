@@ -25,6 +25,7 @@ from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from management.group.definer import seed_group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
@@ -366,8 +367,8 @@ def _seed_platform_roles():
             try:
                 uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
 
-                role_name = f"{access_type.value.capitalize()} {scope.value} Platform Role"
-                description = f"Platform default role for {access_type.value} access at {scope.value} scope"
+                role_name = f"{access_type.value.capitalize()} {scope.name.lower()} Platform Role"
+                description = f"Platform default role for {access_type.value} access at {scope.name.lower()} scope"
 
                 platform_role, created = PlatformRoleV2.objects.update_or_create(
                     uuid=uuid,
@@ -386,10 +387,43 @@ def _seed_platform_roles():
                 platform_roles[(access_type, scope)] = platform_role
             except DefaultGroupNotAvailableError:
                 logger.warning(
-                    "Default groups may not exist yet during seeding. "
-                    "Skipping platform role creation for %s %s scope",
+                    "Default groups do not exist yet. Creating them now for %s %s scope",
                     access_type.value,
-                    scope.value,
+                    scope.name.lower(),
                 )
+                # Create the default groups
+                seed_group()
+
+                # Retry creating the platform role now that default groups exist
+                try:
+                    # refresh policy service since groups were just created
+                    policy_service = GlobalPolicyIdService.shared()
+                    uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
+
+                    role_name = f"{access_type.value.capitalize()} {scope.name.lower()} Platform Role"
+                    description = f"Platform default role for {access_type.value} access at {scope.name.lower()} scope"
+
+                    platform_role, created = PlatformRoleV2.objects.update_or_create(
+                        uuid=uuid,
+                        defaults={
+                            "name": role_name,
+                            "description": description,
+                            "tenant": public_tenant,
+                        },
+                    )
+
+                    if created:
+                        logger.info("Created platform role: %s", role_name)
+                    else:
+                        logger.info("Updated platform role: %s", role_name)
+
+                    platform_roles[(access_type, scope)] = platform_role
+                except DefaultGroupNotAvailableError as e:
+                    logger.error(
+                        "Failed to create platform role for %s %s scope after creating default groups: %s",
+                        access_type.value,
+                        scope.name.lower(),
+                        str(e),
+                    )
 
     return platform_roles
