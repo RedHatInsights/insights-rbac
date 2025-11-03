@@ -158,9 +158,6 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         role = Role.objects.create(tenant=self.tenant, name="Root Scope Role", system=False)
         access = Access.objects.create(role=role, permission=self.root_permission, tenant=self.tenant)
 
-        # Verify no resource definitions (so it should use default_resource from scope logic)
-        self.assertEqual(access.resourceDefinitions.count(), 0, "Role should have no resource definitions")
-
         # Start with NO bindings - handler will create one at correct scope
         # This tests the handler's ability to create bindings at the right scope from scratch
 
@@ -800,7 +797,7 @@ class ComprehensiveBootstrapMigrationTest(TestCase):
                 break  # Only corrupt one binding
 
         # Step 6: Perform migration (will use our replicator via patch)
-        roles_checked, roles_migrated = migrate_all_role_bindings(OutboxReplicator(), batch_size=10)
+        roles_checked, roles_migrated = migrate_all_role_bindings(OutboxReplicator())
 
         # Should have processed roles
         self.assertGreater(roles_checked, 0, "Should have checked roles")

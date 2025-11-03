@@ -102,7 +102,7 @@ def migrate_system_role_bindings_for_group(group: Group, replicator: RelationRep
     return bindings_cleaned
 
 
-def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(), batch_size: int = 100):
+def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator()):
     """
     Migrate all role bindings to correct scope.
 
@@ -111,11 +111,10 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
 
     Args:
         replicator: Replicator to use for relation updates. Defaults to OutboxReplicator.
-        batch_size: Number of items to process in each batch (default: 100).
 
     Returns: Tuple of (items_checked, items_migrated)
     """
-    logger.info(f"Starting binding scope migration (batch_size={batch_size})")
+    logger.info("Starting binding scope migration")
     logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
 
@@ -128,28 +127,22 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     custom_roles_checked = 0
     custom_roles_migrated = 0
 
-    custom_role_ids = list(custom_roles.values_list("pk", flat=True))
+    for role in custom_roles:
+        custom_roles_checked += 1
 
-    for batch_start in range(0, total_custom_roles, batch_size):
-        batch_end = min(batch_start + batch_size, total_custom_roles)
-        batch_ids = custom_role_ids[batch_start:batch_end]
+        with transaction.atomic():
+            role = Role.objects.select_for_update().get(pk=role.pk)
 
-        for role_id in batch_ids:
-            custom_roles_checked += 1
+            try:
+                migrated = migrate_custom_role_bindings(role, replicator)
+                custom_roles_migrated += migrated
+            except Exception as e:
+                logger.error(f"Failed to migrate custom role {role.uuid}: {e}", exc_info=True)
+                continue
 
-            with transaction.atomic():
-                role = Role.objects.select_for_update().get(pk=role_id)
-
-                try:
-                    migrated = migrate_custom_role_bindings(role, replicator)
-                    custom_roles_migrated += migrated
-                except Exception as e:
-                    logger.error(f"Failed to migrate custom role {role.uuid}: {e}", exc_info=True)
-                    continue
-
-        if batch_end % (batch_size * 10) == 0 or batch_end == total_custom_roles:
+        if custom_roles_checked % 10 == 0 or custom_roles_checked == total_custom_roles:
             logger.info(
-                f"Progress (custom roles): processed {batch_end}/{total_custom_roles}, "
+                f"Progress (custom roles): processed {custom_roles_checked}/{total_custom_roles}, "
                 f"migrated {custom_roles_migrated}"
             )
 
@@ -170,28 +163,22 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     groups_checked = 0
     groups_migrated = 0
 
-    group_ids = list(groups_with_system_roles.values_list("pk", flat=True))
+    for group in groups_with_system_roles:
+        groups_checked += 1
 
-    for batch_start in range(0, total_groups, batch_size):
-        batch_end = min(batch_start + batch_size, total_groups)
-        batch_ids = group_ids[batch_start:batch_end]
+        with transaction.atomic():
+            group = Group.objects.select_for_update().select_related("tenant").get(pk=group.pk)
 
-        for group_id in batch_ids:
-            groups_checked += 1
+            try:
+                migrated = migrate_system_role_bindings_for_group(group, replicator)
+                if migrated > 0:
+                    groups_migrated += 1
+            except Exception as e:
+                logger.error(f"Failed to migrate system roles for group {group.uuid}: {e}", exc_info=True)
+                continue
 
-            with transaction.atomic():
-                group = Group.objects.select_for_update().select_related("tenant").get(pk=group_id)
-
-                try:
-                    migrated = migrate_system_role_bindings_for_group(group, replicator)
-                    if migrated > 0:
-                        groups_migrated += 1
-                except Exception as e:
-                    logger.error(f"Failed to migrate system roles for group {group.uuid}: {e}", exc_info=True)
-                    continue
-
-        if batch_end % (batch_size * 10) == 0 or batch_end == total_groups:
-            logger.info(f"Progress (groups): processed {batch_end}/{total_groups}, " f"migrated {groups_migrated}")
+        if groups_checked % 10 == 0 or groups_checked == total_groups:
+            logger.info(f"Progress (groups): processed {groups_checked}/{total_groups}, migrated {groups_migrated}")
 
     logger.info(
         f"Completed system role migration via groups: {groups_checked} groups checked, {groups_migrated} migrated"
