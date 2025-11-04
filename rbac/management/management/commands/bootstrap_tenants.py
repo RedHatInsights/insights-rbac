@@ -106,6 +106,7 @@ class Command(BaseCommand):
         estimate = query.count()
 
         logger.info(f"About to bootstrap an estimated {estimate} tenants...")
+        logger.info(f"Running with {force=}.")
 
         successful_org_ids = set[str]()  # Only populated if use_org_ids is true.
         missing_org_ids = set[str]()
