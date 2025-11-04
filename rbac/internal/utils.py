@@ -200,3 +200,27 @@ def is_str_valid_uuid(uuid_str: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def get_workspace_id_by_name(workspace_name: str, tenant):
+    """
+    Get workspace ID by workspace name for a given tenant.
+
+    Args:
+        workspace_name: The name of the workspace (e.g., "tasks", "automation")
+        tenant: The tenant object
+
+    Returns:
+        Workspace ID as string if found, None otherwise
+    """
+    from management.workspace.model import Workspace
+
+    try:
+        workspace = Workspace.objects.get(tenant=tenant, name=workspace_name)
+        return str(workspace.id)
+    except Workspace.DoesNotExist:
+        return None
+    except Workspace.MultipleObjectsReturned:
+        # If multiple workspaces have the same name, return the first one
+        workspace = Workspace.objects.filter(tenant=tenant, name=workspace_name).first()
+        return str(workspace.id) if workspace else None

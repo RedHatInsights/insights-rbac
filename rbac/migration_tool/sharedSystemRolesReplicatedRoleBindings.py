@@ -93,6 +93,7 @@ def v1_role_to_v2_bindings(
     """Convert a V1 role to a set of V2 role bindings."""
     from internal.utils import (
         get_or_create_ungrouped_workspace,
+        get_workspace_id_by_name,
         get_workspace_ids_from_resource_definition,
         is_resource_a_workspace,
     )
@@ -110,7 +111,6 @@ def v1_role_to_v2_bindings(
 
         default = True
         for resource_def in access.resourceDefinitions.all():
-            default = False
             attri_filter = resource_def.attributeFilter
 
             # Deal with some malformed data in db
@@ -136,8 +136,34 @@ def v1_role_to_v2_bindings(
 
             resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])
             if resource_type is None:
-                # Resource type not mapped to v2
+                # Resource type not mapped to v2, try special handling for service attribute
+                if attri_filter.get("key") == "service":
+                    # For playbook-dispatcher, the service value is the workspace NAME
+                    # Look up the workspace ID by name
+                    default = False
+                    for workspace_name in values_from_attribute_filter(attri_filter):
+                        workspace_id = get_workspace_id_by_name(workspace_name, v1_role.tenant)
+                        if workspace_id:
+                            add_element(
+                                perm_groupings,
+                                V2boundresource(("rbac", "workspace"), workspace_id),
+                                v2_perm,
+                                collection=set,
+                            )
+                            logger.info(
+                                f"Bound playbook-dispatcher permission '{v1_perm}' to workspace '{workspace_name}' "
+                                f"(ID: {workspace_id}) in role '{v1_role.name}'"
+                            )
+                        else:
+                            logger.warning(
+                                f"Workspace '{workspace_name}' not found in tenant for playbook-dispatcher "
+                                f"permission '{v1_perm}' in role '{v1_role.name}', skipping"
+                            )
+                # Skip unmapped resource types without setting default=False
                 continue
+
+            # We have a mapped resource type, so mark as non-default
+            default = False
             if not is_for_enabled_resource(resource_type):
                 continue
             for resource_id in values_from_attribute_filter(attri_filter):
