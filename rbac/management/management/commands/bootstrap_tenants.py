@@ -112,7 +112,7 @@ class Command(BaseCommand):
         failed_org_ids = set[str]()
 
         # These are "raw" because we haven't locked anything, and the tenant could vanish out from under us.
-        for index, raw_tenant in enumerate(query):
+        for index, raw_tenant in enumerate(query.iterator()):
             logger.info(f"Bootstrapping tenant {index + 1}/{estimate}...")
 
             result = _bootstrap_with_retry(
