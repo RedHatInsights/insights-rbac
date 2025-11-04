@@ -23,6 +23,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant
 from management.models import Group, Workspace
+from management.principal.model import Principal
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
 from rbac import urls
 from tests.identity_request import IdentityRequest
@@ -68,6 +69,16 @@ class RoleBindingViewTests(IdentityRequest):
             tenant=self.tenant,
         )
 
+        # Create a principal (user)
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        )
+
+        # Add principal to group
+        self.group.principals.add(self.principal)
+
         # Create a role binding
         self.role_binding = RoleBinding.objects.create(
             role=self.role,
@@ -87,6 +98,7 @@ class RoleBindingViewTests(IdentityRequest):
         RoleBindingGroup.objects.all().delete()
         RoleBinding.objects.all().delete()
         RoleV2.objects.all().delete()
+        Principal.objects.all().delete()
         Group.objects.all().delete()
         Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
@@ -186,6 +198,7 @@ class RoleBindingViewTests(IdentityRequest):
         params = {
             "resource_id": str(self.default_workspace.id),
             "resource_type": "workspace",
+            "subject_type": "group",
             "fields": "subject(id,type,group)",
         }
         response = client.get(url, params, format="json", **self.headers)
@@ -213,6 +226,7 @@ class RoleBindingViewTests(IdentityRequest):
         params = {
             "resource_id": str(self.default_workspace.id),
             "resource_type": "workspace",
+            "subject_type": "group",
             "fields": "subject(group.name,group.description)",
         }
         response = client.get(url, params, format="json", **self.headers)
@@ -307,6 +321,7 @@ class RoleBindingViewTests(IdentityRequest):
         params = {
             "resource_id": str(self.default_workspace.id),
             "resource_type": "workspace",
+            "subject_type": "group",
             "fields": "subject,roles,resource,last_modified",
         }
         response = client.get(url, params, format="json", **self.headers)
@@ -373,3 +388,131 @@ class RoleBindingViewTests(IdentityRequest):
         self.assertIn("roles", first_item)
         self.assertIn("resource", first_item)
         self.assertIn("last_modified", first_item)
+
+    def test_list_by_subject_with_user_subject_type(self):
+        """Test listing role bindings filtered by user subject type."""
+        url = reverse("v2_management:role-bindings-by-subject")
+        client = APIClient()
+
+        params = {
+            "resource_id": str(self.default_workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        response = client.get(url, params, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Should have at least one user
+        self.assertGreater(len(data), 0)
+
+        # Check that all subjects are users
+        for item in data:
+            subject = item["subject"]
+            self.assertEqual(subject["type"], "user")
+            self.assertIn("user", subject)
+            self.assertIn("username", subject["user"])
+            self.assertNotIn("group", subject)
+
+    def test_list_by_subject_with_user_subject_type_includes_username(self):
+        """Test that user subject includes username field."""
+        url = reverse("v2_management:role-bindings-by-subject")
+        client = APIClient()
+
+        params = {
+            "resource_id": str(self.default_workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        response = client.get(url, params, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertGreater(len(data), 0)
+        first_item = data[0]
+
+        # Check user structure
+        subject = first_item["subject"]
+        self.assertEqual(subject["type"], "user")
+        self.assertIn("user", subject)
+        self.assertEqual(subject["user"]["username"], "testuser")
+
+    def test_list_by_subject_with_user_subject_id_filter(self):
+        """Test filtering by specific user subject ID."""
+        url = reverse("v2_management:role-bindings-by-subject")
+        client = APIClient()
+
+        params = {
+            "resource_id": str(self.default_workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+            "subject_id": str(self.principal.uuid),
+        }
+        response = client.get(url, params, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Should have exactly one user
+        self.assertEqual(len(data), 1)
+
+        # Check it's the correct user
+        subject = data[0]["subject"]
+        self.assertEqual(subject["id"], self.principal.uuid)
+        self.assertEqual(subject["type"], "user")
+        self.assertEqual(subject["user"]["username"], "testuser")
+
+    def test_list_by_subject_with_user_field_filter(self):
+        """Test filtering user subject fields."""
+        url = reverse("v2_management:role-bindings-by-subject")
+        client = APIClient()
+
+        params = {
+            "resource_id": str(self.default_workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+            "fields": "subject(user.username)",
+        }
+        response = client.get(url, params, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertGreater(len(data), 0)
+        first_item = data[0]
+
+        # Check that only subject is present
+        self.assertIn("subject", first_item)
+        self.assertNotIn("roles", first_item)
+        self.assertNotIn("resource", first_item)
+        self.assertNotIn("last_modified", first_item)
+
+        # Check user has only username
+        subject = first_item["subject"]
+        self.assertIn("user", subject)
+        self.assertIn("username", subject["user"])
+
+    def test_list_by_subject_user_has_roles_from_group(self):
+        """Test that users receive roles from their group memberships."""
+        url = reverse("v2_management:role-bindings-by-subject")
+        client = APIClient()
+
+        params = {
+            "resource_id": str(self.default_workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+            "subject_id": str(self.principal.uuid),
+        }
+        response = client.get(url, params, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertEqual(len(data), 1)
+
+        # Check that the user has the roles from their group
+        roles = data[0]["roles"]
+        self.assertGreater(len(roles), 0)
+        self.assertEqual(roles[0]["name"], "Test Role")

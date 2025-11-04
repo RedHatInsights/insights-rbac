@@ -17,6 +17,7 @@
 """Serializers for role binding management."""
 import re
 
+from management.models import Group
 from rest_framework import serializers
 
 
@@ -172,49 +173,145 @@ class DynamicFieldsSerializer(serializers.Serializer):
 class RoleBindingBySubjectSerializer(DynamicFieldsSerializer):
     """Serializer for role bindings grouped by subject.
 
-    This serializer works with Group objects that have been annotated with
-    role binding information via the _build_group_queryset method.
+    This serializer works with both Group and Principal objects that have been
+    annotated with role binding information via the _build_group_queryset or
+    _build_principal_queryset methods.
     """
 
-    last_modified = serializers.DateTimeField(read_only=True, source="latest_modified")
+    last_modified = serializers.SerializerMethodField()
     subject = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
 
-    def get_subject(self, group):
-        """Extract subject information from the Group object."""
-        return {
-            "id": group.uuid,
-            "type": "group",
-            "group": {
-                "name": group.name,
-                "description": group.description,
-                "user_count": group.principalCount,
-            },
-        }
+    def __init__(self, *args, **kwargs):
+        """Initialize and store field specs for manual filtering."""
+        # Store fields before parent pops it, so we can use it in get_* methods
+        fields = kwargs.get("fields")
+        self._field_specs = self._parse_field_specs(fields) if fields else {}
+        super().__init__(*args, **kwargs)
 
-    def get_roles(self, group):
+    def _filter_dict(self, data, field_specs):
+        """Filter a dictionary based on field specifications.
+
+        Args:
+            data: Dictionary to filter
+            field_specs: List of field specifications (e.g., ["name", "group.name"])
+
+        Returns:
+            Filtered dictionary
+        """
+        if not field_specs:
+            return data
+
+        result = {}
+        for spec in field_specs:
+            if "." in spec:
+                # Nested field like "group.name"
+                parent, child = spec.split(".", 1)
+                if parent not in result:
+                    result[parent] = {}
+                if parent in data and isinstance(data[parent], dict):
+                    # Get the child value
+                    if child in data[parent]:
+                        result[parent][child] = data[parent][child]
+            else:
+                # Simple field
+                if spec in data:
+                    result[spec] = data[spec]
+
+        return result
+
+    def get_last_modified(self, obj):
+        """Extract last modified timestamp."""
+        # If obj is a dict (for testing), return modified or latest_modified
+        if isinstance(obj, dict):
+            return obj.get("modified") or obj.get("latest_modified")
+        return getattr(obj, "latest_modified", None)
+
+    def get_subject(self, obj):
+        """Extract subject information from the Group or Principal object."""
+        # Build the subject data
+        if isinstance(obj, dict):
+            subject_data = obj.get("subject", {})
+        elif isinstance(obj, Group):
+            subject_data = {
+                "id": obj.uuid,
+                "type": "group",
+                "group": {
+                    "name": obj.name,
+                    "description": obj.description,
+                    "user_count": obj.principalCount,
+                },
+            }
+        else:
+            # This is a Principal (user)
+            subject_data = {
+                "id": obj.uuid,
+                "type": "user",
+                "user": {
+                    "username": obj.username,
+                },
+            }
+
+        # Apply field filtering if specified
+        if self._field_specs.get("subject"):
+            subject_data = self._filter_dict(subject_data, self._field_specs["subject"])
+
+        return subject_data
+
+    def get_roles(self, obj):
         """Extract roles from the prefetched role bindings."""
-        roles = []
-        seen_role_ids = set()
+        # Build the roles list
+        if isinstance(obj, dict):
+            roles = obj.get("roles", [])
+        else:
+            roles = []
+            seen_role_ids = set()
 
-        # Access the prefetched filtered_bindings
-        if hasattr(group, "filtered_bindings"):
-            for binding_group in group.filtered_bindings:
-                role = binding_group.binding.role
-                if role and role.uuid not in seen_role_ids:
-                    roles.append({"uuid": role.uuid, "name": role.name})
-                    seen_role_ids.add(role.uuid)
+            # Check if this is a Group or Principal
+            if isinstance(obj, Group):
+                # Access the prefetched filtered_bindings for groups
+                if hasattr(obj, "filtered_bindings"):
+                    for binding_group in obj.filtered_bindings:
+                        role = binding_group.binding.role
+                        if role and role.uuid not in seen_role_ids:
+                            roles.append({"id": role.uuid, "name": role.name})
+                            seen_role_ids.add(role.uuid)
+            else:
+                # For principals, get roles from their filtered_groups
+                if hasattr(obj, "filtered_groups"):
+                    for group in obj.filtered_groups:
+                        if hasattr(group, "filtered_bindings"):
+                            for binding_group in group.filtered_bindings:
+                                role = binding_group.binding.role
+                                if role and role.uuid not in seen_role_ids:
+                                    roles.append({"id": role.uuid, "name": role.name})
+                                    seen_role_ids.add(role.uuid)
+
+        # Apply field filtering if specified (filter each role dict)
+        if self._field_specs.get("roles"):
+            roles = [self._filter_dict(role, self._field_specs["roles"]) for role in roles]
 
         return roles
 
-    def get_resource(self, group):
+    def get_resource(self, obj):
         """Extract resource information from the request context."""
-        request = self.context.get("request")
-        if request:
-            return {
-                "id": request.resource_id,
-                "name": request.resource_name,
-                "type": request.resource_type,
-            }
-        return None
+        # Build the resource data
+        if isinstance(obj, dict):
+            resource_data = obj.get("resource", {})
+        else:
+            request = self.context.get("request")
+            if request:
+                resource_data = {
+                    "id": request.resource_id,
+                    "name": request.resource_name,
+                    "type": request.resource_type,
+                }
+            else:
+                resource_data = None
+
+        # Apply field filtering if specified
+        if resource_data and self._field_specs.get("resource"):
+            resource_data = self._filter_dict(resource_data, self._field_specs["resource"])
+
+        return resource_data

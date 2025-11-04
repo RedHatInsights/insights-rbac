@@ -75,14 +75,23 @@ class RoleBindingViewSet(BaseV2ViewSet):
         fields = request.query_params.get("fields")
         order_by = request.query_params.get("order_by")
 
-        # Build queryset of groups with role binding data
-        queryset = self._build_group_queryset(
-            resource_id=resource_id,
-            resource_type=resource_type,
-            subject_type=subject_type,
-            subject_id=subject_id,
-            tenant=request.tenant,
-        )
+        # Build queryset based on subject type
+        if subject_type == "user":
+            queryset = self._build_principal_queryset(
+                resource_id=resource_id,
+                resource_type=resource_type,
+                subject_id=subject_id,
+                tenant=request.tenant,
+            )
+        else:
+            # Default to groups (both when subject_type="group" or not specified)
+            queryset = self._build_group_queryset(
+                resource_id=resource_id,
+                resource_type=resource_type,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                tenant=request.tenant,
+            )
 
         # Apply ordering
         if order_by:
@@ -117,8 +126,8 @@ class RoleBindingViewSet(BaseV2ViewSet):
         # Start with groups that have bindings to the specified resource
         queryset = Group.objects.filter(
             tenant=tenant,
-            rolebindinggroup__binding__resource_type=resource_type,
-            rolebindinggroup__binding__resource_id=resource_id,
+            role_binding_entries__binding__resource_type=resource_type,
+            role_binding_entries__binding__resource_id=resource_id,
         ).distinct()
 
         # Apply subject filtering if specified
@@ -144,13 +153,53 @@ class RoleBindingViewSet(BaseV2ViewSet):
         ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
 
         queryset = queryset.prefetch_related(
-            Prefetch("rolebindinggroup_set", queryset=rolebinding_group_queryset, to_attr="filtered_bindings")
+            Prefetch("role_binding_entries", queryset=rolebinding_group_queryset, to_attr="filtered_bindings")
         )
 
         # Annotate with latest modified timestamp from roles
-        queryset = queryset.annotate(
-            latest_modified=Max("rolebindinggroup__binding__role__modified")
+        queryset = queryset.annotate(latest_modified=Max("role_binding_entries__binding__role__modified"))
+
+        return queryset
+
+    def _build_principal_queryset(self, resource_id, resource_type, subject_id, tenant):
+        """Build a queryset of principals (users) with their role bindings for the specified resource.
+
+        Returns a queryset of Principal objects annotated with:
+        - latest_modified: Latest modification timestamp from associated roles
+
+        Each principal will have prefetched groups and their role bindings filtered by resource.
+        """
+        # Start with principals that belong to groups with bindings to the specified resource
+        queryset = Principal.objects.filter(
+            tenant=tenant,
+            type=Principal.Types.USER,
+            group__role_binding_entries__binding__resource_type=resource_type,
+            group__role_binding_entries__binding__resource_id=resource_id,
+        ).distinct()
+
+        # Apply subject filtering if specified
+        if subject_id:
+            queryset = queryset.filter(uuid=subject_id)
+
+        # Prefetch the role bindings through groups
+        binding_queryset = RoleBinding.objects.filter(
+            resource_type=resource_type, resource_id=resource_id
+        ).select_related("role")
+
+        # Prefetch the join table entries with the filtered bindings
+        rolebinding_group_queryset = RoleBindingGroup.objects.filter(
+            binding__resource_type=resource_type, binding__resource_id=resource_id
+        ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
+
+        # Prefetch groups with their filtered bindings
+        group_queryset = Group.objects.prefetch_related(
+            Prefetch("role_binding_entries", queryset=rolebinding_group_queryset, to_attr="filtered_bindings")
         )
+
+        queryset = queryset.prefetch_related(Prefetch("group", queryset=group_queryset, to_attr="filtered_groups"))
+
+        # Annotate with latest modified timestamp from roles
+        queryset = queryset.annotate(latest_modified=Max("group__role_binding_entries__binding__role__modified"))
 
         return queryset
 
