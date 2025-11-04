@@ -33,13 +33,12 @@ def _try_bulk_bootstrap(
     force: bool,
 ) -> Optional[_BulkBootstrapResult]:
     try:
-        logger.info("A")
-
         with transaction.atomic():
             tenants = Tenant.objects.select_for_update().filter(pk__in=(t.pk for t in raw_tenants))
 
             # A tenant has vanished. Don't try to figure out which; just give up instead.
             if len(tenants) != len(raw_tenants):
+                logger.info("Could not find a tenant about to be bootstrapped; refusing to bulk bootstrap.")
                 return None
 
             logger.info(f"Bootstrapping {len(raw_tenants)} tenants...")
