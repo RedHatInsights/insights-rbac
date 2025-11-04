@@ -634,7 +634,6 @@ class RBACKafkaConsumer:
                 messages_processed_total.labels(message_type="relations", status="validation_failed").inc()
                 return False
 
-            # Extract the org_id from resource context
             resource_context = debezium_msg.payload.get("resource_context")
 
             # Validate that resource_context is present
