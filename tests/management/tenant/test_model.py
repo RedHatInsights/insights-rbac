@@ -20,6 +20,7 @@ from typing import Optional, Tuple
 import uuid
 
 from django.conf import settings
+from unittest.mock import patch
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
@@ -50,6 +51,7 @@ class V2TenantBootstrapServiceTest(TestCase):
     fixture: RbacFixture
 
     def setUp(self):
+        # Clear any existing state first
         self.tuples = InMemoryTuples()
         self.service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples))
         self.fixture = RbacFixture(self.service)

@@ -25,6 +25,7 @@ from management.principal.cleaner import (
     process_principal_events_from_umb,
 )
 from migration_tool.migrate import migrate_data
+from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 
 
 @shared_task
@@ -73,3 +74,9 @@ def run_redis_cache_health():
 def migrate_data_in_worker(kwargs):
     """Celery task to migrate data from V1 to V2 spiceDB schema."""
     migrate_data(**kwargs)
+
+
+@shared_task
+def migrate_binding_scope_in_worker():
+    """Celery task to migrate role binding scopes."""
+    return migrate_all_role_bindings()

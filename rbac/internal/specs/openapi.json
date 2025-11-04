@@ -1245,6 +1245,45 @@
         }
       }
     },
+    "/api/utils/migrate_binding_scope/": {
+      "post": {
+        "tags": [
+          "V2",
+          "Utils"
+        ],
+        "summary": "Migrate role binding scopes",
+        "description": "Migrate all role bindings to the correct scope based on permission scopes. Iterates through roles (not binding mappings) and uses dual write handlers.",
+        "operationId": "MigrateBindingScope",
+        "responses": {
+          "202": {
+            "description": "Binding scope migration is running in a background worker.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Status message"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/bootstrap_tenant/": {
       "post": {
         "tags": [
