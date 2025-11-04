@@ -195,7 +195,7 @@ class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspa
 
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
-class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
+class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     """Tests for create/update/delete workspaces."""
 
     def setUp(self):
@@ -2650,7 +2650,7 @@ class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
 
 
 @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
-class WorkspaceViewTestsWithHierarchyLimit(WorkspaceViewTests):
+class WorkspaceViewTestsWithHierarchyLimit(TransactionalWorkspaceViewTests):
     """Test workspace hierarchy limits."""
 
     def test_create_nested_workspace_valid(self):
@@ -2678,7 +2678,7 @@ class WorkspaceViewTestsWithHierarchyLimit(WorkspaceViewTests):
 
 
 @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
-class WorkspaceViewTestsWithPeerRestrictions(WorkspaceViewTests):
+class WorkspaceViewTestsWithPeerRestrictions(TransactionalWorkspaceViewTests):
     """Test workspace peer restrictions."""
 
     def test_create_nested_workspace_against_root(self):
