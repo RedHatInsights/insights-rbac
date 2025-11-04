@@ -16,8 +16,8 @@
 """Describes the urls and patterns for the management application."""
 from django.conf.urls import include
 from django.urls import re_path
-from management.role_binding.view import RoleBindingViewSet
 from management.views import (
+    RoleBindingViewSet,
     WorkspaceViewSet,
 )
 from rest_framework.routers import DefaultRouter
