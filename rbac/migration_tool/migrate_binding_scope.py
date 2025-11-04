@@ -127,7 +127,7 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     custom_roles_checked = 0
     custom_roles_migrated = 0
 
-    for role in custom_roles:
+    for role in custom_roles.iterator():
         custom_roles_checked += 1
 
         with transaction.atomic():
@@ -163,7 +163,7 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     groups_checked = 0
     groups_migrated = 0
 
-    for group in groups_with_system_roles:
+    for group in groups_with_system_roles.iterator():
         groups_checked += 1
 
         with transaction.atomic():
