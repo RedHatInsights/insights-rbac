@@ -213,6 +213,21 @@ class MessageValidator:
                 validation_errors_total.labels(error_type="empty_relations").inc()
                 return False
 
+            # Validate resource_context exists and contains org_id
+            resource_context = payload.get("resource_context")
+            if not resource_context:
+                logger.error("Missing required field 'resource_context' in replication message")
+                validation_errors_total.labels(error_type="missing_resource_context").inc()
+
+            if not isinstance(resource_context, dict):
+                logger.error("resource_context must be a dictionary")
+                validation_errors_total.labels(error_type="invalid_resource_context_type").inc()
+                return False
+
+            if "org_id" not in resource_context:
+                logger.error("Missing required field 'org_id' in resource_context")
+                validation_errors_total.labels(error_type="missing_org_id_in_context").inc()
+
             # Validate structure of relations
             for relation in relations_to_add + relations_to_remove:
                 if not isinstance(relation, dict):

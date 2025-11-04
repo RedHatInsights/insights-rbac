@@ -258,6 +258,10 @@ objects:
             value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
           - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
             value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -278,7 +282,7 @@ objects:
           - '-c'
           - >
             PYTHONPATH=${PWD}/rbac/ celery -A
-            rbac.celery beat -l $DJANGO_LOG_LEVEL
+            rbac.celery beat -l $DJANGO_LOG_LEVEL --schedule=/tmp/celerybeat-schedule
         livenessProbe:
           exec:
             command:
@@ -547,6 +551,10 @@ objects:
             value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
           - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
             value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
           - name: RBAC_KAFKA_CONSUMER_TOPIC
             value: ${RBAC_KAFKA_CONSUMER_TOPIC}
           ####### Following envs are additional to workers
@@ -637,6 +645,18 @@ objects:
             value: ${ADD_UNGROUPED_HOSTS_ID}
           - name: REMOVE_NULL_VALUE
             value: ${REMOVE_NULL_VALUE}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
 
     - name: rbac-kafka-consumer
       minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
@@ -678,6 +698,18 @@ objects:
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
         livenessProbe:
           exec:
             command: ["test", "-f", "/tmp/kubernetes-liveness"]
@@ -991,8 +1023,8 @@ objects:
           command:
             - /opt/rbac/rbac/manage.py
             - import_workspace_data
-          env:
-            # Copied from user id populator
+          env: &workspace_job_env_vars
+            # Common env vars for workspace-related jobs
             - name: APP_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -1127,6 +1159,18 @@ objects:
               value: ${WORKSPACE_ORG_CREATION_LIMIT}
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
+            - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+            - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+              value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+            - name: ROOT_SCOPE_PERMISSIONS
+              value: ${ROOT_SCOPE_PERMISSIONS}
+            - name: TENANT_SCOPE_PERMISSIONS
+              value: ${TENANT_SCOPE_PERMISSIONS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1156,6 +1200,22 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: workspace-data
+      - name: force-bootstrap-tenants
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - bootstrap_tenants
+            - "--all"
+            - "--force"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *workspace_job_env_vars
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1659,4 +1719,10 @@ parameters:
   value: '0'
 - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
   description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
+  value: ''
+- name: ROOT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to root workspace scope (supports wildcards like rbac:*:read)
+  value: ''
+- name: TENANT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to tenant scope (supports wildcards like rbac:*:*)
   value: ''

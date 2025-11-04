@@ -137,6 +137,10 @@ class MessageValidatorTests(TestCase):
                 }
             ],
             "relations_to_remove": [],
+            "resource_context": {
+                "org_id": "12345",
+                "event_type": "create_group",
+            },
         }
 
         self.assertTrue(self.validator.validate_replication_message(payload))
@@ -176,6 +180,78 @@ class MessageValidatorTests(TestCase):
         }
 
         self.assertFalse(self.validator.validate_replication_message(payload))
+
+    def test_validate_replication_message_missing_resource_context(self):
+        """Test validation fails when resource_context is missing."""
+        payload = {
+            "relations_to_add": [
+                {
+                    "resource": {"type": "rbac", "id": "group1"},
+                    "subject": {"type": "rbac", "id": "user1"},
+                    "relation": "member",
+                }
+            ],
+            "relations_to_remove": [],
+            # Missing "resource_context"
+        }
+
+        self.assertFalse(self.validator.validate_replication_message(payload))
+
+    def test_validate_replication_message_invalid_resource_context_type(self):
+        """Test validation fails when resource_context is not a dict."""
+        payload = {
+            "relations_to_add": [
+                {
+                    "resource": {"type": "rbac", "id": "group1"},
+                    "subject": {"type": "rbac", "id": "user1"},
+                    "relation": "member",
+                }
+            ],
+            "relations_to_remove": [],
+            "resource_context": "not_a_dict",
+        }
+
+        self.assertFalse(self.validator.validate_replication_message(payload))
+
+    def test_validate_replication_message_valid_with_resource_context(self):
+        """Test validation succeeds with complete resource_context (CREATE_WORKSPACE case)."""
+        payload = {
+            "relations_to_add": [
+                {
+                    "resource": {"type": "rbac", "id": "workspace1"},
+                    "subject": {"type": "rbac", "id": "user1"},
+                    "relation": "member",
+                }
+            ],
+            "relations_to_remove": [],
+            "resource_context": {
+                "resource_type": "Workspace",
+                "resource_id": "workspace1",
+                "org_id": "12345",
+                "event_type": "create_workspace",
+            },
+        }
+
+        self.assertTrue(self.validator.validate_replication_message(payload))
+
+    def test_validate_replication_message_valid_with_minimal_resource_context(self):
+        """Test validation succeeds with minimal resource_context (org_id and event_type only)."""
+        payload = {
+            "relations_to_add": [
+                {
+                    "resource": {"type": "rbac", "id": "group1"},
+                    "subject": {"type": "rbac", "id": "user1"},
+                    "relation": "member",
+                }
+            ],
+            "relations_to_remove": [],
+            "resource_context": {
+                "org_id": "12345",
+                "event_type": "create_group",
+            },
+        }
+
+        self.assertTrue(self.validator.validate_replication_message(payload))
 
 
 class DebeziumMessageTests(TestCase):
@@ -610,6 +686,10 @@ class RBACKafkaConsumerTests(TestCase):
             payload={
                 "relations_to_add": [],
                 "relations_to_remove": [],
+                "resource_context": {
+                    "org_id": "12345",
+                    "event_type": "create_group",
+                },
             },  # Both empty - invalid
         )
 
