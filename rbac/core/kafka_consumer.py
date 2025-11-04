@@ -636,7 +636,24 @@ class RBACKafkaConsumer:
 
             # Extract the org_id from resource context
             resource_context = debezium_msg.payload.get("resource_context")
-            org_id = resource_context["org_id"]
+
+            # Validate that resource_context is present
+            if resource_context is None:
+                logger.error(f"Missing resource_context." f"aggregateid: {debezium_msg.aggregateid}")
+                messages_processed_total.labels(message_type="relations", status="missing_resource_context").inc()
+                return False
+
+            org_id = resource_context.get("org_id")
+
+            # Validate that org_id is present
+            if org_id is None:
+                logger.warning(
+                    f"Missing org_id in resource_context. "
+                    f"resource_context: {resource_context}, "
+                    f"aggregateid: {debezium_msg.aggregateid}"
+                )
+                messages_processed_total.labels(message_type="relations", status="missing_org_id").inc()
+                return False
 
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
@@ -648,14 +665,6 @@ class RBACKafkaConsumer:
                 f"relations_to_add: {len(replication_msg.relations_to_add)}, "
                 f"relations_to_remove: {len(replication_msg.relations_to_remove)}"
             )
-
-            # Get tenant by org_id
-            try:
-                tenant = Tenant.objects.get(org_id=org_id)
-            except Tenant.DoesNotExist:
-                logger.error(f"Tenant not found for org_id: {org_id}")
-                messages_processed_total.labels(message_type="relations", status="tenant_not_found").inc()
-                return False
 
             # Do tuple deletes for relationships
             replication_delete_response = relations_api_replication._delete_relationships(
@@ -672,12 +681,17 @@ class RBACKafkaConsumer:
                 replication_delete_response.consistency_token, "token", None
             )
 
-            if token:
-                # Update tenant with consistency token
-                tenant.relations_consistency_token = token
-                tenant.save()
+            if token and org_id:
+                try:
+                    tenant = Tenant.objects.get(org_id=org_id)
+                    tenant.relations_consistency_token = token
+                    tenant.save()
 
-                logger.info(f"Updated consistency token for org_id {org_id}: {token}")
+                    logger.info(f"Updated consistency token for org_id {org_id}: {token}")
+                except Tenant.DoesNotExist:
+                    logger.warning(
+                        f"Tenant not found for org_id: {org_id}. " f"Unable to save consistency token: {token}"
+                    )
             else:
                 logger.warning(
                     f"No consistency token in either write or delete response - "
