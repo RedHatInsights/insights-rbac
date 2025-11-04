@@ -2,18 +2,21 @@
   "name": "Role Based Access Control",
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "peerDependencies": {
-    "@typespec/compiler": "^0.66.0"
+    "@typespec/compiler": "^1.5.0"
   },
   "devDependencies": {
-    "@typespec/compiler": "^0.66.0"
+    "@typespec/compiler": "^1.5.0"
   },
   "private": true,
   "dependencies": {
-    "@typespec/http": "^0.66.0",
-    "@typespec/json-schema": "^0.66.0",
-    "@typespec/openapi3": "^0.66.0",
-    "@typespec/rest": "^0.66.0",
-    "@typespec/versioning": "^0.66.0"
+    "@typespec/http": "^1.5.0",
+    "@typespec/json-schema": "^1.5.0",
+    "@typespec/openapi3": "^1.5.0",
+    "@typespec/rest": "^0.75.0",
+    "@typespec/versioning": "^0.75.0"
   }
 }

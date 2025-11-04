@@ -119,6 +119,10 @@ class BaseInternalViewsetTests(IdentityRequest):
         Role.objects.all().delete()
         Policy.objects.all().delete()
         logging.disable(self._prior_logging_disable_level)
+        # Clear the principal cache to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
 @override_settings(
@@ -283,22 +287,80 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
 
     @patch("management.tasks.run_seeds_in_worker.delay")
-    def test_run_seeds_with_options(self, seed_mock):
-        """Test that we can trigger seeds with options."""
+    def test_run_seeds_with_seed_types(self, seed_mock):
+        """Test that we can trigger seeds with seed types."""
         response = self.client.post(f"/_private/api/seeds/run/?seed_types=roles,groups", **self.request.META)
         seed_mock.assert_called_once_with({"roles": True, "groups": True})
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
 
     @patch("management.tasks.run_seeds_in_worker.delay")
-    def test_run_seeds_with_invalid_options(self, seed_mock):
-        """Test that we get a 400 when invalid option supplied."""
+    def test_run_seeds_with_force_create(self, seed_mock):
+        """Test that we can trigger seeds with force create flag."""
+        response = self.client.post(
+            f"/_private/api/seeds/run/?seed_types=roles&force_create_relationships=true", **self.request.META
+        )
+        seed_mock.assert_called_once_with({"roles": True, "force_create_relationships": True})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_force_update(self, seed_mock):
+        """Test that we can trigger seeds with force update flags."""
+        response = self.client.post(
+            f"/_private/api/seeds/run/?seed_types=roles&force_update_relationships=true", **self.request.META
+        )
+        seed_mock.assert_called_once_with({"roles": True, "force_update_relationships": True})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_invalid_types(self, seed_mock):
+        """Test that we get a 400 when invalid seed types supplied."""
         response = self.client.post(f"/_private/api/seeds/run/?seed_types=foo,bar", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         seed_mock.assert_not_called()
         self.assertEqual(
             response.content.decode(),
             "Valid options for \"seed_types\": ['permissions', 'roles', 'groups'].",
+        )
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_invalid_force_flag(self, seed_mock):
+        """Test that we get a 400 when invalid force flag supplied."""
+        for flag in ["force_create_relationships", "force_update_relationships"]:
+            with self.subTest(flag=flag):
+                response = self.client.post(f"/_private/api/seeds/run/?{flag}=no", **self.request.META)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                seed_mock.assert_not_called()
+                self.assertEqual(
+                    response.content.decode(),
+                    f"Valid options for \"{flag}\": ['true', 'false'].",
+                )
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_both_force_flags(self, seed_mock):
+        """Test that we get a 400 when both force flags are true."""
+        response = self.client.post(
+            f"/_private/api/seeds/run/?force_create_relationships=true&force_update_relationships=true",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        seed_mock.assert_not_called()
+        self.assertEqual(
+            response.content.decode(),
+            "force_create_relationships and force_update_relationships cannot both be set to true.",
+        )
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_invalid_options(self, seed_mock):
+        """Test that we get a 400 when invalid option supplied."""
+        response = self.client.post(f"/_private/api/seeds/run/?foo=true", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        seed_mock.assert_not_called()
+        self.assertEqual(
+            response.content.decode(),
+            "Valid query parameters: ['seed_types', 'force_create_relationships', 'force_update_relationships'].",
         )
 
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
@@ -936,7 +998,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertIsNotNone(Workspace.objects.root(tenant=tenant))
         self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
         self.assertTrue(getattr(tenant, "tenant_mapping"))
-        self.assertEqual(len(tuples), 9)
+        self.assertEqual(len(tuples), 21)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_multiple_tenants(self, replicate):
@@ -974,8 +1036,9 @@ class InternalViewsetTests(BaseInternalViewsetTests):
             self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
             self.assertTrue(getattr(tenant, "tenant_mapping"))
         self.assertEqual(
-            len(tuples), 9 + 9 + 9
-        )  # orgs: 3 for workspaces, 3 for default and 3 for admin default access
+            len(tuples),
+            21 + 21 + 21,
+        )  # orgs: 3 for workspaces, (3 for default and 3 for admin default access) for each of 3 scopes
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
@@ -1030,7 +1093,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(tuples), 9)
+        self.assertEqual(len(tuples), 21)
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):
@@ -1884,6 +1947,14 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         super().setUp()
 
         self.API_PATH = "/_private/api/utils/user_lookup/"
+
+    def tearDown(self):
+        """Tear down user lookup tests."""
+        super().tearDown()
+        # Clear the principal cache for the test tenant to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("12345")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",

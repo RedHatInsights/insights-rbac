@@ -46,6 +46,7 @@ from migration_tool.in_memory_tuples import (
     relation,
     resource,
     subject,
+    resource_type,
 )
 
 from tests.core.test_kafka import copy_call_args
@@ -64,15 +65,20 @@ def normalize_and_sort(json_obj):
     return json_obj
 
 
-def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id):
+def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id, org_id=None, event_type="create_custom_role"):
     """Create a replication event for a v1 role."""
-    return {
+    event = {
         "relations_to_add": relation_api_tuples_for_v1_role(
             v1_role_uuid=v1_role_uuid,
             bound_workspace_id=bound_workspace_id,
         ),
         "relations_to_remove": [],
+        "resource_context": {
+            "org_id": org_id or "",
+            "event_type": event_type,
+        },
     }
+    return event
 
 
 def relation_api_tuples_for_v1_role(v1_role_uuid, bound_workspace_id):
@@ -289,6 +295,11 @@ class RoleViewsetTests(IdentityRequest):
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
         cached_tenants.delete_tenant(test_tenant_org_id)
+        # Clear principal cache to avoid stale data between tests
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -503,7 +514,12 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
+        replication_event = replication_event_for_v1_role(
+            response.data.get("uuid"),
+            str(self.default_workspace.id),
+            org_id=self.customer_data["org_id"],
+            event_type="create_custom_role",
+        )
 
         mock_method.assert_called_once()
         actual_call_arg = mock_method.call_args[0][0]
@@ -1650,7 +1666,12 @@ class RoleViewsetTests(IdentityRequest):
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
 
         response = client.put(url, test_data, format="json", **self.headers)
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
+        replication_event = replication_event_for_v1_role(
+            response.data.get("uuid"),
+            str(self.default_workspace.id),
+            org_id=self.customer_data["org_id"],
+            event_type="update_custom_role",
+        )
         replication_event["relations_to_remove"] = current_relations
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
@@ -1658,6 +1679,91 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(expected_sorted, actual_sorted)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @override_settings(
+        ROLE_CREATE_ALLOW_LIST="compliance,inventory",
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        TENANT_SCOPE_PERMISSIONS="",
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_update_role_scoped(self, replicate):
+        """Test that updating a role properly updates its scope."""
+        tuples = InMemoryTuples()
+        replicate.side_effect = InMemoryRelationReplicator(tuples).replicate
+
+        # Set up
+        Permission.objects.create(permission="compliance:policy:read", tenant=self.public_tenant)
+        Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)
+
+        role_name = "test_update_role"
+        access_data = [{"permission": "compliance:policy:read", "resourceDefinitions": []}]
+        new_access_data = [{"permission": "inventory:groups:read", "resourceDefinitions": []}]
+
+        default_workspace: Workspace = Workspace.objects.default(tenant=self.tenant)
+        root_workspace: Workspace = Workspace.objects.root(tenant=self.tenant)
+
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        v1_uuid = response.data["uuid"]
+
+        default_binding = BindingMapping.objects.filter(role__uuid=v1_uuid).get()
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(default_workspace.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", default_binding.mappings["id"]),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", default_binding.mappings["id"]),
+                    relation("role"),
+                    subject("rbac", "role", str(default_binding.mappings["role"]["id"])),
+                )
+            ),
+        )
+
+        # Update the role with new access data
+        test_data = dict(response.data)
+        test_data["access"] = new_access_data
+        url = reverse("v1_management:role-detail", kwargs={"uuid": v1_uuid})
+        client = APIClient()
+
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        root_binding = BindingMapping.objects.filter(role__uuid=v1_uuid).get()
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(root_workspace.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", root_binding.mappings["id"]),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", root_binding.mappings["id"]),
+                    relation("role"),
+                    subject("rbac", "role", str(root_binding.mappings["role"]["id"])),
+                )
+            ),
+        )
 
     @override_settings(
         ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True, REMOVE_NULL_VALUE=True
@@ -1882,7 +1988,14 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        replication_event = {"relations_to_add": [], "relations_to_remove": []}
+        replication_event = {
+            "relations_to_add": [],
+            "relations_to_remove": [],
+            "resource_context": {
+                "org_id": str(self.tenant.org_id),
+                "event_type": "delete_custom_role",
+            },
+        }
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
@@ -2077,7 +2190,14 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        replication_event = {"relations_to_add": [], "relations_to_remove": []}
+        replication_event = {
+            "relations_to_add": [],
+            "relations_to_remove": [],
+            "resource_context": {
+                "org_id": str(self.tenant.org_id),
+                "event_type": "delete_custom_role",
+            },
+        }
         current_relations = relation_api_tuples_for_v1_role(role_uuid, bound_workspace_id=str(self.child_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
@@ -2525,6 +2645,11 @@ class RoleViewNonAdminTests(IdentityRequest):
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
         cached_tenants.delete_tenant(test_tenant_org_id)
+        # Clear principal cache to avoid stale data between tests
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @staticmethod
     def _create_group_with_user_access_admin_role(tenant):

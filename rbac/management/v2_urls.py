@@ -14,8 +14,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Describes the urls and patterns for the management application."""
-from django.conf.urls import include
-from django.urls import re_path
+from django.urls import include, path
 from management.views import (
     RoleBindingViewSet,
     WorkspaceViewSet,
@@ -29,5 +28,5 @@ ROUTER.register(r"role-bindings", RoleBindingViewSet, basename="role-bindings")
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    re_path(r"^", include(ROUTER.urls)),
+    path("", include(ROUTER.urls)),
 ]

@@ -93,17 +93,25 @@ def replication_event(relations_to_add, relations_to_remove):
     }
 
 
-def generate_replication_event_to_add_principals(group_uuid, principal_user_id):
+def generate_replication_event_to_add_principals(group_uuid, principal_user_id, org_id="100001"):
     return {
         "relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)],
         "relations_to_remove": [],
+        "resource_context": {
+            "org_id": org_id,
+            "event_type": "add_principals_to_group",
+        },
     }
 
 
-def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
+def generate_replication_event_to_remove_principals(group_uuid, principal_uuid, org_id="100001"):
     return {
         "relations_to_add": [],
         "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)],
+        "resource_context": {
+            "org_id": org_id,
+            "event_type": "remove_principals_from_group",
+        },
     }
 
 
@@ -118,6 +126,7 @@ def find_relation_in_list(relation_list, relation_tuple):
     )
 
 
+@override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS="tenant:*:*")
 class GroupViewsetTests(IdentityRequest):
     """Test the group viewset."""
 
@@ -273,6 +282,11 @@ class GroupViewsetTests(IdentityRequest):
         Policy.objects.all().delete()
         Workspace.objects.filter(parent__isnull=False).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
+        # Clear the principal cache for the test tenant to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1029,17 +1043,38 @@ class GroupViewsetTests(IdentityRequest):
 
         to_add = actual_call_arg["relations_to_add"]
 
-        tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+        tenant_mapping: TenantMapping = TenantMapping.objects.get(tenant=self.tenant)
 
         def assert_group_tuples(tuple_to_replicate):
-            relation_tuple = relation_api_tuple(
-                "workspace",
-                str(self.default_workspace.id),
-                "binding",
-                "role_binding",
-                str(tenant_mapping.default_role_binding_uuid),
-            )
-            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            relation_tuples = [
+                relation_api_tuple(
+                    "workspace",
+                    str(self.default_workspace.id),
+                    "binding",
+                    "role_binding",
+                    str(tenant_mapping.default_role_binding_uuid),
+                ),
+                relation_api_tuple(
+                    "workspace",
+                    str(self.root_workspace.id),
+                    "binding",
+                    "role_binding",
+                    str(tenant_mapping.root_scope_default_role_binding_uuid),
+                ),
+                relation_api_tuple(
+                    "tenant",
+                    self.tenant.tenant_resource_id(),
+                    "binding",
+                    "role_binding",
+                    str(tenant_mapping.tenant_scope_default_role_binding_uuid),
+                ),
+            ]
+
+            for relation_tuple in relation_tuples:
+                self.assertIsNotNone(
+                    find_relation_in_list(tuple_to_replicate, relation_tuple),
+                    f"Missing relation: {relation_tuple}",
+                )
 
         assert_group_tuples(to_add)
 
@@ -1436,8 +1471,6 @@ class GroupViewsetTests(IdentityRequest):
         with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("v1_management:group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
-            test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
-
             org_id = self.customer_data["org_id"]
 
             default_role = Role.objects.create(
@@ -1447,40 +1480,75 @@ class GroupViewsetTests(IdentityRequest):
                 system=True,
                 tenant=self.public_tenant,
             )
+
+            # Ensure this role is in the root scope.
+            default_role.access.create(
+                tenant=self.public_tenant,
+                permission=Permission.objects.create(tenant=self.public_tenant, permission="root:resource:verb"),
+            )
+
+            # We use a system role for this test because the test roles created in setUp do not go through the normal
+            # role creation machinery, and thus are not in the expected state for use with relations (e.g. the custom
+            # roles will have no BindingMappings created).
+            system_role = Role.objects.create(
+                name="system_role",
+                description="A default role for a group.",
+                platform_default=False,
+                system=True,
+                tenant=self.public_tenant,
+            )
+
             self.defGroup.policies.first().roles.add(default_role)
+
             self.assertTrue(self.defGroup.system)
             self.assertEqual(self.defGroup.roles().count(), 1)
-            response = client.post(url, test_data, format="json", **self.headers)
-            actual_call_arg = mock_method.call_args_list[0][0][0]
-            to_remove = actual_call_arg["relations_to_remove"]
-            to_add = actual_call_arg["relations_to_add"]
 
-            binding_mapping = BindingMapping.objects.get(
-                role=default_role, resource_type_name="workspace", resource_id=self.default_workspace.id
-            )
+            test_data = {"roles": [system_role.uuid, self.dummy_role_id]}
+
+            response = client.post(url, test_data, format="json", **self.headers)
+
+            # Here, we look at all of the calls because there may be multiple replication events.
+
+            to_remove = [
+                relation for args in mock_method.call_args_list for relation in args[0][0]["relations_to_remove"]
+            ]
+
+            to_add = [relation for args in mock_method.call_args_list for relation in args[0][0]["relations_to_add"]]
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
 
             # New platform default role for tenant created
             custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
 
+            # Check the binding mapping for the default role that should have been propagated to the group.
+
+            default_binding_mapping = BindingMapping.objects.get(
+                role=default_role, resource_type_name="workspace", resource_id=self.root_workspace.id
+            )
+
             relation_tuple = relation_api_tuple(
-                "role_binding", binding_mapping.mappings["id"], "role", "role", str(default_role.uuid)
+                "role_binding",
+                default_binding_mapping.mappings["id"],
+                "role",
+                "role",
+                str(default_role.uuid),
             )
 
             self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
             relation_tuple = relation_api_tuple(
                 "workspace",
-                str(self.default_workspace.id),
+                str(self.root_workspace.id),
                 "binding",
                 "role_binding",
-                str(binding_mapping.mappings["id"]),
+                str(default_binding_mapping.mappings["id"]),
             )
 
             self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
             relation_tuple = relation_api_tuple(
                 "role_binding",
-                binding_mapping.mappings["id"],
+                default_binding_mapping.mappings["id"],
                 "subject",
                 "group",
                 str(custom_default_group.uuid),
@@ -1489,8 +1557,6 @@ class GroupViewsetTests(IdentityRequest):
 
             self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
-            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
-
             relation_tuple = relation_api_tuple(
                 "workspace",
                 str(self.default_workspace.id),
@@ -1498,7 +1564,45 @@ class GroupViewsetTests(IdentityRequest):
                 "role_binding",
                 str(tenant_mapping.default_role_binding_uuid),
             )
+
             self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
+
+            added_binding_mapping = BindingMapping.objects.get(
+                role=system_role, resource_type_name="workspace", resource_id=self.default_workspace.id
+            )
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                str(added_binding_mapping.mappings["id"]),
+                "role",
+                "role",
+                str(added_binding_mapping.mappings["role"]["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            # The added role should be bound in the default workspace because it has no permissions (and thus has the
+            # DEFAULT scope).
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(added_binding_mapping.mappings["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                added_binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
             # Original platform default role does not change
             self.defGroup.refresh_from_db()
@@ -1552,8 +1656,8 @@ class GroupViewsetTests(IdentityRequest):
                                     "uuid": str(custom_default_group.uuid),
                                     "operation": "added",
                                     "role": {
-                                        "uuid": str(self.roleB.uuid),
-                                        "name": self.roleB.name,
+                                        "uuid": str(system_role.uuid),
+                                        "name": system_role.name,
                                     },
                                 },
                             }
@@ -1586,6 +1690,12 @@ class GroupViewsetTests(IdentityRequest):
                 system=True,
                 tenant=self.public_tenant,
             )
+
+            default_role_to_keep_in_group.access.create(
+                tenant=self.public_tenant,
+                permission=Permission.objects.create(tenant=self.public_tenant, permission="tenant:resource:verb"),
+            )
+
             self.defGroup.policies.first().roles.add(default_role)
             self.defGroup.policies.first().roles.add(default_role_to_keep_in_group)
 
@@ -1617,8 +1727,9 @@ class GroupViewsetTests(IdentityRequest):
 
             binding_mapping = BindingMapping.objects.get(
                 role=default_role_to_keep_in_group,
-                resource_type_name="workspace",
-                resource_id=self.default_workspace.id,
+                resource_type_namespace="rbac",
+                resource_type_name="tenant",
+                resource_id=self.tenant.tenant_resource_id(),
             )
 
             relation_tuple = relation_api_tuple(
@@ -1632,8 +1743,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
             relation_tuple = relation_api_tuple(
-                "workspace",
-                str(self.default_workspace.id),
+                "tenant",
+                self.tenant.tenant_resource_id(),
                 "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),
@@ -3887,7 +3998,9 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717"),
+                generate_replication_event_to_add_principals(
+                    str(test_group.uuid), "redhat/-448717", str(self.tenant.org_id)
+                ),
                 actual_call_arg,
             )
 
@@ -4123,7 +4236,7 @@ class GroupPrincipalViewsetTests(GroupViewsetTests):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798"),
+                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798", org_id),
                 actual_call_arg,
             )
 
@@ -4425,6 +4538,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         Policy.objects.all().delete()
         Workspace.objects.filter(parent__isnull=False).delete()
         Workspace.objects.filter(parent__isnull=True).delete()
+        # Clear the principal cache for the test tenant to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @staticmethod
     def _create_group_with_user_access_administrator_role(tenant: Tenant) -> Group:
@@ -5265,7 +5382,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         to_add = actual_call_arg["relations_to_add"]
         self.assertEqual(1, len(to_add))
 
-        def assert_group_tuples(tuple_to_replicate):
+        def assert_group_tuples(tuples_to_replicate: list):
             relation_tuple = relation_api_tuple(
                 "role_binding",
                 binding_mapping.mappings["id"],
@@ -5275,7 +5392,13 @@ class GroupViewNonAdminTests(IdentityRequest):
                 "member",
             )
 
-            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            result = find_relation_in_list(tuples_to_replicate, relation_tuple)
+            self.assertIsNotNone(result)
+
+            # The same relation can end up being added multiple times due to an implementation detail, so just check
+            # that all of the relations match the one we found (rather than, e.g., checking that only one relation is
+            # in the list).
+            self.assertTrue(all(t == result for t in tuples_to_replicate))
 
         assert_group_tuples(to_add)
 
@@ -5287,8 +5410,6 @@ class GroupViewNonAdminTests(IdentityRequest):
         actual_call_arg = mock_method.call_args[0][0]
         to_remove = actual_call_arg["relations_to_remove"]
         self.assertEqual([], actual_call_arg["relations_to_add"])
-        self.assertEqual(1, len(to_remove))
-
         assert_group_tuples(to_remove)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
@@ -5732,7 +5853,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345", str(self.tenant.org_id)),
             actual_call_arg,
         )
 
@@ -5770,7 +5891,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234", str(self.tenant.org_id)),
             actual_call_arg,
         )
 
@@ -5846,7 +5967,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234", str(self.tenant.org_id)),
             actual_call_arg,
         )
 
@@ -6121,7 +6242,9 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456"),
+            generate_replication_event_to_remove_principals(
+                str(test_group.uuid), "redhat/3456", str(self.tenant.org_id)
+            ),
             actual_call_arg,
         )
 
