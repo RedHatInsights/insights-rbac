@@ -524,36 +524,38 @@ class V2TenantBootstrapService:
         self,
         tenants_with_mappings: list[tuple[Tenant, TenantMapping]],
     ) -> list[Relationship]:
-        tenant_ids = [t.id for t, _ in tenants_with_mappings]
-
         # Bulk query all workspaces for all tenants at once
         all_workspaces = Workspace.objects.filter(
-            tenant_id__in=tenant_ids, type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]
+            tenant__in=[t[0] for t in tenants_with_mappings],
+            type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT],
         )
 
         # Group workspaces by tenant_id for fast lookup
         workspaces_by_tenant: dict[int, dict[str, Workspace]] = {}
+
         for ws in all_workspaces:
-            if ws.tenant_id not in workspaces_by_tenant:
-                workspaces_by_tenant[ws.tenant_id] = {}
-            workspaces_by_tenant[ws.tenant_id][ws.type] = ws
+            workspaces_by_tenant.setdefault(ws.tenant_id, {})[ws.type] = ws
 
         # Build relationships for all tenants
         all_relationships = []
 
         for tenant, mapping in tenants_with_mappings:
-            tenant_workspaces = workspaces_by_tenant.get(tenant.id, {})
-            root = tenant_workspaces.get(Workspace.Types.ROOT)
-            default = tenant_workspaces.get(Workspace.Types.DEFAULT)
+            assert mapping.tenant_id == tenant.id
 
-            if not root or not default:
-                logger.warning(
-                    f"Missing workspaces for tenant {tenant.org_id} during bulk re-replication. "
-                    f"Has root: {bool(root)}, has default: {bool(default)}"
+            tenant_workspaces = workspaces_by_tenant[tenant.id]
+
+            # The tenant is already bootstrapped (as evidenced by the existence of its TenantMapping),
+            # so these workspaces must always exist.
+            root = tenant_workspaces[Workspace.Types.ROOT]
+            default = tenant_workspaces[Workspace.Types.DEFAULT]
+
+            all_relationships.extend(
+                self._built_in_hierarchy_tuples(
+                    default_workspace_id=default.id,
+                    root_workspace_id=root.id,
+                    org_id=tenant.org_id,
                 )
-                continue
-
-            all_relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
+            )
 
             all_relationships.extend(
                 self._bootstrap_default_access(
