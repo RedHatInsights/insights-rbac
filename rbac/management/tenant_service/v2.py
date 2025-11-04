@@ -488,25 +488,7 @@ class V2TenantBootstrapService:
 
     def _replicate_bootstrap(self, tenant: Tenant, mapping: TenantMapping):
         """Replicate the bootstrapping of a tenant."""
-        built_in_workspaces = Workspace.objects.built_in(tenant=tenant)
-        root = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.ROOT)
-        default = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.DEFAULT)
-
-        relationships = []
-
-        relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
-
-        relationships.extend(
-            self._bootstrap_default_access(
-                tenant,
-                mapping,
-                TenantScopeResources.for_models(
-                    tenant=tenant,
-                    root_workspace=root,
-                    default_workspace=default,
-                ),
-            )
-        )
+        relationships = self._relationships_for_existing_bootstraps(tenants_with_mappings=[(tenant, mapping)])
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -522,6 +504,26 @@ class V2TenantBootstrapService:
         if not tenants_with_mappings:
             return
 
+        relationships = self._relationships_for_existing_bootstraps(tenants_with_mappings=tenants_with_mappings)
+
+        # Single bulk replication event for all tenants
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
+                info={
+                    "num_tenants": len(tenants_with_mappings),
+                    "first_org_id": tenants_with_mappings[0][0].org_id if tenants_with_mappings else None,
+                    "forced": True,
+                },
+                partition_key=PartitionKey.byEnvironment(),
+                add=relationships,
+            )
+        )
+
+    def _relationships_for_existing_bootstraps(
+        self,
+        tenants_with_mappings: list[tuple[Tenant, TenantMapping]],
+    ) -> list[Relationship]:
         tenant_ids = [t.id for t, _ in tenants_with_mappings]
 
         # Bulk query all workspaces for all tenants at once
@@ -565,19 +567,7 @@ class V2TenantBootstrapService:
                 )
             )
 
-        # Single bulk replication event for all tenants
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
-                info={
-                    "num_tenants": len(tenants_with_mappings),
-                    "first_org_id": tenants_with_mappings[0][0].org_id if tenants_with_mappings else None,
-                    "forced": True,
-                },
-                partition_key=PartitionKey.byEnvironment(),
-                add=all_relationships,
-            )
-        )
+        return all_relationships
 
     def _query_with_default_groups(self, query_set: QuerySet) -> QuerySet:
         return query_set.prefetch_related(
