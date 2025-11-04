@@ -184,6 +184,39 @@ class V2TenantBootstrapService:
 
         return BootstrappedTenant(tenant=tenant, mapping=lock_result.tenant_mapping)
 
+    def bootstrap_tenants(self, tenants: Iterable[Tenant], force: bool = False) -> list[BootstrappedTenant]:
+        """
+        Bootstrap existing tenants.
+
+        If [force] is True, will re-bootstrap any tenants that are already bootstrapped.
+        This does not change the RBAC data that already exists, but will replicate to Relations.
+
+        This will raise an exception if bootstrapping any individual tenant would do so. Additionally, note that the
+        returned list is not necessarily in the same order as the provided iterable.
+        """
+        tenants = set(tenants)
+        lock_result = try_lock_tenants_for_bootstrap(tenants)
+
+        to_bootstrap: list[Tenant] = []
+        bootstrap_results: list[BootstrappedTenant] = []
+
+        for tenant in tenants:
+            tenant_lock = lock_result.get(tenant)
+
+            if tenant_lock is not None:
+                if force:
+                    self._replicate_bootstrap(tenant, tenant_lock.tenant_mapping)
+
+                bootstrap_results.append(BootstrappedTenant(tenant=tenant, mapping=tenant_lock.tenant_mapping))
+            else:
+                to_bootstrap.append(tenant)
+
+        if len(to_bootstrap) > 0:
+            bootstrap_results.extend(self._bootstrap_tenants(to_bootstrap))
+
+        assert len(bootstrap_results) == len(tenants)
+        return bootstrap_results
+
     def create_ungrouped_workspace(self, org_id) -> Workspace:
         """Util for creating ungrouped workspace. Can be removed once ungrouped workspace has gone."""
         tenant = Tenant.objects.get(org_id=org_id)

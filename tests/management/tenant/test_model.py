@@ -490,6 +490,68 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
+    def test_bulk_bootstrap_simple(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+
+        self.assertTenantBootstrapped(org_id="o1", existing=True)
+        self.assertTenantBootstrapped(org_id="o2", existing=True)
+        self.assertTenantBootstrapped(org_id="o3", existing=True)
+
+    def test_bulk_bootstrap_force(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+        self.tuples.clear()
+
+        # Re-bootstrapping without forcing should have no effect.
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+        self.assertEqual(len(self.tuples), 0)
+
+        # Re-bootstrapping with force should re-replicate relations.
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant], force=True)
+        self.assertGreater(len(self.tuples), 0)
+
+        self.assertTenantBootstrapped(org_id="o1", existing=True)
+        self.assertTenantBootstrapped(org_id="o2", existing=True)
+        self.assertTenantBootstrapped(org_id="o3", existing=True)
+
+    def test_bulk_bootstrap_mixed_state(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        self.service.bootstrap_tenant(o1_tenant)
+        self.tuples.clear()
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+
+        # o2 and o3 should have been newly bootstrapped.
+        self.assertTenantBootstrapped("o2", existing=True)
+        self.assertTenantBootstrapped("o3", existing=True)
+
+        # o1 should not have been re-replicated.
+        self.assertEqual(0, self.tuples.count_tuples(resource("rbac", "tenant", o1_tenant.tenant_resource_id())))
+        self.assertEqual(0, self.tuples.count_tuples(subject("rbac", "tenant", o1_tenant.tenant_resource_id())))
+
+    def test_bulk_bootstrap_custom_default_group(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        o1_group = self.fixture.custom_default_group(o1_tenant)
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+
+        self.assertTenantBootstrapped("o1", existing=True, with_custom_default_group=o1_group)
+        self.assertTenantBootstrapped("o2", existing=True)
+        self.assertTenantBootstrapped("o3", existing=True)
+
     def assertAddedToDefaultGroup(self, user_id: str, tenant_mapping: TenantMapping, and_admin_group: bool = False):
         self.assertEqual(
             1,
