@@ -173,11 +173,12 @@ class Command(BaseCommand):
 
         # These are "raw" because we haven't locked anything, and the tenant could vanish out from under us.
         #
-        # We use a batch size of 30 because there is a size limit on replication events (999 events?). At time of
+        # We use a batch size of 40 because there is a number limit relationships of 1 k:
+        # https://authzed.com/docs/spicedb/ops/data/bulk-operations At time of
         # writing (2025-11-04), there are 21 relations per bootstrapped tenant at most (when there is no custom
         # default group). This value may need to be updated if this script is used in the future.
         for raw_tenants in itertools.batched(query.iterator(), 40):
-            logger.info(f"Bootstrapping tenant {tenants_seen + 1}-{tenants_seen + 1 + len(raw_tenants)}/{estimate}...")
+            logger.info(f"Bootstrapping tenant {tenants_seen + 1}-{tenants_seen + len(raw_tenants)}/{estimate}...")
 
             bulk_result = _bulk_bootstrap_with_retry(
                 bootstrap_service=bootstrap_service,
@@ -185,8 +186,7 @@ class Command(BaseCommand):
                 force=force,
             )
 
-            for raw_tenant in bulk_result.keys():
-                tenant_result = bulk_result[raw_tenant]
+            for raw_tenant, tenant_result in bulk_result.items():
 
                 if isinstance(tenant_result, BootstrappedTenant):
                     if use_org_ids:
