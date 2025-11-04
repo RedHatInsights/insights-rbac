@@ -118,6 +118,11 @@ class UtilsTests(IdentityRequest):
         Role.objects.all().delete()
         Access.objects.all().delete()
 
+        # Clear principal cache to avoid stale data between tests
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
     def test_access_for_principal(self):
         """Test that we get the correct access for a principal."""
         kwargs = {"application": "app"}

@@ -19,7 +19,7 @@
 from django.conf import settings
 from django.utils.translation import gettext as _
 from feature_flags import FEATURE_FLAGS
-from internal.utils import get_or_create_ungrouped_workspace
+from internal.utils import get_or_create_ungrouped_workspace, is_resource_a_workspace
 from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import (
@@ -111,10 +111,7 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         return hierarchy_enabled and is_access_request and self._is_workspace_filter(instance)
 
     def _is_workspace_filter(self, instance):
-        is_workspace_application = instance.application == settings.WORKSPACE_APPLICATION_NAME
-        is_workspace_resource_type = instance.resource_type in settings.WORKSPACE_RESOURCE_TYPE
-        is_workspace_group_filter = instance.attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
-        return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
+        return is_resource_a_workspace(instance.application, instance.resource_type, instance.attributeFilter)
 
 
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):

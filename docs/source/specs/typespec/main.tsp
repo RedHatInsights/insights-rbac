@@ -31,7 +31,7 @@ model Timestamps {
 scalar UUID extends string;
 
 model CursorPaginationMeta {
-    @doc("Limit of returned objects")
+    @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
     limit: int64 = 10;
 }
@@ -46,6 +46,42 @@ model CursorPaginationLinks {
     @example("/api/rbac/v2/(resource)/?limit=10&cursor=eyJpZCI6IjEwMCJ9")
     @format("uri")
     previous: string | null;
+}
+
+model OffsetPaginationMeta {
+    @doc("Total count of objects")
+    @example(10)
+    count: int64;
+
+    @doc("Limit of returned objects. Use -1 to return all objects.")
+    @example(10)
+    limit: int64 = 10;
+
+    @doc("Offset of returned objects")
+    @example(0)
+    offset: int64 = 0;
+}
+
+model OffsetPaginationLinks {
+    @doc("The first link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=0")
+    @format("uri")
+    first: string | null;
+
+    @doc("The next link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=10")
+    @format("uri")
+    next: string | null;
+
+    @doc("The previous link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=0")
+    @format("uri")
+    previous: string | null;
+
+    @doc("The last link in pagination")
+    @example("/api/rbac/v2/workspaces/?limit=10&offset=90")
+    @format("uri")
+    last: string | null;
 }
 
 namespace Problems {
@@ -279,26 +315,26 @@ namespace Workspaces {
         parent_id: UUID = "New parent ID of moved workspace";
     }
 
-
-
-
-
     model Pagination {
         @doc("Pagination metadata")
-        meta: CursorPaginationMeta;
+        meta: OffsetPaginationMeta;
 
         @doc("Pagination links")
-        links: CursorPaginationLinks;
+        links: OffsetPaginationLinks;
     }
 
 
     @example(#{
         meta: #{
-            limit: 10
+            count: 100,
+            limit: 10,
+            offset: 0
         },
         links: #{
-            next: "/api/rbac/v2/workspaces?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9",
-            previous: null
+            first: "/api/rbac/v2/workspaces/?limit=10&offset=0",
+            next: "/api/rbac/v2/workspaces/?limit=10&offset=10",
+            previous: null,
+            last: "/api/rbac/v2/workspaces/?limit=10&offset=90"
         },
         data: #[
             #{
@@ -326,15 +362,19 @@ namespace Workspaces {
       #{
         parameters: #{
           limit: 10,
-          cursor: "eyJpZCI6IjEyMyIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEyOjAwOjAwWiJ9"
+          offset: 0
         },
         returnType: #{
           meta: #{
-            limit: 10
+            count: 100,
+            limit: 10,
+            offset: 0
           },
           links: #{
-            next: "/api/rbac/v2/workspaces/?limit=10&cursor=eyJpZCI6IjE1NiIsImNyZWF0ZWQiOiIyMDI0LTA4LTA0VDEzOjAwOjAwWiJ9",
-            previous: null
+            first: "/api/rbac/v2/workspaces/?limit=10&offset=0",
+            next: "/api/rbac/v2/workspaces/?limit=10&offset=10",
+            previous: null,
+            last: "/api/rbac/v2/workspaces/?limit=10&offset=90"
           },
           data: #[
             #{
@@ -353,8 +393,8 @@ namespace Workspaces {
     @get op list(
         @query limit?: int64 = 10;
 
-        @doc("Cursor for cursor-based pagination.")
-        @query cursor?: string;
+        @doc("Offset for offset-based pagination.")
+        @query offset?: int64 = 0;
 
         @doc("Defaults to all when param is not supplied.")
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
@@ -489,7 +529,8 @@ namespace Workspaces {
       }
     )
     @route("{id}/")
-    @patch op patch(
+    @patch(#{implicitOptionality: true})
+    op patch(
         @doc("Unique identification")
         @path id: UUID;
         @body body: PatchWorkspaceRequest

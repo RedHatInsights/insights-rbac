@@ -19,9 +19,8 @@
 import json
 import logging
 import uuid
-from contextlib import contextmanager
+from typing import Optional
 
-import grpc
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
@@ -59,6 +58,7 @@ from management.group.relation_api_dual_write_group_handler import RelationApiDu
 from management.inventory_checker.inventory_api_check import (
     BootstrappedTenantInventoryChecker,
     GroupPrincipalInventoryChecker,
+    RoleRelationInventoryChecker,
     WorkspaceRelationInventoryChecker,
 )
 from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
@@ -76,8 +76,10 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
 from management.role.model import Access
+from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    migrate_binding_scope_in_worker,
     migrate_data_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -86,6 +88,8 @@ from management.tasks import (
 )
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import (
+    create_client_channel,
+    create_client_channel_inventory,
     get_principal,
     groups_for_principal,
 )
@@ -114,13 +118,7 @@ jwt_manager = JWTManager(jwt_provider, jwt_cache)
 BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
 GroupPrincipalChecker = GroupPrincipalInventoryChecker()
 WorkspaceRelationChecker = WorkspaceRelationInventoryChecker()
-
-
-@contextmanager
-def create_client_channel(addr):
-    """Create secure channel for grpc requests."""
-    secure_channel = grpc.insecure_channel(addr)
-    yield secure_channel
+RoleRelationChecker = RoleRelationInventoryChecker()
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -552,18 +550,47 @@ def run_seeds(request):
     POST /_private/api/seeds/run/?seed_types=permissions,roles,groups
     """
     if request.method == "POST":
-        args = {}
-        option_key = "seed_types"
+        type_option = "seed_types"
+        force_create_option = "force_create_relationships"
+        force_update_option = "force_update_relationships"
+
+        valid_options = [type_option, force_create_option, force_update_option]
         valid_values = ["permissions", "roles", "groups"]
-        seed_types_param = request.GET.get(option_key)
+
+        for option in request.GET.keys():
+            if option not in valid_options:
+                return HttpResponse(f"Valid query parameters: {valid_options}.", status=400)
+
+        args = {}
+        seed_types_param = request.GET.get(type_option)
+
         if seed_types_param:
             seed_types = seed_types_param.split(",")
             if not all([value in valid_values for value in seed_types]):
-                return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+                return HttpResponse(f'Valid options for "{type_option}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
+
+        for option in [force_create_option, force_update_option]:
+            value: Optional[str] = request.GET.get(option)
+
+            if value is not None:
+                if value == "true":
+                    args[option] = True
+                elif value == "false":
+                    args[option] = False
+                else:
+                    return HttpResponse(f'Valid options for "{option}": {["true", "false"]}.', status=400)
+
+        if args.get(force_create_option, False) and args.get(force_update_option, False):
+            return HttpResponse(
+                f"{force_create_option} and {force_update_option} cannot both be set to true.", status=400
+            )
+
         logger.info(f"Running seeds: {request.method} {request.user.username}")
         run_seeds_in_worker.delay(args)
+
         return HttpResponse("Seeds are running in a background worker.", status=202)
+
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
@@ -982,6 +1009,7 @@ def clean_binding_mapping(request, binding_id):
                             event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
                             info={
                                 "users": mapping.mappings["users"],
+                                "org_id": str(mapping.role.tenant.org_id),
                             },
                             partition_key=PartitionKey.byEnvironment(),
                             remove=relations_to_remove,
@@ -1015,6 +1043,7 @@ def clean_binding_mapping(request, binding_id):
                             event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
                             info={
                                 "groups": missing_groups,
+                                "org_id": str(mapping.role.tenant.org_id),
                             },
                             partition_key=PartitionKey.byEnvironment(),
                             remove=relations_to_remove,
@@ -1730,10 +1759,9 @@ def check_inventory(request):
     subject_resource_id = req_data["subject"]["resource"]["resource_id"]
     subject_resource_type = req_data["subject"]["resource"]["resource_type"]
     subject_resource_reporter_type = req_data["subject"]["resource"]["reporter"]["type"]
-    token = jwt_manager.get_jwt_from_redis()
 
     try:
-        with create_client_channel(settings.INVENTORY_API_SERVER) as channel:
+        with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
             resource_ref = resource_reference_pb2.ResourceReference(
@@ -1755,9 +1783,7 @@ def check_inventory(request):
             relation=resource_relation,
             object=resource_ref,
         )
-        # Pass JWT token in metadata
-        metadata = [("authorization", f"Bearer {token}")]
-        response = stub.Check(request, metadata=metadata)
+        response = stub.Check(request)
 
         if response:
             response_to_dict = json_format.MessageToDict(response)
@@ -1819,21 +1845,17 @@ def check_workspace_relation(request, workspace_uuid):
     # Check workspaces descendants
     if workspace and query_params.get("descendants") == "true":
         workspace_descendants = workspace.descendants()
-        responses = []
+        workspace_pairs = [(str(w.id), str(w.parent.id)) for w in workspace_descendants]
         try:
-            for workspace in workspace_descendants:
-                workspace_uuid = str(workspace.id)
-                workspace_parent = str(workspace.parent.id) if workspace.parent else None
-                workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent)
-                responses.append(
-                    {
-                        "org_id": workspace.tenant.org_id,
-                        "workspace_id": workspace_uuid,
-                        "workspace_parent_id": workspace_parent,
-                        "workspace_relation_correct": workspace_correct,
-                    }
-                )
-            workspace_check_response = responses
+            if workspace_pairs:
+                workspace_uuid = str(workspace_uuid)
+                workspace_descendants_correct = WorkspaceRelationChecker.check_workspace_descendants(workspace_pairs)
+                response = {
+                    "org_id": workspace.tenant.org_id,
+                    "workspace_id": workspace_uuid,
+                    "workspace_descendants_correct": workspace_descendants_correct,
+                }
+                return JsonResponse(response, safe=False)
         except RpcError as e:
             return JsonResponse(
                 {
@@ -1848,8 +1870,18 @@ def check_workspace_relation(request, workspace_uuid):
                 status=500,
             )
     elif workspace:
-        workspace_parent_id = str(workspace.parent.id)
+        workspace_parent_id = str(workspace.parent.id) if workspace.parent else None
         workspace_uuid_str = str(workspace_uuid)
+        if workspace.type == Workspace.Types.ROOT:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Root workspace provided — this is not a valid input as it does not have a parent "
+                        "workspace. Request skipped."
+                    )
+                },
+                status=400,
+            )
         try:
             workspace_correct = WorkspaceRelationChecker.check_workspace(workspace_uuid, workspace_parent_id)
             workspace_check_response = {
@@ -1869,6 +1901,48 @@ def check_workspace_relation(request, workspace_uuid):
                 status=500,
             )
     return JsonResponse(workspace_check_response, safe=False)
+
+
+def check_role(request, role_uuid):
+    """POST to check a role has correct V2 relations and bindings are correct on Inventory API."""
+    try:
+        role = get_object_or_404(Role, uuid=role_uuid)
+        bindings = role.binding_mappings.all()
+        relations_dual_write_handler = RelationApiDualWriteHandler(
+            role=role, event_type=ReplicationEventType.UPDATE_SYSTEM_ROLE, tenant=role.tenant
+        )
+
+        if bindings:
+            with transaction.atomic():
+                relations_dual_write_handler.prepare_for_update()
+                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+        else:
+            with transaction.atomic():
+                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+
+        role_relations = relations_dual_write_handler.role_relations
+
+        serialized_relations = [json_format.MessageToDict(rel) for rel in role_relations]
+
+        role_correct = RoleRelationChecker.check_role(serialized_relations, role.uuid)
+        return JsonResponse(
+            {
+                "V2_role_checks": {
+                    "v1_role_uuid": role.uuid,
+                    "v1_role_name": role.name,
+                    "V2_role_relations_correct": role_correct,
+                },
+            }
+        )
+    except RpcError as e:
+        return JsonResponse(
+            {"detail": "gRPC error occurred during inventory role relation check", "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"detail": "Unexpected error occurred during inventory role relation check", "error": str(e)}, status=500
+        )
 
 
 @require_http_methods(["GET", "DELETE"])
@@ -1968,3 +2042,108 @@ def workspace_removal(request):
     except Exception as e:
         logger.exception(f"Bulk workspace deletion failed: {e}")
         return HttpResponse(str(e), status=500)
+
+
+def send_kafka_test_message(request):
+    """Send a test Debezium message to the Kafka consumer topic.
+
+    GET /_private/api/utils/kafka_test_message/
+
+    Sends a predefined test message with sample relations.
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+
+    if not settings.KAFKA_ENABLED:
+        return HttpResponse("Kafka is not enabled", status=400)
+
+    try:
+        from core.kafka import RBACProducer
+        import uuid
+
+        # Create sample test data
+        relations_to_add = [
+            {
+                "resource": {
+                    "type": {"namespace": "rbac", "name": "workspace"},
+                    "id": f"test-workspace-{uuid.uuid4()}",
+                },
+                "subject": {
+                    "subject": {
+                        "type": {"namespace": "rbac", "name": "principal"},
+                        "id": f"test-principal-{uuid.uuid4()}",
+                    }
+                },
+                "relation": "member",
+            }
+        ]
+        relations_to_remove = []
+
+        # Create the payload for the relations message
+        test_payload = {
+            "relations_to_add": relations_to_add,
+            "relations_to_remove": relations_to_remove,
+        }
+
+        # Create a Debezium-format message
+        debezium_message = {
+            "schema": {
+                "type": "string",
+                "optional": False,
+                "name": "io.debezium.data.Json",
+                "version": 1,
+            },
+            "payload": json.dumps(test_payload),
+        }
+
+        # Send the message
+        producer = RBACProducer()
+        topic = settings.RBAC_KAFKA_CONSUMER_TOPIC
+
+        if not topic:
+            return HttpResponse("RBAC_KAFKA_CONSUMER_TOPIC is not configured", status=400)
+
+        producer.send_kafka_message(topic, debezium_message)
+
+        logger.info(f"Test Kafka message sent to topic '{topic}' by user '{request.user.username}'")
+
+        response_data = {
+            "message": "Test message sent successfully",
+            "topic": topic,
+            "message_format": "debezium",
+            "payload_summary": {
+                "relations_to_add_count": len(relations_to_add),
+                "relations_to_remove_count": len(relations_to_remove),
+            },
+            "sample_data": {
+                "relations_to_add": relations_to_add,
+                "relations_to_remove": relations_to_remove,
+            },
+        }
+
+        return JsonResponse(response_data, status=200)
+
+    except Exception as e:
+        logger.error(f"Error sending test Kafka message: {e}")
+        return JsonResponse({"error": "Error sending test message", "detail": str(e)}, status=500)
+
+
+def migrate_binding_scope(request):
+    """View method for running binding scope migration.
+
+    POST /_private/api/utils/migrate_binding_scope/
+
+    Migrates all role bindings to the correct scope based on permission scopes.
+    Iterates through roles (not binding mappings) and uses dual write handlers.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
+
+    logger.info(f"Running binding scope migration: {request.method} {request.user.username}")
+
+    migrate_binding_scope_in_worker.delay()
+
+    return JsonResponse(
+        {"message": "Binding scope migration is running in a background worker."},
+        status=202,
+    )

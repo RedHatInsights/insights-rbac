@@ -17,6 +17,7 @@ objects:
     database:
       name: rbac
       dbVolumeSize: medium
+      version: 16
     inMemoryDb: true
     kafkaTopics:
     - topicName: ${NOTIFICATIONS_TOPIC}
@@ -26,6 +27,9 @@ objects:
       partitions: 1
       replicas: 3
     - topicName: ${EXTERNAL_CHROME_TOPIC}
+      partitions: 1
+      replicas: 3
+    - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
     deployments:
@@ -246,6 +250,18 @@ objects:
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -266,7 +282,7 @@ objects:
           - '-c'
           - >
             PYTHONPATH=${PWD}/rbac/ celery -A
-            rbac.celery beat -l $DJANGO_LOG_LEVEL
+            rbac.celery beat -l $DJANGO_LOG_LEVEL --schedule=/tmp/celerybeat-schedule
         livenessProbe:
           exec:
             command:
@@ -450,8 +466,23 @@ objects:
                 optional: true
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+            # Inventory API variables
+          - name: INVENTORY_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
+          - name: INVENTORY_API_TOKEN_URL
+            value: ${INVENTORY_API_TOKEN_URL}
           - name: SCOPES
             value: ${SCOPES}
           - name: TOKEN_GRANT_TYPE
@@ -512,6 +543,20 @@ objects:
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: RBAC_KAFKA_CONSUMER_TOPIC
+            value: ${RBAC_KAFKA_CONSUMER_TOPIC}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -600,6 +645,94 @@ objects:
             value: ${ADD_UNGROUPED_HOSTS_ID}
           - name: REMOVE_NULL_VALUE
             value: ${REMOVE_NULL_VALUE}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
+
+    - name: rbac-kafka-consumer
+      minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
+      maxReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
+      metadata:
+        annotations:
+          ignore-check.kube-linter.io/minimum-three-replicas: "A single consumer guarantees events are processed in the exact order they happened, maintaining the integrity and consistency."
+      podSpec:
+        image: ${IMAGE}:${IMAGE_TAG}
+        command: ["/opt/rbac/rbac/manage.py", "launch-rbac-kafka-consumer"]
+        env:
+          - name: APP_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: CLOWDER_ENABLED
+            value: ${CLOWDER_ENABLED}
+          - name: DJANGO_DEBUG
+            value: ${DJANGO_DEBUG}
+          - name: DJANGO_LOG_LEVEL
+            value: ${DJANGO_LOG_LEVEL}
+          - name: DJANGO_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                key: django-secret-key
+                name: rbac-secret
+                optional: false
+          - name: ENV_NAME
+            value: ${ENV_NAME}
+          - name: KAFKA_ENABLED
+            value: ${KAFKA_ENABLED}
+          - name: RBAC_KAFKA_CONSUMER_TOPIC
+            value: ${RBAC_KAFKA_CONSUMER_TOPIC}
+          - name: RBAC_KAFKA_CONSUMER_GROUP_ID
+            value: ${RBAC_KAFKA_CONSUMER_GROUP_ID}
+          - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
+            value: ${RBAC_KAFKA_CUSTOM_CONSUMER_BROKER}
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
+        livenessProbe:
+          exec:
+            command: ["test", "-f", "/tmp/kubernetes-liveness"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          exec:
+            command: ["test", "-f", "/tmp/kubernetes-readiness"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        resources:
+          limits:
+            cpu: ${RBAC_KAFKA_CONSUMER_CPU_LIMIT}
+            memory: ${RBAC_KAFKA_CONSUMER_MEMORY_LIMIT}
+          requests:
+            cpu: ${RBAC_KAFKA_CONSUMER_CPU_REQUEST}
+            memory: ${RBAC_KAFKA_CONSUMER_MEMORY_REQUEST}
 
     jobs:
       - name: tenant-org-id-populator
@@ -890,8 +1023,8 @@ objects:
           command:
             - /opt/rbac/rbac/manage.py
             - import_workspace_data
-          env:
-            # Copied from user id populator
+          env: &workspace_job_env_vars
+            # Common env vars for workspace-related jobs
             - name: APP_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -1026,6 +1159,18 @@ objects:
               value: ${WORKSPACE_ORG_CREATION_LIMIT}
             - name: FEATURE_FLAGS_CACHE_DIR
               value: ${FEATURE_FLAGS_CACHE_DIR}
+            - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+            - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+              value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+            - name: ROOT_SCOPE_PERMISSIONS
+              value: ${ROOT_SCOPE_PERMISSIONS}
+            - name: TENANT_SCOPE_PERMISSIONS
+              value: ${TENANT_SCOPE_PERMISSIONS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1055,6 +1200,22 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: workspace-data
+      - name: force-bootstrap-tenants
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - bootstrap_tenants
+            - "--all"
+            - "--force"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *workspace_job_env_vars
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1250,7 +1411,7 @@ parameters:
   value: 'False'
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
-  value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
+  value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc,subscriptions
 - description: Application exclude list for v2 migration (all permissions)
   name: V2_MIGRATION_APP_EXCLUDE_LIST
   value: approval
@@ -1455,6 +1616,9 @@ parameters:
 - name: INVENTORY_API_SERVER
   description: The gRPC API server to use for inventory api
   value: "localhost:9000"
+- name: INVENTORY_API_TOKEN_URL
+  description: The SSO token url to use for inventory api
+  value: "https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
   value: "False"
@@ -1517,6 +1681,48 @@ parameters:
 - name: REDHAT_SSO
   description: The SSO url for rbac environment
   value: 'sso.stage.redhat.com'
+- name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+  description: The UUID for the role for default root workspace level
+  value: ''
+- name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+  description: The UUID for the role for admin root workspace level
+  value: ''
+- name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+  description: The UUID for the role for default tenant level
+  value: ''
+- name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+  description: The UUID for the role for admin tenant level
+  value: ''
 - name: FEATURE_FLAGS_CACHE_DIR
   description: The cache dir for unleash
   value: '/tmp/unleash_cache'
+- name: RBAC_KAFKA_CONSUMER_CPU_LIMIT
+  description:
+  value: 500m
+- name: RBAC_KAFKA_CONSUMER_CPU_REQUEST
+  description:
+  value: 100m
+- name: RBAC_KAFKA_CONSUMER_MEMORY_LIMIT
+  description:
+  value: 300Mi
+- name: RBAC_KAFKA_CONSUMER_MEMORY_REQUEST
+  description:
+  value: 300Mi
+- name: RBAC_KAFKA_CONSUMER_TOPIC
+  description: The name of the topic for the RBAC Kafka consumer
+  value: 'outbox.event.rbac-consumer-replication-event'
+- name: RBAC_KAFKA_CONSUMER_GROUP_ID
+  description: The consumer group ID for the RBAC Kafka consumer
+  value: 'rbac-consumer-group'
+- name: RBAC_KAFKA_CONSUMER_REPLICAS
+  description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
+  value: '0'
+- name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
+  description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
+  value: ''
+- name: ROOT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to root workspace scope (supports wildcards like rbac:*:read)
+  value: ''
+- name: TENANT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to tenant scope (supports wildcards like rbac:*:*)
+  value: ''

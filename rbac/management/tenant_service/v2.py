@@ -1,12 +1,14 @@
 """V2 implementation of Tenant bootstrapping."""
 
-from typing import Callable, List, Optional
-from uuid import UUID
+import dataclasses
+from typing import Callable, Iterable, List, Optional
 
 from django.conf import settings
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, QuerySet
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.permission.scope_service import TenantScopeResources
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     PartitionKey,
@@ -14,7 +16,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.tenant_mapping.model import TenantMapping, logger
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
+from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
 from management.workspace.model import Workspace
@@ -31,14 +34,121 @@ def default_get_user_id(user: User):
     return user.user_id
 
 
+@dataclasses.dataclass(frozen=True)
+class TenantBootstrapLock:
+    """
+    Contains a tenant's locked TenantMapping and custom default group (if any).
+
+    This is returned from functions that take a tenant's bootstrap lock.
+    """
+
+    tenant_mapping: TenantMapping
+    custom_default_group: Optional[Group]
+
+
+def try_lock_tenants_for_bootstrap(tenants: Iterable[Tenant]) -> dict[Tenant, Optional[TenantBootstrapLock]]:
+    """
+    Lock the provided tenants in order to prevent concurrent V2 bootstrapping.
+
+    In particular, this locks the tenant's TenantMapping and custom default group (if any). The returned dict
+    is keyed by each tenant and contains a TenantBootstrapLock for each bootstrapped tenant. (It contains None for each
+    tenant without a TenantMapping).
+
+    This lock prevents the following from happening concurrently:
+    * V2 bootstrapping of the tenant.
+    * Creation of a custom default group for the tenant (since clone_default_group_in_public_schema holds this lock).
+    * Deletion of a custom default group for the tenant (since any custom default group is locked).
+    """
+    tenants = list(tenants)
+
+    if any(t.pk is None for t in tenants):
+        raise ValueError("Cannot lock unsaved tenant")
+
+    if any(t.tenant_name == "public" for t in tenants):
+        raise ValueError("Cannot lock public tenant")
+
+    mappings: dict[int, TenantMapping] = {
+        m.tenant_id: m for m in TenantMapping.objects.select_for_update().filter(tenant__in=tenants)
+    }
+
+    # This prevents concurrent deletion of a custom default group because GroupViewSet uses select_for_update in
+    # get_queryset when removing a group.
+    #
+    # Note that if new code that removes a custom default group is added, it must also ensure that it locks the
+    # group. Locking the group here (but not *before* deletion) is insufficient because the deletion code could
+    # concurrently replicate the removal of the group and the restoration of default access.
+    #
+    # Let T be a tenant with custom default group G. Consider transactions A (deleting a custom default group), B (also
+    # deleting the same group), and C (creating a new custom default group), assuming a custom default group already
+    # exists:
+    #
+    # A: Creates outbox message for deleting G (and restoring platform default access for T).
+    # B: Creates outbox message for deleting G (and restoring platform default access for T).
+    # B: Deletes custom default group G.
+    # B: Commits.
+    # C: Locks T for bootstrap.
+    # C: Creates a new custom default group G'.
+    # C: Creates outbox message for creating G' (and removing platform default access for T).
+    # A: Attempts to delete G (to no effect, since it's already deleted).
+    # A: Commits.
+    #
+    # Transaction A commits its platform default access restoration last, so tenant T will end up both having a custom
+    # default access group G' *and* having platform default access (or, at best, the restoration and removal of
+    # platform default access are unordered). This would result in inconsistency. Locking G before replicating the
+    # platform default access restoration would prevent this issue by serializing A and B.
+
+    default_groups: dict[int, Group] = {
+        g.tenant_id: g for g in Group.objects.select_for_update().filter(platform_default=True, tenant__in=tenants)
+    }
+
+    result: dict[Tenant, Optional[TenantBootstrapLock]] = {}
+
+    for tenant in tenants:
+        mapping = mappings.get(tenant.id)
+
+        if mapping is None:
+            result[tenant] = None
+            continue
+
+        result[tenant] = TenantBootstrapLock(
+            tenant_mapping=mapping, custom_default_group=default_groups.get(tenant.id)
+        )
+
+    return result
+
+
+class TenantNotBootstrappedError(Exception):
+    """Raised when a tenant is required to have been bootstrapped but has not been."""
+
+    pass
+
+
+def try_lock_tenant_for_bootstrap(tenant: Tenant) -> Optional[TenantBootstrapLock]:
+    """Attempt to lock a single tenant, as if by try_lock_tenants_for_bootstrap."""
+    return try_lock_tenants_for_bootstrap([tenant])[tenant]
+
+
+def lock_tenant_for_bootstrap(tenant: Tenant) -> TenantBootstrapLock:
+    """
+    Lock a single tenant, as if by try_lock_tenant_for_bootstrap.
+
+    This throws TenantNotBootstrappedError if the tenant is not bootstrapped.
+    """
+    result = try_lock_tenant_for_bootstrap(tenant)
+
+    if result is None:
+        raise TenantNotBootstrappedError(f"Tenant {tenant} not bootstrapped.")
+
+    return result
+
+
 class V2TenantBootstrapService:
     """Service for bootstrapping tenants with built-in relationships."""
 
     _replicator: RelationReplicator
     _user_domain = settings.PRINCIPAL_USER_DOMAIN
     _public_tenant: Optional[Tenant]
-    _platform_default_policy_uuid: Optional[str] = None
-    _admin_default_policy_uuid: Optional[str] = None
+    _policy_service: GlobalPolicyIdService
 
     def __init__(
         self,
@@ -50,6 +160,7 @@ class V2TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
         self._get_user_id = get_user_id if get_user_id else default_get_user_id
+        self._policy_service = GlobalPolicyIdService.shared()
 
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
@@ -63,13 +174,15 @@ class V2TenantBootstrapService:
         If [force] is True, will re-bootstrap the tenant if already bootstrapped.
         This does not change the RBAC data that already exists, but will replicate to Relations.
         """
-        try:
-            mapping = TenantMapping.objects.get(tenant=tenant)
-            if force:
-                self._replicate_bootstrap(tenant, mapping)
-            return BootstrappedTenant(tenant=tenant, mapping=mapping)
-        except TenantMapping.DoesNotExist:
+        lock_result = try_lock_tenant_for_bootstrap(tenant)
+
+        if lock_result is None:
             return self._bootstrap_tenant(tenant)
+
+        if force:
+            self._replicate_bootstrap(tenant, lock_result.tenant_mapping)
+
+        return BootstrappedTenant(tenant=tenant, mapping=lock_result.tenant_mapping)
 
     def create_ungrouped_workspace(self, org_id) -> Workspace:
         """Util for creating ungrouped workspace. Can be removed once ungrouped workspace has gone."""
@@ -177,7 +290,14 @@ class V2TenantBootstrapService:
                     f"org_id={user.org_id}"
                 )
             org_ids.add(user.org_id)
-        bootstrapped_list = self._get_or_bootstrap_tenants(org_ids, ready_tenants)
+
+        bootstrapped_list = self._get_or_bootstrap_tenants(
+            org_ids=org_ids,
+            ready=ready_tenants,
+            account_number_by_org_id={},
+            bulk=True,
+        )
+
         bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
 
         tuples_to_add = []
@@ -299,46 +419,33 @@ class V2TenantBootstrapService:
     def _get_or_bootstrap_tenant(
         self, org_id: str, ready: bool, account_number: Optional[str] = None
     ) -> BootstrappedTenant:
-        tenant_name = f"org{org_id}"
-        tenant, _ = Tenant.objects.get_or_create(
-            org_id=org_id,
-            defaults={"ready": ready, "account_id": account_number, "tenant_name": tenant_name},
+        bootstrapped_tenants = self._get_or_bootstrap_tenants(
+            org_ids={org_id},
+            ready=ready,
+            account_number_by_org_id={org_id: account_number},
+            bulk=False,
         )
-        try:
-            mapping = TenantMapping.objects.get(tenant=tenant)
-            logger.info(f"Tenant already bootstrapped. org_id={tenant.org_id}")
-            return BootstrappedTenant(
-                tenant=tenant,
-                mapping=mapping,
-            )
-        except TenantMapping.DoesNotExist:
-            bootstrap = self._bootstrap_tenant(tenant)
-            return bootstrap
+
+        assert len(bootstrapped_tenants) == 1
+        return bootstrapped_tenants[0]
 
     def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
-        if tenant.tenant_name == "public":
-            raise ValueError("Cannot bootstrap public tenant.")
+        bootstrapped_tenants, relationships = self._bootstrap_tenants_no_replicate([tenant])
+        assert len(bootstrapped_tenants) == 1
 
-        # Set up workspace hierarchy for Tenant
-        root_workspace, default_workspace, relationships = self._built_in_workspaces(tenant)
-        root_workspace.save(force_insert=True)
-        default_workspace.save(force_insert=True)
+        bootstrapped_tenant = bootstrapped_tenants[0]
+        assert bootstrapped_tenant.default_workspace is not None
 
-        # We do not check for custom default group here.
-        # By this point if there is a custom default group,
-        # a TenantMapping must have already been created.
-        mapping = TenantMapping.objects.create(tenant=tenant)
-        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.id)))
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"org_id": tenant.org_id, "default_workspace_id": str(default_workspace.id)},
+                info={"org_id": tenant.org_id, "default_workspace_id": str(bootstrapped_tenant.default_workspace.id)},
                 partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
         )
 
-        return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
+        return bootstrapped_tenant
 
     def _replicate_bootstrap(self, tenant: Tenant, mapping: TenantMapping):
         """Replicate the bootstrapping of a tenant."""
@@ -347,8 +454,20 @@ class V2TenantBootstrapService:
         default = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.DEFAULT)
 
         relationships = []
+
         relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
-        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default.id)))
+
+        relationships.extend(
+            self._bootstrap_default_access(
+                tenant,
+                mapping,
+                TenantScopeResources.for_models(
+                    tenant=tenant,
+                    root_workspace=root,
+                    default_workspace=default,
+                ),
+            )
+        )
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -359,74 +478,98 @@ class V2TenantBootstrapService:
             )
         )
 
-    def _get_or_bootstrap_tenants(self, org_ids: set, ready: bool) -> list[BootstrappedTenant]:
+    def _query_with_default_groups(self, query_set: QuerySet) -> QuerySet:
+        return query_set.prefetch_related(
+            Prefetch(
+                "group_set",
+                queryset=Group.objects.filter(platform_default=True).order_by(),
+                to_attr="_v2_bootstrap_cached_default_groups",
+            )
+        )
+
+    def _fresh_tenants_with_default_groups(self, tenants: list[Tenant]) -> list[Tenant]:
+        loaded = list(self._query_with_default_groups(Tenant.objects.filter(pk__in=(tenant.pk for tenant in tenants))))
+
+        if len(loaded) != len(tenants):
+            raise AssertionError(
+                f"Tenant set changed concurrently. Expected {len(tenants)} tenants but got {len(loaded)}."
+            )
+
+        return loaded
+
+    def _tenant_default_groups(self, tenant: Tenant) -> list[Group]:
+        default_groups = getattr(tenant, "_v2_bootstrap_cached_default_groups", None)
+
+        if default_groups is None:
+            default_groups = list(Group.objects.filter(tenant=tenant, platform_default=True).order_by())
+            tenant._v2_bootstrap_cached_default_groups = default_groups
+
+        return default_groups
+
+    def _get_or_bootstrap_tenants(
+        self,
+        org_ids: set,
+        ready: bool,
+        account_number_by_org_id: dict[str, Optional[str]],
+        bulk: bool,
+    ) -> list[BootstrappedTenant]:
+        if not bulk and len(org_ids) != 1:
+            raise ValueError("Bulk bootstrapping is required unless exactly one org_id is present.")
+
         """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
-        existing_tenants = {
-            tenant.org_id: tenant
-            for tenant in Tenant.objects.filter(org_id__in=org_ids)
-            .select_related("tenant_mapping")
-            .prefetch_related(
-                Prefetch(
-                    "group_set",
-                    queryset=Group.objects.filter(platform_default=True).order_by(),
-                    to_attr="platform_default_groups",
-                )
-            )
+        existing_tenants: dict[str, Tenant] = {
+            tenant.org_id: tenant for tenant in Tenant.objects.filter(org_id__in=org_ids)
         }
+
+        tenant_locks = try_lock_tenants_for_bootstrap(existing_tenants.values())
 
         # An existing tenant might have been bootstrapped and already has mapping and workspaces
         tenants_to_bootstrap: list[Tenant] = []
         bootstrapped_list: list[BootstrappedTenant] = []
+
         for tenant in existing_tenants.values():
-            if not hasattr(tenant, "tenant_mapping"):
+            lock = tenant_locks[tenant]
+
+            if lock is None:
                 tenants_to_bootstrap.append(tenant)
             else:
                 logger.info(f"Tenant already bootstrapped. org_id={tenant.org_id}")
-                bootstrapped_list.append(BootstrappedTenant(tenant, tenant.tenant_mapping))
+                bootstrapped_list.append(BootstrappedTenant(tenant, lock.tenant_mapping))
+
         # Create new tenants
         new_tenants = [
-            Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=ready)
+            Tenant(
+                tenant_name=f"org{org_id}",
+                org_id=org_id,
+                ready=ready,
+                account_id=account_number_by_org_id.get(org_id),
+            )
             for org_id in org_ids
             if org_id not in existing_tenants
         ]
+
         if new_tenants:
             new_tenants = Tenant.objects.bulk_create(new_tenants)
             tenants_to_bootstrap.extend(new_tenants)
+
         if tenants_to_bootstrap:
-            bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+            # These two strategies will result in the same structure and relationships, but the created
+            # ReplicationEvent will have different metadata. We accept the flag in order to preserve the existing
+            # behavior while reusing the rest of the logic.
+            if bulk:
+                bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+            else:
+                # If we're not using bulk bootstrapping, there must only be one tenant, so there can only be one
+                # tenant to bootstrap.
+                assert len(tenants_to_bootstrap) == 1
+                bootstrapped_list.append(self._bootstrap_tenant(tenants_to_bootstrap[0]))
+
         return bootstrapped_list
 
     def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
-        # Set up workspace hierarchy for Tenant
-        workspaces: list[Workspace] = []
-        relationships: list[Relationship] = []
-        mappings_to_create: list[TenantMapping] = []
-        default_workspace_ids: list[UUID] = []
-        for tenant in tenants:
-            kwargs = {"tenant": tenant}
-            if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
-                group_uuid = tenant.platform_default_groups[0].uuid
-                logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
-                kwargs["default_group_uuid"] = group_uuid
-            mappings_to_create.append(TenantMapping(**kwargs))
+        bootstrapped, relationships = self._bootstrap_tenants_no_replicate(tenants)
 
-            root, default, built_in_relationships = self._built_in_workspaces(tenant)
-
-            default_workspace_ids.append(default.id)
-            workspaces.extend([root, default])
-            relationships.extend(built_in_relationships)
-
-        Workspace.objects.bulk_create(workspaces)
-
-        mappings = TenantMapping.objects.bulk_create(mappings_to_create)
-        tenant_mappings = {mapping.tenant_id: mapping for mapping in mappings}
-        bootstrapped_tenants = []
-
-        for tenant, default_workspace_id in zip(tenants, default_workspace_ids):
-            mapping = tenant_mappings[tenant.id]
-            relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace_id)))
-            bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
@@ -435,7 +578,69 @@ class V2TenantBootstrapService:
                 add=relationships,
             )
         )
-        return bootstrapped_tenants
+
+        return bootstrapped
+
+    def _bootstrap_tenants_no_replicate(
+        self, tenants: list[Tenant]
+    ) -> tuple[list[BootstrappedTenant], list[Relationship]]:
+        # Set up workspace hierarchy for Tenant.
+        if any(t.tenant_name == "public" for t in tenants):
+            raise ValueError("Cannot bootstrap public tenant.")
+
+        tenants = self._fresh_tenants_with_default_groups(tenants)
+        relationships: list[Relationship] = []
+        mappings_to_create: list[TenantMapping] = []
+
+        default_workspaces: list[Workspace] = []
+        root_workspaces: list[Workspace] = []
+
+        for tenant in tenants:
+            platform_default_groups = self._tenant_default_groups(tenant)
+            kwargs = {"tenant": tenant}
+            if platform_default_groups:
+                group_uuid = platform_default_groups[0].uuid
+                logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
+                kwargs["default_group_uuid"] = group_uuid
+            mappings_to_create.append(TenantMapping(**kwargs))
+
+            root, default, built_in_relationships = self._built_in_workspaces(tenant)
+
+            default_workspaces.append(default)
+            root_workspaces.append(root)
+            relationships.extend(built_in_relationships)
+
+        Workspace.objects.bulk_create([*default_workspaces, *root_workspaces])
+
+        mappings = TenantMapping.objects.bulk_create(mappings_to_create)
+        tenant_mappings = {mapping.tenant_id: mapping for mapping in mappings}
+        bootstrapped_tenants = []
+
+        for tenant, default_workspace, root_workspace in zip(tenants, default_workspaces, root_workspaces):
+            mapping = tenant_mappings[tenant.id]
+
+            relationships.extend(
+                self._bootstrap_default_access(
+                    tenant,
+                    mapping,
+                    TenantScopeResources.for_models(
+                        tenant=tenant,
+                        default_workspace=default_workspace,
+                        root_workspace=root_workspace,
+                    ),
+                )
+            )
+
+            bootstrapped_tenants.append(
+                BootstrappedTenant(
+                    tenant=tenant,
+                    mapping=mapping,
+                    default_workspace=default_workspace,
+                    root_workspace=root_workspace,
+                )
+            )
+
+        return bootstrapped_tenants, relationships
 
     def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[Relationship], list[Relationship]]:
         """Get the tuples to add and remove for a user."""
@@ -478,60 +683,17 @@ class V2TenantBootstrapService:
             create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"),
         ]
 
-    def _default_binding_tuples(
-        self, default_workspace_id, role_binding_uuid, default_role_uuid, default_group_uuid
-    ) -> List[Relationship]:
-        """
-        Create the tuples used to bootstrap default access for a Workspace.
-
-        Can be used for both default access and admin access as long as the correct arguments are provided.
-        Each of role binding, role, and group must refer to admin or default versions.
-        """
-        return [
-            create_relationship(
-                ("rbac", "workspace"),
-                default_workspace_id,
-                ("rbac", "role_binding"),
-                role_binding_uuid,
-                "binding",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                role_binding_uuid,
-                ("rbac", "role"),
-                default_role_uuid,
-                "role",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                role_binding_uuid,
-                ("rbac", "group"),
-                default_group_uuid,
-                "subject",
-                "member",
-            ),
-        ]
-
     def _bootstrap_default_access(
-        self, tenant: Tenant, mapping: TenantMapping, default_workspace_id: str
+        self,
+        tenant: Tenant,
+        mapping: TenantMapping,
+        scope_resources: TenantScopeResources,
     ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         """
-        platform_default_role_uuid = self._get_platform_default_policy_uuid()
-        admin_default_role_uuid = self._get_admin_default_policy_uuid()
-
-        if platform_default_role_uuid is None:
-            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
-
-        if admin_default_role_uuid is None:
-            logger.warning("No admin default role found for public tenant. Default access will not be set up.")
-
-        default_user_role_binding_uuid = str(mapping.default_role_binding_uuid)
-        default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
-
         tuples_to_add: List[Relationship] = []
 
         # Add default role binding IFF there is no custom default access for the tenant
@@ -544,32 +706,36 @@ class V2TenantBootstrapService:
         # 2. If tenant mapping does not exist, create it via this same bootstrap process.
         #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
         #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role_uuid and not (
-            hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups
-        ):
-            tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_user_role_binding_uuid,
-                    platform_default_role_uuid,
-                    str(mapping.default_group_uuid),
+        if not self._tenant_default_groups(tenant):
+            try:
+                tuples_to_add.extend(
+                    default_role_binding_tuples(
+                        tenant_mapping=mapping,
+                        target_resources=scope_resources,
+                        access_type=DefaultAccessType.USER,
+                        policy_service=self._policy_service,
+                    )
                 )
-            )
+            except DefaultGroupNotAvailableError:
+                logger.warning("No platform default role found for public tenant. Default access will not be set up.")
         else:
             logger.info(
                 f"Not setting up default access for tenant with customized default group. org_id={tenant.org_id}"
             )
 
         # Admin role binding is not customizable
-        if admin_default_role_uuid:
+        try:
             tuples_to_add.extend(
-                self._default_binding_tuples(
-                    default_workspace_id,
-                    default_admin_role_binding_uuid,
-                    admin_default_role_uuid,
-                    str(mapping.default_admin_group_uuid),
+                default_role_binding_tuples(
+                    tenant_mapping=mapping,
+                    target_resources=scope_resources,
+                    access_type=DefaultAccessType.ADMIN,
+                    policy_service=self._policy_service,
                 )
             )
+        except DefaultGroupNotAvailableError:
+            logger.warning("No admin default role found for public tenant. Default access will not be set up.")
+
         return tuples_to_add
 
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
@@ -589,24 +755,6 @@ class V2TenantBootstrapService:
         relationships.extend(self._built_in_hierarchy_tuples(default_workspace_id, root_workspace_id, tenant.org_id))
 
         return root, default, relationships
-
-    def _get_platform_default_policy_uuid(self) -> Optional[str]:
-        try:
-            if self._platform_default_policy_uuid is None:
-                policy = Group.objects.public_tenant_only().get(platform_default=True).policies.get()
-                self._platform_default_policy_uuid = str(policy.uuid)
-            return self._platform_default_policy_uuid
-        except Group.DoesNotExist:
-            return None
-
-    def _get_admin_default_policy_uuid(self) -> Optional[str]:
-        try:
-            if self._admin_default_policy_uuid is None:
-                policy = Group.objects.public_tenant_only().get(admin_default=True).policies.get()
-                self._admin_default_policy_uuid = str(policy.uuid)
-            return self._admin_default_policy_uuid
-        except Group.DoesNotExist:
-            return None
 
     def create_workspace_relationships(self, pairs):
         """

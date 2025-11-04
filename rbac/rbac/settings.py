@@ -169,7 +169,6 @@ TIME_ZONE = "UTC"
 
 USE_I18N = True
 
-USE_L10N = True
 
 USE_TZ = True
 
@@ -190,7 +189,14 @@ STATIC_URL = "{}/static/".format(API_PATH_PREFIX.rstrip("/"))
 
 STATICFILES_DIRS = [os.path.join(BASE_DIR, "..", "docs/source/specs")]
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 INTERNAL_IPS = ["127.0.0.1"]
 
@@ -419,6 +425,12 @@ NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
 EXTERNAL_SYNC_TOPIC = ENVIRONMENT.get_value("EXTERNAL_SYNC_TOPIC", default=None)
 EXTERNAL_CHROME_TOPIC = ENVIRONMENT.get_value("EXTERNAL_CHROME_TOPIC", default=None)
 
+RBAC_KAFKA_CONSUMER_TOPIC = ENVIRONMENT.get_value("RBAC_KAFKA_CONSUMER_TOPIC", default=None)
+
+RBAC_KAFKA_CONSUMER_GROUP_ID = ENVIRONMENT.get_value("RBAC_KAFKA_CONSUMER_GROUP_ID", default="rbac-consumer-group")
+
+RBAC_KAFKA_CUSTOM_CONSUMER_BROKER = ENVIRONMENT.get_value("RBAC_KAFKA_CUSTOM_CONSUMER_BROKER", default="")
+
 # if we don't enable KAFKA we can't use the notifications
 if not KAFKA_ENABLED:
     NOTIFICATIONS_ENABLED = False
@@ -480,6 +492,10 @@ if KAFKA_ENABLED:
     if clowder_chrome_topic:
         EXTERNAL_CHROME_TOPIC = clowder_chrome_topic.name
 
+    clowder_rbac_consumer_topic = KafkaTopics.get(RBAC_KAFKA_CONSUMER_TOPIC)
+    if clowder_rbac_consumer_topic:
+        RBAC_KAFKA_CONSUMER_TOPIC = clowder_rbac_consumer_topic.name
+
 # BOP TLS settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):
     BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
@@ -517,6 +533,13 @@ TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_cre
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
 RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
 RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
+INVENTORY_API_CLIENT_ID = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_ID", default="")
+INVENTORY_API_CLIENT_SECRET = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_SECRET", default="")
+INVENTORY_API_TOKEN_URL = ENVIRONMENT.get_value(
+    "INVENTORY_API_TOKEN_URL",
+    default="https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token",
+)
+INVENTORY_API_LOCAL = ENVIRONMENT.bool("INVENTORY_API_LOCAL", default=True)
 INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 
@@ -541,6 +564,12 @@ WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_
 # These can include wildcard patterns (e.g. "rbac:*:read" or "advisor:*:*").
 ROOT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("ROOT_SCOPE_PERMISSIONS", default="")
 TENANT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("TENANT_SCOPE_PERMISSIONS", default="")
+
+# Org level permissons parent role uuids
+SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID", default="")
+SYSTEM_DEFAULT_TENANT_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_DEFAULT_TENANT_ROLE_UUID", default="")
+SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID", default="")
+SYSTEM_ADMIN_TENANT_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_ADMIN_TENANT_ROLE_UUID", default="")
 
 # Manipulation of response to include ungrouped hosts id
 ADD_UNGROUPED_HOSTS_ID = ENVIRONMENT.bool("ADD_UNGROUPED_HOSTS_ID", default=False)

@@ -18,10 +18,10 @@
 """Utilities for Internal RBAC use."""
 import json
 import logging
-from contextlib import contextmanager
+import uuid
 
-import grpc
 import jsonschema
+from django.conf import settings
 from django.db import transaction
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
@@ -36,13 +36,6 @@ from api.models import User
 
 
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def create_client_channel(addr):
-    """Create secure channel for grpc requests."""
-    secure_channel = grpc.insecure_channel(addr)
-    yield secure_channel
 
 
 def build_internal_user(request, json_rh_auth):
@@ -83,11 +76,14 @@ def delete_bindings(bindings):
             - relations (list): A list of tuples representing the relations to be removed.
     """
     replicator = OutboxReplicator()
+    # Get org_id from first binding's role tenant
+    org_id = str(bindings.first().role.tenant.org_id) if bindings.exists() else ""
     info = {
         "mappings": [binding.mappings for binding in bindings],
         "role_ids": [binding.role_id for binding in bindings],
         "resource_ids": [binding.resource_id for binding in bindings],
         "resource_types": [binding.resource_type_name for binding in bindings],
+        "org_id": org_id,
     }
     if bindings:
         with transaction.atomic():
@@ -170,3 +166,37 @@ def load_request_body(request) -> dict:
     request_decoded = request.body.decode("utf-8")
     req_data = json.loads(request_decoded)
     return req_data
+
+
+def is_resource_a_workspace(application: str, resource_type: str, attributeFilter: dict) -> bool:
+    """Check if a given ResourceDefinition is a Workspace."""
+    is_workspace_application = application == settings.WORKSPACE_APPLICATION_NAME
+    is_workspace_resource_type = resource_type in settings.WORKSPACE_RESOURCE_TYPE
+    is_workspace_group_filter = attributeFilter.get("key") == settings.WORKSPACE_ATTRIBUTE_FILTER
+    return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
+
+
+def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
+    """Get workspace id from a resource definition."""
+    operation = attributeFilter.get("operation")
+    ret = []
+    if operation == "in":
+        value = attributeFilter.get("value", [])
+        ret.extend(uuid.UUID(val) for val in value if is_str_valid_uuid(val))
+    elif operation == "equal":
+        value = attributeFilter.get("value", "")
+        if is_str_valid_uuid(value):
+            ret.append(uuid.UUID(value))
+
+    return ret
+
+
+def is_str_valid_uuid(uuid_str: str) -> bool:
+    """Check if a string can be converted to a valid UUID."""
+    if uuid_str is None or not uuid_str:
+        return False
+    try:
+        uuid.UUID(uuid_str)
+        return True
+    except ValueError:
+        return False

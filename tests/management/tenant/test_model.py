@@ -18,6 +18,9 @@
 
 from typing import Optional, Tuple
 import uuid
+
+from django.conf import settings
+from unittest.mock import patch
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
@@ -34,6 +37,7 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
+from migration_tool.models import V2boundresource
 from tests.management.role.test_dual_write import RbacFixture
 
 from api.models import Tenant, User
@@ -47,6 +51,7 @@ class V2TenantBootstrapServiceTest(TestCase):
     fixture: RbacFixture
 
     def setUp(self):
+        # Clear any existing state first
         self.tuples = InMemoryTuples()
         self.service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples))
         self.fixture = RbacFixture(self.service)
@@ -189,8 +194,8 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
-    def test_will_add_default_access_when_already_customized(self):
-        """Test just to confirm behavior but this is not a valid state and this scenario should never happen."""
+    def test_will_reuse_default_access_when_already_customized(self):
+        """Test that bootstrapping a single tenant with a custom default group will use that group."""
         tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
         self.fixture.custom_default_group(tenant)
 
@@ -204,7 +209,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         default_ws = self.fixture.default_workspace(tenant)
 
         self.assertEqual(
-            1,
+            0,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", default_ws.id),
@@ -214,7 +219,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
         self.assertEqual(
-            1,
+            0,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "role_binding", bootstrapped.mapping.default_role_binding_uuid),
@@ -223,7 +228,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 )
             ),
         )
-        self.assertNotEqual(
+        self.assertEqual(
             tenant.tenant_mapping.default_group_uuid, Group.objects.get(tenant=tenant, platform_default=True).uuid
         )
 
@@ -282,9 +287,9 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Admins get 2, otherwise 1
         num_group_membership_tuples = 2 + 1 + 2 + 1 + 1 + 1
         # o1 is already bootstrapped, should get 0
-        # existing unbootstrapped custom group tenants get 6
-        # new or otherwise unbootstrapped tenants get 9
-        num_tenant_bootstrapping_tuples = 0 + 9 + 6 + 9
+        # existing unbootstrapped custom group tenants get 12
+        # new or otherwise unbootstrapped tenants get 21
+        num_tenant_bootstrapping_tuples = 0 + 21 + 12 + 21
 
         self.assertEqual(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
 
@@ -510,9 +515,9 @@ class V2TenantBootstrapServiceTest(TestCase):
     def assertTenantBootstrapped(
         self, org_id: str, with_custom_default_group: Optional[Group] = None, existing: bool = False
     ) -> Tuple[Tenant, TenantMapping, Workspace, Workspace]:
-        tenant = Tenant.objects.get(org_id=org_id)
-        mapping = TenantMapping.objects.get(tenant=tenant)
-        workspaces = list(Workspace.objects.filter(tenant=tenant))
+        tenant: Tenant = Tenant.objects.get(org_id=org_id)
+        mapping: TenantMapping = TenantMapping.objects.get(tenant=tenant)
+        workspaces: list[Workspace] = list(Workspace.objects.filter(tenant=tenant))
         self.assertEqual(len(workspaces), 2)
         default = Workspace.objects.default(tenant=tenant)
         root = Workspace.objects.root(tenant=tenant)
@@ -571,38 +576,73 @@ class V2TenantBootstrapServiceTest(TestCase):
             f"Expected tenant {org_id} to have platform",
         )
 
-        self.assertEqual(
-            1 if custom_default_group is None else 0,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", default.id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", mapping.default_role_binding_uuid),
-                )
-            ),
-            f"Expected default workspace to have platform default role binding for tenant {org_id}",
+        def assert_default_role_binding(
+            target: V2boundresource,
+            group_uuid: uuid.UUID | str,
+            role_uuid: uuid.UUID | str,
+            role_binding_uuid: uuid.UUID | str,
+            count: int = 0,
+        ):
+            verb = "have" if count != 0 else "not verb"
+
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource(target.resource_type[0], target.resource_type[1], target.resource_id),
+                        relation("binding"),
+                        subject("rbac", "role_binding", str(role_binding_uuid)),
+                    )
+                ),
+                f"Expected target resource to {verb} default role binding for tenant {org_id}",
+            )
+
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", str(role_binding_uuid)),
+                        relation("subject"),
+                        subject("rbac", "group", str(group_uuid), "member"),
+                    )
+                ),
+                f"Expected default role binding to {verb} default group as subject for tenant {org_id}",
+            )
+
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", str(role_binding_uuid)),
+                        relation("role"),
+                        subject("rbac", "role", str(role_uuid)),
+                    )
+                ),
+                f"Expected default role binding to {verb} platform default role as subject for tenant {org_id}",
+            )
+
+        assert_default_role_binding(
+            count=1 if custom_default_group is None else 0,
+            target=V2boundresource(("rbac", "workspace"), str(default.id)),
+            group_uuid=mapping.default_group_uuid,
+            role_uuid=platform_default_policy.uuid,
+            role_binding_uuid=mapping.default_role_binding_uuid,
         )
-        self.assertEqual(
-            1 if custom_default_group is None else 0,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_role_binding_uuid),
-                    relation("subject"),
-                    subject("rbac", "group", mapping.default_group_uuid, "member"),
-                )
-            ),
-            f"Expected default role binding to have default group as subject for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1 if custom_default_group is None else 0,
+            target=V2boundresource(("rbac", "workspace"), str(root.id)),
+            group_uuid=mapping.default_group_uuid,
+            role_uuid=settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID,
+            role_binding_uuid=mapping.root_scope_default_role_binding_uuid,
         )
-        self.assertEqual(
-            1 if custom_default_group is None else 0,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_role_binding_uuid),
-                    relation("role"),
-                    subject("rbac", "role", platform_default_policy.uuid),
-                )
-            ),
-            f"Expected default role binding to have platform default role for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1 if custom_default_group is None else 0,
+            target=V2boundresource(("rbac", "tenant"), tenant.tenant_resource_id()),
+            group_uuid=mapping.default_group_uuid,
+            role_uuid=settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID,
+            role_binding_uuid=mapping.tenant_scope_default_role_binding_uuid,
         )
 
         if custom_default_group is not None:
@@ -618,37 +658,28 @@ class V2TenantBootstrapServiceTest(TestCase):
                 f"Expected no relations to custom default group (leave to migrator) for tenant {org_id}",
             )
 
-        self.assertEqual(
-            1,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", default.id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
-                )
-            ),
-            f"Expected default workspace to have admin default role binding for tenant {org_id}",
+        assert_default_role_binding(
+            count=1,
+            target=V2boundresource(("rbac", "workspace"), str(default.id)),
+            group_uuid=mapping.default_admin_group_uuid,
+            role_uuid=admin_default_policy.uuid,
+            role_binding_uuid=mapping.default_admin_role_binding_uuid,
         )
-        self.assertEqual(
-            1,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
-                    relation("subject"),
-                    subject("rbac", "group", mapping.default_admin_group_uuid, "member"),
-                )
-            ),
-            f"Expected admin default role binding to have admin default group as subject for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1,
+            target=V2boundresource(("rbac", "workspace"), str(root.id)),
+            group_uuid=mapping.default_admin_group_uuid,
+            role_uuid=settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID,
+            role_binding_uuid=mapping.root_scope_default_admin_role_binding_uuid,
         )
-        self.assertEqual(
-            1,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
-                    relation("role"),
-                    subject("rbac", "role", admin_default_policy.uuid),
-                )
-            ),
-            f"Expected admin default role binding to have admin default role for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1,
+            target=V2boundresource(("rbac", "tenant"), tenant.tenant_resource_id()),
+            group_uuid=mapping.default_admin_group_uuid,
+            role_uuid=settings.SYSTEM_ADMIN_TENANT_ROLE_UUID,
+            role_binding_uuid=mapping.tenant_scope_default_admin_role_binding_uuid,
         )
+
         return tenant, mapping, root, default

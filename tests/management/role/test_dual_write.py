@@ -17,23 +17,40 @@
 """Test tuple changes for RBAC operations."""
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
+from django.conf import settings
+
 from management.group.definer import seed_group, set_system_flag_before_update
 from management.group.model import Group
-from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.group.platform import GlobalPolicyIdService
+from management.group.relation_api_dual_write_group_handler import (
+    RelationApiDualWriteGroupHandler,
+)
 from management.models import Workspace
 from management.permission.model import Permission
+from management.permission.scope_service import Scope
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
-from management.role.model import Access, BindingMapping, ResourceDefinition, Role, SourceKey
+from management.relation_replicator.relation_replicator import (
+    DualWriteException,
+    ReplicationEventType,
+)
+from management.role.model import (
+    Access,
+    BindingMapping,
+    ResourceDefinition,
+    Role,
+    SourceKey,
+)
+from management.role.platform import platform_v2_role_uuid_for
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -49,12 +66,17 @@ from migration_tool.in_memory_tuples import (
     subject,
     subject_type,
 )
+from migration_tool.utils import create_relationship
 
 from api.cross_access.model import CrossAccountRequest
-from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
+from api.cross_access.relation_api_dual_write_cross_access_handler import (
+    RelationApiDualWriteCrossAccessHandler,
+)
 from api.cross_access.util import create_cross_principal
-from api.models import Tenant
+from api.models import Tenant, User
 from unittest.mock import patch
+
+from migration_tool.models import V2boundresource
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -93,16 +115,41 @@ class DualWriteTestCase(TestCase):
         default = Workspace.objects.default(tenant=tenant)
         return str(default.id)
 
+    def root_workspace(self, tenant: Optional[Tenant] = None) -> str:
+        """Return the root workspace ID."""
+        tenant = tenant if tenant is not None else self.tenant
+        root = Workspace.objects.root(tenant=tenant)
+        return str(root.id)
+
+    def default_workspace_resource(self, tenant: Optional[Tenant] = None) -> V2boundresource:
+        return V2boundresource(("rbac", "workspace"), self.default_workspace(tenant))
+
+    def root_workspace_resource(self, tenant: Optional[Tenant] = None) -> V2boundresource:
+        return V2boundresource(("rbac", "workspace"), self.root_workspace(tenant))
+
+    def tenant_resource(self, tenant: Optional[Tenant] = None) -> V2boundresource:
+        if tenant is None:
+            tenant = self.tenant
+
+        return V2boundresource.for_model(tenant)
+
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
         return RelationApiDualWriteHandler(role, event_type, replicator=InMemoryRelationReplicator(self.tuples))
 
     def given_v1_system_role(
-        self, name: str, permissions: list[str], platform_default=False, admin_default=False
+        self,
+        name: str,
+        permissions: list[str],
+        platform_default=False,
+        admin_default=False,
     ) -> Role:
         """Create a new system role with the given ID and permissions."""
         role = self.fixture.new_system_role(
-            name=name, permissions=permissions, platform_default=platform_default, admin_default=admin_default
+            name=name,
+            permissions=permissions,
+            platform_default=platform_default,
+            admin_default=admin_default,
         )
         dual_write_handler = SeedingRelationApiDualWriteHandler(
             role=role, replicator=InMemoryRelationReplicator(self.tuples)
@@ -137,7 +184,10 @@ class DualWriteTestCase(TestCase):
     ) -> Tuple[Group, list[Principal]]:
         """Create a new group with the given name and users."""
         group, principals = self.fixture.new_group(
-            name=name, users=users, service_accounts=service_accounts, tenant=self.tenant
+            name=name,
+            users=users,
+            service_accounts=service_accounts,
+            tenant=self.tenant,
         )
         dual_write = RelationApiDualWriteGroupHandler(
             group,
@@ -146,6 +196,11 @@ class DualWriteTestCase(TestCase):
         )
         dual_write.replicate_new_principals(principals)
         return group, principals
+
+    def given_custom_default_group(self) -> Group:
+        with patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate") as replicate:
+            replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+            return self.fixture.custom_default_group(self.tenant)
 
     def given_car(self, user_id: str, roles: list[Role], old_format=True):
         create_cross_principal(user_id, target_org=self.tenant.org_id)
@@ -203,7 +258,7 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.add_role_to_group(role, group)
-            dual_write_handler.generate_relations_to_add_roles([role])
+            dual_write_handler.generate_relations_reset_roles([role])
         dual_write_handler.replicate()
         return policy
 
@@ -243,10 +298,17 @@ class DualWriteTestCase(TestCase):
         """Assert there is a role matching the given permissions and return its ID."""
         roles, unmatched = self.tuples.find_group_with_tuples(
             [
-                all_of(resource_type("rbac", "role"), relation(permission.replace(":", "_")))
+                all_of(
+                    resource_type("rbac", "role"),
+                    relation(permission.replace(":", "_")),
+                )
                 for permission in permissions
             ],
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (
+                t.resource_type_namespace,
+                t.resource_type_name,
+                t.resource_id,
+            ),
             group_filter=lambda group: group[0] == "rbac" and group[1] == "role",
             require_full_match=True,
         )
@@ -265,7 +327,11 @@ class DualWriteTestCase(TestCase):
         """Assert there are [num] role bindings."""
         role_bindings = self.tuples.find_tuples_grouped(
             subject_type("rbac", "role_binding"),
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (
+                t.resource_type_namespace,
+                t.resource_type_name,
+                t.resource_id,
+            ),
         )
         num_role_bindings = len(role_bindings)
         self.assertEqual(
@@ -274,18 +340,21 @@ class DualWriteTestCase(TestCase):
             f"Expected exactly {num} role bindings, but got {num_role_bindings}.\n" f"Role bindings: {role_bindings}",
         )
 
-    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
-        """Assert there is a role binding with the given roles and groups."""
-        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
-
-    def expect_role_bindings_to_workspace(
-        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    def expect_role_bindings_to_resource(
+        self, num: int, target: V2boundresource, for_v2_roles: list[str], for_groups: list[str]
     ):
-        """Assert there is [num] role bindings with the given roles and groups."""
+        """Assert there are [num] role bindings with the given roles and groups."""
         # Find all bindings for the given workspace
         resources = self.tuples.find_tuples_grouped(
-            all_of(resource("rbac", "workspace", workspace), relation("binding")),
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            all_of(
+                resource(target.resource_type[0], target.resource_type[1], target.resource_id),
+                relation("binding"),
+            ),
+            group_by=lambda t: (
+                t.resource_type_namespace,
+                t.resource_type_name,
+                t.resource_id,
+            ),
         )
 
         # Now of those bound to the workspace, find bindings that bind the given roles and groups
@@ -308,7 +377,11 @@ class DualWriteTestCase(TestCase):
                 )
                 for group_id in for_groups
             ],
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (
+                t.resource_type_namespace,
+                t.resource_type_name,
+                t.resource_id,
+            ),
             group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
             require_full_match=True,
         )
@@ -317,14 +390,92 @@ class DualWriteTestCase(TestCase):
         self.assertEqual(
             num_role_bindings,
             num,
-            f"Expected exactly 1 role binding against workspace {workspace} "
+            f"Expected exactly {num} role binding{"s" if num != 1 else ""} against resource {target} "
             f"with roles {for_v2_roles} and groups {for_groups}, "
             f"but got {len(role_bindings)}.\n"
             f"Matched role bindings: {role_bindings}.\n"
             f"Unmatched role bindings: {unmatched}",
         )
 
+    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding with the given roles and groups."""
+        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
 
+    def expect_role_bindings_to_workspace(
+        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    ):
+        """Assert there are [num] role bindings for the given workspace with the given roles and groups."""
+        self.expect_role_bindings_to_resource(
+            num=num,
+            target=V2boundresource(("rbac", "workspace"), workspace),
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_1_role_binding_to_tenant(self, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding for the given workspace with the given roles and groups."""
+        self.expect_role_bindings_to_tenant(
+            num=1,
+            org_id=org_id,
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_role_bindings_to_tenant(self, num: int, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding for the given tenant with the given roles and groups."""
+        self.expect_role_bindings_to_resource(
+            num=num,
+            target=V2boundresource(("rbac", "tenant"), Tenant.org_id_to_tenant_resource_id(org_id)),
+            for_v2_roles=for_v2_roles,
+            for_groups=for_groups,
+        )
+
+    def expect_binding_present(self, target: V2boundresource, v2_role_id: str, group_id: str):
+        """Assert that a role binding (and associated BindingMapping) exist for the given resource, role, and group."""
+        self.expect_role_bindings_to_resource(
+            num=1,
+            target=target,
+            for_v2_roles=[v2_role_id],
+            for_groups=[group_id],
+        )
+
+        mapping = BindingMapping.objects.get(
+            resource_type_namespace=target.resource_type[0],
+            resource_type_name=target.resource_type[1],
+            resource_id=target.resource_id,
+            mappings__role__id=v2_role_id,
+        )
+
+        self.assertIn(group_id, mapping.mappings["groups"])
+
+    def expect_binding_absent(self, target: V2boundresource, v2_role_id: str, group_id: str):
+        """Assert that a role binding (and BindingMapping) do not exist for the given resource, role, and group."""
+        self.expect_role_bindings_to_resource(
+            num=0,
+            target=target,
+            for_v2_roles=[v2_role_id],
+            for_groups=[group_id],
+        )
+
+        mappings = list(
+            BindingMapping.objects.filter(
+                resource_type_namespace=target.resource_type[0],
+                resource_type_name=target.resource_type[1],
+                resource_id=target.resource_id,
+                mappings__role__id=v2_role_id,
+            )
+        )
+
+        self.assertLessEqual(len(mappings), 1)
+
+        if len(mappings) == 0:
+            return
+
+        mapping = mappings[0]
+        self.assertNotIn(group_id, mapping.mappings["groups"])
+
+
+@override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS="tenant:*:*")
 class DualWriteGroupTestCase(DualWriteTestCase):
     """Test dual write logic for group modifications."""
 
@@ -343,7 +494,10 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         group, principals = self.given_group("g1", ["u1", "u2"])
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEqual(len(tuples), 2)
-        self.assertEqual({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
+        self.assertEqual(
+            {t.subject_id for t in tuples},
+            {f"localhost/{p.user_id}" for p in principals},
+        )
 
     def test_update_group_tuples(self):
         """Update a group by adding and removing users."""
@@ -353,14 +507,20 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEqual(len(tuples), 3)
-        self.assertEqual({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
+        self.assertEqual(
+            {t.subject_id for t in tuples},
+            {f"localhost/{p.user_id}" for p in principals},
+        )
 
         self.given_removed_group_members(group, ["u2"])
         principals = [p for p in principals if p.username != "u2"]
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEqual(len(tuples), 2)
-        self.assertEqual({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
+        self.assertEqual(
+            {t.subject_id for t in tuples},
+            {f"localhost/{p.user_id}" for p in principals},
+        )
 
     def test_custom_roles_group_assignments_tuples(self):
         role_1 = self.given_v1_role(
@@ -417,6 +577,20 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.assertEqual(len(tuples), 0)
 
+    def test_system_role_mapping(self):
+        role_test = self.given_v1_system_role(
+            "rtest",
+            permissions=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        group, _ = self.given_group("g1", [])
+
+        self.given_roles_assigned_to_group(group, roles=[role_test])
+
+        # See the group bound.
+        mappings = BindingMapping.objects.filter(role=role_test).get().mappings
+        self.assertEqual(mappings["groups"], [str(group.uuid)])
+
     def test_adding_same_role_again_and_unassign_it_once(self):
         role_test = self.given_v1_role(
             "rtest",
@@ -429,9 +603,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(group, roles=[role_test])
         self.given_roles_assigned_to_group(group, roles=[role_test])
 
-        # See the group bound multiple times
+        # See the group bound.
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 2)
+        self.assertEqual(len(mappings["groups"]), 1)
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -449,7 +623,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         dual_write_handler.replicate()
 
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 1)
+        self.assertEqual(len(mappings["groups"]), 0)
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -457,7 +631,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
-        self.assertEqual(len(tuples), 1)
+        self.assertEqual(len(tuples), 0)
 
     def test_reset_called_multiple_times_when_role_added_multiple_times(self):
         role_test = self.given_v1_system_role(
@@ -471,9 +645,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(group, roles=[role_test])
         self.given_roles_assigned_to_group(group, roles=[role_test])
 
-        # See the group bound multiple times
+        # See the group bound.
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 3)
+        self.assertEqual(len(mappings["groups"]), 1)
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -488,7 +662,6 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             ReplicationEventType.UNASSIGN_ROLE,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.generate_relations_to_add_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
@@ -514,35 +687,41 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         group, _ = self.given_group("g1", [])
 
         self.given_roles_assigned_to_group(group, roles=[role_test])
-        self.given_roles_assigned_to_group(group, roles=[role_test])
-        self.given_roles_assigned_to_group(group, roles=[role_test])
 
-        # See the group bound multiple times
-        mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 3)
+        binding_mapping: BindingMapping = BindingMapping.objects.filter(role=role_test).get()
+
+        original_groups = binding_mapping.mappings["groups"]
+        self.assertEqual(original_groups, [str(group.uuid)])
+
         tuples = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role_binding", mappings["id"]),
+                resource("rbac", "role_binding", binding_mapping.mappings["id"]),
                 relation("subject"),
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
         self.assertEqual(len(tuples), 1)
 
+        # In previous versions of RBAC, a single group could have been stored twice in the same BindingMapping. We
+        # need to ensure that calling generate_relations_reset_roles correctly handles this case and results in the
+        # group being stored only once.
+        binding_mapping.mappings["groups"] = original_groups + original_groups
+        binding_mapping.save()
+
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.UNASSIGN_ROLE,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.generate_relations_to_add_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
         dual_write_handler.replicate()
 
-        mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEqual(len(mappings["groups"]), 1)
+        # Retrieve the updated mapping.
+        binding_mapping = BindingMapping.objects.filter(role=role_test).get()
+        self.assertEqual(binding_mapping.mappings["groups"], [str(group.uuid)])
         tuples = self.tuples.find_tuples(
             all_of(
-                resource("rbac", "role_binding", mappings["id"]),
+                resource("rbac", "role_binding", binding_mapping.mappings["id"]),
                 relation("subject"),
                 subject("rbac", "group", str(group.uuid), "member"),
             )
@@ -592,6 +771,121 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid)))
         self.assertEqual(len(tuples), 0)
+
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    def test_custom_default_group_scopes(self):
+        """Test that system roles assigned to a new custom default groups are bound in the appropriate scope."""
+        for index, (permissions, target_for) in enumerate(
+            [
+                ([], lambda t: self.fixture.default_workspace(t)),
+                (["default:resource:verb"], lambda t: self.fixture.default_workspace(t)),
+                (["root:resource:verb"], lambda t: self.fixture.root_workspace(t)),
+                (["default:resource:verb", "root:resource:verb"], lambda t: self.fixture.root_workspace(t)),
+                (["tenant:resource:verb"], lambda t: t),
+                (["default:resource:verb", "root:resource:verb", "tenant:resource:verb"], lambda t: t),
+            ]
+        ):
+            with self.subTest(permissions=permissions):
+                Role.objects.public_tenant_only().delete()
+                platform_role = self.given_v1_system_role("platform", permissions, platform_default=True)
+
+                seed_group()
+
+                self.switch_to_new_tenant(name=f"test-{index}", org_id=f"test-{index}")
+                custom_group = self.given_custom_default_group()
+
+                target = V2boundresource.for_model(target_for(self.tenant))
+
+                role_id = str(platform_role.uuid)
+                group_id = str(custom_group.uuid)
+
+                self.expect_binding_present(target, v2_role_id=role_id, group_id=group_id)
+
+                self.given_roles_unassigned_from_group(custom_group, [platform_role])
+                self.expect_binding_absent(target, v2_role_id=role_id, group_id=group_id)
+
+                # Adding the role back later should still bind it in the target scope.
+                self.given_roles_assigned_to_group(custom_group, [platform_role])
+                self.expect_binding_present(target, v2_role_id=role_id, group_id=group_id)
+
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    def test_remove_scope_changed(self):
+        """Test that removing a role with changed scope from a group removes the old relations."""
+        Role.objects.public_tenant_only().delete()
+        platform_role = self.given_v1_system_role(
+            "platform", ["app:resource:verb", "other_app:resource:verb"], platform_default=True
+        )
+
+        def make_platform_default_group() -> Group:
+            # Assume that the custom default group was created while the role had root scope.
+            with override_settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
+                seed_group()
+                return self.given_custom_default_group()
+
+        def make_ordinary_group() -> Group:
+            with override_settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
+                group, _ = self.given_group(name="a group")
+                self.given_roles_assigned_to_group(group, [platform_role])
+
+                return group
+
+        for kind, group_fn in [
+            ("custom platform default", make_platform_default_group),
+            ("ordinary", make_ordinary_group),
+        ]:
+            with self.subTest(kind=kind):
+                group = group_fn()
+
+                role_id = str(platform_role.uuid)
+                group_id = str(group.uuid)
+
+                default_workspace = self.default_workspace_resource()
+                root_workspace = self.root_workspace_resource()
+                tenant = self.tenant_resource()
+
+                # A binding to the root workspace should have been created.
+                self.expect_binding_present(root_workspace, v2_role_id=role_id, group_id=group_id)
+
+                # No other bindings should have been created
+                self.expect_binding_absent(default_workspace, v2_role_id=role_id, group_id=group_id)
+                self.expect_binding_absent(tenant, v2_role_id=role_id, group_id=group_id)
+
+                # Remove the role while it has tenant scope.
+                with override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="app:*:*"):
+                    self.given_roles_unassigned_from_group(group, [platform_role])
+
+                # The root workspace binding should have been removed, and no other bindings should have been created.
+                self.expect_binding_absent(default_workspace, v2_role_id=role_id, group_id=group_id)
+                self.expect_binding_absent(root_workspace, v2_role_id=role_id, group_id=group_id)
+                self.expect_binding_absent(tenant, v2_role_id=role_id, group_id=group_id)
+
+    def test_custom_role_scope(self):
+        """Test that custom roles are bound in the correct scope."""
+        role = self.given_v1_role("a role", default=["root:resource:verb", "tenant:resource:verb"])
+
+        group, _ = self.given_group(name="a group")
+        self.given_roles_assigned_to_group(group, [role])
+
+        v2_role_id: str = BindingMapping.objects.get(role=role).mappings["role"]["id"]
+        group_id = str(group.uuid)
+
+        self.expect_binding_absent(
+            self.default_workspace_resource(),
+            v2_role_id=v2_role_id,
+            group_id=group_id,
+        )
+
+        self.expect_binding_absent(
+            self.root_workspace_resource(),
+            v2_role_id=v2_role_id,
+            group_id=group_id,
+        )
+
+        self.expect_binding_present(
+            self.tenant_resource(),
+            v2_role_id=v2_role_id,
+            group_id=group_id,
+        )
 
     def test_delete_group_removes_role_binding_for_system_roles_if_last_group(self):
         role_1 = self.given_v1_role(
@@ -663,6 +957,93 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.assertEqual(len(tuples), 1)
 
+    def _assert_custom_default_group_before_bootstrap(
+        self, do_boostrap: Callable[[V2TenantBootstrapService, Tenant], None]
+    ):
+        replicator = InMemoryRelationReplicator(self.tuples)
+        bootstrap_service = V2TenantBootstrapService(replicator=replicator)
+
+        self.switch_tenant(self.fixture.new_unbootstrapped_tenant(org_id="56789"))
+
+        # Hypothesis: a custom default access group is created before the tenant is bootstrapped (e.g. before V2
+        # existed).
+        default_group = Group.objects.create(
+            tenant=self.tenant,
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+        )
+
+        do_boostrap(bootstrap_service, self.tenant)
+
+        mapping: TenantMapping = self.tenant.tenant_mapping
+        policy_service = GlobalPolicyIdService()
+
+        default_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service=policy_service)
+        )
+        root_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.ROOT, policy_service=policy_service)
+        )
+        tenant_scope_role = str(
+            platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.TENANT, policy_service=policy_service)
+        )
+
+        def assert_default_bindings(num: int):
+            self.expect_role_bindings_to_workspace(
+                num=num,
+                workspace=self.default_workspace(self.tenant),
+                for_v2_roles=[default_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
+
+            self.expect_role_bindings_to_workspace(
+                num=num,
+                workspace=self.root_workspace(self.tenant),
+                for_v2_roles=[root_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
+
+            self.expect_role_bindings_to_tenant(
+                num=num,
+                org_id=self.tenant.org_id,
+                for_v2_roles=[tenant_scope_role],
+                for_groups=[mapping.default_group_uuid],
+            )
+
+        # Ensure that we actually use the correct default group UUID.
+        self.assertEqual(default_group.uuid, mapping.default_group_uuid)
+
+        # After bootstrap, no default role binding should exist, since a custom default access group exists.
+        assert_default_bindings(0)
+
+        self.given_group_removed(default_group)
+
+        # Once we have removed the default group, the default role binding should be restored.
+        assert_default_bindings(1)
+
+    def test_custom_default_group_before_single_bootstrap(self):
+        def do_bootstrap(bootstrap_service: V2TenantBootstrapService, tenant: Tenant):
+            bootstrap_service.bootstrap_tenant(tenant)
+
+        self._assert_custom_default_group_before_bootstrap(do_bootstrap)
+
+    def test_custom_default_group_before_bulk_bootstrap(self):
+        def do_bootstrap(bootstrap_service: V2TenantBootstrapService, tenant: Tenant):
+            # Import a single user in order to exercise the bulk import path.
+            bootstrap_service.import_bulk_users(
+                [
+                    User(
+                        username="test_user",
+                        user_id=f"{self.tenant.org_id}-user",
+                        org_id=self.tenant.org_id,
+                        is_active=True,
+                    )
+                ]
+            )
+
+        self._assert_custom_default_group_before_bootstrap(do_bootstrap)
+
 
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
@@ -710,7 +1091,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
         self.expect_1_role_binding_to_workspace(
-            self.default_workspace(), for_v2_roles=[id], for_groups=[str(g1.uuid), str(g2.uuid)]
+            self.default_workspace(),
+            for_v2_roles=[id],
+            for_groups=[str(g1.uuid), str(g2.uuid)],
         )
 
         self.given_roles_unassigned_from_group(g1, roles=[role])
@@ -730,7 +1113,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
 
         self.expect_1_role_binding_to_workspace(
-            self.default_workspace(self.test_tenant), for_v2_roles=[id], for_groups=[str(g1.uuid)]
+            self.default_workspace(self.test_tenant),
+            for_v2_roles=[id],
+            for_groups=[str(g1.uuid)],
         )
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
@@ -751,7 +1136,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
 
         self.expect_role_bindings_to_workspace(
-            0, self.default_workspace(self.test_tenant), for_v2_roles=[id], for_groups=[str(g1.uuid)]
+            0,
+            self.default_workspace(self.test_tenant),
+            for_v2_roles=[id],
+            for_groups=[str(g1.uuid)],
         )
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
@@ -763,7 +1151,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         admin_default = str(admin_default_group.policies.get().uuid)
 
         role = self.given_v1_system_role(
-            "r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+            "r1",
+            ["app1:hosts:read", "inventory:hosts:write"],
+            platform_default=True,
+            admin_default=True,
         )
 
         # check if relations exist in replicator.
@@ -811,7 +1202,10 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         admin_default = str(admin_default_group.policies.get().uuid)
 
         role = self.given_v1_system_role(
-            "d_r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+            "d_r1",
+            ["app1:hosts:read", "inventory:hosts:write"],
+            platform_default=True,
+            admin_default=True,
         )
 
         # check if relations exist in replicator.
@@ -882,6 +1276,682 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 0)
 
+    def test_updating_platform_role_scope_transitions(self):
+        """Test platform role scope transitions: ROOT->TENANT, DEFAULT->TENANT, and DEFAULT->ROOT."""
+
+        # Subtest 1: ROOT to TENANT transition
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+            TENANT_SCOPE_PERMISSIONS="app1:*:*",
+            SYSTEM_DEFAULT_TENANT_ROLE_UUID="3c9e6f1a-8b2d-4e5c-9a7f-1d3b5c8e2a4f",
+            SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="5e8a2c4f-9d1b-4c7e-8f3a-6d2b9c1e5a7f",
+        ):
+            with self.subTest(transition="ROOT to TENANT"):
+                platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+                platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_role_root_to_tenant",
+                    permissions=["inventory:*:*"],
+                    platform_default=True,
+                )
+
+                # Verify initial ROOT parent relationship
+                initial_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(initial_tuples), 1)
+
+                # Update to TENANT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role.admin_default = False
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(
+                        tenant_scope_permissions=["app1:organization:admin"]
+                    ),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify TENANT parent relationship exists and ROOT is deleted
+                updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(updated_tuples), 1)
+                deleted_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(deleted_tuples), 0)
+
+        # Subtest 2: DEFAULT to TENANT transition
+        with override_settings(
+            TENANT_SCOPE_PERMISSIONS="app1:*:*",
+            SYSTEM_DEFAULT_TENANT_ROLE_UUID="3c9e6f1a-8b2d-4e5c-9a7f-1d3b5c8e2a4f",
+        ):
+            with self.subTest(transition="DEFAULT to TENANT"):
+                platform_default_group, _ = seed_group()
+                platform_default_uuid = str(platform_default_group.policies.get().uuid)
+                platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_role_default_to_tenant",
+                    permissions=["inventory:hosts:read"],
+                    platform_default=True,
+                )
+
+                # Verify initial DEFAULT parent relationship
+                initial_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(initial_tuples), 1)
+
+                # Update to TENANT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(tenant_scope_permissions=["app1:*:*"]),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify TENANT parent relationship exists and DEFAULT is deleted
+                updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(updated_tuples), 1)
+                deleted_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(deleted_tuples), 0)
+
+        # Subtest 3: DEFAULT to ROOT transition
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+            SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="5e8a2c4f-9d1b-4c7e-8f3a-6d2b9c1e5a7f",
+        ):
+            with self.subTest(transition="DEFAULT to ROOT"):
+                platform_default_group, _ = seed_group()
+                platform_default_uuid = str(platform_default_group.policies.get().uuid)
+                platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_role_default_to_root",
+                    permissions=["app1:hosts:read"],
+                    platform_default=True,
+                )
+
+                # Verify initial DEFAULT parent relationship
+                initial_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(initial_tuples), 1)
+
+                # Update to ROOT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(root_scope_permission=["inventory:*:*"]),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify ROOT parent relationship exists and DEFAULT is deleted
+                updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(updated_tuples), 1)
+                deleted_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(deleted_tuples), 0)
+
+    def test_updating_admin_role_scope_transitions(self):
+        """Test admin role scope transitions: ROOT->TENANT, DEFAULT->TENANT, and DEFAULT->ROOT."""
+
+        # Subtest 1: ROOT to TENANT transition
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+            TENANT_SCOPE_PERMISSIONS="app1:*:*",
+            SYSTEM_ADMIN_TENANT_ROLE_UUID="a7f3c8b2-1d4e-4f9a-8c6d-2b5e7a9f1c3d",
+            SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="9b4c7e1f-3a5d-4f8c-9e2a-7c1d5b8f3a6e",
+        ):
+            with self.subTest(transition="ROOT to TENANT"):
+                admin_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+                admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_admin_role_root_to_tenant",
+                    permissions=["inventory:*:*"],
+                    admin_default=True,
+                )
+
+                # Verify initial ROOT parent relationship
+                initial_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(initial_tuples), 1)
+
+                # Update to TENANT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(
+                        tenant_scope_permissions=["app1:organization:admin"]
+                    ),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify TENANT parent relationship exists and ROOT is deleted
+                updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(updated_tuples), 1)
+                deleted_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(deleted_tuples), 0)
+
+        # Subtest 2: DEFAULT to TENANT transition
+        with override_settings(
+            TENANT_SCOPE_PERMISSIONS="app1:*:*",
+            SYSTEM_ADMIN_TENANT_ROLE_UUID="a7f3c8b2-1d4e-4f9a-8c6d-2b5e7a9f1c3d",
+        ):
+            with self.subTest(transition="DEFAULT to TENANT"):
+                _, admin_default_group = seed_group()
+                admin_default_uuid = str(admin_default_group.policies.get().uuid)
+                admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_admin_role_default_to_tenant",
+                    permissions=["inventory:hosts:read"],
+                    admin_default=True,
+                )
+
+                # Verify initial DEFAULT parent relationship
+                initial_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(initial_tuples), 1)
+
+                # Update to TENANT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(tenant_scope_permissions=["app1:*:*"]),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify TENANT parent relationship exists and DEFAULT is deleted
+                updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(updated_tuples), 1)
+                deleted_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(deleted_tuples), 0)
+
+        # Subtest 3: DEFAULT to ROOT transition
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+            SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="9b4c7e1f-3a5d-4f8c-9e2a-7c1d5b8f3a6e",
+        ):
+            with self.subTest(transition="DEFAULT to ROOT"):
+                _, admin_default_group = seed_group()
+                admin_default_uuid = str(admin_default_group.policies.get().uuid)
+                admin_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_admin_role_default_to_root",
+                    permissions=["app1:hosts:read"],
+                    admin_default=True,
+                )
+
+                # Verify initial DEFAULT parent relationship
+                initial_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(initial_tuples), 1)
+
+                # Update to ROOT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(root_scope_permission=["inventory:*:*"]),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify ROOT parent relationship exists and DEFAULT is deleted
+                updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(updated_tuples), 1)
+                deleted_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_default_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(deleted_tuples), 0)
+
+    def test_dual_platform_admin_role_operations(self):
+        """Test operations on roles with both platform_default=True and admin_default=True."""
+
+        # Subtest 1: DEFAULT to ROOT transition for dual role
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+            SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="5e8a2c4f-9d1b-4c7e-8f3a-6d2b9c1e5a7f",
+            SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="9b4c7e1f-3a5d-4f8c-9e2a-7c1d5b8f3a6e",
+        ):
+            with self.subTest(operation="DEFAULT to ROOT"):
+                platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+                admin_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_dual_role_default_to_root",
+                    ["app1:hosts:read"],
+                    platform_default=True,
+                    admin_default=True,
+                )
+
+                # Verify initial state - check tuples specific to this role
+                role_specific_tuples = self.tuples.find_tuples(
+                    all_of(
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                # Should have 2 child relationships (platform default + admin default parents)
+                self.assertEqual(len(role_specific_tuples), 2)
+
+                # Update to ROOT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(root_scope_permission=["inventory:*:*"]),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify both platform and admin ROOT relationships exist
+                platform_updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(platform_updated_tuples), 1)
+
+                admin_updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_root_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(admin_updated_tuples), 1)
+
+        # Subtest 2: DEFAULT to TENANT transition for dual role
+        with override_settings(
+            TENANT_SCOPE_PERMISSIONS="app1:*:*",
+            SYSTEM_ADMIN_TENANT_ROLE_UUID="a7f3c8b2-1d4e-4f9a-8c6d-2b5e7a9f1c3d",
+            SYSTEM_DEFAULT_TENANT_ROLE_UUID="3c9e6f1a-8b2d-4e5c-9a7f-1d3b5c8e2a4f",
+        ):
+            with self.subTest(operation="DEFAULT to TENANT"):
+                platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+                admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_dual_role_default_to_tenant",
+                    ["app1:hosts:read"],
+                    platform_default=True,
+                    admin_default=True,
+                )
+
+                # Verify initial state - check tuples specific to this role
+                role_specific_tuples = self.tuples.find_tuples(
+                    all_of(
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                # Should have 2 child relationships (platform default + admin default parents)
+                self.assertEqual(len(role_specific_tuples), 2)
+
+                # Update to TENANT scope
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.prepare_for_update()
+                role = self.fixture.update_custom_role(
+                    role,
+                    resource_access=self.fixture.workspace_access(root_scope_permission=["app1:*:*"]),
+                )
+                dual_write_handler.replicate_update_system_role()
+
+                # Verify both platform and admin TENANT relationships exist
+                platform_updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(platform_updated_tuples), 1)
+
+                admin_updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(admin_updated_tuples), 1)
+
+        # Subtest 3: Role deletion removes both relationships
+        with override_settings(
+            TENANT_SCOPE_PERMISSIONS="app1:*:*",
+            SYSTEM_ADMIN_TENANT_ROLE_UUID="a7f3c8b2-1d4e-4f9a-8c6d-2b5e7a9f1c3d",
+            SYSTEM_DEFAULT_TENANT_ROLE_UUID="3c9e6f1a-8b2d-4e5c-9a7f-1d3b5c8e2a4f",
+        ):
+            with self.subTest(operation="DELETE removes relationships"):
+                platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+                admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+
+                role = self.given_v1_system_role(
+                    "test_dual_role_deletion",
+                    ["app1:hosts:read"],
+                    platform_default=True,
+                    admin_default=True,
+                )
+
+                # Verify initial state - check tuples specific to this role
+                role_specific_tuples = self.tuples.find_tuples(
+                    all_of(
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                # Should have 2 child relationships (platform default + admin default parents)
+                self.assertEqual(len(role_specific_tuples), 2)
+
+                # Delete system role
+                dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role, replicator=InMemoryRelationReplicator(self.tuples)
+                )
+                dual_write_handler.replicate_deleted_system_role()
+
+                # Verify both platform and admin relationships are removed
+                platform_updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", platform_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(platform_updated_tuples), 0)
+
+                admin_updated_tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role", admin_tenant_uuid),
+                        relation("child"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                )
+                self.assertEqual(len(admin_updated_tuples), 0)
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        TENANT_SCOPE_PERMISSIONS="app1:*:*",
+        SYSTEM_ADMIN_TENANT_ROLE_UUID="a7f3c8b2-1d4e-4f9a-8c6d-2b5e7a9f1c3d",
+        SYSTEM_DEFAULT_TENANT_ROLE_UUID="3c9e6f1a-8b2d-4e5c-9a7f-1d3b5c8e2a4f",
+        SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="5e8a2c4f-9d1b-4c7e-8f3a-6d2b9c1e5a7f",
+        SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="9b4c7e1f-3a5d-4f8c-9e2a-7c1d5b8f3a6e",
+    )
+    def test_system_role_incorrect_scope_removal(self):
+        """Test that when a role has incorrect parent relationships (e.g., ROOT scope bound to TENANT parent), those incorrect relationships are removed."""
+        platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+        admin_tenant_uuid = settings.SYSTEM_ADMIN_TENANT_ROLE_UUID
+        platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+        admin_root_uuid = settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+
+        # Create a role with ROOT scope permissions
+        role = self.given_v1_system_role("r1", ["inventory:*:*"], platform_default=True, admin_default=True)
+
+        # Verify it's correctly bound to ROOT parent relationships
+        initial_tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEqual(len(initial_tuples), 3)
+
+        platform_root_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(platform_root_tuples), 1)
+
+        admin_root_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(admin_root_tuples), 1)
+
+        # Manually inject incorrect TENANT scope relationships (simulating a data inconsistency)
+        # This simulates the scenario where the role's scope is ROOT but it's incorrectly bound to TENANT parents
+        platform_incorrect_relationship = create_relationship(
+            resource_name=("rbac", "role"),
+            resource_id=platform_tenant_uuid,
+            relation="child",
+            subject_name=("rbac", "role"),
+            subject_id=str(role.uuid),
+            subject_relation="",
+        )
+        self.tuples.add(platform_incorrect_relationship)
+        admin_incorrect_relationship = create_relationship(
+            resource_name=("rbac", "role"),
+            resource_id=admin_tenant_uuid,
+            relation="child",
+            subject_name=("rbac", "role"),
+            subject_id=str(role.uuid),
+            subject_relation="",
+        )
+        self.tuples.add(admin_incorrect_relationship)
+
+        # Verify incorrect relationships now exist
+        all_tuples_before_delete = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEqual(len(all_tuples_before_delete), 5)  # 3 correct + 2 incorrect
+
+        # Delete system role - this should remove ALL parent relationships including incorrect ones
+        dual_write_handler = SeedingRelationApiDualWriteHandler(
+            role, replicator=InMemoryRelationReplicator(self.tuples)
+        )
+        dual_write_handler.replicate_deleted_system_role()
+
+        all_tuples_after_delete = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEqual(len(all_tuples_after_delete), 0)
+        # Verify all relationships are removed (both correct ROOT and incorrect TENANT)
+
+        platform_root_tuples_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(platform_root_tuples_after), 0)
+
+        admin_root_tuples_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", admin_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(admin_root_tuples_after), 0)
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*,app1:*:*",
+        TENANT_SCOPE_PERMISSIONS="catalog:*:*",
+        SYSTEM_DEFAULT_TENANT_ROLE_UUID="3c9e6f1a-8b2d-4e5c-9a7f-1d3b5c8e2a4f",
+        SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID="5e8a2c4f-9d1b-4c7e-8f3a-6d2b9c1e5a7f",
+    )
+    def test_updating_platform_role_scope_changes_due_to_settings_change(self):
+        """Test that updating a platform default role's parent relationship when scope changes due to settings change, not permission change."""
+        platform_default_group, admin_default_group = seed_group()
+        platform_default_uuid = str(platform_default_group.policies.get().uuid)
+        platform_tenant_uuid = settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID
+        platform_root_uuid = settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+
+        # Create a platform default role with app1:*:* which initially is in ROOT scope
+        role = self.given_v1_system_role(
+            "test_scope_change_via_settings",
+            permissions=["app1:*:*"],
+            platform_default=True,
+        )
+
+        # Initially, parent should be the platform root role since app1:*:* is in ROOT_SCOPE_PERMISSIONS
+        initial_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", platform_root_uuid),
+                relation("child"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(initial_tuples), 1)
+
+        # Now simulate settings change where ROOT_SCOPE_PERMISSIONS no longer includes app1:*:*
+        # We override settings to remove app1:*:* from ROOT_SCOPE_PERMISSIONS
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="inventory:*:*",  # app1:*:* removed
+            TENANT_SCOPE_PERMISSIONS="catalog:*:*",  # app1:*:* not here either, so it falls back to DEFAULT
+        ):
+            # Prepare for update (but permissions stay the same, only settings changed)
+            dual_write_handler = SeedingRelationApiDualWriteHandler(
+                role=role, replicator=InMemoryRelationReplicator(self.tuples)
+            )
+            dual_write_handler.prepare_for_update()
+
+            # Call replicate_update_system_role without changing permissions
+            # Just refresh the role to simulate re-processing with new settings
+            role = self.fixture.update_custom_role(
+                role,
+                resource_access=self.fixture.workspace_access(default=["app1:*:*"]),
+            )
+            dual_write_handler.replicate_update_system_role()
+
+            # After update with new settings, parent should be the platform default role
+            # because app1:*:* no longer matches ROOT or TENANT scope
+            updated_tuples = self.tuples.find_tuples(
+                all_of(
+                    resource("rbac", "role", platform_default_uuid),
+                    relation("child"),
+                    subject("rbac", "role", str(role.uuid)),
+                )
+            )
+            self.assertEqual(len(updated_tuples), 1)
+
+            # Verify the old ROOT relationship is deleted
+            deleted_tuple = self.tuples.find_tuples(
+                all_of(
+                    resource("rbac", "role", platform_root_uuid),
+                    relation("child"),
+                    subject("rbac", "role", str(role.uuid)),
+                )
+            )
+            self.assertEqual(len(deleted_tuple), 0)
+
 
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
     """Test dual write logic when we are working with custom roles."""
@@ -926,7 +1996,9 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
 
         self.expect_1_role_binding_to_workspace(
-            self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[str(group.uuid)]
+            self.default_workspace(),
+            for_v2_roles=[role_for_default],
+            for_groups=[str(group.uuid)],
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
 
@@ -951,7 +2023,9 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         role_for_ws_2 = self.expect_1_v2_role_with_permissions(["app1:hosts:read"])
 
         self.expect_1_role_binding_to_workspace(
-            self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[str(group.uuid)]
+            self.default_workspace(),
+            for_v2_roles=[role_for_default],
+            for_groups=[str(group.uuid)],
         )
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
 
@@ -1074,6 +2148,121 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[])
 
+    def test_change_role_scope(self):
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            role = self.given_v1_role(name="test role", default=["app:resource:verb"])
+
+        group, _ = self.given_group("a group")
+        group_id = str(group.uuid)
+
+        # This can change, so we need to recompute it after updating the role.
+        def get_v2_role_id() -> str:
+            return BindingMapping.objects.get(role=role).mappings["role"]["id"]
+
+        default_workspace = self.default_workspace_resource()
+        root_workspace = self.root_workspace_resource()
+        tenant = self.tenant_resource()
+
+        # Scope at the time of assignment should not matter.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            self.given_roles_assigned_to_group(group, [role])
+            v2_role_id = get_v2_role_id()
+
+        self.expect_binding_present(default_workspace, v2_role_id=v2_role_id, group_id=group_id)
+        self.expect_binding_absent(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
+        self.expect_binding_absent(tenant, v2_role_id=v2_role_id, group_id=group_id)
+
+        # Put the existing permission into root scope, then try removing it.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            self.given_update_to_v1_role(role, default=[])
+
+        # At this point, we expect no role bindings to exist (and thus there is no V2 role ID to check).
+        # We expect to have successfully removed the existing role binding despite the scope of the role having
+        # changed since it was created.
+        self.assertFalse(BindingMapping.objects.filter(role=role).exists())
+        self.assertEqual(0, len(self.tuples.find_tuples(relation("binding"))))
+
+        # Re-adding the permission (but now in root scope) should bind the role in the root workspace.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            self.given_update_to_v1_role(role, default=["app:resource:verb"])
+            v2_role_id = get_v2_role_id()
+
+        self.expect_binding_absent(default_workspace, v2_role_id=v2_role_id, group_id=group_id)
+        self.expect_binding_present(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
+        self.expect_binding_absent(tenant, v2_role_id=v2_role_id, group_id=group_id)
+
+        # Adding a new permission in tenant scope should bind the role to the tenant.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS="other_app:*:*"):
+            self.given_update_to_v1_role(role, default=["app:resource:verb", "other_app:resource:verb"])
+            v2_role_id = get_v2_role_id()
+
+        self.expect_binding_absent(default_workspace, v2_role_id=v2_role_id, group_id=group_id)
+        self.expect_binding_absent(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
+        self.expect_binding_present(tenant, v2_role_id=v2_role_id, group_id=group_id)
+
+    def test_role_with_mixed_resource_definitions_creates_multiple_bindings(self):
+        """
+        Test that a role with both scope-based permissions and workspace resource definitions creates multiple bindings.
+
+        Scenario:
+        - ROOT scope permission (advisor:recommendation:read) without resource definition → binds to root workspace
+        - DEFAULT scope permission (inventory:groups:write) without resource definition → binds to root workspace (merged)
+        - DEFAULT scope permission (inventory:groups:read) with specific workspace resource definition → binds to that workspace
+
+        Expected: TWO separate bindings (one for root, one for specific workspace)
+        """
+        # Create a specific workspace for the resource definition
+        specific_workspace = Workspace.objects.create(
+            name="Specific Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.fixture.root_workspace(self.tenant),
+        )
+        specific_ws_id = str(specific_workspace.id)
+
+        # Create role with mixed permissions
+        with self.settings(ROOT_SCOPE_PERMISSIONS="advisor:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            role = self.given_v1_role(
+                "mixed_resource_role",
+                default=["advisor:recommendation:read", "inventory:groups:write"],
+                **{specific_ws_id: ["inventory:groups:read"]},
+            )
+
+        # Verify 2 BindingMappings created (one per resource)
+        mappings = BindingMapping.objects.filter(role=role)
+        self.assertEqual(mappings.count(), 2, "Should have 2 BindingMapping records")
+
+        # Get the V2 role IDs for each binding
+        root_binding = mappings.get(resource_id=self.root_workspace())
+        specific_binding = mappings.get(resource_id=specific_ws_id)
+
+        root_role_id = root_binding.mappings["role"]["id"]
+        specific_role_id = specific_binding.mappings["role"]["id"]
+
+        # Verify root workspace binding exists with correct permissions
+        self.expect_1_role_binding_to_workspace(
+            self.root_workspace(),
+            for_v2_roles=[root_role_id],
+            for_groups=[],
+        )
+        root_role_binding = root_binding.get_role_binding()
+        self.assertIn("advisor_recommendation_read", root_role_binding.role.permissions)
+        self.assertIn("inventory_groups_write", root_role_binding.role.permissions)
+
+        # Verify specific workspace binding exists with correct permissions
+        self.expect_1_role_binding_to_workspace(
+            specific_ws_id,
+            for_v2_roles=[specific_role_id],
+            for_groups=[],
+        )
+        specific_role_binding = specific_binding.get_role_binding()
+        self.assertIn("inventory_groups_read", specific_role_binding.role.permissions)
+
+        # Verify the two bindings have different V2 roles (different permission sets)
+        self.assertNotEqual(
+            root_role_id, specific_role_id, "Different permission sets should create different V2 roles"
+        )
+
 
 class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
 
@@ -1151,7 +2340,10 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         dual_write_handler.replicate()
 
         mapping = BindingMapping.objects.filter(role=system_role).first()
-        self.assertEqual(mapping.mappings["users"], {str(SourceKey(car_1, car_1.source_pk())): user_id_1})
+        self.assertEqual(
+            mapping.mappings["users"],
+            {str(SourceKey(car_1, car_1.source_pk())): user_id_1},
+        )
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
@@ -1174,7 +2366,10 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         dual_write_handler.generate_relations_reset_roles(car_1.roles.all())
         dual_write_handler.replicate()
         mapping.refresh_from_db()
-        self.assertEqual(mapping.mappings["users"], {str(SourceKey(car_1, car_1.source_pk())): user_id_1})
+        self.assertEqual(
+            mapping.mappings["users"],
+            {str(SourceKey(car_1, car_1.source_pk())): user_id_1},
+        )
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
@@ -1195,7 +2390,10 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         mapping.refresh_from_db()
         self.assertEqual(
             mapping.mappings["users"],
-            {str(SourceKey(car_1, car_1.source_pk())): user_id_1, str(SourceKey(car_2, car_2.source_pk())): user_id_2},
+            {
+                str(SourceKey(car_1, car_1.source_pk())): user_id_1,
+                str(SourceKey(car_2, car_2.source_pk())): user_id_2,
+            },
         )
         tuples = self.tuples.find_tuples(
             all_of(
@@ -1237,7 +2435,10 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
 class RbacFixture:
     """RBAC Fixture."""
 
-    def __init__(self, bootstrap_service: TenantBootstrapService = V2TenantBootstrapService(NoopReplicator())):
+    def __init__(
+        self,
+        bootstrap_service: TenantBootstrapService = V2TenantBootstrapService(NoopReplicator()),
+    ):
         """Initialize the RBAC fixture."""
         self.public_tenant = Tenant.objects.get(tenant_name="public")
         self.bootstrap_service = bootstrap_service
@@ -1264,7 +2465,13 @@ class RbacFixture:
             # Nothing to do if not using V2 bootstrapping
             return None
 
-    def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
+    def new_system_role(
+        self,
+        name: str,
+        permissions: list[str],
+        platform_default=False,
+        admin_default=False,
+    ) -> Role:
         """Create a new system role with the given name and permissions."""
         role = Role.objects.create(
             name=name,
@@ -1291,7 +2498,7 @@ class RbacFixture:
         """
         Create a new custom role.
 
-        [resource_access] is a list of tuples of the form (permissions, attribute_filter).
+        [resource_access] is a list of tuples of the form (permissions, attribute filter).
         """
         role = Role.objects.create(name=name, system=False, tenant=tenant)
         return self.update_custom_role(role, resource_access)
@@ -1300,7 +2507,7 @@ class RbacFixture:
         """
         Update a custom role.
 
-        [resource_access] is a list of tuples of the form (permissions, attribute_filter).
+        [resource_access] is a list of tuples of the form (permissions, attribute filter).
         """
         role.access.all().delete()
 
@@ -1319,7 +2526,9 @@ class RbacFixture:
             if attribute_filter:
                 for access in access_list:
                     ResourceDefinition.objects.create(
-                        attributeFilter=attribute_filter, access=access, tenant=role.tenant
+                        attributeFilter=attribute_filter,
+                        access=access,
+                        tenant=role.tenant,
                     )
 
         return role
@@ -1346,13 +2555,20 @@ class RbacFixture:
         return [
             (default, {}),
             *[
-                (permissions, {"key": "group.id", "operation": "equal", "value": workspace})
+                (
+                    permissions,
+                    {"key": "group.id", "operation": "equal", "value": workspace},
+                )
                 for workspace, permissions in kwargs.items()
             ],
         ]
 
     def new_group(
-        self, name: str, tenant: Tenant, users: list[str] = [], service_accounts: list[str] = []
+        self,
+        name: str,
+        tenant: Tenant,
+        users: list[str] = [],
+        service_accounts: list[str] = [],
     ) -> Tuple[Group, list[Principal]]:
         """Create a new group with the given name, users, and tenant."""
         group = Group.objects.create(name=name, tenant=tenant)
@@ -1360,7 +2576,7 @@ class RbacFixture:
         return group, principals
 
     def custom_default_group(self, tenant: Tenant) -> Group:
-        return set_system_flag_before_update(self.default_group, tenant, None)  # type: ignore
+        return set_system_flag_before_update(Group.objects.get(pk=self.default_group.pk), tenant, None)  # type: ignore
 
     def root_workspace(self, tenant: Tenant) -> Workspace:
         return Workspace.objects.root(tenant=tenant)
@@ -1371,7 +2587,10 @@ class RbacFixture:
     def add_role_to_group(self, role: Role, group: Group) -> Policy:
         """Add a role to a group for a given tenant and return the policy."""
         policy, _ = Policy.objects.get_or_create(
-            name=f"System Policy for Group {group.uuid}", system=True, group=group, tenant=group.tenant
+            name=f"System Policy for Group {group.uuid}",
+            system=True,
+            group=group,
+            tenant=group.tenant,
         )
         policy.roles.add(role)
         policy.save()
@@ -1390,7 +2609,11 @@ class RbacFixture:
         return policy
 
     def add_members_to_group(
-        self, group: Group, users: list[str], service_accounts: list[str], principal_tenant: Tenant
+        self,
+        group: Group,
+        users: list[str],
+        service_accounts: list[str],
+        principal_tenant: Tenant,
     ) -> list[Principal]:
         """Add members to the group."""
         principals = [
@@ -1414,7 +2637,11 @@ class RbacFixture:
         return principals
 
     def remove_members_from_group(
-        self, group: Group, users: list[str], service_accounts: list[str], principal_tenant: Tenant
+        self,
+        group: Group,
+        users: list[str],
+        service_accounts: list[str],
+        principal_tenant: Tenant,
     ):
         """Remove members from the group."""
         principals = [

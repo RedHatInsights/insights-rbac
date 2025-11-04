@@ -15,16 +15,24 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """TenantMapping model."""
-
+import enum
 import logging
 import uuid
+from typing import Callable, ClassVar
 
 from django.db import models
+from management.permission.scope_service import Scope
 
 from api.models import Tenant
 
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+class DefaultAccessType(enum.StrEnum):
+    """Represents the two types of default access resources. This mirrors the split in TenantMapping."""
+
+    USER = "user"
+    ADMIN = "admin"
 
 
 class TenantMapping(models.Model):
@@ -38,5 +46,39 @@ class TenantMapping(models.Model):
     default_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     # The admin default group UUID, for the same purpose as above, except for admin users.
     default_admin_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+
+    # UUIDs for the role bindings that bind the user default and admin default groups to the appropriate platform
+    # groups. One such role binding exists for each of the scopes that has default roles: the tenant itself, the
+    # tenant's root workspace, and the tenant's default workspace.
     default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    root_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    root_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    tenant_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    tenant_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+
+    _role_binding_uuid_fns: ClassVar[dict[DefaultAccessType, dict[Scope, Callable[["TenantMapping"], uuid.UUID]]]] = {
+        DefaultAccessType.USER: {
+            Scope.DEFAULT: lambda m: m.default_role_binding_uuid,
+            Scope.ROOT: lambda m: m.root_scope_default_role_binding_uuid,
+            Scope.TENANT: lambda m: m.tenant_scope_default_role_binding_uuid,
+        },
+        DefaultAccessType.ADMIN: {
+            Scope.DEFAULT: lambda m: m.default_admin_role_binding_uuid,
+            Scope.ROOT: lambda m: m.root_scope_default_admin_role_binding_uuid,
+            Scope.TENANT: lambda m: m.tenant_scope_default_admin_role_binding_uuid,
+        },
+    }
+
+    def group_uuid_for(self, access_type: DefaultAccessType) -> uuid.UUID:
+        """Get the UUID for the tenant's default group for the appropriate access type."""
+        if access_type == DefaultAccessType.USER:
+            return self.default_group_uuid
+        elif access_type == DefaultAccessType.ADMIN:
+            return self.default_admin_group_uuid
+        else:
+            raise ValueError(f"Unexpected access type: {access_type}")
+
+    def default_role_binding_uuid_for(self, access_type: DefaultAccessType, scope: Scope) -> uuid.UUID:
+        """Get the UUID for the tenant's default role binding (in the provided scope) of the provided access type."""
+        return TenantMapping._role_binding_uuid_fns[access_type][scope](self)
