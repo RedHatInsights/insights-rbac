@@ -282,7 +282,7 @@ objects:
           - '-c'
           - >
             PYTHONPATH=${PWD}/rbac/ celery -A
-            rbac.celery beat -l $DJANGO_LOG_LEVEL
+            rbac.celery beat -l $DJANGO_LOG_LEVEL --schedule=/tmp/celerybeat-schedule
         livenessProbe:
           exec:
             command:
