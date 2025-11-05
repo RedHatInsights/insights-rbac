@@ -35,7 +35,7 @@ _duplicated_fields = [
 _relations_limit = 1000
 
 
-def _replicate_removed_batches(replicator: RelationReplicator, to_remove_batches: list[list[Relationship]]):
+def _replicate_removed_batches(replicator: RelationReplicator, batches_to_remove: list[list[Relationship]]):
     """Replicate the provided relations while grouping sublists but without splitting any sublist between events."""
 
     def _do_remove(relations: list[Relationship]):
@@ -52,7 +52,7 @@ def _replicate_removed_batches(replicator: RelationReplicator, to_remove_batches
 
     collected = []
 
-    for batch in to_remove_batches:
+    for batch in batches_to_remove:
         if len(collected) + len(batch) > _relations_limit:
             _do_remove(collected)
             collected = []
@@ -134,7 +134,7 @@ class Command(BaseCommand):
                     scope_resources_cache = TenantScopeResourcesCache.for_tenants(tenants)
 
                 updated_mappings: list[TenantMapping] = []
-                to_remove_batches: list[list[Relationship]] = []
+                batches_to_remove: list[list[Relationship]] = []
 
                 for tenant in tenants:
                     lock_result = lock_results[tenant]
@@ -155,7 +155,7 @@ class Command(BaseCommand):
                                 target_scopes=[Scope.ROOT, Scope.TENANT],
                             )
 
-                        to_remove_batches.append(
+                        batches_to_remove.append(
                             [*relations_for(DefaultAccessType.USER), *relations_for(DefaultAccessType.ADMIN)]
                         )
 
@@ -173,8 +173,8 @@ class Command(BaseCommand):
                 # Bulk update for efficiency
                 TenantMapping.objects.bulk_update(updated_mappings, _duplicated_fields)
 
-                if to_remove_batches:
-                    _replicate_removed_batches(replicator=replicator, to_remove_batches=to_remove_batches)
+                if batches_to_remove:
+                    _replicate_removed_batches(replicator=replicator, batches_to_remove=batches_to_remove)
 
                 processed += batch_count
                 updated += batch_count
