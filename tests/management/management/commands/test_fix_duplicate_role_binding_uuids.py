@@ -56,9 +56,9 @@ class TestFixDuplicateRoleBindingUUIDs(TestCase):
             self.fixture.new_tenant(org_id=f"batch-test-org-{i}")
 
         # Set stage duplicate UUID for all tenants
-        stage_uuid = "0e0451d3-440f-404a-b8a8-a77811e40925"
+        duplicated = uuid.uuid4()
         for mapping in TenantMapping.objects.all():
-            mapping.root_scope_default_role_binding_uuid = stage_uuid
+            mapping.root_scope_default_role_binding_uuid = duplicated
             mapping.save()
 
         # Run with small batch size

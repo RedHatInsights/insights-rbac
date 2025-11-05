@@ -4,10 +4,9 @@ import itertools
 import logging
 import uuid
 
-from django.conf import settings
 from django.core.management import BaseCommand
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Count
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.platform import GlobalPolicyIdService
 from management.permission.scope_service import Scope, TenantScopeResourcesCache
@@ -74,10 +73,6 @@ class Command(BaseCommand):
 
     help = "Fix duplicate role binding UUIDs in TenantMapping table"
 
-    # Known duplicate UUIDs from migration 0070
-    STAGE_DUPLICATE_UUID = "0e0451d3-440f-404a-b8a8-a77811e40925"
-    PROD_DUPLICATE_UUID = "b79d902b-02ac-4d59-b3b2-6321fd7d557c"
-
     def add_arguments(self, parser):
         """Add command arguments."""
         parser.add_argument(
@@ -93,42 +88,32 @@ class Command(BaseCommand):
             help="Remove the relevant access bindings from relations",
         )
 
-    def handle(self, *args, **options):
-        """Execute the command."""
-        batch_size = options["batch_size"]
-        replicate_removal = options["replicate_removal"]
+    def _handle_field_duplicates(self, field: str, replicate_removal: bool, batch_size: int):
+        duplicate_values = [
+            m[field]
+            for m in TenantMapping.objects.all()
+            .values(field)
+            .annotate(field_count=Count(field))
+            .filter(field_count__gt=1)
+        ]
 
-        self.stderr.write(f"Running with {batch_size=}, {replicate_removal=}")
+        self.stderr.write(f"Duplicate values for {field}: {duplicate_values}")
 
-        env_name = settings.ENV_NAME
-        self.stderr.write(f"Environment: {env_name}")
-        self.stderr.write("=" * 80)
-
-        # Determine which UUID to filter by based on environment
-        if env_name.lower() == "stage":
-            target_uuid = self.STAGE_DUPLICATE_UUID
-            self.stderr.write(f"STAGE environment detected. Fixing UUID: {target_uuid}")
-        elif env_name.lower() == "prod":
-            target_uuid = self.PROD_DUPLICATE_UUID
-            self.stderr.write(f"PROD environment detected. Fixing UUID: {target_uuid}")
-        else:
-            self.stderr.write(
-                self.style.ERROR(
-                    f"Environment '{env_name}' is neither 'stage' nor 'prod'. "
-                    "Cannot determine which duplicate UUID to fix."
-                )
-            )
-            return
-
-        # Build the queryset with the environment-specific UUID filter
-        base_qs: QuerySet = TenantMapping.objects.filter(root_scope_default_role_binding_uuid=target_uuid)
+        tenant_query = Tenant.objects.select_for_update().filter(
+            tenant_mapping__in=TenantMapping.objects.filter(**{f"{field}__in": duplicate_values})
+        )
 
         # Count total records to process (estimate for progress tracking)
-        estimate = base_qs.count()
-        self.stderr.write(f"\nEstimated {estimate} TenantMapping records to process")
+        estimate = tenant_query.count()
+        self.stderr.write(f"Estimated {estimate} TenantMapping records to process")
 
         if estimate == 0:
-            self.stderr.write(self.style.SUCCESS("No TenantMapping records found with duplicate UUID. Nothing to do."))
+            self.stderr.write(
+                self.style.SUCCESS(
+                    f"No (remaining) TenantMapping records found with duplicate UUID in field {field}. Nothing to do."
+                )
+            )
+
             return
 
         # Process in batches using iterator (streaming cursor) - matches bootstrap_tenants pattern
@@ -140,13 +125,8 @@ class Command(BaseCommand):
         policy_service = GlobalPolicyIdService()
 
         # Use iterator() for streaming and batched() for grouping (like bootstrap_tenants command)
-        for raw_mappings in itertools.batched(
-            base_qs.order_by("id").prefetch_related("tenant").iterator(chunk_size=2000), batch_size
-        ):
+        for tenants in itertools.batched(tenant_query.order_by("id").iterator(), batch_size):
             with transaction.atomic():
-                tenants = list(Tenant.objects.select_for_update().filter(tenant_mapping__in=raw_mappings))
-                assert len(tenants) == len(raw_mappings), "TenantMappings should not have been deleted"
-
                 # We need to take the full bootstrap lock to prevent concurrent custom default group creation/removal.
                 lock_results = try_lock_tenants_for_bootstrap(tenants)
 
@@ -157,8 +137,10 @@ class Command(BaseCommand):
                 to_remove_batches: list[list[Relationship]] = []
 
                 for tenant in tenants:
-                    mapping = lock_results[tenant].tenant_mapping
-                    assert mapping is not None
+                    lock_result = lock_results[tenant]
+                    assert lock_result is not None, f"Tenant {tenant} is known to be bootstrapped."
+
+                    mapping = lock_result.tenant_mapping
 
                     if replicate_removal:
                         resources = scope_resources_cache.resources_for(tenant)
@@ -204,6 +186,20 @@ class Command(BaseCommand):
 
         # Final summary
         self.stderr.write(self.style.SUCCESS(f"Successfully updated {updated} TenantMapping records."))
+
+    def handle(self, *args, **options):
+        """Execute the command."""
+        batch_size = options["batch_size"]
+        replicate_removal = options["replicate_removal"]
+
+        self.stderr.write(f"Running with {batch_size=}, {replicate_removal=}")
+        self.stderr.write("=" * 80)
+
+        for field in _duplicated_fields:
+            self.stderr.write(f"Removing duplicates for field {field}.")
+            self._handle_field_duplicates(field=field, replicate_removal=replicate_removal, batch_size=batch_size)
+
+            self.stderr.write()
 
         self.stderr.write("\nFields updated:")
 
