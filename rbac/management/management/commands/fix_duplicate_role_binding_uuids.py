@@ -7,9 +7,60 @@ import uuid
 from django.conf import settings
 from django.core.management import BaseCommand
 from django.db import transaction
-from management.tenant_mapping.model import TenantMapping
+from django.db.models import QuerySet
+from kessel.relations.v1beta1.common_pb2 import Relationship
+from management.group.platform import GlobalPolicyIdService
+from management.permission.scope_service import Scope, TenantScopeResourcesCache
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_service.relations import default_role_binding_tuples
+from management.tenant_service.v2 import try_lock_tenants_for_bootstrap
+
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)
+
+_duplicated_fields = [
+    "root_scope_default_role_binding_uuid",
+    "root_scope_default_admin_role_binding_uuid",
+    "tenant_scope_default_admin_role_binding_uuid",
+    "tenant_scope_default_role_binding_uuid",
+]
+
+_relations_limit = 1000
+
+
+def _replicate_removed_batches(replicator: RelationReplicator, to_remove_batches: list[list[Relationship]]):
+    """Replicate the provided relations while grouping sublists but without splitting any sublist between events."""
+
+    def _do_remove(relations: list[Relationship]):
+        if not relations:
+            return
+
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.DUPLICATE_BINDING_CLEANUP,
+                partition_key=PartitionKey.byEnvironment(),
+                remove=relations,
+            )
+        )
+
+    collected = []
+
+    for batch in to_remove_batches:
+        if len(collected) + len(batch) > _relations_limit:
+            _do_remove(collected)
+            collected = []
+
+        collected.extend(batch)
+
+    _do_remove(collected)
 
 
 class Command(BaseCommand):
@@ -36,9 +87,18 @@ class Command(BaseCommand):
             help="Number of TenantMapping records to process in each batch (default: 1000)",
         )
 
+        parser.add_argument(
+            "--replicate-removal",
+            action="store_true",
+            help="Remove the relevant access bindings from relations",
+        )
+
     def handle(self, *args, **options):
         """Execute the command."""
         batch_size = options["batch_size"]
+        replicate_removal = options["replicate_removal"]
+
+        self.stdout.write(f"Running with {batch_size=}, {replicate_removal=}")
 
         env_name = settings.ENV_NAME
         self.stdout.write(f"Environment: {env_name}")
@@ -61,7 +121,7 @@ class Command(BaseCommand):
             return
 
         # Build the queryset with the environment-specific UUID filter
-        base_qs = TenantMapping.objects.filter(root_scope_default_role_binding_uuid=target_uuid)
+        base_qs: QuerySet = TenantMapping.objects.filter(root_scope_default_role_binding_uuid=target_uuid)
 
         # Count total records to process (estimate for progress tracking)
         estimate = base_qs.count()
@@ -76,37 +136,63 @@ class Command(BaseCommand):
         processed = 0
         updated = 0
 
+        replicator = OutboxReplicator()
+        policy_service = GlobalPolicyIdService()
+
         # Use iterator() for streaming and batched() for grouping (like bootstrap_tenants command)
-        for raw_mappings in itertools.batched(base_qs.order_by("id").iterator(), batch_size):
+        for raw_mappings in itertools.batched(
+            base_qs.order_by("id").prefetch_related("tenant").iterator(chunk_size=2000), batch_size
+        ):
             with transaction.atomic():
-                # Lock the records we're about to update (like bootstrap_tenants does)
-                mapping_ids = [m.id for m in raw_mappings]
-                mappings = list(TenantMapping.objects.select_for_update().filter(id__in=mapping_ids))
+                tenants = list(Tenant.objects.select_for_update().filter(tenant_mapping__in=raw_mappings))
+                assert len(tenants) == len(raw_mappings), "TenantMappings should not have been deleted"
 
-                if not mappings:
-                    continue
+                # We need to take the full bootstrap lock to prevent concurrent custom default group creation/removal.
+                lock_results = try_lock_tenants_for_bootstrap(tenants)
 
-                batch_count = len(mappings)
-                logger.info(f"Processing batch: {processed + 1}-{processed + batch_count} of ~{estimate}")
-                self.stdout.write(f"Processing batch: {processed + 1}-{processed + batch_count} of ~{estimate}")
+                if replicate_removal:
+                    scope_resources_cache = TenantScopeResourcesCache.for_tenants(tenants)
 
-                # Update each mapping with new unique UUIDs
-                for mapping in mappings:
+                updated_mappings: list[TenantMapping] = []
+                to_remove_batches: list[list[Relationship]] = []
+
+                for tenant in tenants:
+                    mapping = lock_results[tenant].tenant_mapping
+                    assert mapping is not None
+
+                    if replicate_removal:
+                        resources = scope_resources_cache.resources_for(tenant)
+
+                        def relations_for(access_type: DefaultAccessType):
+                            # Only the ROOT and TENANT scope bindings are affected.
+                            return default_role_binding_tuples(
+                                tenant_mapping=mapping,
+                                target_resources=resources,
+                                access_type=access_type,
+                                policy_service=policy_service,
+                                target_scopes=[Scope.ROOT, Scope.TENANT],
+                            )
+
+                        to_remove_batches.append(
+                            [*relations_for(DefaultAccessType.USER), *relations_for(DefaultAccessType.ADMIN)]
+                        )
+
                     mapping.root_scope_default_role_binding_uuid = uuid.uuid4()
                     mapping.root_scope_default_admin_role_binding_uuid = uuid.uuid4()
                     mapping.tenant_scope_default_admin_role_binding_uuid = uuid.uuid4()
                     mapping.tenant_scope_default_role_binding_uuid = uuid.uuid4()
 
+                    updated_mappings.append(mapping)
+
+                batch_count = len(tenants)
+                logger.info(f"Processing batch: {processed + 1}-{processed + batch_count} of ~{estimate}")
+                self.stdout.write(f"Processing batch: {processed + 1}-{processed + batch_count} of ~{estimate}")
+
                 # Bulk update for efficiency
-                TenantMapping.objects.bulk_update(
-                    mappings,
-                    [
-                        "root_scope_default_role_binding_uuid",
-                        "root_scope_default_admin_role_binding_uuid",
-                        "tenant_scope_default_admin_role_binding_uuid",
-                        "tenant_scope_default_role_binding_uuid",
-                    ],
-                )
+                TenantMapping.objects.bulk_update(updated_mappings, _duplicated_fields)
+
+                if to_remove_batches:
+                    _replicate_removed_batches(replicator=replicator, to_remove_batches=to_remove_batches)
 
                 processed += batch_count
                 updated += batch_count
@@ -120,7 +206,6 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"Successfully updated {updated} TenantMapping records."))
 
         self.stdout.write("\nFields updated:")
-        self.stdout.write("  - root_scope_default_role_binding_uuid")
-        self.stdout.write("  - root_scope_default_admin_role_binding_uuid")
-        self.stdout.write("  - tenant_scope_default_admin_role_binding_uuid")
-        self.stdout.write("  - tenant_scope_default_role_binding_uuid")
+
+        for field in _duplicated_fields:
+            self.stdout.write(f"  - {field}")
