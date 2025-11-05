@@ -667,7 +667,6 @@ class RBACKafkaConsumer:
                     f"aggregateid: {debezium_msg.aggregateid}"
                 )
                 messages_processed_total.labels(message_type="relations", status="missing_org_id").inc()
-                return False
 
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
