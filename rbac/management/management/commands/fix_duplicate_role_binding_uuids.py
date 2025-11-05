@@ -130,6 +130,7 @@ class Command(BaseCommand):
                 # We need to take the full bootstrap lock to prevent concurrent custom default group creation/removal.
                 lock_results = try_lock_tenants_for_bootstrap(tenants)
 
+                # We only need this when computing relations to remove.
                 if replicate_removal:
                     scope_resources_cache = TenantScopeResourcesCache.for_tenants(tenants)
 
