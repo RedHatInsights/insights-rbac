@@ -46,8 +46,7 @@ def populate_tenant_org_id(tenants, account_org_mapping):
 
     for account_id, org_id in account_org_mapping.items():
         try:
-            tenant = tenant_by_account_id.get(account_id)
-            if tenant:
+            if tenant := tenant_by_account_id.get(account_id):
                 with transaction.atomic():
                     logger.info(f"Updating tenant with account_id={account_id} to org_id={org_id}")
                     tenant.org_id = org_id

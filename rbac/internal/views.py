@@ -696,20 +696,11 @@ def populate_tenant_org_id_view(request):
     """
     if request.method == "POST":
         try:
-            # Find tenants with empty org_id
-            tenants_without_org_id = Tenant.objects.filter(org_id__isnull=True).exclude(tenant_name="public")
-
-            if not tenants_without_org_id.exists():
-                return JsonResponse(
-                    {
-                        "message": "No tenants found with empty org_id.",
-                        "statistics": {"updated": 0, "not_found": 0, "errors": 0, "error_details": []},
-                    },
-                    status=200,
-                )
+            # Find tenants with empty org_id (initial query to get account_ids)
+            tenants_query = Tenant.objects.filter(org_id__isnull=True).exclude(tenant_name="public")
 
             # Get list of account_ids that need org_id mapping
-            account_ids = [tenant.account_id for tenant in tenants_without_org_id if tenant.account_id]
+            account_ids = list(tenants_query.values_list("account_id", flat=True).filter(account_id__isnull=False))
 
             if not account_ids:
                 return JsonResponse(
@@ -722,7 +713,7 @@ def populate_tenant_org_id_view(request):
 
             logger.info(f"Found {len(account_ids)} tenants with empty org_id")
 
-            # Fetch mapping from BOP
+            # Fetch mapping from BOP (done outside transaction to avoid holding locks during API call)
             account_org_mapping = PROXY.fetch_account_org_mapping(account_ids)
 
             if account_org_mapping is None:
@@ -745,9 +736,14 @@ def populate_tenant_org_id_view(request):
                     status=200,
                 )
 
-            # Populate tenants with org_id
+            # Populate tenants with org_id (with transaction and row locking)
             logger.info(f"Populating org_id for {len(account_org_mapping)} tenants from BOP mapping")
-            stats = populate_tenant_org_id(tenants_without_org_id, account_org_mapping)
+            with transaction.atomic():
+                # Re-fetch tenants with select_for_update to prevent concurrent modifications
+                tenants_without_org_id = (
+                    Tenant.objects.select_for_update().filter(org_id__isnull=True).exclude(tenant_name="public")
+                )
+                stats = populate_tenant_org_id(tenants_without_org_id, account_org_mapping)
 
             response_data = {
                 "message": "Tenant org_id population completed.",
