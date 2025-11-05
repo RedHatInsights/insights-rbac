@@ -1876,6 +1876,110 @@
         }
       }
     },
+    "/api/utils/populate_tenant_org_id/": {
+      "post": {
+        "tags": [
+          "Tenant",
+          "Utils"
+        ],
+        "summary": "Populate tenant org_id from BOP",
+        "description": "Automatically queries tenants with empty org_id (excluding 'public'), fetches account_id to org_id mapping from BOP, and updates the tenants.",
+        "operationId": "PopulateTenantOrgId",
+        "responses": {
+          "200": {
+            "description": "Tenant org_id population completed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Status message",
+                      "example": "Tenant org_id population completed."
+                    },
+                    "tenants_checked": {
+                      "type": "integer",
+                      "description": "Number of tenants checked for org_id population",
+                      "example": 100
+                    },
+                    "mappings_from_bop": {
+                      "type": "integer",
+                      "description": "Number of account-org mappings retrieved from BOP",
+                      "example": 95
+                    },
+                    "statistics": {
+                      "type": "object",
+                      "properties": {
+                        "updated": {
+                          "type": "integer",
+                          "description": "Number of tenants successfully updated",
+                          "example": 95
+                        },
+                        "not_found": {
+                          "type": "integer",
+                          "description": "Number of account_ids not found in tenant database",
+                          "example": 0
+                        },
+                        "errors": {
+                          "type": "integer",
+                          "description": "Number of errors encountered during update",
+                          "example": 0
+                        },
+                        "error_details": {
+                          "type": "array",
+                          "description": "Details of errors if any occurred",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "account_id": {
+                                "type": "string"
+                              },
+                              "org_id": {
+                                "type": "string"
+                              },
+                              "error": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error processing request or failed to fetch from BOP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/reset_imported_tenants/": {
       "delete": {
         "tags": [

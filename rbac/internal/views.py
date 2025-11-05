@@ -107,7 +107,7 @@ from api.tasks import (
     run_migration_resource_deletion,
     run_reset_imported_tenants,
 )
-from api.utils import RESOURCE_MODEL_MAPPING, get_resources
+from api.utils import RESOURCE_MODEL_MAPPING, get_resources, populate_tenant_org_id
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -681,6 +681,88 @@ def populate_tenant_account_id(request):
             "Tenant objects account_id values being updated in background worker.",
             status=200,
         )
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def populate_tenant_org_id_view(request):
+    """View method for populating Tenant#org_id values by fetching from BOP.
+
+    POST /_private/api/utils/populate_tenant_org_id/
+
+    This endpoint:
+    1. Finds all tenants with empty org_id (excluding "public")
+    2. Fetches account_id to org_id mapping from BOP
+    3. Updates tenants with the org_id values
+    """
+    if request.method == "POST":
+        try:
+            # Find tenants with empty org_id
+            tenants_without_org_id = Tenant.objects.filter(org_id__isnull=True).exclude(tenant_name="public")
+
+            if not tenants_without_org_id.exists():
+                return JsonResponse(
+                    {
+                        "message": "No tenants found with empty org_id.",
+                        "statistics": {"updated": 0, "not_found": 0, "errors": 0, "error_details": []},
+                    },
+                    status=200,
+                )
+
+            # Get list of account_ids that need org_id mapping
+            account_ids = [tenant.account_id for tenant in tenants_without_org_id if tenant.account_id]
+
+            if not account_ids:
+                return JsonResponse(
+                    {
+                        "message": "No tenants found with valid account_id to fetch org_id.",
+                        "statistics": {"updated": 0, "not_found": 0, "errors": 0, "error_details": []},
+                    },
+                    status=200,
+                )
+
+            logger.info(f"Found {len(account_ids)} tenants with empty org_id")
+
+            # Fetch mapping from BOP
+            account_org_mapping = PROXY.fetch_account_org_mapping(account_ids)
+
+            if account_org_mapping is None:
+                return JsonResponse(
+                    {"error": "Failed to fetch account-org mapping from BOP"},
+                    status=500,
+                )
+
+            if not account_org_mapping:
+                return JsonResponse(
+                    {
+                        "message": "No account-org mappings returned from BOP.",
+                        "statistics": {
+                            "updated": 0,
+                            "not_found": len(account_ids),
+                            "errors": 0,
+                            "error_details": [],
+                        },
+                    },
+                    status=200,
+                )
+
+            # Populate tenants with org_id
+            logger.info(f"Populating org_id for {len(account_org_mapping)} tenants from BOP mapping")
+            stats = populate_tenant_org_id(tenants_without_org_id, account_org_mapping)
+
+            response_data = {
+                "message": "Tenant org_id population completed.",
+                "tenants_checked": len(account_ids),
+                "mappings_from_bop": len(account_org_mapping),
+                "statistics": stats,
+            }
+            return JsonResponse(response_data, status=200)
+        except Exception as e:
+            logger.error(f"Error populating tenant org_id: {str(e)}")
+            return JsonResponse(
+                {"error": f"Error processing request: {str(e)}"},
+                status=500,
+            )
+
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
