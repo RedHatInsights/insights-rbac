@@ -98,21 +98,21 @@ class Command(BaseCommand):
         batch_size = options["batch_size"]
         replicate_removal = options["replicate_removal"]
 
-        self.stdout.write(f"Running with {batch_size=}, {replicate_removal=}")
+        self.stderr.write(f"Running with {batch_size=}, {replicate_removal=}")
 
         env_name = settings.ENV_NAME
-        self.stdout.write(f"Environment: {env_name}")
-        self.stdout.write("=" * 80)
+        self.stderr.write(f"Environment: {env_name}")
+        self.stderr.write("=" * 80)
 
         # Determine which UUID to filter by based on environment
         if env_name.lower() == "stage":
             target_uuid = self.STAGE_DUPLICATE_UUID
-            self.stdout.write(f"STAGE environment detected. Fixing UUID: {target_uuid}")
+            self.stderr.write(f"STAGE environment detected. Fixing UUID: {target_uuid}")
         elif env_name.lower() == "prod":
             target_uuid = self.PROD_DUPLICATE_UUID
-            self.stdout.write(f"PROD environment detected. Fixing UUID: {target_uuid}")
+            self.stderr.write(f"PROD environment detected. Fixing UUID: {target_uuid}")
         else:
-            self.stdout.write(
+            self.stderr.write(
                 self.style.ERROR(
                     f"Environment '{env_name}' is neither 'stage' nor 'prod'. "
                     "Cannot determine which duplicate UUID to fix."
@@ -125,10 +125,10 @@ class Command(BaseCommand):
 
         # Count total records to process (estimate for progress tracking)
         estimate = base_qs.count()
-        self.stdout.write(f"\nEstimated {estimate} TenantMapping records to process")
+        self.stderr.write(f"\nEstimated {estimate} TenantMapping records to process")
 
         if estimate == 0:
-            self.stdout.write(self.style.SUCCESS("No TenantMapping records found with duplicate UUID. Nothing to do."))
+            self.stderr.write(self.style.SUCCESS("No TenantMapping records found with duplicate UUID. Nothing to do."))
             return
 
         # Process in batches using iterator (streaming cursor) - matches bootstrap_tenants pattern
@@ -186,7 +186,7 @@ class Command(BaseCommand):
 
                 batch_count = len(tenants)
                 logger.info(f"Processing batch: {processed + 1}-{processed + batch_count} of ~{estimate}")
-                self.stdout.write(f"Processing batch: {processed + 1}-{processed + batch_count} of ~{estimate}")
+                self.stderr.write(f"Processing batch: {processed + 1}-{processed + batch_count} of ~{estimate}")
 
                 # Bulk update for efficiency
                 TenantMapping.objects.bulk_update(updated_mappings, _duplicated_fields)
@@ -200,12 +200,12 @@ class Command(BaseCommand):
                 # Log progress
                 if estimate > 0:
                     progress_pct = (processed / estimate) * 100
-                    self.stdout.write(f"Progress: {processed}/{estimate} ({progress_pct:.1f}%)")
+                    self.stderr.write(f"Progress: {processed}/{estimate} ({progress_pct:.1f}%)")
 
         # Final summary
-        self.stdout.write(self.style.SUCCESS(f"Successfully updated {updated} TenantMapping records."))
+        self.stderr.write(self.style.SUCCESS(f"Successfully updated {updated} TenantMapping records."))
 
-        self.stdout.write("\nFields updated:")
+        self.stderr.write("\nFields updated:")
 
         for field in _duplicated_fields:
-            self.stdout.write(f"  - {field}")
+            self.stderr.write(f"  - {field}")

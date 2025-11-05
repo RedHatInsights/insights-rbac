@@ -65,8 +65,8 @@ class TestFixDuplicateRoleBindingUUIDs(TestCase):
         out, err = self._call_command("--batch-size", "3")
 
         # Should process in multiple batches
-        self.assertIn("Processing batch", out)
-        self.assertIn("Successfully updated", out)
+        self.assertIn("Processing batch", err)
+        self.assertIn("Successfully updated", err)
 
         # All should have unique UUIDs
         total_mappings = TenantMapping.objects.count()
