@@ -425,7 +425,8 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_data["tenants_checked"], 3)
         self.assertEqual(response_data["mappings_from_bop"], 2)
         self.assertEqual(response_data["statistics"]["updated"], 2)
-        self.assertEqual(response_data["statistics"]["not_found"], 0)  # All BOP mappings found in tenant list
+        self.assertEqual(response_data["statistics"]["deleted_no_mapping"], 1)  # tenant3 deleted (no BOP mapping)
+        self.assertEqual(response_data["statistics"]["deleted_duplicate"], 0)
         self.assertEqual(response_data["statistics"]["errors"], 0)
 
         # Verify BOP was called with correct account_ids
@@ -434,14 +435,15 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertIn("333444", called_account_ids)
         self.assertIn("555666", called_account_ids)
 
-        # Verify tenants were updated
+        # Verify tenants were updated or deleted
         tenant1.refresh_from_db()
         tenant2.refresh_from_db()
-        tenant3.refresh_from_db()
 
         self.assertEqual(tenant1.org_id, "org-111")
         self.assertEqual(tenant2.org_id, "org-333")
-        self.assertIsNone(tenant3.org_id)  # Not in BOP mapping
+
+        # Verify tenant3 was deleted (no mapping in BOP)
+        self.assertFalse(Tenant.objects.filter(id=tenant3.id).exists())
 
     def test_get_invalid_default_admin_groups(self):
         """Test that we can get invalid groups."""
