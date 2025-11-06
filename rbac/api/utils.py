@@ -52,49 +52,45 @@ def populate_tenant_org_id(tenants, account_org_mapping):
 
     # Get set of existing org_ids that match the ones we want to assign
     # (more efficient than checking all org_ids)
-    account_ids_to_update = set(account_org_mapping.keys())
     org_ids_to_assign = list(account_org_mapping.values())
-    existing_org_ids = set(
-        Tenant.objects.filter(org_id__in=org_ids_to_assign)
-        .exclude(account_id__in=account_ids_to_update)
-        .values_list("org_id", flat=True)
-    )
+    existing_org_ids = set(Tenant.objects.filter(org_id__in=org_ids_to_assign).values_list("org_id", flat=True))
 
     # Process tenants with account_ids in the provided list
-    for tenant in tenant_by_account_id.values():
-        account_id = tenant.account_id
-        try:
-            # Check if we have a mapping for this account_id
-            if account_id not in account_org_mapping:
-                # No mapping found - delete the tenant
-                logger.warning(f"No org_id mapping found for account_id={account_id}, deleting tenant {tenant.id}")
-                tenant.delete()
-                stats["deleted_no_mapping"] += 1
-                continue
+    with transaction.atomic():
+        for tenant in tenant_by_account_id.values():
+            account_id = tenant.account_id
+            try:
+                # Check if we have a mapping for this account_id
+                if account_id not in account_org_mapping:
+                    # No mapping found - delete the tenant
+                    logger.warning(f"No org_id mapping found for account_id={account_id}, deleting tenant {tenant.id}")
+                    tenant.delete()
+                    stats["deleted_no_mapping"] += 1
+                    continue
 
-            org_id = account_org_mapping[account_id]
+                org_id = account_org_mapping[account_id]
 
-            # Check if this org_id already exists
-            if org_id in existing_org_ids:
-                logger.warning(
-                    f"org_id={org_id} already exists for another tenant, "
-                    f"deleting tenant {tenant.id} with account_id={account_id}"
-                )
-                tenant.delete()
-                stats["deleted_duplicate"] += 1
-            else:
-                # Safe to update
-                logger.info(f"Updating tenant {tenant.id} with account_id={account_id} to org_id={org_id}")
-                tenant.org_id = org_id
-                tenant.save()
-                stats["updated"] += 1
-                # Add to existing set so next iteration knows about it
-                existing_org_ids.add(org_id)
+                # Check if this org_id already exists
+                if org_id in existing_org_ids:
+                    logger.warning(
+                        f"org_id={org_id} already exists for another tenant, "
+                        f"deleting tenant {tenant.id} with account_id={account_id}"
+                    )
+                    tenant.delete()
+                    stats["deleted_duplicate"] += 1
+                else:
+                    # Safe to update
+                    logger.info(f"Updating tenant {tenant.id} with account_id={account_id} to org_id={org_id}")
+                    tenant.org_id = org_id
+                    tenant.save()
+                    stats["updated"] += 1
+                    # Add to existing set so next iteration knows about it
+                    existing_org_ids.add(org_id)
 
-        except Exception as e:
-            logger.error(f"Error processing tenant with account_id={account_id}: {str(e)}")
-            stats["errors"] += 1
-            stats["error_details"].append({"account_id": account_id, "tenant_id": tenant.id, "error": str(e)})
+            except Exception as e:
+                logger.error(f"Error processing tenant with account_id={account_id}: {str(e)}")
+                stats["errors"] += 1
+                stats["error_details"].append({"account_id": account_id, "tenant_id": tenant.id, "error": str(e)})
 
     logger.info(f"Tenant org_id population completed. Stats: {stats}")
     return stats
