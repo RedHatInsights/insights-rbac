@@ -410,6 +410,25 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         tenant3 = Tenant.objects.create(tenant_name="acct555666", account_id="555666", org_id=None)
         tenant4 = Tenant.objects.create(tenant_name="acct777888", account_id="777888", org_id=None)
 
+        # Create workspaces for tenant3 (will be deleted due to no BOP mapping)
+        # Create a hierarchy: root -> default -> child1 -> grandchild
+        root_ws_t3 = Workspace.objects.create(name="Root", tenant=tenant3, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t3 = Workspace.objects.create(
+            name="Default", tenant=tenant3, type=Workspace.Types.DEFAULT, parent=root_ws_t3
+        )
+        child_ws_t3 = Workspace.objects.create(
+            name="Child", tenant=tenant3, type=Workspace.Types.STANDARD, parent=default_ws_t3
+        )
+        grandchild_ws_t3 = Workspace.objects.create(
+            name="Grandchild", tenant=tenant3, type=Workspace.Types.STANDARD, parent=child_ws_t3
+        )
+
+        # Create workspaces for tenant4 (will be deleted due to duplicate org_id)
+        root_ws_t4 = Workspace.objects.create(name="Root", tenant=tenant4, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t4 = Workspace.objects.create(
+            name="Default", tenant=tenant4, type=Workspace.Types.DEFAULT, parent=root_ws_t4
+        )
+
         # Create an existing tenant with org_id that will conflict with tenant4's mapping
         existing_tenant = Tenant.objects.create(tenant_name="acct_existing", account_id="999000", org_id="org-777")
 
@@ -450,9 +469,13 @@ class InternalViewsetTests(BaseInternalViewsetTests):
 
         # Verify tenant3 was deleted (no mapping in BOP)
         self.assertFalse(Tenant.objects.filter(id=tenant3.id).exists())
+        # Verify tenant3's workspaces were also deleted
+        self.assertFalse(Workspace.objects.filter(tenant_id=tenant3.id).exists())
 
         # Verify tenant4 was deleted (duplicate org_id)
         self.assertFalse(Tenant.objects.filter(id=tenant4.id).exists())
+        # Verify tenant4's workspaces were also deleted
+        self.assertFalse(Workspace.objects.filter(tenant_id=tenant4.id).exists())
 
         # Verify existing_tenant is still there
         existing_tenant.refresh_from_db()
