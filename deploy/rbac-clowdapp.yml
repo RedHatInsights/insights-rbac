@@ -1232,7 +1232,7 @@ objects:
             requests:
               cpu: 50m
               memory: 512Mi
-          env: *job_common_env_vars
+          env: *workspace_job_env_vars
 
 - apiVersion: v1
   kind: ConfigMap
