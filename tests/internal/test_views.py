@@ -366,7 +366,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
     def test_populate_tenant_account_id(self, populate_mock):
         """Test that we can trigger population of account id's for tenants."""
-        response = self.client.post(f"/_private/api/utils/populate_tenant_account_id/", **self.request.META)
+        response = self.client.post("/_private/api/utils/populate_tenant_account_id/", **self.request.META)
         populate_mock.assert_called_once_with()
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
@@ -396,10 +396,52 @@ class InternalViewsetTests(BaseInternalViewsetTests):
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
     def test_populate_tenant_account_id_get_failure(self, populate_mock):
         """Test that we get a bad request for not using POST method."""
-        response = self.client.get(f"/_private/api/utils/populate_tenant_account_id/", **self.request.META)
+        response = self.client.get("/_private/api/utils/populate_tenant_account_id/", **self.request.META)
         populate_mock.assert_not_called()
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertEqual(response.content.decode(), 'Invalid method, only "POST" is allowed.')
+
+    @patch("management.principal.proxy.PrincipalProxy.fetch_account_org_mapping")
+    def test_populate_tenant_org_id(self, mock_fetch_bop):
+        """Test that we can populate tenant org_id by fetching from BOP."""
+        # Create test tenants with account_id but no org_id
+        tenant1 = Tenant.objects.create(tenant_name="acct111222", account_id="111222", org_id=None)
+        tenant2 = Tenant.objects.create(tenant_name="acct333444", account_id="333444", org_id=None)
+        tenant3 = Tenant.objects.create(tenant_name="acct555666", account_id="555666", org_id=None)
+
+        # Mock BOP response
+        mock_fetch_bop.return_value = {
+            "111222": "org-111",
+            "333444": "org-333",
+            # 555666 not in mapping to simulate partial results
+        }
+
+        response = self.client.post("/_private/api/utils/populate_tenant_org_id/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response_data = json.loads(response.content.decode())
+        self.assertEqual(response_data["message"], "Tenant org_id population completed.")
+        self.assertEqual(response_data["tenants_checked"], 3)
+        self.assertEqual(response_data["mappings_from_bop"], 2)
+        self.assertEqual(response_data["statistics"]["updated"], 2)
+        self.assertEqual(response_data["statistics"]["not_found"], 0)  # All BOP mappings found in tenant list
+        self.assertEqual(response_data["statistics"]["errors"], 0)
+
+        # Verify BOP was called with correct account_ids
+        called_account_ids = mock_fetch_bop.call_args[0][0]
+        self.assertIn("111222", called_account_ids)
+        self.assertIn("333444", called_account_ids)
+        self.assertIn("555666", called_account_ids)
+
+        # Verify tenants were updated
+        tenant1.refresh_from_db()
+        tenant2.refresh_from_db()
+        tenant3.refresh_from_db()
+
+        self.assertEqual(tenant1.org_id, "org-111")
+        self.assertEqual(tenant2.org_id, "org-333")
+        self.assertIsNone(tenant3.org_id)  # Not in BOP mapping
 
     def test_get_invalid_default_admin_groups(self):
         """Test that we can get invalid groups."""

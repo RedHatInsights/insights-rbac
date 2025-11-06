@@ -29,6 +29,41 @@ def populate_tenant_account_id():
             tenant.save()
 
 
+def populate_tenant_org_id(tenants, account_org_mapping):
+    """Populate tenant's org_id from account_id mapping.
+
+    Args:
+        tenants (QuerySet or list): List or QuerySet of Tenant objects to update
+        account_org_mapping (dict): Mapping of account_id to org_id {account_id: org_id}
+
+    Returns:
+        dict: Statistics about the operation (updated, not_found, errors)
+    """
+    stats = {"updated": 0, "not_found": 0, "errors": 0, "error_details": []}
+
+    # Create a mapping of account_id to tenant object for quick lookup
+    tenant_by_account_id = {tenant.account_id: tenant for tenant in tenants if tenant.account_id}
+
+    for account_id, org_id in account_org_mapping.items():
+        try:
+            if tenant := tenant_by_account_id.get(account_id):
+                with transaction.atomic():
+                    logger.info(f"Updating tenant with account_id={account_id} to org_id={org_id}")
+                    tenant.org_id = org_id
+                    tenant.save()
+                    stats["updated"] += 1
+            else:
+                logger.warning(f"Tenant with account_id={account_id} not found in provided tenants")
+                stats["not_found"] += 1
+        except Exception as e:
+            logger.error(f"Error updating tenant with account_id={account_id}: {str(e)}")
+            stats["errors"] += 1
+            stats["error_details"].append({"account_id": account_id, "org_id": org_id, "error": str(e)})
+
+    logger.info(f"Tenant org_id population completed. Stats: {stats}")
+    return stats
+
+
 def get_resources(resource, org_id):
     """Get queryset by org_id."""
     queryset = RESOURCE_MODEL_MAPPING[resource].objects.all()
