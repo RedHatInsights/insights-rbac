@@ -1216,6 +1216,23 @@ objects:
               cpu: 50m
               memory: 512Mi
           env: *workspace_job_env_vars
+      - name: fix-duplicate-role-binding-uuids
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - fix_duplicate_role_binding_uuids
+            - "--batch-size"
+            - "1000"
+            - "--replicate-removal"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *job_common_env_vars
 
 - apiVersion: v1
   kind: ConfigMap
