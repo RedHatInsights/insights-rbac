@@ -45,6 +45,11 @@ def populate_tenant_org_id(tenants, account_org_mapping):
     Returns:
         dict: Statistics about the operation (updated, deleted_no_mapping, deleted_duplicate, errors)
     """
+    provided_org_ids = [t.org_id for t in tenants if t.org_id is not None]
+
+    if provided_org_ids:
+        raise ValueError(f"Expected all tenants to have no org_id, got: {provided_org_ids}")
+
     stats = {"updated": 0, "deleted_no_mapping": 0, "deleted_duplicate": 0, "errors": 0, "error_details": []}
 
     # Create a mapping of account_id to tenant object for quick lookup
