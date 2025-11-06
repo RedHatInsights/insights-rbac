@@ -136,7 +136,12 @@ def delete_tenant_with_resources(tenant):
         tenant: Tenant object to delete
     """
     # Delete workspaces first (handles children-before-parents automatically)
-    migration_resource_deletion("workspace", tenant.org_id)
+    workspaces = Workspace.objects.filter(tenant=tenant).order_by("id")
+    # Delete workspaces without children first (due to PROTECT on parent)
+    chunk_delete(workspaces.filter(children__isnull=True))
+    # Now delete remaining workspaces
+    chunk_delete(workspaces)
+    logger.info(f"Deleted all workspaces for tenant {tenant.id}")
 
     # Now tenant can be safely deleted (all workspaces are gone)
     tenant.delete()

@@ -410,6 +410,18 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         tenant3 = Tenant.objects.create(tenant_name="acct555666", account_id="555666", org_id=None)
         tenant4 = Tenant.objects.create(tenant_name="acct777888", account_id="777888", org_id=None)
 
+        # Create workspaces for tenant1 (will be UPDATED, not deleted)
+        root_ws_t1 = Workspace.objects.create(name="Root", tenant=tenant1, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t1 = Workspace.objects.create(
+            name="Default", tenant=tenant1, type=Workspace.Types.DEFAULT, parent=root_ws_t1
+        )
+
+        # Create workspaces for tenant2 (will be UPDATED, not deleted)
+        root_ws_t2 = Workspace.objects.create(name="Root", tenant=tenant2, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t2 = Workspace.objects.create(
+            name="Default", tenant=tenant2, type=Workspace.Types.DEFAULT, parent=root_ws_t2
+        )
+
         # Create workspaces for tenant3 (will be deleted due to no BOP mapping)
         # Create a hierarchy: root -> default -> child1 -> grandchild
         root_ws_t3 = Workspace.objects.create(name="Root", tenant=tenant3, type=Workspace.Types.ROOT, parent=None)
@@ -466,6 +478,14 @@ class InternalViewsetTests(BaseInternalViewsetTests):
 
         self.assertEqual(tenant1.org_id, "org-111")
         self.assertEqual(tenant2.org_id, "org-333")
+
+        # Verify tenant1's workspaces are still there (tenant was updated, not deleted)
+        self.assertTrue(Workspace.objects.filter(id=root_ws_t1.id).exists())
+        self.assertTrue(Workspace.objects.filter(id=default_ws_t1.id).exists())
+
+        # Verify tenant2's workspaces are still there (tenant was updated, not deleted)
+        self.assertTrue(Workspace.objects.filter(id=root_ws_t2.id).exists())
+        self.assertTrue(Workspace.objects.filter(id=default_ws_t2.id).exists())
 
         # Verify tenant3 was deleted (no mapping in BOP)
         self.assertFalse(Tenant.objects.filter(id=tenant3.id).exists())
