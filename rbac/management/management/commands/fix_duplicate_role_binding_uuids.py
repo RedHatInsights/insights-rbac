@@ -99,7 +99,7 @@ class Command(BaseCommand):
 
         self.stderr.write(f"Duplicate values for {field}: {duplicate_values}")
 
-        tenant_query = Tenant.objects.select_for_update().filter(
+        tenant_query = Tenant.objects.filter(
             tenant_mapping__in=TenantMapping.objects.filter(**{f"{field}__in": duplicate_values})
         )
 
@@ -125,8 +125,13 @@ class Command(BaseCommand):
         policy_service = GlobalPolicyIdService()
 
         # Use iterator() for streaming and batched() for grouping (like bootstrap_tenants command)
-        for tenants in itertools.batched(tenant_query.order_by("id").iterator(), batch_size):
+        for raw_tenants in itertools.batched(tenant_query.order_by("id").iterator(), batch_size):
             with transaction.atomic():
+                tenants = list(Tenant.objects.select_for_update().filter(pk__in=[t.pk for t in raw_tenants]))
+
+                if len(tenants) != len(raw_tenants):
+                    raise ValueError("Tenant should not have vanished out from under us.")
+
                 # We need to take the full bootstrap lock to prevent concurrent custom default group creation/removal.
                 lock_results = try_lock_tenants_for_bootstrap(tenants)
 
