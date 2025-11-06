@@ -69,7 +69,7 @@ def populate_tenant_org_id(tenants, account_org_mapping):
                 if account_id not in account_org_mapping:
                     # No mapping found - delete the tenant
                     logger.warning(f"No org_id mapping found for account_id={account_id}, deleting tenant {tenant.id}")
-                    tenant.delete()
+                    delete_tenant_with_resources(tenant)
                     stats["deleted_no_mapping"] += 1
                     continue
 
@@ -81,7 +81,7 @@ def populate_tenant_org_id(tenants, account_org_mapping):
                         f"org_id={org_id} already exists for another tenant, "
                         f"deleting tenant {tenant.id} with account_id={account_id}"
                     )
-                    tenant.delete()
+                    delete_tenant_with_resources(tenant)
                     stats["deleted_duplicate"] += 1
                 else:
                     # Safe to update
@@ -124,6 +124,22 @@ def migration_resource_deletion(resource, org_id):
         logger.info("All workspaces without children removed.")
     chunk_delete(resource_objs)
     logger.info(f"Resources of type {resource} deleted.")
+
+
+def delete_tenant_with_resources(tenant):
+    """Delete tenant after removing its workspaces and other resources.
+
+    Uses migration_resource_deletion to properly handle workspace deletion
+    (children before parents due to PROTECT constraints).
+
+    Args:
+        tenant: Tenant object to delete
+    """
+    # Delete workspaces first (handles children-before-parents automatically)
+    migration_resource_deletion("workspace", tenant.org_id)
+
+    # Now tenant can be safely deleted (all workspaces are gone)
+    tenant.delete()
 
 
 def chunk_delete(queryset):
