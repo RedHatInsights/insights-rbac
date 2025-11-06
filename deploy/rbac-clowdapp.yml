@@ -1224,6 +1224,7 @@ objects:
             - fix_duplicate_role_binding_uuids
             - "--batch-size"
             - "1000"
+            - "--replicate-removal"
           resources:
             limits:
               cpu: 300m
