@@ -80,6 +80,7 @@ urlpatterns = [
     path("api/utils/sync_schemas/", views.sync_schemas),
     path("api/utils/set_tenant_ready/", views.set_tenant_ready),
     path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
+    path("api/utils/populate_tenant_org_id/", views.populate_tenant_org_id_view),
     path("api/utils/invalid_default_admin_groups/", views.invalid_default_admin_groups),
     path("api/utils/ocm_performance/", views.ocm_performance),
     path("api/utils/get_org_admin/<int:org_or_account>/", views.get_org_admin),
@@ -107,6 +108,7 @@ urlpatterns = [
     path("api/inventory/check/", views.check_inventory),
     path("api/utils/workspace/", views.workspace_removal),
     path("api/utils/kafka_test_message/", views.send_kafka_test_message),
+    path("api/utils/migrate_binding_scope/", views.migrate_binding_scope),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

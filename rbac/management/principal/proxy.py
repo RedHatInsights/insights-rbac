@@ -274,6 +274,50 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             url, org_id=org_id, params=params, org_id_filter=False, method=method, data=payload
         )
 
+    def fetch_account_org_mapping(self, account_ids):
+        """Fetch account_id to org_id mapping from BOP.
+
+        Args:
+            account_ids (list): List of account IDs to fetch mapping for
+
+        Returns:
+            dict: Mapping of account_id to org_id, or None if error
+        """
+        if not account_ids:
+            LOGGER.warning("No account_ids provided to fetch from BOP")
+            return {}
+
+        account_mapping_path = "/v2/accountMapping/orgIds"
+        url = f"{self.protocol}://{self.host}:{self.port}{self.path}{account_mapping_path}"
+
+        try:
+            headers = {
+                USER_ENV_HEADER: self.user_env,
+                CLIENT_ID_HEADER: self.client_id,
+                API_TOKEN_HEADER: self.api_token,
+                "Content-Type": "application/json",
+            }
+            kwargs = {"headers": headers, "json": account_ids, "verify": self.ssl_verify}
+            if self.source_cert:
+                kwargs["verify"] = self.client_cert_path
+
+            LOGGER.info(f"Fetching account-org mapping from BOP for {len(account_ids)} accounts")
+            response = requests.post(url, **kwargs)
+
+            if response.status_code == status.HTTP_200_OK:
+                mapping = response.json()
+                LOGGER.info(f"Successfully fetched {len(mapping)} account-org mappings from BOP")
+                bop_request_status_count.labels(method="POST", status=200).inc()
+                return mapping
+            else:
+                LOGGER.error(f"BOP returned status {response.status_code}: {response.text}")
+                bop_request_status_count.labels(method="POST", status=response.status_code).inc()
+                return None
+        except Exception as e:
+            LOGGER.error(f"Error fetching account-org mapping from BOP: {str(e)}")
+            bop_request_status_count.labels(method="POST", status=500).inc()
+            return None
+
     def request_filtered_principals(self, principals, org_id=None, limit=None, offset=None, options={}):
         """Request specific principals for an account."""
         if org_id is None:
