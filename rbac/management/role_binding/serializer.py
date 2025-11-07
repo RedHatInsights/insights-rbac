@@ -19,6 +19,7 @@ import re
 
 from management.models import Group
 from rest_framework import serializers
+from management.workspace.model import Workspace
 
 
 class UserDetailsSerializer(serializers.Serializer):
@@ -182,6 +183,7 @@ class RoleBindingBySubjectSerializer(DynamicFieldsSerializer):
     subject = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
+    inherited_from = serializers.SerializerMethodField()
 
     def __init__(self, *args, **kwargs):
         """Initialize and store field specs for manual filtering."""
@@ -315,3 +317,57 @@ class RoleBindingBySubjectSerializer(DynamicFieldsSerializer):
             resource_data = self._filter_dict(resource_data, self._field_specs["resource"])
 
         return resource_data
+
+    def get_inherited_from(self, obj):
+        """When enabled, return the parent resource from which bindings are inherited.
+
+        If multiple distinct parent resources are present for a subject, omit the field.
+        """
+        request = self.context.get("request")
+        if not request or not getattr(request, "include_inherited", False):
+            return None
+
+        requested_res_id = str(getattr(request, "resource_id", ""))
+        requested_res_type = getattr(request, "resource_type", "")
+
+        parent_resources = set()
+
+        def note_parent(binding):
+            # Collect only when parent differs from requested resource
+            if binding is None:
+                return
+            b_res_id = str(binding.resource_id)
+            b_res_type = binding.resource_type
+            if b_res_id != requested_res_id or b_res_type != requested_res_type:
+                parent_resources.add((b_res_type, b_res_id))
+
+        if isinstance(obj, Group):
+            if hasattr(obj, "filtered_bindings"):
+                for binding_group in obj.filtered_bindings:
+                    note_parent(binding_group.binding)
+        else:
+            if hasattr(obj, "filtered_groups"):
+                for group in obj.filtered_groups:
+                    if hasattr(group, "filtered_bindings"):
+                        for binding_group in group.filtered_bindings:
+                            note_parent(binding_group.binding)
+
+        if len(parent_resources) != 1:
+            return None
+
+        res_type, res_id = next(iter(parent_resources))
+        # Try to resolve name for workspaces only, others remain None
+        name = None
+        if res_type == "workspace":
+            try:
+                # request.tenant provided by middleware
+                name = Workspace.objects.get(id=res_id, tenant=request.tenant).name
+            except Workspace.DoesNotExist:
+                name = None
+
+        data = {"id": res_id, "name": name, "type": res_type}
+
+        # Apply field filtering if specified
+        if self._field_specs.get("inherited_from"):
+            data = self._filter_dict(data, self._field_specs["inherited_from"])
+        return data
