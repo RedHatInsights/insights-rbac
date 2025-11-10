@@ -79,6 +79,7 @@ from management.role.model import Access
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    migrate_binding_scope_in_worker,
     migrate_data_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -106,7 +107,7 @@ from api.tasks import (
     run_migration_resource_deletion,
     run_reset_imported_tenants,
 )
-from api.utils import RESOURCE_MODEL_MAPPING, get_resources
+from api.utils import RESOURCE_MODEL_MAPPING, get_resources, populate_tenant_org_id
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -680,6 +681,84 @@ def populate_tenant_account_id(request):
             "Tenant objects account_id values being updated in background worker.",
             status=200,
         )
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def populate_tenant_org_id_view(request):
+    """View method for populating Tenant#org_id values by fetching from BOP.
+
+    POST /_private/api/utils/populate_tenant_org_id/
+
+    This endpoint:
+    1. Finds all tenants with empty org_id (excluding "public")
+    2. Fetches account_id to org_id mapping from BOP
+    3. Updates tenants with the org_id values
+    """
+    if request.method == "POST":
+        try:
+            # Find tenants with empty org_id (initial query to get account_ids)
+            tenants_query = Tenant.objects.filter(org_id__isnull=True).exclude(tenant_name="public")
+
+            # Get list of account_ids that need org_id mapping
+            account_ids = list(tenants_query.values_list("account_id", flat=True).filter(account_id__isnull=False))
+
+            if not account_ids:
+                return JsonResponse(
+                    {
+                        "message": "No tenants found with valid account_id to fetch org_id.",
+                        "statistics": {"updated": 0, "not_found": 0, "errors": 0, "error_details": []},
+                    },
+                    status=200,
+                )
+
+            logger.info(f"Found {len(account_ids)} tenants with empty org_id")
+
+            # Fetch mapping from BOP (done outside transaction to avoid holding locks during API call)
+            account_org_mapping = PROXY.fetch_account_org_mapping(account_ids)
+
+            if account_org_mapping is None:
+                return JsonResponse(
+                    {"error": "Failed to fetch account-org mapping from BOP"},
+                    status=500,
+                )
+
+            if not account_org_mapping:
+                return JsonResponse(
+                    {
+                        "message": "No account-org mappings returned from BOP.",
+                        "statistics": {
+                            "updated": 0,
+                            "not_found": len(account_ids),
+                            "errors": 0,
+                            "error_details": [],
+                        },
+                    },
+                    status=200,
+                )
+
+            # Populate tenants with org_id (with transaction and row locking)
+            logger.info(f"Populating org_id for {len(account_org_mapping)} tenants from BOP mapping")
+            with transaction.atomic():
+                # Re-fetch tenants with select_for_update to prevent concurrent modifications
+                tenants_without_org_id = (
+                    Tenant.objects.select_for_update().filter(org_id__isnull=True).exclude(tenant_name="public")
+                )
+                stats = populate_tenant_org_id(tenants_without_org_id, account_org_mapping)
+
+            response_data = {
+                "message": "Tenant org_id population completed.",
+                "tenants_checked": len(account_ids),
+                "mappings_from_bop": len(account_org_mapping),
+                "statistics": stats,
+            }
+            return JsonResponse(response_data, status=200)
+        except Exception as e:
+            logger.error(f"Error populating tenant org_id: {str(e)}")
+            return JsonResponse(
+                {"error": f"Error processing request: {str(e)}"},
+                status=500,
+            )
+
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
@@ -2125,3 +2204,24 @@ def send_kafka_test_message(request):
     except Exception as e:
         logger.error(f"Error sending test Kafka message: {e}")
         return JsonResponse({"error": "Error sending test message", "detail": str(e)}, status=500)
+
+
+def migrate_binding_scope(request):
+    """View method for running binding scope migration.
+
+    POST /_private/api/utils/migrate_binding_scope/
+
+    Migrates all role bindings to the correct scope based on permission scopes.
+    Iterates through roles (not binding mappings) and uses dual write handlers.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
+
+    logger.info(f"Running binding scope migration: {request.method} {request.user.username}")
+
+    migrate_binding_scope_in_worker.delay()
+
+    return JsonResponse(
+        {"message": "Binding scope migration is running in a background worker."},
+        status=202,
+    )

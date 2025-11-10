@@ -1,3 +1,4 @@
+import datetime
 from unittest.mock import patch
 
 from django.conf import settings
@@ -83,6 +84,45 @@ class TestBootstrapTenants(DualWriteTestCase):
 
     def test_single(self):
         self._do_test_simple_bootstrap(["--org-id=12345"], created_org_id="12345")
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bulk(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        tenants = [self.fixture.new_unbootstrapped_tenant(org_id=f"test-{i}") for i in range(100)]
+        self._invoke(["--all"])
+
+        policy_service = GlobalPolicyIdService()
+
+        # Trivially check that the tenant was bootstrapped.
+        for tenant in tenants:
+            self.expect_1_role_binding_to_workspace(
+                workspace=self.default_workspace(tenant),
+                for_v2_roles=[str(policy_service.platform_default_policy_uuid())],
+                for_groups=[str(tenant.tenant_mapping.default_group_uuid)],
+            )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bulk_fallback(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        tenants = [self.fixture.new_unbootstrapped_tenant(org_id=f"test-{i}") for i in range(100)]
+
+        # This unfortunately depends on implementation details, but it is worthwhile to test the fallback to single
+        # bootstrapping.
+        with patch("management.tenant_service.v2.V2TenantBootstrapService.bootstrap_tenants") as bootstrap_tenants:
+            bootstrap_tenants.side_effect = NotImplementedError("no")
+            self._invoke(["--all"])
+
+        policy_service = GlobalPolicyIdService()
+
+        # Trivially check that the tenant was bootstrapped.
+        for tenant in tenants:
+            self.expect_1_role_binding_to_workspace(
+                workspace=self.default_workspace(tenant),
+                for_v2_roles=[str(policy_service.platform_default_policy_uuid())],
+                for_groups=[str(tenant.tenant_mapping.default_group_uuid)],
+            )
 
     def test_missing(self):
         self.assertRaisesMessage(
