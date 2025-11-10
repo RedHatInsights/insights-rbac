@@ -217,7 +217,8 @@ class PrincipalView(APIView):
         resp = proxy.request_principals(
             org_id=user.org_id, input=proxyInput, limit=limit, offset=offset, options=options
         )
-        return resp, ""
+        usernames_filter = f"&usernames={usernames}" if usernames else ""
+        return resp, usernames_filter
 
     @staticmethod
     def service_accounts_from_it_service(request, user, query_params, options):
@@ -301,13 +302,13 @@ class PrincipalView(APIView):
 
         # Calculate the both types principals count
         userCount = 0
-        if usernames_filter and user_resp["data"]:
-            userCount += len(user_resp["data"])
-        elif "userCount" in user_resp:
-            userCount += int(user_resp["userCount"])
-        elif "userCount" in user_resp["data"]:
-            userCount += int(user_resp["data"]["userCount"])
-        userCount += sa_resp.get("saCount")
+        if "userCount" in user_resp:
+            userCount = int(user_resp["userCount"])
+        elif "data" in user_resp and "userCount" in user_resp["data"]:
+            userCount = int(user_resp["data"]["userCount"])
+        elif "data" in user_resp:
+            userCount = len(user_resp["data"])
+        userCount += sa_resp.get("saCount", 0)
 
         # Put together the response
         resp = {"status_code": status.HTTP_200_OK, "data": {}, "userCount": userCount}
