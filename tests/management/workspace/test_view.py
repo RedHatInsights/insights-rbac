@@ -195,7 +195,7 @@ class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspa
 
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
-class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
+class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     """Tests for create/update/delete workspaces."""
 
     def setUp(self):
@@ -1390,6 +1390,206 @@ class WorkspaceTestsCreateUpdateDelete(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         detail = response.data.get("detail")
         self.assertEqual(detail, "Unable to delete ungrouped-hosts workspace")
+
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_retry_success_after_serialization_failure(self, mock_super_create):
+        """
+        Test that create operation succeeds after SerializationFailure on first attempt.
+
+        The retry=3 parameter in @pgtransaction.atomic should automatically retry
+        when SerializationFailure occurs. This test verifies that after an initial
+        failure, the operation succeeds on retry.
+        """
+        # Mock to fail once with SerializationFailure, then succeed
+        # Note: Django wraps psycopg2 errors in OperationalError
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        from rest_framework.response import Response
+
+        success_response = Response(
+            {
+                "id": str(uuid4()),
+                "name": "Test Workspace",
+                "parent_id": str(self.default_workspace.id),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+        # First call raises error, second call succeeds
+        mock_super_create.side_effect = [serialization_error, success_response]
+
+        # Execute
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace", "parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify success after retry
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], "Test Workspace")
+
+        # Verify the method was called twice (initial + 1 retry)
+        self.assertEqual(mock_super_create.call_count, 2)
+
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_retry_exhausted_after_three_failures(self, mock_super_create):
+        """
+        Test that create operation returns 409 CONFLICT after all retry attempts fail.
+
+        The retry=3 parameter means: 1 initial attempt + 3 retries = 4 total attempts.
+        If all attempts fail with SerializationFailure, the exception should propagate
+        and be caught by the create() method, returning a 409 response.
+        """
+        # Mock to always fail with SerializationFailure
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        mock_super_create.side_effect = serialization_error
+
+        # Execute
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace", "parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify returns 409 CONFLICT after all retries exhausted
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("Too many concurrent updates", str(response.data["detail"]))
+
+        # Verify the method was called 4 times (1 initial + 3 retries)
+        self.assertEqual(mock_super_create.call_count, 4)
+
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_retry_success_on_third_attempt(self, mock_super_create):
+        """
+        Test that create succeeds on the 4th and final attempt (3rd retry).
+
+        This verifies the retry mechanism continues trying until success
+        or all attempts are exhausted.
+        """
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        from rest_framework.response import Response
+
+        success_response = Response(
+            {
+                "id": str(uuid4()),
+                "name": "Test Workspace",
+                "parent_id": str(self.default_workspace.id),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+        # Fail 3 times, succeed on 4th attempt (final retry)
+        mock_super_create.side_effect = [
+            serialization_error,
+            serialization_error,
+            serialization_error,
+            success_response,
+        ]
+
+        # Execute
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace", "parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify success on 4th attempt (3rd retry)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], "Test Workspace")
+
+        # Verify the method was called 4 times before succeeding
+        self.assertEqual(mock_super_create.call_count, 4)
+
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_retry_deadlock_detected(self, mock_super_create):
+        """
+        Test that DeadlockDetected errors are also retried by the retry mechanism.
+
+        According to django-pgtransaction documentation, the retry parameter
+        handles both SerializationFailure and DeadlockDetected errors.
+        """
+        # Mock to fail with DeadlockDetected, then succeed
+        deadlock_error = OperationalError("deadlock detected")
+        deadlock_error.__cause__ = DeadlockDetected("deadlock detected")
+
+        from rest_framework.response import Response
+
+        success_response = Response(
+            {
+                "id": str(uuid4()),
+                "name": "Test Workspace",
+                "parent_id": str(self.default_workspace.id),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+        mock_super_create.side_effect = [deadlock_error, success_response]
+
+        # Execute
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace", "parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify success after retry
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Verify retry happened
+        self.assertEqual(mock_super_create.call_count, 2)
+
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_retry_deadlock_exhausted(self, mock_super_create):
+        """
+        Test that DeadlockDetected returns 500 error after all retries exhausted.
+
+        Unlike SerializationFailure (409), DeadlockDetected should return 500
+        as it indicates a more serious internal server error.
+        The retry=3 parameter means 1 initial + 3 retries = 4 total attempts.
+        """
+        deadlock_error = OperationalError("deadlock detected")
+        deadlock_error.__cause__ = DeadlockDetected("deadlock detected")
+
+        mock_super_create.side_effect = deadlock_error
+
+        # Execute
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace", "parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify returns 500 INTERNAL SERVER ERROR for deadlock
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn("Internal server error", str(response.data["detail"]))
+
+        # Verify all retry attempts were made (1 initial + 3 retries = 4 total)
+        self.assertEqual(mock_super_create.call_count, 4)
+
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_no_retry_on_validation_error(self, mock_super_create):
+        """
+        Test that ValidationError does not trigger retries.
+
+        Only SerializationFailure and DeadlockDetected should be retried.
+        Other errors like ValidationError should fail immediately without retry.
+        """
+        # Mock to raise ValidationError
+        validation_error = ValidationError("Validation failed")
+        mock_super_create.side_effect = validation_error
+
+        # Execute
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace", "parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Verify failure without retry (ValidationError is handled by DRF)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Verify method was called only once (no retries for ValidationError)
+        self.assertEqual(mock_super_create.call_count, 1)
 
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
@@ -2650,7 +2850,7 @@ class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
 
 
 @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
-class WorkspaceViewTestsWithHierarchyLimit(WorkspaceViewTests):
+class WorkspaceViewTestsWithHierarchyLimit(TransactionalWorkspaceViewTests):
     """Test workspace hierarchy limits."""
 
     def test_create_nested_workspace_valid(self):
@@ -2678,7 +2878,7 @@ class WorkspaceViewTestsWithHierarchyLimit(WorkspaceViewTests):
 
 
 @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
-class WorkspaceViewTestsWithPeerRestrictions(WorkspaceViewTests):
+class WorkspaceViewTestsWithPeerRestrictions(TransactionalWorkspaceViewTests):
     """Test workspace peer restrictions."""
 
     def test_create_nested_workspace_against_root(self):
