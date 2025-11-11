@@ -82,9 +82,9 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
             request = self.context.get("request")
             if request:
                 resource_data = {
-                    "id": getattr(request, "resource_id", None),
-                    "name": getattr(request, "resource_name", None),
-                    "type": getattr(request, "resource_type", None),
+                    "id": self.context.get("resource_id"),
+                    "name": self.context.get("resource_name"),
+                    "type": self.context.get("resource_type"),
                 }
             else:
                 resource_data = None

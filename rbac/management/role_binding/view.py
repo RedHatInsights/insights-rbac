@@ -64,11 +64,14 @@ class RoleBindingViewSet(BaseV2ViewSet):
             tenant=request.tenant,
         )
 
-        request.resource_id = resource_id
-        request.resource_type = resource_type
-        request.resource_name = self._get_resource_name(resource_id, resource_type, request.tenant)
+        context = {
+            "request": request,
+            "resource_id": resource_id,
+            "resource_type": resource_type,
+            "resource_name": self._get_resource_name(resource_id, resource_type, request.tenant)
+        }
 
-        serializer = self.get_serializer(queryset, many=True, context={"request": request})
+        serializer = self.get_serializer(queryset, many=True, context=context)
         return Response(serializer.data)
 
     def _build_group_queryset(self, resource_id, resource_type, tenant):
