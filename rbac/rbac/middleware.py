@@ -25,7 +25,7 @@ from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
-from django.urls import resolve
+from django.urls import resolve, reverse
 from feature_flags import FEATURE_FLAGS
 from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
@@ -71,9 +71,17 @@ def catch_integrity_error(func):
 
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
-    no_auth_list = ["status", "metrics", "openapi.json", "health"]
-    no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
-    return no_auth
+    no_auth_list = [
+        reverse("v1_api:server-status"),
+        reverse("v1_api:openapi"),
+        "/metrics",
+    ]
+
+    # Only add V2 OpenAPI endpoint if V2 APIs are enabled
+    if settings.V2_APIS_ENABLED:
+        no_auth_list.append(reverse("v2_api:openapi"))
+
+    return request.path in no_auth_list
 
 
 class HttpResponseUnauthorizedRequest(HttpResponse):

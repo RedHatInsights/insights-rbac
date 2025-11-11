@@ -42,11 +42,17 @@ urlpatterns = [
 ]
 
 if settings.V2_APIS_ENABLED:
-    urlpatterns.append(
-        re_path(
-            r"^{}v2/".format(API_PATH_PREFIX),
-            include(("management.v2_urls", "v2_management")),
-        )
+    urlpatterns.extend(
+        [
+            re_path(
+                r"^{}v2/".format(API_PATH_PREFIX),
+                include(("api.v2_urls", "v2_api")),
+            ),
+            re_path(
+                r"^{}v2/".format(API_PATH_PREFIX),
+                include(("management.v2_urls", "v2_management")),
+            ),
+        ]
     )
 
 urlpatterns += staticfiles_urlpatterns()

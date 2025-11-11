@@ -13,20 +13,12 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Describes the urls and patterns for the management application."""
-from django.urls import include, path
-from management.views import (
-    RoleBindingViewSet,
-    WorkspaceViewSet,
-)
-from rest_framework.routers import DefaultRouter
+"""Describes the urls and patterns for the V2 API application."""
+from django.urls import path
 
-
-ROUTER = DefaultRouter()
-ROUTER.register(r"workspaces", WorkspaceViewSet, basename="workspace")
-ROUTER.register(r"role-bindings", RoleBindingViewSet, basename="role-bindings")
+from api.openapi.view import openapi_v2
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    path("", include(ROUTER.urls)),
+    path("openapi.json", openapi_v2, name="openapi"),
 ]

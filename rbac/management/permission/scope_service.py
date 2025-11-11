@@ -20,6 +20,7 @@ from enum import IntEnum
 from typing import Iterable, Self
 
 from django.conf import settings
+from django.db.models import QuerySet
 from management.models import Role, Workspace
 from management.permission.model import PermissionValue
 from migration_tool.models import V2boundresource
@@ -82,6 +83,51 @@ class TenantScopeResources:
             return self.default_workspace
 
         raise ValueError(f"Unexpected scope: {scope}")
+
+
+class TenantScopeResourcesCache:
+    """A cache of TenantScopeResources instances for multiple tenants."""
+
+    _workspaces: dict[Tenant, dict[Workspace.Types, Workspace]]
+
+    def __init__(self, workspaces: dict[Tenant, dict[Workspace.Types, Workspace]]):
+        """Create an instance from the internal representation."""
+        self._workspaces = workspaces
+
+    @classmethod
+    def for_tenants(cls, tenants: Iterable[Tenant]) -> "TenantScopeResourcesCache":
+        """Create an instance for the provided tenants."""
+        tenants = list(tenants)
+        raw_workspaces: QuerySet = Workspace.objects.filter(
+            tenant__in=tenants, type__in=[Workspace.Types.DEFAULT, Workspace.Types.ROOT]
+        )
+
+        grouped_workspaces = {}
+
+        # No reason to batch them, since we're keeping them all in memory anyway.
+        for workspace in raw_workspaces:
+            tenant_dict = grouped_workspaces.setdefault(workspace.tenant, {})
+
+            # Default and root workspaces should be unique
+            assert workspace.type not in tenant_dict
+
+            tenant_dict[workspace.type] = workspace
+
+        return TenantScopeResourcesCache(grouped_workspaces)
+
+    def resources_for(self, tenant: Tenant) -> TenantScopeResources:
+        """
+        Return the resources for the specified tenant.
+
+        Raises KeyError if the tenant is not known.
+        """
+        tenant_dict = self._workspaces[tenant]
+
+        return TenantScopeResources.for_models(
+            tenant=tenant,
+            root_workspace=tenant_dict[Workspace.Types.ROOT],
+            default_workspace=tenant_dict[Workspace.Types.DEFAULT],
+        )
 
 
 def bound_model_for_scope(
