@@ -32,6 +32,9 @@ objects:
     - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
+    optionalDependencies:
+      - kessel-inventory
+      - kessel-relations
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
