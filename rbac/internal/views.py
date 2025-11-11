@@ -722,22 +722,13 @@ def populate_tenant_org_id_view(request):
                     status=500,
                 )
 
+            # If BOP returns no mappings, use empty dict so all tenants will be deleted
             if not account_org_mapping:
-                return JsonResponse(
-                    {
-                        "message": "No account-org mappings returned from BOP.",
-                        "statistics": {
-                            "updated": 0,
-                            "not_found": len(account_ids),
-                            "errors": 0,
-                            "error_details": [],
-                        },
-                    },
-                    status=200,
-                )
+                logger.warning("No account-org mappings returned from BOP. All tenants will be deleted.")
+                account_org_mapping = {}
 
             # Populate tenants with org_id (with transaction and row locking)
-            logger.info(f"Populating org_id for {len(account_org_mapping)} tenants from BOP mapping")
+            logger.info(f"Processing tenants: {len(account_ids)} checked, {len(account_org_mapping)} BOP mappings")
             with transaction.atomic():
                 # Re-fetch tenants with select_for_update to prevent concurrent modifications
                 tenants_without_org_id = (
