@@ -61,16 +61,13 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
             roles = []
             seen_role_ids = set()
 
-            # Check if this is a Group object
-            if isinstance(obj, Group):
-                # Access the prefetched filtered_bindings for groups
-                if hasattr(obj, "filtered_bindings"):
-                    for binding_group in obj.filtered_bindings:
-                        if hasattr(binding_group, "binding") and binding_group.binding:
-                            role = binding_group.binding.role
-                            if role and role.uuid not in seen_role_ids:
-                                roles.append({"id": role.uuid, "name": role.name})
-                                seen_role_ids.add(role.uuid)
+            if isinstance(obj, Group) and hasattr(obj, "filtered_bindings"):
+                for binding_group in obj.filtered_bindings:
+                    if hasattr(binding_group, "binding") and binding_group.binding:
+                        role = binding_group.binding.role
+                        if role and role.uuid not in seen_role_ids:
+                            roles.append({"id": role.uuid, "name": role.name})
+                            seen_role_ids.add(role.uuid)
         return roles
 
     def get_resource(self, obj):

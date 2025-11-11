@@ -17,12 +17,9 @@
 """View for role binding management."""
 import logging
 
-from django.db.models import Count, Max, Prefetch, Q
 from management.base_viewsets import BaseV2ViewSet
-from management.models import Group
 from management.permissions.workspace_access import WorkspaceAccessPermission
-from management.principal.model import Principal
-from management.role.v2_model import RoleBinding, RoleBindingGroup
+from management.querysets import get_role_binding_groups_queryset
 from management.workspace.model import Workspace
 from rest_framework import serializers
 from rest_framework.decorators import action
@@ -58,7 +55,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
         if not resource_type:
             raise serializers.ValidationError({"resource_type": "This query parameter is required."})
 
-        queryset = self._build_group_queryset(
+        queryset = get_role_binding_groups_queryset(
             resource_id=resource_id,
             resource_type=resource_type,
             tenant=request.tenant,
@@ -68,50 +65,11 @@ class RoleBindingViewSet(BaseV2ViewSet):
             "request": request,
             "resource_id": resource_id,
             "resource_type": resource_type,
-            "resource_name": self._get_resource_name(resource_id, resource_type, request.tenant)
+            "resource_name": self._get_resource_name(resource_id, resource_type, request.tenant),
         }
 
         serializer = self.get_serializer(queryset, many=True, context=context)
         return Response(serializer.data)
-
-    def _build_group_queryset(self, resource_id, resource_type, tenant):
-        """Build a queryset of groups with their role bindings for the specified resource.
-
-        Returns a queryset of Group objects annotated with:
-        - principalCount: Count of user principals in the group
-        - latest_modified: Latest modification timestamp from associated roles
-        Each group will have prefetched role bindings filtered by resource.
-        """
-        # Start with groups that have bindings to the specified resource
-        queryset = Group.objects.filter(
-            tenant=tenant,
-            role_binding_entries__binding__resource_type=resource_type,
-            role_binding_entries__binding__resource_id=resource_id,
-        ).distinct()
-
-        # Annotate with principal count
-        queryset = queryset.annotate(
-            principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True)
-        )
-
-        # Prefetch the role bindings for this resource with their roles
-        binding_queryset = RoleBinding.objects.filter(
-            resource_type=resource_type, resource_id=resource_id
-        ).select_related("role")
-
-        # Prefetch the join table entries with the filtered bindings
-        rolebinding_group_queryset = RoleBindingGroup.objects.filter(
-            binding__resource_type=resource_type, binding__resource_id=resource_id
-        ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
-
-        queryset = queryset.prefetch_related(
-            Prefetch("role_binding_entries", queryset=rolebinding_group_queryset, to_attr="filtered_bindings")
-        )
-
-        # Annotate with latest modified timestamp from roles
-        queryset = queryset.annotate(latest_modified=Max("role_binding_entries__binding__role__modified"))
-
-        return queryset
 
     def _get_resource_name(self, resource_id, resource_type, tenant):
         """Get the name of the resource."""
