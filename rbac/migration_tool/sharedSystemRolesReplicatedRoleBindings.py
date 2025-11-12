@@ -107,6 +107,9 @@ def v1_role_to_v2_bindings(
         if not is_for_enabled_app(v1_perm):
             continue
 
+        # Convert v1 permission to v2 format once (applies to ALL permissions including playbook-dispatcher)
+        # Examples: "playbook-dispatcher:run:read" -> "playbook_dispatcher_run_read"
+        #           "inventory:hosts:write" -> "inventory_hosts_write"
         v2_perm = v1_perm_to_v2_perm(v1_perm)
 
         default = True
@@ -136,10 +139,9 @@ def v1_role_to_v2_bindings(
 
             resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])
             if resource_type is None:
-                # Resource type not mapped to v2, try special handling for service attribute
+                # Handle special case for 'service' attribute - workspace lookup by name
                 if attri_filter.get("key") == "service":
-                    # For playbook-dispatcher, the service value is the workspace NAME
-                    # Look up the workspace ID by name
+                    # The service value is the workspace name, look up the workspace ID by name
                     default = False
                     for workspace_name in values_from_attribute_filter(attri_filter):
                         workspace_id = get_workspace_id_by_name(workspace_name, v1_role.tenant)
@@ -151,12 +153,12 @@ def v1_role_to_v2_bindings(
                                 collection=set,
                             )
                             logger.info(
-                                f"Bound playbook-dispatcher permission '{v1_perm}' to workspace '{workspace_name}' "
+                                f"Bound permission '{v1_perm}' to workspace '{workspace_name}' "
                                 f"(ID: {workspace_id}) in role '{v1_role.name}'"
                             )
                         else:
                             logger.warning(
-                                f"Workspace '{workspace_name}' not found in tenant for playbook-dispatcher "
+                                f"Workspace '{workspace_name}' not found in tenant for "
                                 f"permission '{v1_perm}' in role '{v1_role.name}', skipping"
                             )
                 # Skip unmapped resource types without setting default=False
@@ -203,6 +205,8 @@ def permission_groupings_to_v2_role_bindings(
     for resource, permissions in perm_groupings.items():
         mapping = role_bindings_by_resource.get(resource)
         current = mapping.get_role_binding() if mapping is not None else None
+        # Create permission set for this resource (includes ALL permission types: playbook-dispatcher, inventory, etc.)
+        # The permissions are already in v2 format from v1_perm_to_v2_perm()
         perm_set = frozenset(permissions)
         new_role: Optional[V2role] = None
 
@@ -216,9 +220,10 @@ def permission_groupings_to_v2_role_bindings(
             # No updated Role matches. We need a new or reconfigured Role.
             # Is there a current role? Should update it? Only if it wasn't already updated.
             if current is not None and current.role.id not in latest_roles_by_id:
+                # Reuse existing role ID, update permissions (includes playbook-dispatcher, etc.)
                 new_role = V2role(current.role.id, False, perm_set)
             else:
-                # Need to create a new role
+                # Create a new role with all permissions (includes playbook-dispatcher, etc.)
                 id = str(uuid.uuid4())
                 new_role = V2role(id, False, perm_set)
             latest_roles_by_id[new_role.id] = new_role
@@ -273,7 +278,17 @@ def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:
 
 
 def v1_perm_to_v2_perm(v1_permission: Permission):
-    """Convert a V1 permission to a V2 permission."""
+    """
+    Convert a V1 permission to a V2 permission.
+
+    Converts permissions from V1 format (app:resource:verb) to V2 format (app_resource_verb).
+    Hyphens, colons, dots, and spaces are converted to underscores, and the result is lowercased.
+
+    Examples:
+        "playbook-dispatcher:run:read" -> "playbook_dispatcher_run_read"
+        "cost-management:cost_model:write" -> "cost_management_cost_model_write"
+        "inventory:hosts:*" -> "inventory_hosts_all"
+    """
     return cleanNameForV2SchemaCompatibility(
         v1_permission.application + "_" + v1_permission.resource_type + "_" + v1_permission.verb
     )
