@@ -83,7 +83,7 @@ class MessageValidatorTests(TestCase):
         self.assertFalse(self.validator.validate_parsed_message(message))
 
     def test_validate_parsed_message_invalid_aggregatetype(self):
-        """Test validation fails with invalid aggregatetype."""
+        """Test validation passes with any aggregatetype (validation removed)."""
         message = {
             "aggregatetype": "invalid_type",
             "aggregateid": "test-id-123",
@@ -91,10 +91,10 @@ class MessageValidatorTests(TestCase):
             "payload": {},
         }
 
-        self.assertFalse(self.validator.validate_parsed_message(message))
+        self.assertTrue(self.validator.validate_parsed_message(message))
 
     def test_validate_parsed_message_empty_aggregateid(self):
-        """Test validation fails with empty aggregateid."""
+        """Test validation passes with empty aggregateid (validation removed)."""
         message = {
             "aggregatetype": "relations",
             "aggregateid": "",
@@ -102,10 +102,10 @@ class MessageValidatorTests(TestCase):
             "payload": {},
         }
 
-        self.assertFalse(self.validator.validate_parsed_message(message))
+        self.assertTrue(self.validator.validate_parsed_message(message))
 
     def test_validate_parsed_message_empty_event_type(self):
-        """Test validation fails with empty event type."""
+        """Test validation passes with empty event type (validation removed)."""
         message = {
             "aggregatetype": "relations",
             "aggregateid": "test-id-123",
@@ -113,7 +113,7 @@ class MessageValidatorTests(TestCase):
             "payload": {},
         }
 
-        self.assertFalse(self.validator.validate_parsed_message(message))
+        self.assertTrue(self.validator.validate_parsed_message(message))
 
     def test_validate_parsed_message_invalid_payload_type(self):
         """Test validation fails with non-dict payload."""
@@ -146,13 +146,19 @@ class MessageValidatorTests(TestCase):
         self.assertTrue(self.validator.validate_replication_message(payload))
 
     def test_validate_replication_message_missing_field(self):
-        """Test validation fails when required field is missing."""
+        """Test validation passes when only one of the fields is present."""
         payload = {
-            "relations_to_add": []
-            # Missing "relations_to_remove"
+            "relations_to_add": [
+                {
+                    "resource": {"type": "rbac", "id": "group1"},
+                    "subject": {"type": "rbac", "id": "user1"},
+                    "relation": "member",
+                }
+            ]
+            # Missing "relations_to_remove" - but that's okay now
         }
 
-        self.assertFalse(self.validator.validate_replication_message(payload))
+        self.assertTrue(self.validator.validate_replication_message(payload))
 
     def test_validate_replication_message_invalid_type(self):
         """Test validation fails with invalid field types."""
@@ -182,7 +188,7 @@ class MessageValidatorTests(TestCase):
         self.assertFalse(self.validator.validate_replication_message(payload))
 
     def test_validate_replication_message_missing_resource_context(self):
-        """Test validation fails when resource_context is missing."""
+        """Test validation passes when resource_context is missing (optional now)."""
         payload = {
             "relations_to_add": [
                 {
@@ -192,13 +198,13 @@ class MessageValidatorTests(TestCase):
                 }
             ],
             "relations_to_remove": [],
-            # Missing "resource_context"
+            # Missing "resource_context" - but that's okay now
         }
 
-        self.assertFalse(self.validator.validate_replication_message(payload))
+        self.assertTrue(self.validator.validate_replication_message(payload))
 
     def test_validate_replication_message_invalid_resource_context_type(self):
-        """Test validation fails when resource_context is not a dict."""
+        """Test validation passes when resource_context is not a dict (validation removed)."""
         payload = {
             "relations_to_add": [
                 {
@@ -211,7 +217,7 @@ class MessageValidatorTests(TestCase):
             "resource_context": "not_a_dict",
         }
 
-        self.assertFalse(self.validator.validate_replication_message(payload))
+        self.assertTrue(self.validator.validate_replication_message(payload))
 
     def test_validate_replication_message_valid_with_resource_context(self):
         """Test validation succeeds with complete resource_context (CREATE_WORKSPACE case)."""
@@ -335,7 +341,8 @@ class DebeziumMessageParsingTests(TestCase):
                 "version": 1,
             },
             "payload": (
-                '{"relations_to_add": [{"subject": {"subject": {"id": "09e360f0-ba13-48e2-a25a-76224b1f1717", '
+                '{"aggregatetype": "relations", "aggregateid": "test-aggregate-id", "type": "create_binding", '
+                '"relations_to_add": [{"subject": {"subject": {"id": "09e360f0-ba13-48e2-a25a-76224b1f1717", '
                 '"type": {"name": "group", "namespace": "rbac"}}, "relation": "member"}, "relation": "subject", '
                 '"resource": {"id": "f2c095b1-b02d-4cf7-a71f-4dc06de0d9e1", "type": {"name": "role_binding", '
                 '"namespace": "rbac"}}}], "relations_to_remove": [{"subject": {"subject": {"id": '
@@ -349,8 +356,8 @@ class DebeziumMessageParsingTests(TestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(result["aggregatetype"], "relations")
-        self.assertEqual(result["aggregateid"], "debezium-message")
-        self.assertEqual(result["type"], "relation_change")
+        self.assertEqual(result["aggregateid"], "test-aggregate-id")
+        self.assertEqual(result["type"], "create_binding")
 
         # Verify the payload was correctly parsed
         payload = result["payload"]
@@ -374,6 +381,9 @@ class DebeziumMessageParsingTests(TestCase):
                 "version": 1,
             },
             "payload": {
+                "aggregatetype": "relations",
+                "aggregateid": "dict-test-id",
+                "type": "add_member",
                 "relations_to_add": [
                     {
                         "subject": {"id": "user-123", "type": "user"},
@@ -389,8 +399,8 @@ class DebeziumMessageParsingTests(TestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(result["aggregatetype"], "relations")
-        self.assertEqual(result["aggregateid"], "debezium-message")
-        self.assertEqual(result["type"], "relation_change")
+        self.assertEqual(result["aggregateid"], "dict-test-id")
+        self.assertEqual(result["type"], "add_member")
         self.assertEqual(len(result["payload"]["relations_to_add"]), 1)
         self.assertEqual(len(result["payload"]["relations_to_remove"]), 0)
 
@@ -398,10 +408,12 @@ class DebeziumMessageParsingTests(TestCase):
     @patch("core.kafka_consumer.Path")
     def test_parse_non_debezium_message_rejected(self, mock_path):
         """Test that non-Debezium messages are rejected."""
+        from core.kafka_consumer import ValidationError
+
         mock_path.return_value = self.liveness_file
         consumer = RBACKafkaConsumer()
 
-        # Legacy format should now be rejected
+        # Legacy format should now be rejected with ValidationError
         legacy_message = {
             "aggregatetype": "relations",
             "aggregateid": "group-123",
@@ -409,47 +421,54 @@ class DebeziumMessageParsingTests(TestCase):
             "payload": {"relations_to_add": [], "relations_to_remove": []},
         }
 
-        result = consumer._parse_debezium_message(legacy_message)
-        self.assertIsNone(result)  # Should be rejected
+        with self.assertRaises(ValidationError):
+            consumer._parse_debezium_message(legacy_message)
 
     @override_settings(KAFKA_ENABLED=True, RBAC_KAFKA_CONSUMER_TOPIC="test-topic")
     @patch("core.kafka_consumer.Path")
     def test_parse_invalid_debezium_message(self, mock_path):
         """Test parsing invalid Debezium message."""
+        from core.kafka_consumer import ValidationError
+
         mock_path.return_value = self.liveness_file
         consumer = RBACKafkaConsumer()
 
-        # Test message without schema field
+        # Test message without schema field - should raise ValidationError
         message_no_schema = {"payload": '{"relations_to_add": [], "relations_to_remove": []}'}
-        result = consumer._parse_debezium_message(message_no_schema)
-        self.assertIsNone(result)
+        with self.assertRaises(ValidationError):
+            consumer._parse_debezium_message(message_no_schema)
 
-        # Test message without payload field
+        # Test message without payload field - should raise ValidationError
         message_no_payload = {"schema": {"type": "string"}}
-        result = consumer._parse_debezium_message(message_no_payload)
-        self.assertIsNone(result)
+        with self.assertRaises(ValidationError):
+            consumer._parse_debezium_message(message_no_payload)
 
-        # Test message with neither schema nor payload
+        # Test message with neither schema nor payload - should raise ValidationError
         invalid_message = {"some_field": "value"}
-        result = consumer._parse_debezium_message(invalid_message)
-        self.assertIsNone(result)
+        with self.assertRaises(ValidationError):
+            consumer._parse_debezium_message(invalid_message)
 
     @override_settings(KAFKA_ENABLED=True, RBAC_KAFKA_CONSUMER_TOPIC="test-topic")
     @patch("core.kafka_consumer.Path")
     def test_parse_debezium_message_invalid_json_payload(self, mock_path):
         """Test parsing Debezium message with invalid JSON in payload."""
+        import json
+
         mock_path.return_value = self.liveness_file
         consumer = RBACKafkaConsumer()
 
         debezium_message = {"schema": {"type": "string"}, "payload": "invalid json {"}
 
-        result = consumer._parse_debezium_message(debezium_message)
-        self.assertIsNone(result)
+        # Should raise JSONDecodeError for invalid JSON
+        with self.assertRaises(json.JSONDecodeError):
+            consumer._parse_debezium_message(debezium_message)
 
     @override_settings(KAFKA_ENABLED=True, RBAC_KAFKA_CONSUMER_TOPIC="test-topic")
     @patch("core.kafka_consumer.Path")
     def test_parse_debezium_message_unknown_payload_structure(self, mock_path):
         """Test parsing Debezium message with unknown payload structure."""
+        from core.kafka_consumer import ValidationError
+
         mock_path.return_value = self.liveness_file
         consumer = RBACKafkaConsumer()
 
@@ -458,8 +477,9 @@ class DebeziumMessageParsingTests(TestCase):
             "payload": '{"unknown_field": "value"}',
         }
 
-        result = consumer._parse_debezium_message(debezium_message)
-        self.assertIsNone(result)
+        # Should raise ValidationError for unknown payload structure
+        with self.assertRaises(ValidationError):
+            consumer._parse_debezium_message(debezium_message)
 
 
 class RBACKafkaConsumerTests(TestCase):
@@ -580,7 +600,9 @@ class RBACKafkaConsumerTests(TestCase):
             mock_process.assert_called_once()
 
     def test_process_debezium_message_workspace_unknown(self):
-        """Test processing workspace message is treated as unknown type."""
+        """Test processing workspace message without relations fields fails validation."""
+        from core.kafka_consumer import ValidationError
+
         consumer = RBACKafkaConsumer()
 
         message_value = {
@@ -593,12 +615,14 @@ class RBACKafkaConsumerTests(TestCase):
             },
         }
 
-        result = consumer._process_debezium_message(message_value)
-
-        self.assertFalse(result)  # Should return False for unknown aggregate type
+        # Should raise ValidationError because payload doesn't have relations_to_add or relations_to_remove
+        with self.assertRaises(ValidationError):
+            consumer._process_debezium_message(message_value)
 
     def test_process_debezium_message_invalid(self):
         """Test processing invalid message."""
+        from core.kafka_consumer import ValidationError
+
         consumer = RBACKafkaConsumer()
 
         message_value = {
@@ -606,43 +630,33 @@ class RBACKafkaConsumerTests(TestCase):
             # Missing required fields
         }
 
-        result = consumer._process_debezium_message(message_value)
+        # Should raise ValidationError for invalid message
+        with self.assertRaises(ValidationError):
+            consumer._process_debezium_message(message_value)
 
-        self.assertFalse(result)
-
-    def test_process_relations_message_success(self):
-        """Test successful relations message processing."""
-        consumer = RBACKafkaConsumer()
-
-        debezium_msg = DebeziumMessage(
-            aggregatetype="relations",
-            aggregateid="test-id-123",
-            event_type="create_group",
-            payload={
-                "relations_to_add": [
-                    {
-                        "resource": {"type": "rbac", "id": "group1"},
-                        "subject": {"type": "rbac", "id": "user1"},
-                        "relation": "member",
-                    }
-                ],
-                "relations_to_remove": [],
-            },
-        )
-
-        result = consumer._process_relations_message(debezium_msg)
-
-        self.assertTrue(result)
-
+    @patch("core.kafka_consumer.json_format.ParseDict")
     @patch("core.kafka_consumer.relations_api_replication._write_relationships")
     @patch("core.kafka_consumer.relations_api_replication._delete_relationships")
     @patch("core.kafka_consumer.Tenant.objects.get")
-    def test_process_relations_message_success(self, mock_tenant_get, mock_delete, mock_write):
+    def test_process_relations_message_success(self, mock_tenant_get, mock_delete, mock_write, mock_parse_dict):
         """Test successful relations message processing."""
         # Mock tenant lookup
         mock_tenant = Mock()
         mock_tenant.org_id = "12345"
         mock_tenant_get.return_value = mock_tenant
+
+        # Mock protobuf conversion
+        mock_relationship_pb = Mock()
+        mock_parse_dict.return_value = mock_relationship_pb
+
+        # Mock API responses with consistency tokens
+        mock_write_response = Mock()
+        mock_write_response.consistency_token.token = "test-token-123"
+        mock_write.return_value = mock_write_response
+
+        mock_delete_response = Mock()
+        mock_delete_response.consistency_token.token = "test-token-456"
+        mock_delete.return_value = mock_delete_response
 
         consumer = RBACKafkaConsumer()
 
@@ -676,7 +690,9 @@ class RBACKafkaConsumerTests(TestCase):
         mock_delete.assert_called_once()
 
     def test_process_relations_message_invalid_payload(self):
-        """Test relations message processing with invalid payload."""
+        """Test relations message processing with invalid payload raises ValidationError."""
+        from core.kafka_consumer import ValidationError
+
         consumer = RBACKafkaConsumer()
 
         debezium_msg = DebeziumMessage(
@@ -693,9 +709,9 @@ class RBACKafkaConsumerTests(TestCase):
             },  # Both empty - invalid
         )
 
-        result = consumer._process_relations_message(debezium_msg)
-
-        self.assertFalse(result)
+        # Should raise ValidationError for empty relations
+        with self.assertRaises(ValidationError):
+            consumer._process_relations_message(debezium_msg)
 
     @override_settings(
         KAFKA_ENABLED=True,
@@ -764,7 +780,12 @@ class RBACKafkaConsumerTests(TestCase):
 
             mock_process.assert_called_once()
 
-    @override_settings(KAFKA_ENABLED=True)
+    @override_settings(
+        KAFKA_ENABLED=True,
+        RBAC_KAFKA_CUSTOM_CONSUMER_BROKER=None,
+        KAFKA_AUTH=None,
+        KAFKA_SERVERS=["localhost:9092"],
+    )
     @patch("core.kafka_consumer.KafkaConsumer")
     def test_start_consuming_kafka_error(self, mock_kafka_consumer):
         """Test handling Kafka errors during consumption."""
@@ -876,125 +897,165 @@ class RetryConfigTests(TestCase):
         """Test default retry configuration."""
         config = RetryConfig()
 
-        self.assertEqual(config.initial_delay, 1.0)
-        self.assertEqual(config.max_delay, 300.0)
-        self.assertEqual(config.backoff_multiplier, 2.0)
+        self.assertEqual(config.operation_max_retries, 10)
+        self.assertEqual(config.backoff_factor, 5)
+        self.assertEqual(config.max_backoff_seconds, 30)
+        self.assertEqual(config.base_delay, 0.3)
         self.assertEqual(config.jitter_factor, 0.1)
 
     def test_custom_config(self):
         """Test custom retry configuration."""
-        config = RetryConfig(initial_delay=0.5, max_delay=60.0, backoff_multiplier=1.5, jitter_factor=0.2)
+        config = RetryConfig(
+            operation_max_retries=10,
+            backoff_factor=3,
+            max_backoff_seconds=60,
+            base_delay=0.5,
+            jitter_factor=0.2,
+        )
 
-        self.assertEqual(config.initial_delay, 0.5)
-        self.assertEqual(config.max_delay, 60.0)
-        self.assertEqual(config.backoff_multiplier, 1.5)
+        self.assertEqual(config.operation_max_retries, 10)
+        self.assertEqual(config.backoff_factor, 3)
+        self.assertEqual(config.max_backoff_seconds, 60)
+        self.assertEqual(config.base_delay, 0.5)
         self.assertEqual(config.jitter_factor, 0.2)
 
     @patch("random.random")
     def test_calculate_delay_exponential_backoff(self, mock_random):
-        """Test delay calculation with exponential backoff."""
+        """Test delay calculation with linear backoff.
+
+        Formula: backoff = min(backoff_factor * attempt * base_delay, max_backoff_seconds)
+        """
         mock_random.return_value = 0.5  # Fixed jitter for testing
         config = RetryConfig(
-            initial_delay=1.0,
-            max_delay=100.0,
-            backoff_multiplier=2.0,
+            backoff_factor=5,
+            base_delay=0.3,
+            max_backoff_seconds=30,
             jitter_factor=0.1,
         )
 
         # Test first few attempts
-        delay_0 = config.calculate_delay(0)  # 1.0 * (2^0) + jitter = 1.0 + 0.05 = 1.05
-        delay_1 = config.calculate_delay(1)  # 1.0 * (2^1) + jitter = 2.0 + 0.1 = 2.1
-        delay_2 = config.calculate_delay(2)  # 1.0 * (2^2) + jitter = 4.0 + 0.2 = 4.2
+        # Formula: backoff_factor * attempt * base_delay + jitter
+        delay_0 = config.calculate_delay(0)  # 5 * 0 * 0.3 + jitter = 0.0 + 0.0 = 0.0
+        delay_1 = config.calculate_delay(1)  # 5 * 1 * 0.3 + jitter = 1.5 + 0.075 = 1.575
+        delay_2 = config.calculate_delay(2)  # 5 * 2 * 0.3 + jitter = 3.0 + 0.15 = 3.15
 
-        self.assertAlmostEqual(delay_0, 1.05, places=2)
-        self.assertAlmostEqual(delay_1, 2.1, places=2)
-        self.assertAlmostEqual(delay_2, 4.2, places=2)
+        self.assertAlmostEqual(delay_0, 0.0, places=2)
+        self.assertAlmostEqual(delay_1, 1.575, places=2)
+        self.assertAlmostEqual(delay_2, 3.15, places=2)
 
     @patch("random.random")
     def test_calculate_delay_max_limit(self, mock_random):
         """Test delay calculation respects max limit."""
         mock_random.return_value = 0.0  # No jitter for simpler testing
-        config = RetryConfig(initial_delay=1.0, max_delay=10.0, backoff_multiplier=2.0, jitter_factor=0.1)
+        config = RetryConfig(backoff_factor=5, base_delay=0.3, max_backoff_seconds=10, jitter_factor=0.1)
 
-        # High attempt number should be capped at max_delay
-        delay = config.calculate_delay(10)  # Would be 1024 without cap
+        # High attempt number should be capped at max_backoff_seconds
+        # Formula: backoff_factor * attempt * base_delay
+        # For attempt 10: 5 * 10 * 0.3 = 15, but capped at 10
+        delay = config.calculate_delay(10)
 
         self.assertLessEqual(delay, 10.0)
 
     def test_calculate_delay_with_jitter(self):
         """Test that jitter adds randomness to delays."""
-        config = RetryConfig(initial_delay=1.0, max_delay=100.0, jitter_factor=0.1)
+        config = RetryConfig(backoff_factor=5, base_delay=0.3, max_backoff_seconds=100, jitter_factor=0.1)
 
         # Calculate delays multiple times to check they're different due to jitter
+        # For attempt 1: 5 * 1 * 0.3 = 1.5, jitter up to 0.15
         delays = [config.calculate_delay(1) for _ in range(10)]
 
-        # All delays should be around 2.0 but slightly different
+        # All delays should be around 1.5 but slightly different
         for delay in delays:
-            self.assertGreater(delay, 2.0)
-            self.assertLess(delay, 2.3)  # 2.0 + max jitter (0.2)
+            self.assertGreater(delay, 1.5)
+            self.assertLess(delay, 1.65)  # 1.5 + max jitter (0.15)
 
         # Check that we got some variation
         self.assertGreater(len(set(delays)), 5)  # Should have at least some different values
 
 
-class SelectiveRetryLogicTests(TestCase):
-    """Tests for the new selective retry logic."""
+class RetryAllErrorsTests(TestCase):
+    """Tests for the new 'retry all errors' policy."""
 
     def setUp(self):
         """Set up test fixtures."""
-        self.consumer = RBACKafkaConsumer()
+        from core.kafka_consumer import RetryConfig
+        from kafka import TopicPartition
 
-    def test_should_retry_exception_json_errors(self):
-        """Test that JSON errors are not retried."""
+        # Use short operation_max_retries to avoid infinite loops in tests
+        retry_config = RetryConfig(
+            base_delay=0.01,
+            max_backoff_seconds=1,
+            operation_max_retries=2,
+        )
+        self.consumer = RBACKafkaConsumer(retry_config=retry_config)
+        self.topic_partition = TopicPartition("test-topic", 0)
+
+        # Mock the stop event's wait method to return False (not stopping)
+        self.consumer._stop_health_check.wait = Mock(return_value=False)
+
+    def test_should_retry_all_exceptions(self):
+        """Test that ALL errors are now retried with new policy."""
+        from core.kafka_consumer import RetryHelper
+
         json_error = json.JSONDecodeError("test", "doc", 0)
         unicode_error = UnicodeDecodeError("utf-8", b"", 0, 1, "test")
-
-        self.assertFalse(self.consumer._should_retry_exception(json_error))
-        self.assertFalse(self.consumer._should_retry_exception(unicode_error))
-
-    def test_should_retry_exception_network_errors(self):
-        """Test that network errors are retried."""
         connection_error = ConnectionError("Connection failed")
         timeout_error = TimeoutError("Request timed out")
         os_error = OSError("Network unreachable")
-
-        self.assertTrue(self.consumer._should_retry_exception(connection_error))
-        self.assertTrue(self.consumer._should_retry_exception(timeout_error))
-        self.assertTrue(self.consumer._should_retry_exception(os_error))
-
-    def test_should_retry_exception_validation_errors(self):
-        """Test that validation errors are not retried."""
         validation_error = ValueError("validation failed")
         generic_value_error = ValueError("some other error")
 
-        self.assertFalse(self.consumer._should_retry_exception(validation_error))
-        self.assertTrue(self.consumer._should_retry_exception(generic_value_error))  # Only validation-specific ones
+        # Create RetryHelper to test retry logic
+        retry_helper = RetryHelper(
+            retry_config=self.consumer.retry_config,
+            shutdown_event=self.consumer._stop_health_check,
+        )
+
+        # ALL errors should be retried with new policy
+        self.assertTrue(retry_helper._should_retry(json_error))
+        self.assertTrue(retry_helper._should_retry(unicode_error))
+        self.assertTrue(retry_helper._should_retry(connection_error))
+        self.assertTrue(retry_helper._should_retry(timeout_error))
+        self.assertTrue(retry_helper._should_retry(os_error))
+        self.assertTrue(retry_helper._should_retry(validation_error))
+        self.assertTrue(retry_helper._should_retry(generic_value_error))
 
     @patch("core.kafka_consumer.logger")
-    def test_process_message_with_retry_permanent_error(self, mock_logger):
-        """Test that permanent errors are not retried."""
+    def test_process_message_with_retry_max_retries_exceeded(self, mock_logger):
+        """Test that errors are retried until max_retries is hit."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
             "payload": {"relations_to_add": [], "relations_to_remove": []},
         }
 
-        # Mock _process_debezium_message to raise a JSON error
-        with patch.object(
-            self.consumer,
-            "_process_debezium_message",
-            side_effect=json.JSONDecodeError("test", "doc", 0),
+        # Mock _process_debezium_message to always raise a JSON error
+        # Mock time.sleep to break out of infinite pause loop
+        with (
+            patch.object(
+                self.consumer,
+                "_process_debezium_message",
+                side_effect=json.JSONDecodeError("test", "doc", 0),
+            ),
+            patch("time.sleep") as mock_sleep,
         ):
-            result = self.consumer._process_message_with_retry(message_value, 1234, 0)
+            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
 
-        self.assertFalse(result)
-        # Should log as permanent error, not retry
-        mock_logger.error.assert_called()
-        self.assertIn("Permanent JSON decode error", mock_logger.error.call_args[0][0])
+            # Should enter pause loop after max retries, then get interrupted
+            with self.assertRaises(KeyboardInterrupt):
+                self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+        # Should have retried operation_max_retries times (2)
+        self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
+        # Should have called sleep at least once (entered pause loop)
+        self.assertGreater(mock_sleep.call_count, 0)
+        # Should log max operation retries exceeded
+        mock_logger.critical.assert_called()
+        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
 
     @patch("core.kafka_consumer.logger")
-    def test_process_message_with_retry_processing_failure(self, mock_logger):
-        """Test that processing failures are not retried."""
+    def test_process_message_with_retry_processing_failure_retried(self, mock_logger):
+        """Test that processing failures ARE retried with new policy."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
@@ -1002,13 +1063,24 @@ class SelectiveRetryLogicTests(TestCase):
         }
 
         # Mock _process_debezium_message to return False (processing failed)
-        with patch.object(self.consumer, "_process_debezium_message", return_value=False):
-            result = self.consumer._process_message_with_retry(message_value, 1234, 0)
+        # Mock time.sleep to break out of infinite pause loop
+        with (
+            patch.object(self.consumer, "_process_debezium_message", return_value=False),
+            patch("time.sleep") as mock_sleep,
+        ):
+            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
 
-        self.assertFalse(result)
-        # Should log as processing failed, not retry
-        mock_logger.error.assert_called()
-        self.assertIn("Message processing failed", mock_logger.error.call_args[0][0])
+            # Should enter pause loop after max retries, then get interrupted
+            with self.assertRaises(KeyboardInterrupt):
+                self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+        # Should have retried operation_max_retries times (2)
+        self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
+        # Should have called sleep at least once (entered pause loop)
+        self.assertGreater(mock_sleep.call_count, 0)
+        # Should log max operation retries exceeded
+        mock_logger.critical.assert_called()
+        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
 
 
 class HealthCheckTests(TestCase):
@@ -1051,17 +1123,26 @@ class RBACKafkaConsumerRetryTests(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
-        self.retry_config = RetryConfig(initial_delay=0.01, max_delay=0.1)  # Fast retries for testing
+        # Fast retries for testing
+        self.retry_config = RetryConfig(
+            base_delay=0.01,
+            max_backoff_seconds=1,
+            operation_max_retries=-1,
+        )
 
     @patch("core.kafka_consumer.Path")
-    @patch("core.kafka_consumer.time.sleep")
-    def test_process_message_with_retry_success_after_failures(self, mock_sleep, mock_path):
+    def test_process_message_with_retry_success_after_failures(self, mock_path):
         """Test message processing succeeds after initial failures."""
+        from kafka import TopicPartition
+
         mock_liveness = Mock()
         mock_readiness = Mock()
         mock_path.side_effect = [mock_liveness, mock_readiness]
 
         consumer = RBACKafkaConsumer(retry_config=self.retry_config)
+
+        # Mock the stop event's wait method to return False (not stopping)
+        consumer._stop_health_check.wait = Mock(return_value=False)
 
         # Mock _process_debezium_message to fail twice then succeed
         call_count = 0
@@ -1080,12 +1161,15 @@ class RBACKafkaConsumerRetryTests(TestCase):
             "payload": {"relations_to_add": [], "relations_to_remove": []},
         }
 
+        # Create a TopicPartition for the test
+        topic_partition = TopicPartition("test-topic", 0)
+
         # Patch the method before calling
         original_method = consumer._process_debezium_message
         consumer._process_debezium_message = Mock(side_effect=mock_process_side_effect)
 
         try:
-            result = consumer._process_message_with_retry(test_message, 123, 0)
+            result = consumer._process_message_with_retry(test_message, 123, 0, topic_partition)
         finally:
             # Restore original method
             consumer._process_debezium_message = original_method
@@ -1094,26 +1178,49 @@ class RBACKafkaConsumerRetryTests(TestCase):
         self.assertEqual(call_count, 3)  # Failed twice, succeeded on third attempt
 
     @patch("core.kafka_consumer.Path")
-    @patch("core.kafka_consumer.time.sleep")
-    def test_process_message_with_retry_json_error_skipped(self, mock_sleep, mock_path):
-        """Test that JSON decode errors are not retried."""
+    def test_process_message_with_retry_json_error_retried(self, mock_path):
+        """Test that JSON decode errors ARE now retried with new policy."""
+        from kafka import TopicPartition
+        from core.kafka_consumer import RetryConfig
+
         mock_liveness = Mock()
         mock_readiness = Mock()
         mock_path.side_effect = [mock_liveness, mock_readiness]
 
-        consumer = RBACKafkaConsumer(retry_config=self.retry_config)
+        # Set operation_max_retries to a small number to avoid infinite retries in test
+        retry_config = RetryConfig(base_delay=0.01, max_backoff_seconds=0.1, operation_max_retries=2)
+        consumer = RBACKafkaConsumer(retry_config=retry_config)
+
+        # Mock the stop event's wait method to return False (not stopping)
+        consumer._stop_health_check.wait = Mock(return_value=False)
+
+        # Create a TopicPartition for the test
+        topic_partition = TopicPartition("test-topic", 0)
+
+        # Use valid Debezium message format
+        message_value = {"schema": {"type": "string"}, "payload": {"relations_to_add": [], "relations_to_remove": []}}
 
         # Mock _process_debezium_message to raise JSON decode error
-        with patch.object(
-            consumer,
-            "_process_debezium_message",
-            side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
+        # Mock time.sleep to avoid actually sleeping in the pause loop
+        with (
+            patch.object(
+                consumer,
+                "_process_debezium_message",
+                side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
+            ),
+            patch("time.sleep") as mock_sleep,
         ):
-            result = consumer._process_message_with_retry({"test": "message"}, 123, 0)
+            # Set sleep to raise an exception to break out of infinite loop
+            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
 
-        self.assertFalse(result)
-        # Should not have slept (no retries for JSON errors)
-        mock_sleep.assert_not_called()
+            # Should enter pause loop after max retries, then get interrupted
+            with self.assertRaises(KeyboardInterrupt):
+                consumer._process_message_with_retry(message_value, 123, 0, topic_partition)
+
+        # Should have waited (called wait max_retries times during retry)
+        self.assertEqual(consumer._stop_health_check.wait.call_count, 2)
+        # Should have called sleep at least once (entered pause loop)
+        self.assertGreater(mock_sleep.call_count, 0)
 
     @patch("core.kafka_consumer.Path")
     def test_consumer_init_with_retry_config(self, mock_path):
@@ -1122,11 +1229,16 @@ class RBACKafkaConsumerRetryTests(TestCase):
         mock_readiness = Mock()
         mock_path.side_effect = [mock_liveness, mock_readiness]
 
-        custom_config = RetryConfig(initial_delay=2.0, max_delay=60.0)
+        custom_config = RetryConfig(
+            base_delay=0.5,
+            max_backoff_seconds=60,
+            operation_max_retries=5,
+        )
         consumer = RBACKafkaConsumer(retry_config=custom_config)
 
-        self.assertEqual(consumer.retry_config.initial_delay, 2.0)
-        self.assertEqual(consumer.retry_config.max_delay, 60.0)
+        self.assertEqual(consumer.retry_config.base_delay, 0.5)
+        self.assertEqual(consumer.retry_config.max_backoff_seconds, 60)
+        self.assertEqual(consumer.retry_config.operation_max_retries, 5)
 
     @patch("core.kafka_consumer.Path")
     def test_consumer_init_with_default_retry_config(self, mock_path):
@@ -1137,5 +1249,6 @@ class RBACKafkaConsumerRetryTests(TestCase):
 
         consumer = RBACKafkaConsumer()
 
-        self.assertEqual(consumer.retry_config.initial_delay, 1.0)
-        self.assertEqual(consumer.retry_config.max_delay, 300.0)
+        self.assertEqual(consumer.retry_config.base_delay, 0.3)
+        self.assertEqual(consumer.retry_config.max_backoff_seconds, 30)
+        self.assertEqual(consumer.retry_config.operation_max_retries, 10)
