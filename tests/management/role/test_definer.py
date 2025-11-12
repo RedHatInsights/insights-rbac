@@ -752,6 +752,18 @@ class V2RoleSeedingTests(IdentityRequest):
         self.assertTrue(Group.objects.filter(platform_default=True).exists())
         self.assertTrue(Group.objects.filter(admin_default=True).exists())
 
+        # Verify UUIDs are correct
+        policy_service = GlobalPolicyIdService.shared()
+        for access_type in DefaultAccessType:
+            for scope in Scope:
+                expected_uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
+                actual_role = platform_roles[(access_type, scope)]
+                self.assertEqual(
+                    actual_role.uuid,
+                    expected_uuid,
+                    f"UUID mismatch for {access_type.value} {scope.name.lower()} platform role",
+                )
+
     def test_seed_platform_roles_uses_correct_uuids(self):
         """Test that platform roles are created with correct UUIDs from settings."""
         seed_group()
@@ -781,12 +793,7 @@ class V2RoleSeedingTests(IdentityRequest):
         second_count = PlatformRoleV2.objects.count()
         self.assertEqual(second_count, 6)
 
-        # UUIDs should be the same
-        for access_type in DefaultAccessType:
-            for scope in Scope:
-                self.assertEqual(
-                    platform_roles_1[(access_type, scope)].uuid, platform_roles_2[(access_type, scope)].uuid
-                )
+        self.assertEqual(platform_roles_1, platform_roles_2)
 
     def test_seed_v2_role_from_v1(self):
         """Test that V2 roles are created from V1 roles during seeding."""
@@ -794,20 +801,23 @@ class V2RoleSeedingTests(IdentityRequest):
         seed_group()
         seed_roles()
 
-        # Get any system V1 role from the actual seeded roles
-        v1_role = Role.objects.filter(system=True, tenant=self.public_tenant).first()
-        self.assertIsNotNone(v1_role, "Should have at least one system role")
+        # Get all system V1 roles from the actual seeded roles
+        v1_roles = Role.objects.filter(system=True, tenant=self.public_tenant)
+        self.assertGreater(v1_roles.count(), 0, "Should have at least one system role")
 
-        # V2 role should be created with same UUID
-        v2_role = SeededRoleV2.objects.get(uuid=v1_role.uuid)
-        self.assertEqual(v2_role.name, v1_role.display_name)
-        self.assertEqual(v2_role.tenant, self.public_tenant)
-        self.assertEqual(v2_role.v1_source, v1_role)
+        # Verify V2 role exists for each V1 role
+        for v1_role in v1_roles:
+            with self.subTest(role=v1_role.name):
+                # V2 role should be created with same UUID
+                v2_role = SeededRoleV2.objects.get(uuid=v1_role.uuid)
+                self.assertEqual(v2_role.name, v1_role.display_name)
+                self.assertEqual(v2_role.tenant, self.public_tenant)
+                self.assertEqual(v2_role.v1_source, v1_role)
 
-        # V2 role should have the same permissions as V1 role
-        v1_permissions = set(access.permission for access in v1_role.access.all())
-        v2_permissions = set(v2_role.permissions.all())
-        self.assertEqual(v1_permissions, v2_permissions)
+                # V2 role should have the same permissions as V1 role
+                v1_permissions = set(access.permission for access in v1_role.access.all())
+                v2_permissions = set(v2_role.permissions.all())
+                self.assertEqual(v1_permissions, v2_permissions)
 
     def test_platform_role_has_seeded_role_as_child(self):
         """Test that platform roles have seeded roles as children after seeding."""
