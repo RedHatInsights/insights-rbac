@@ -366,7 +366,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
     def test_populate_tenant_account_id(self, populate_mock):
         """Test that we can trigger population of account id's for tenants."""
-        response = self.client.post(f"/_private/api/utils/populate_tenant_account_id/", **self.request.META)
+        response = self.client.post("/_private/api/utils/populate_tenant_account_id/", **self.request.META)
         populate_mock.assert_called_once_with()
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
@@ -396,10 +396,137 @@ class InternalViewsetTests(BaseInternalViewsetTests):
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
     def test_populate_tenant_account_id_get_failure(self, populate_mock):
         """Test that we get a bad request for not using POST method."""
-        response = self.client.get(f"/_private/api/utils/populate_tenant_account_id/", **self.request.META)
+        response = self.client.get("/_private/api/utils/populate_tenant_account_id/", **self.request.META)
         populate_mock.assert_not_called()
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertEqual(response.content.decode(), 'Invalid method, only "POST" is allowed.')
+
+    @patch("management.principal.proxy.PrincipalProxy.fetch_account_org_mapping")
+    def test_populate_tenant_org_id(self, mock_fetch_bop):
+        """Test that we can populate tenant org_id by fetching from BOP."""
+        # Create test tenants with account_id but no org_id
+        tenant1 = Tenant.objects.create(tenant_name="acct111222", account_id="111222", org_id=None)
+        tenant2 = Tenant.objects.create(tenant_name="acct333444", account_id="333444", org_id=None)
+        tenant3 = Tenant.objects.create(tenant_name="acct555666", account_id="555666", org_id=None)
+        tenant4 = Tenant.objects.create(tenant_name="acct777888", account_id="777888", org_id=None)
+
+        # Create workspaces for tenant1 (will be UPDATED, not deleted)
+        root_ws_t1 = Workspace.objects.create(name="Root", tenant=tenant1, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t1 = Workspace.objects.create(
+            name="Default", tenant=tenant1, type=Workspace.Types.DEFAULT, parent=root_ws_t1
+        )
+
+        # Create workspaces for tenant2 (will be UPDATED, not deleted)
+        root_ws_t2 = Workspace.objects.create(name="Root", tenant=tenant2, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t2 = Workspace.objects.create(
+            name="Default", tenant=tenant2, type=Workspace.Types.DEFAULT, parent=root_ws_t2
+        )
+
+        # Create workspaces for tenant3 (will be deleted due to no BOP mapping)
+        # Create a hierarchy: root -> default -> child1 -> grandchild
+        root_ws_t3 = Workspace.objects.create(name="Root", tenant=tenant3, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t3 = Workspace.objects.create(
+            name="Default", tenant=tenant3, type=Workspace.Types.DEFAULT, parent=root_ws_t3
+        )
+        child_ws_t3 = Workspace.objects.create(
+            name="Child", tenant=tenant3, type=Workspace.Types.STANDARD, parent=default_ws_t3
+        )
+        grandchild_ws_t3 = Workspace.objects.create(
+            name="Grandchild", tenant=tenant3, type=Workspace.Types.STANDARD, parent=child_ws_t3
+        )
+
+        # Create workspaces for tenant4 (will be deleted due to duplicate org_id)
+        root_ws_t4 = Workspace.objects.create(name="Root", tenant=tenant4, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t4 = Workspace.objects.create(
+            name="Default", tenant=tenant4, type=Workspace.Types.DEFAULT, parent=root_ws_t4
+        )
+
+        # Create an existing tenant with org_id that will conflict with tenant4's mapping
+        existing_tenant = Tenant.objects.create(tenant_name="acct_existing", account_id="999000", org_id="org-777")
+
+        # Mock BOP response
+        mock_fetch_bop.return_value = {
+            "111222": "org-111",
+            "333444": "org-333",
+            "777888": "org-777",  # This conflicts with existing_tenant's org_id
+            # 555666 not in mapping to simulate partial results
+        }
+
+        response = self.client.post("/_private/api/utils/populate_tenant_org_id/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response_data = json.loads(response.content.decode())
+        self.assertEqual(response_data["message"], "Tenant org_id population completed.")
+        self.assertEqual(response_data["tenants_checked"], 4)
+        self.assertEqual(response_data["mappings_from_bop"], 3)
+        self.assertEqual(response_data["statistics"]["updated"], 2)  # tenant1, tenant2
+        self.assertEqual(response_data["statistics"]["deleted_no_mapping"], 1)  # tenant3 deleted (no BOP mapping)
+        self.assertEqual(response_data["statistics"]["deleted_duplicate"], 1)  # tenant4 deleted (org-777 exists)
+        self.assertEqual(response_data["statistics"]["errors"], 0)
+
+        # Verify BOP was called with correct account_ids
+        called_account_ids = mock_fetch_bop.call_args[0][0]
+        self.assertIn("111222", called_account_ids)
+        self.assertIn("333444", called_account_ids)
+        self.assertIn("555666", called_account_ids)
+        self.assertIn("777888", called_account_ids)
+
+        # Verify tenants were updated or deleted
+        tenant1.refresh_from_db()
+        tenant2.refresh_from_db()
+
+        self.assertEqual(tenant1.org_id, "org-111")
+        self.assertEqual(tenant2.org_id, "org-333")
+
+        # Verify tenant1's workspaces are still there (tenant was updated, not deleted)
+        self.assertTrue(Workspace.objects.filter(id=root_ws_t1.id).exists())
+        self.assertTrue(Workspace.objects.filter(id=default_ws_t1.id).exists())
+
+        # Verify tenant2's workspaces are still there (tenant was updated, not deleted)
+        self.assertTrue(Workspace.objects.filter(id=root_ws_t2.id).exists())
+        self.assertTrue(Workspace.objects.filter(id=default_ws_t2.id).exists())
+
+        # Verify tenant3 was deleted (no mapping in BOP)
+        self.assertFalse(Tenant.objects.filter(id=tenant3.id).exists())
+        # Verify tenant3's workspaces were also deleted
+        self.assertFalse(Workspace.objects.filter(tenant_id=tenant3.id).exists())
+
+        # Verify tenant4 was deleted (duplicate org_id)
+        self.assertFalse(Tenant.objects.filter(id=tenant4.id).exists())
+        # Verify tenant4's workspaces were also deleted
+        self.assertFalse(Workspace.objects.filter(tenant_id=tenant4.id).exists())
+
+        # Verify existing_tenant is still there
+        existing_tenant.refresh_from_db()
+        self.assertEqual(existing_tenant.org_id, "org-777")
+
+    @patch("management.principal.proxy.PrincipalProxy.fetch_account_org_mapping")
+    def test_populate_tenant_org_id_no_bop_mapping(self, mock_fetch_bop):
+        """Test that tenants are deleted when BOP returns no mappings."""
+        # Create test tenants with account_id but no org_id
+        tenant1 = Tenant.objects.create(tenant_name="acct222333", account_id="222333", org_id=None)
+        tenant2 = Tenant.objects.create(tenant_name="acct444555", account_id="444555", org_id=None)
+
+        # Create workspaces for tenant1
+        root_ws_t1 = Workspace.objects.create(name="Root", tenant=tenant1, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t1 = Workspace.objects.create(
+            name="Default", tenant=tenant1, type=Workspace.Types.DEFAULT, parent=root_ws_t1
+        )
+
+        # Create workspaces for tenant2
+        root_ws_t2 = Workspace.objects.create(name="Root", tenant=tenant2, type=Workspace.Types.ROOT, parent=None)
+
+        # Mock BOP response - returns empty dict (no mappings found)
+        mock_fetch_bop.return_value = {}
+
+        response = self.client.post("/_private/api/utils/populate_tenant_org_id/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify both tenants were deleted
+        self.assertFalse(Tenant.objects.filter(id=tenant1.id).exists())
+        self.assertFalse(Tenant.objects.filter(id=tenant2.id).exists())
 
     def test_get_invalid_default_admin_groups(self):
         """Test that we can get invalid groups."""

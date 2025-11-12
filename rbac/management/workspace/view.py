@@ -21,7 +21,7 @@ import uuid
 
 import pgtransaction
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
@@ -81,8 +81,18 @@ class WorkspaceViewSet(BaseV2ViewSet):
             return super().get_queryset().select_for_update()
         return super().get_queryset()
 
-    def create(self, request, *args, **kwargs):
-        """Create a Workspace."""
+    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
+    def _create_atomic(self, request, *args, **kwargs):
+        """
+        Create a workspace atomically with SERIALIZABLE isolation level and automatic retries.
+
+        The SERIALIZABLE isolation level ensures the highest data consistency by preventing
+        concurrent transactions from interfering with each other. However, when conflicts occur
+        (e.g., two transactions trying to create workspaces simultaneously), PostgreSQL raises
+        SerializationFailure. The retry=3 parameter automatically retries the transaction up to
+        3 times when SerializationFailure or DeadlockDetected errors occur. This is expected
+        behavior and retrying usually succeeds as concurrent transactions complete.
+        """
         tenant = request.tenant
         parent_id = request.data.get("parent_id")
 
@@ -92,6 +102,38 @@ class WorkspaceViewSet(BaseV2ViewSet):
                     {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
                 )
         return super().create(request=request, args=args, kwargs=kwargs)
+
+    def create(self, request, *args, **kwargs):
+        """Create a Workspace."""
+        try:
+            return self._create_atomic(request, *args, **kwargs)
+        except OperationalError as e:
+            # Django wraps psycopg2 errors in OperationalError
+            if hasattr(e, "__cause__"):
+                if isinstance(e.__cause__, SerializationFailure):
+                    logger.exception("SerializationFailure in workspace creation operation")
+                    return Response(
+                        {"detail": "Too many concurrent updates. Please retry."}, status=status.HTTP_409_CONFLICT
+                    )
+                elif isinstance(e.__cause__, DeadlockDetected):
+                    logger.exception("DeadlockDetected in workspace creation operation")
+                    return Response(
+                        {"detail": "Internal server error in concurrent updates. Please try again later."},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+            raise
+        except ValidationError as e:
+            message = ""
+            for field, error_message in flatten_validation_error(e):
+                if "unique_workspace_name_per_parent" in error_message:
+                    message = "A workspace with the same name already exists under the parent."
+                    break
+                if "__all__" in field:
+                    message = error_message
+                    break
+            if message:
+                raise serializers.ValidationError(message)
+            raise
 
     def retrieve(self, request, *args, **kwargs):
         """Get a workspace."""
@@ -135,8 +177,18 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Update a workspace."""
         return super().update(request, *args, **kwargs)
 
-    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE)
+    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
     def _move_atomic(self, request):
+        """
+        Move a workspace atomically with SERIALIZABLE isolation level and automatic retries.
+
+        The SERIALIZABLE isolation level ensures the highest data consistency by preventing
+        concurrent transactions from interfering with each other. However, when conflicts occur
+        (e.g., two transactions trying to move workspaces simultaneously), PostgreSQL raises
+        SerializationFailure. The retry=3 parameter automatically retries the transaction up to
+        3 times when SerializationFailure or DeadlockDetected errors occur. This is expected
+        behavior and retrying usually succeeds as concurrent transactions complete.
+        """
         target_workspace_id = self._parent_id_query_param_validation(request)
         self._check_target_workspace_write_access(request, target_workspace_id)
         workspace = self.get_object()
@@ -149,15 +201,23 @@ class WorkspaceViewSet(BaseV2ViewSet):
         try:
             response_data = self._move_atomic(request)
             return Response(response_data, status=status.HTTP_200_OK)
-        except SerializationFailure:
-            logging.exception("SerializationFailure in workspace movement operation, ws id: %s", kwargs.get("pk"))
-            return Response({"detail": "Too many concurrent updates. Please retry."}, status=status.HTTP_409_CONFLICT)
-        except DeadlockDetected:
-            logging.exception("DeadlockDetected in workspace movement operation, ws id: %s", kwargs.get("pk"))
-            return Response(
-                {"detail": "Internal server error in concurrent updates. Please try again later."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        except OperationalError as e:
+            # Django wraps psycopg2 errors in OperationalError
+            if hasattr(e, "__cause__"):
+                if isinstance(e.__cause__, SerializationFailure):
+                    logger.exception(
+                        "SerializationFailure in workspace movement operation, ws id: %s", kwargs.get("pk")
+                    )
+                    return Response(
+                        {"detail": "Too many concurrent updates. Please retry."}, status=status.HTTP_409_CONFLICT
+                    )
+                elif isinstance(e.__cause__, DeadlockDetected):
+                    logger.exception("DeadlockDetected in workspace movement operation, ws id: %s", kwargs.get("pk"))
+                    return Response(
+                        {"detail": "Internal server error in concurrent updates. Please try again later."},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+            raise
         except Workspace.DoesNotExist:
             logger.exception("Target Workspace not found during operation, ws id: %s", kwargs.get("pk"))
             return Response(

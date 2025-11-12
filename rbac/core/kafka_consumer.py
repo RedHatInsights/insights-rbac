@@ -28,8 +28,12 @@ from typing import Any, Dict, List, Optional
 from django.conf import settings
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
+from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from prometheus_client import Counter, Histogram
 
+from api.models import Tenant
+
+relations_api_replication = RelationsApiReplicator()
 logger = logging.getLogger("rbac.core.kafka_consumer")
 
 # Metrics
@@ -208,6 +212,21 @@ class MessageValidator:
                 logger.warning("Both relations_to_add and relations_to_remove are empty - this may indicate a bug")
                 validation_errors_total.labels(error_type="empty_relations").inc()
                 return False
+
+            # Validate resource_context exists and contains org_id
+            resource_context = payload.get("resource_context")
+            if not resource_context:
+                logger.error("Missing required field 'resource_context' in replication message")
+                validation_errors_total.labels(error_type="missing_resource_context").inc()
+
+            if not isinstance(resource_context, dict):
+                logger.error("resource_context must be a dictionary")
+                validation_errors_total.labels(error_type="invalid_resource_context_type").inc()
+                return False
+
+            if "org_id" not in resource_context:
+                logger.error("Missing required field 'org_id' in resource_context")
+                validation_errors_total.labels(error_type="missing_org_id_in_context").inc()
 
             # Validate structure of relations
             for relation in relations_to_add + relations_to_remove:
@@ -630,19 +649,68 @@ class RBACKafkaConsumer:
                 messages_processed_total.labels(message_type="relations", status="validation_failed").inc()
                 return False
 
+            resource_context = debezium_msg.payload.get("resource_context")
+
+            # Validate that resource_context is present
+            if resource_context is None:
+                logger.error(f"Missing resource_context." f"aggregateid: {debezium_msg.aggregateid}")
+                messages_processed_total.labels(message_type="relations", status="missing_resource_context").inc()
+                return False
+
+            org_id = resource_context.get("org_id")
+
+            # Validate that org_id is present
+            if org_id is None:
+                logger.warning(
+                    f"Missing org_id in resource_context. "
+                    f"resource_context: {resource_context}, "
+                    f"aggregateid: {debezium_msg.aggregateid}"
+                )
+                messages_processed_total.labels(message_type="relations", status="missing_org_id").inc()
+
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
 
             logger.info(
-                f"Processing relations message - aggregateid: {debezium_msg.aggregateid}, "
+                f"Processing relations message - org_id: {org_id}, "
+                f"aggregateid: {debezium_msg.aggregateid}, "
                 f"event_type: {debezium_msg.event_type}, "
                 f"relations_to_add: {len(replication_msg.relations_to_add)}, "
                 f"relations_to_remove: {len(replication_msg.relations_to_remove)}"
             )
 
-            # TODO: Add actual processing logic here
-            # This is where you would integrate with the relation replication system
+            # Do tuple deletes for relationships
+            replication_delete_response = relations_api_replication._delete_relationships(
+                relationships=replication_msg.relations_to_remove
+            )
 
+            # Do tuple writes for relationships
+            replication_add_response = relations_api_replication._write_relationships(
+                relationships=replication_msg.relations_to_add
+            )
+
+            # Extract consistency token from responses
+            token = getattr(replication_add_response.consistency_token, "token", None) or getattr(
+                replication_delete_response.consistency_token, "token", None
+            )
+
+            if token and org_id:
+                try:
+                    tenant = Tenant.objects.get(org_id=org_id)
+                    tenant.relations_consistency_token = token
+                    tenant.save()
+
+                    logger.info(f"Updated consistency token for org_id {org_id}: {token}")
+                except Tenant.DoesNotExist:
+                    logger.warning(
+                        f"Tenant not found for org_id: {org_id}. " f"Unable to save consistency token: {token}"
+                    )
+            else:
+                logger.warning(
+                    f"No consistency token in either write or delete response - "
+                    f"org_id: {org_id}, "
+                    f"aggregateid: {debezium_msg.aggregateid}"
+                )
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True
 

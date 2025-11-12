@@ -16,12 +16,15 @@
 #
 
 """Class to handle Dual Write API related operations."""
+import logging
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Dict
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
+
+logger = logging.getLogger(__name__)
 
 
 class DualWriteException(Exception):
@@ -61,6 +64,9 @@ class ReplicationEventType(str, Enum):
     MIGRATE_CROSS_ACCOUNT_REQUEST = "migrate_cross_account_request"
     DELETE_BINDING_MAPPINGS = "delete_binding_mappings"
     CREATE_UNGROUPED_HOSTS_WORKSPACE = "create_ungrouped_hosts_workspace"
+    # Binding scope migration
+    MIGRATE_BINDING_SCOPE = "migrate_binding_scope"
+    DUPLICATE_BINDING_CLEANUP = "duplicate_binding_cleanup"
     WORKSPACE_IMPORT = "workspace_import"
     CREATE_WORKSPACE = "create_workspace"
     UPDATE_WORKSPACE = "update_workspace"
@@ -93,39 +99,50 @@ class ReplicationEvent:
         self.event_info = info
 
     def resource_context(self) -> Dict[str, object] | None:
-        """
-        Build resource context if applicable.
+        """Build context for all replication events that have identifiable resources."""
+        # Validate org_id exists for all events
+        org_id = str(self.event_info.get("org_id", ""))
+        if not org_id:
+            logger.warning(
+                f"Missing required org_id for {self.event_type.value} event. " f"event_info: {self.event_info}"
+            )
 
-        Currently only builds context for CREATE_WORKSPACE events.
+        if self.event_type == ReplicationEventType.CREATE_WORKSPACE:
+            if "workspace_id" not in self.event_info:
+                logger.warning(f"Missing workspace_id for CREATE_WORKSPACE event. " f"event_info: {self.event_info}")
+                return None
 
-        Returns:
-            Dictionary with resource context or None if not applicable
-        """
-        if self.event_type == ReplicationEventType.CREATE_WORKSPACE and "workspace_id" in self.event_info:
+            resource_id = str(self.event_info["workspace_id"])
             context = ReplicationEventResourceContext(
                 resource_type="Workspace",
-                resource_id=str(self.event_info["workspace_id"]),
-                org_id=str(self.event_info.get("org_id", "")),
+                resource_id=resource_id,
+                org_id=org_id,
                 event_type=self.event_type.value,
             )
             return context.to_json()
-        return None
+
+        else:
+            context = ReplicationEventResourceContext(
+                org_id=org_id,
+                event_type=self.event_type.value,
+            )
+            return context.to_json()
 
 
 class ReplicationEventResourceContext:
     """Replication event resource context."""
 
-    resource_type: str
-    resource_id: str
+    resource_type: str | None
+    resource_id: str | None
     org_id: str
     event_type: str
 
     def __init__(
         self,
-        resource_type: str,
-        resource_id: str,
         org_id: str,
         event_type: str,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
     ):
         """Initialize ReplicationEventResourceContext."""
         self.resource_type = resource_type
@@ -135,12 +152,17 @@ class ReplicationEventResourceContext:
 
     def to_json(self) -> Dict[str, object]:
         """Convert to JSON dictionary."""
-        return {
-            "resource_type": self.resource_type,
-            "resource_id": self.resource_id,
+        result: Dict[str, object] = {
             "org_id": self.org_id,
             "event_type": self.event_type,
         }
+        # Only include resource_type if it's present
+        if self.resource_type is not None:
+            result["resource_type"] = self.resource_type
+        # Only include resource_id if it's present
+        if self.resource_id is not None:
+            result["resource_id"] = self.resource_id
+        return result
 
 
 class WorkspaceEvent:

@@ -2457,6 +2457,7 @@ class PrincipalViewsetServiceAccountTests(IdentityRequest):
         self.assertEqual(sa["username"], sa1["username"])
 
 
+@override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
 class PrincipalViewsetAllTypesTests(IdentityRequest):
     """Tests the principal view set - only tests with 'type=all' query param."""
 
@@ -2572,7 +2573,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
                     )
         return mocked_service_accounts
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all(self, mock_sa, mock_user):
@@ -2596,7 +2596,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), 6)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.view.PrincipalView.users_from_proxy")
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_all_pagination(self, mock_sa, mock_user):
@@ -2669,7 +2668,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("limit"), limit)
         self.assertEqual(response.data.get("meta").get("offset"), offset)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_username_only(self, mock_sa, mock_user):
@@ -2704,7 +2702,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), 6)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_filtered_principal_all(self, mock_sa, mock_user):
@@ -2731,7 +2728,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), 2)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_filtered_principal_all_username_only(self, mock_sa, mock_user):
@@ -2767,7 +2763,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         self.assertEqual(list(sa[0].keys()), ["username"])
         self.assertEqual(list(user[0].keys()), ["username"])
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_many_principals_limit_10(self, mock_sa, mock_user):
@@ -2793,7 +2788,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_many_principals_limit_20(self, mock_sa, mock_user):
@@ -2823,7 +2817,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), 30)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_many_principals_limit_1000(self, mock_sa, mock_user):
@@ -2853,7 +2846,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), 30)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_username_only_many_principals_limit_10(self, mock_sa, mock_user):
@@ -2887,7 +2879,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_username_only_many_principals_limit_20(self, mock_sa, mock_user):
@@ -2928,7 +2919,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_username_only_many_principals_limit_1000(self, mock_sa, mock_user):
@@ -2969,7 +2959,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), sa_count + user_count)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_without_service_accounts(self, mock_sa, mock_user):
@@ -2996,7 +2985,6 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), user_count)
 
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.proxy.PrincipalProxy.request_principals")
     @patch("management.principal.it_service.ITService.get_service_accounts")
     def test_read_principal_all_without_service_accounts_limit_100(self, mock_sa, mock_user):
@@ -3021,3 +3009,171 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
         self.assertEqual(len(users_list), user_count)
 
         self.assertEqual(response.data.get("meta").get("count"), user_count)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_partial_filters(self, mock_sa, mock_user):
+        """Test that we can read both principal types in one request and filter by partial matching."""
+        tenant, headers = self.generate_tenant_and_headers()
+
+        mock_sa.return_value = (
+            [
+                {
+                    "clientId": "c16e33c3-cf42-4df7-8330-1f6550f6ffd1",
+                    "name": "service_account_name_c16e33c3",
+                    "description": "Service Account description c16e33c3",
+                    "owner": "jsmith",
+                    "username": "service_account-c16e33c3-cf42-4df7-8330-1f6550f6ffd1",
+                    "time_created": 1762725547,
+                    "type": "service-account",
+                },
+                {
+                    "clientId": "cdff8555-5b01-4746-ba51-e8d200590719",
+                    "name": "service_account_name_cdff8555",
+                    "description": "Service Account description cdff8555",
+                    "owner": "jsmith",
+                    "username": "service_account-cdff8555-5b01-4746-ba51-e8d200590719",
+                    "time_created": 1762725547,
+                    "type": "service-account",
+                },
+                {
+                    "clientId": "60281e53-5ad1-4e0c-b4eb-12d57ca326a5",
+                    "name": "service_account_name_60281e53",
+                    "description": "Service Account description 60281e53",
+                    "owner": "jsmith",
+                    "username": "service_account-60281e53-5ad1-4e0c-b4eb-12d57ca326a5",
+                    "time_created": 1762725547,
+                    "type": "service-account",
+                },
+            ],
+            3,
+        )
+        mock_user.return_value = {
+            "status_code": 200,
+            "data": [
+                {"username": "test_user_1", "org_id": "94268706", "is_active": True},
+                {"username": "test_user_2", "org_id": "94268706", "is_active": True},
+                {"username": "test_user_3", "org_id": "94268706", "is_active": True},
+                {"username": "test_user_4", "org_id": "94268706", "is_active": True},
+            ],
+        }
+
+        client = APIClient()
+        limit = "limit=100"
+        match_criteria = "match_criteria=partial"
+        # Filtering by usernames is done on the 3 party service, so it doesn't matter what we put here
+        # We just test that the responses were properly processed and the final count is correct
+        usernames = "usernames=XXX"
+
+        url = f"{reverse('v1_management:principals')}?type=all&{limit}&{match_criteria}&{usernames}"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        for key in response.data.get("data").keys():
+            self.assertIn(key, ["serviceAccounts", "users"])
+        users = response.data.get("data").get("users")
+        sa = response.data.get("data").get("serviceAccounts")
+        self.assertEqual(len(sa), 3)
+        self.assertEqual(len(users), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 7)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_partial_filter_returns_only_service_accounts(self, mock_sa, mock_user):
+        """
+        Test that we can read both principal types in one request and filter by partial matching
+        that leads to only service accounts being returned.
+        """
+        tenant, headers = self.generate_tenant_and_headers()
+
+        mock_sa.return_value = (
+            [
+                {
+                    "clientId": "c16e33c3-cf42-4df7-8330-1f6550f6ffd1",
+                    "name": "service_account_name_c16e33c3",
+                    "description": "Service Account description c16e33c3",
+                    "owner": "jsmith",
+                    "username": "service_account-c16e33c3-cf42-4df7-8330-1f6550f6ffd1",
+                    "time_created": 1762725547,
+                    "type": "service-account",
+                },
+                {
+                    "clientId": "cdff8555-5b01-4746-ba51-e8d200590719",
+                    "name": "service_account_name_cdff8555",
+                    "description": "Service Account description cdff8555",
+                    "owner": "jsmith",
+                    "username": "service_account-cdff8555-5b01-4746-ba51-e8d200590719",
+                    "time_created": 1762725547,
+                    "type": "service-account",
+                },
+                {
+                    "clientId": "60281e53-5ad1-4e0c-b4eb-12d57ca326a5",
+                    "name": "service_account_name_60281e53",
+                    "description": "Service Account description 60281e53",
+                    "owner": "jsmith",
+                    "username": "service_account-60281e53-5ad1-4e0c-b4eb-12d57ca326a5",
+                    "time_created": 1762725547,
+                    "type": "service-account",
+                },
+            ],
+            3,
+        )
+
+        mock_user.return_value = {"status_code": 200, "data": []}
+
+        client = APIClient()
+        limit = "limit=100"
+        match_criteria = "match_criteria=partial"
+        # Filtering by usernames is done on the 3 party service, so it doesn't matter what we put here
+        # We just test that the responses were properly processed and the final count is correct
+        usernames = "usernames=XXX"
+
+        url = f"{reverse('v1_management:principals')}?type=all&{limit}&{match_criteria}&{usernames}"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        for key in response.data.get("data").keys():
+            self.assertEqual(key, "serviceAccounts")
+        sa = response.data.get("data").get("serviceAccounts")
+        self.assertEqual(len(sa), 3)
+        self.assertEqual(response.data.get("meta").get("count"), 3)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_principals")
+    @patch("management.principal.it_service.ITService.get_service_accounts")
+    def test_read_principal_all_partial_filter_return_only_users(self, mock_sa, mock_user):
+        """
+        Test that we can read both principal types in one request and filter by partial matching
+        that leads to only users being returned.
+        """
+        tenant, headers = self.generate_tenant_and_headers()
+
+        mock_sa.return_value = ([], 0)
+        mock_user.return_value = {
+            "status_code": 200,
+            "data": [
+                {"username": "test_user_1", "org_id": "94268706", "is_active": True},
+                {"username": "test_user_2", "org_id": "94268706", "is_active": True},
+                {"username": "test_user_3", "org_id": "94268706", "is_active": True},
+                {"username": "test_user_4", "org_id": "94268706", "is_active": True},
+            ],
+        }
+
+        client = APIClient()
+        limit = "limit=100"
+        match_criteria = "match_criteria=partial"
+        # Filtering by usernames is done on the 3 party service, so it doesn't matter what we put here
+        # We just test that the responses were properly processed and the final count is correct
+        usernames = "usernames=XXX"
+
+        url = f"{reverse('v1_management:principals')}?type=all&{limit}&{match_criteria}&{usernames}"
+        response = client.get(url, **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        for key in response.data.get("data").keys():
+            self.assertEqual(key, "users")
+        users = response.data.get("data").get("users")
+        self.assertEqual(len(users), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 4)

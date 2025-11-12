@@ -32,6 +32,9 @@ logger = logging.getLogger(__name__)
 OPENAPI_FILE_PATH = os.path.join(BASE_DIR, "..", "docs/source/specs")
 OPENAPI_FILE_NAME = "openapi.json"
 
+OPENAPI_V2_FILE_PATH = os.path.join(BASE_DIR, "..", "docs/source/specs/v2")
+OPENAPI_V2_FILE_NAME = "openapi.json"
+
 
 @api_view(["GET"])
 @permission_classes((permissions.AllowAny,))
@@ -64,6 +67,45 @@ def openapi(request):
                 "errors": [
                     {
                         "detail": "OpenAPI specification file contains invalid JSON.",
+                        "status": "500",
+                    }
+                ]
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["GET"])
+@permission_classes((permissions.AllowAny,))
+@renderer_classes((JSONRenderer,))
+def openapi_v2(request):
+    """Provide the V2 openapi information."""
+    openapidoc = os.path.join(OPENAPI_V2_FILE_PATH, OPENAPI_V2_FILE_NAME)
+
+    try:
+        with open(openapidoc, encoding="utf-8") as api_file:
+            data = json.load(api_file)
+            return Response(data)
+    except FileNotFoundError:
+        logger.error(f"V2 OpenAPI specification file not found at {openapidoc}")
+        return Response(
+            {
+                "errors": [
+                    {
+                        "detail": "V2 OpenAPI specification file not found.",
+                        "status": "500",
+                    }
+                ]
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in V2 OpenAPI specification file: {e}")
+        return Response(
+            {
+                "errors": [
+                    {
+                        "detail": "V2 OpenAPI specification file contains invalid JSON.",
                         "status": "500",
                     }
                 ]
