@@ -49,7 +49,7 @@ class RelationsApiReplicator(RelationReplicator):
                 tuples=relationships,
             )
             try:
-                stub.CreateTuples(request)
+                return stub.CreateTuples(request)
             except grpc.RpcError as err:
                 error = GRPCError(err)
                 logger.error(
@@ -57,24 +57,56 @@ class RelationsApiReplicator(RelationReplicator):
                     f"error code {error.code}, reason {error.reason}"
                     f"relationships: {relationships}"
                 )
+                raise
 
     def _delete_relationships(self, relationships):
+        """Delete relationships using the new filter-based API.
+
+        For each relationship, create a filter that matches it exactly and delete it.
+        """
+        # If no relationships to delete, return an empty response
+        if not relationships:
+            logger.debug("No relationships to delete, returning empty response")
+            # Return a mock response with empty consistency token
+            return type("obj", (object,), {"consistency_token": type("obj", (object,), {"token": None})()})()
+
         with grpc.insecure_channel(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
 
-            request = relation_tuples_pb2.DeleteTuplesRequest(
-                tuples=relationships,
-            )
-            try:
-                response = stub.DeleteTuples(request)
-                return response
-            except grpc.RpcError as err:
-                error = GRPCError(err)
-                logger.error(
-                    "Failed to delete relationships from the relation API server: "
-                    f"error code {error.code}, reason {error.reason}"
-                    f"relationships: {relationships}"
+            # Delete each relationship individually using filters
+            responses = []
+            for relationship in relationships:
+                # Create a filter that matches this specific relationship
+                relation_filter = relation_tuples_pb2.RelationTupleFilter(
+                    resource_namespace=relationship.resource.type.namespace,
+                    resource_type=relationship.resource.type.name,
+                    resource_id=relationship.resource.id,
+                    relation=relationship.relation,
+                    subject_filter=relation_tuples_pb2.SubjectFilter(
+                        subject_namespace=relationship.subject.subject.type.namespace,
+                        subject_type=relationship.subject.subject.type.name,
+                        subject_id=relationship.subject.subject.id,
+                        relation=relationship.subject.relation if relationship.subject.relation else "",
+                    ),
                 )
+
+                request = relation_tuples_pb2.DeleteTuplesRequest(
+                    filter=relation_filter,
+                )
+                try:
+                    response = stub.DeleteTuples(request)
+                    responses.append(response)
+                except grpc.RpcError as err:
+                    error = GRPCError(err)
+                    logger.error(
+                        "Failed to delete relationship from the relation API server: "
+                        f"error code {error.code}, reason {error.reason}, "
+                        f"relationship: {relationship}"
+                    )
+                    raise
+
+            # Return the last response (for consistency token)
+            return responses[-1] if responses else None
 
 
 class GRPCError:
@@ -89,11 +121,16 @@ class GRPCError:
         """Initialize the error."""
         self.code = error.code()
         self.message = error.details()
+        self.reason = "unknown"
+        self.metadata = {}
 
-        status = rpc_status.from_call(error)
-        if status is not None:
-            detail = status.details[0]
-            info = error_details_pb2.ErrorInfo()
-            detail.Unpack(info)
-            self.reason = info.reason
-            self.metadata = json.loads(str(info.metadata).replace("'", '"'))
+        try:
+            status = rpc_status.from_call(error)
+            if status is not None and status.details:
+                detail = status.details[0]
+                info = error_details_pb2.ErrorInfo()
+                detail.Unpack(info)
+                self.reason = info.reason
+                self.metadata = json.loads(str(info.metadata).replace("'", '"'))
+        except Exception as e:
+            logger.debug(f"Could not extract error details: {e}")
