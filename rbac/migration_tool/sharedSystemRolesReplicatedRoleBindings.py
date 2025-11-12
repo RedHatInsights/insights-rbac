@@ -166,10 +166,13 @@ def permission_groupings_to_v2_role_bindings(
     perm_groupings: PermissionGroupings, v1_role: Role, role_bindings: Iterable[BindingMapping]
 ) -> list[BindingMapping]:
     """Determine updated role bindings based on latest resource-permission state and current role bindings."""
-    updated_mappings: list[BindingMapping] = []
-    latest_roles_by_id: dict[str, V2role] = {}
     # TODO: this is broken for system roles, need to have Tenant or Policies provided
     # so that we don't look up Policies across all Tenants!
+    if v1_role.system:
+        raise NotImplementedError("System roles are not supported.")
+
+    updated_mappings: list[BindingMapping] = []
+    latest_roles_by_id: dict[str, V2role] = {}
     latest_groups = frozenset([str(policy.group.uuid) for policy in v1_role.policies.all()])
 
     role_bindings_by_resource = {binding.get_role_binding().resource: binding for binding in role_bindings}

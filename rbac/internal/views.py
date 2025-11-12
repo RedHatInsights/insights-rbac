@@ -76,7 +76,10 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
 from management.role.model import Access
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    SeedingRelationApiDualWriteHandler,
+)
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_binding_scope_in_worker,
@@ -108,6 +111,7 @@ from api.tasks import (
     run_reset_imported_tenants,
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources, populate_tenant_org_id
+from migration_tool.in_memory_tuples import InMemoryTuples, InMemoryRelationReplicator, RelationTuple
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -1981,28 +1985,68 @@ def check_workspace_relation(request, workspace_uuid):
     return JsonResponse(workspace_check_response, safe=False)
 
 
+def _tuple_to_dict(relation_tuple: RelationTuple) -> dict:
+    return {
+        "resource": {
+            "type": {
+                "namespace": relation_tuple.resource_type_namespace,
+                "name": relation_tuple.resource_type_name,
+            },
+            "id": relation_tuple.resource_id,
+        },
+        "relation": relation_tuple.relation,
+        "subject": {
+            "subject": {
+                "type": {
+                    "namespace": relation_tuple.subject_type_namespace,
+                    "name": relation_tuple.subject_type_name,
+                },
+                "id": relation_tuple.subject_id,
+            },
+            "relation": relation_tuple.subject_relation,
+        },
+    }
+
+
 def check_role(request, role_uuid):
     """POST to check a role has correct V2 relations and bindings are correct on Inventory API."""
     try:
         role = get_object_or_404(Role, uuid=role_uuid)
-        bindings = role.binding_mappings.all()
-        relations_dual_write_handler = RelationApiDualWriteHandler(
-            role=role, event_type=ReplicationEventType.UPDATE_SYSTEM_ROLE, tenant=role.tenant
-        )
 
-        if bindings:
+        # We will act as if we are about to replicate the role, resulting in the expected tuples ending up here.
+        tuples = InMemoryTuples()
+
+        if role.system:
             with transaction.atomic():
-                relations_dual_write_handler.prepare_for_update()
-                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+                relations_dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role,
+                    replicator=InMemoryRelationReplicator(tuples),
+                )
+
+                relations_dual_write_handler.replicate_new_system_role()
+
+                # Ensure that we don't accidentally update any models.
+                transaction.set_rollback(True)
         else:
+            # We have to lock the role before passing it to RelationApiDualWriteHandler.
             with transaction.atomic():
-                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+                role = get_object_or_404(Role.objects.select_for_update(), pk=role.pk)
 
-        role_relations = relations_dual_write_handler.role_relations
+                relations_dual_write_handler = RelationApiDualWriteHandler(
+                    role=role,
+                    event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+                    tenant=role.tenant,
+                    replicator=InMemoryRelationReplicator(tuples),
+                )
 
-        serialized_relations = [json_format.MessageToDict(rel) for rel in role_relations]
+                relations_dual_write_handler.replicate_new_or_updated_role(role)
 
+                # Ensure that we don't accidentally update any models.
+                transaction.set_rollback(True)
+
+        serialized_relations = [_tuple_to_dict(rel) for rel in tuples]
         role_correct = RoleRelationChecker.check_role(serialized_relations, role.uuid)
+
         return JsonResponse(
             {
                 "V2_role_checks": {

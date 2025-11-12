@@ -4860,6 +4860,20 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
                 "V2_role_relations_correct": mock_check_role.return_value,
             }
         }
+
+        # Create this so that we can check that BindingMappings aren't accidentally created. (A previous implementation
+        # incorrectly used RelationApiDualWriteHandler for system roles.)
+        Access.objects.create(
+            tenant=self.public_tenant,
+            role=self.role,
+            permission=Permission.objects.create(
+                tenant=self.public_tenant,
+                permission="app:resource:verb",
+            ),
+        )
+
+        BindingMapping.objects.all().delete()
+
         with patch(
             "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
@@ -4877,6 +4891,78 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["V2_role_checks"]["v1_role_uuid"], str(self.role.uuid))
         self.assertEqual(response_body["V2_role_checks"]["v1_role_name"], str(self.role.name))
         self.assertEqual(response_body["V2_role_checks"]["V2_role_relations_correct"], True)
+
+        self.assertEqual(BindingMapping.objects.all().count(), 0)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("management.utils.create_client_channel")
+    @patch("management.inventory_checker.inventory_api_check.RoleRelationInventoryChecker.check_role")
+    @patch("internal.views.check_role")
+    def test_inventory_check_custom_role(
+        self, mock_bootstrapped_view, mock_check_role, mock_create_channel, mock_get_token
+    ):
+        """Test a request to check role endpoint on inventory returns correct response."""
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+
+        custom_role = Role.objects.create(
+            tenant=self.tenant,
+            name="Custom role",
+        )
+
+        mock_stub = MagicMock()
+        mock_stub.Check.return_value = True
+
+        mock_check_role.return_value = mock_stub.Check.return_value
+        mock_bootstrapped_view.return_value = {
+            "V2_role_checks": {
+                "v1_role_uuid": custom_role.uuid,
+                "v1_role_name": custom_role.name,
+                "V2_role_relations_correct": mock_check_role.return_value,
+            }
+        }
+
+        # Create this so that we can check that BindingMappings aren't accidentally created.
+        Access.objects.create(
+            tenant=self.public_tenant,
+            role=custom_role,
+            permission=Permission.objects.create(
+                tenant=self.public_tenant,
+                permission="app:resource:verb",
+            ),
+        )
+
+        BindingMapping.objects.all().delete()
+
+        with patch(
+            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            response = self.client.get(
+                f"/_private/api/inventory/check_role/{custom_role.uuid}/",
+                format="json",
+                **self.request.META,
+            )
+
+        # Parse and validate response
+        self.assertEqual(response.status_code, 200)
+        response_body = response.json()
+        self.assertIn("V2_role_checks", response_body)
+        self.assertEqual(response_body["V2_role_checks"]["v1_role_uuid"], str(custom_role.uuid))
+        self.assertEqual(response_body["V2_role_checks"]["v1_role_name"], str(custom_role.name))
+        self.assertEqual(response_body["V2_role_checks"]["V2_role_relations_correct"], True)
+
+        self.assertEqual(BindingMapping.objects.all().count(), 0)
 
     @patch(
         "management.inventory_checker.inventory_api_check.RoleRelationInventoryChecker.check_role",
