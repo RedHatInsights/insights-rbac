@@ -111,7 +111,7 @@ from api.tasks import (
     run_reset_imported_tenants,
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources, populate_tenant_org_id
-from migration_tool.in_memory_tuples import InMemoryTuples, InMemoryRelationReplicator, RelationTuple
+from migration_tool.in_memory_tuples import InMemoryTuples, InMemoryRelationReplicator
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -1985,29 +1985,6 @@ def check_workspace_relation(request, workspace_uuid):
     return JsonResponse(workspace_check_response, safe=False)
 
 
-def _tuple_to_dict(relation_tuple: RelationTuple) -> dict:
-    return {
-        "resource": {
-            "type": {
-                "namespace": relation_tuple.resource_type_namespace,
-                "name": relation_tuple.resource_type_name,
-            },
-            "id": relation_tuple.resource_id,
-        },
-        "relation": relation_tuple.relation,
-        "subject": {
-            "subject": {
-                "type": {
-                    "namespace": relation_tuple.subject_type_namespace,
-                    "name": relation_tuple.subject_type_name,
-                },
-                "id": relation_tuple.subject_id,
-            },
-            "relation": relation_tuple.subject_relation,
-        },
-    }
-
-
 def check_role(request, role_uuid):
     """POST to check a role has correct V2 relations and bindings are correct on Inventory API."""
     try:
@@ -2044,7 +2021,7 @@ def check_role(request, role_uuid):
                 # Ensure that we don't accidentally update any models.
                 transaction.set_rollback(True)
 
-        serialized_relations = [_tuple_to_dict(rel) for rel in tuples]
+        serialized_relations = [json_format.MessageToDict(rel.as_message()) for rel in tuples]
         role_correct = RoleRelationChecker.check_role(serialized_relations, role.uuid)
 
         return JsonResponse(
