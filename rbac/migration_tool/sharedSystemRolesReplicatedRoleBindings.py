@@ -169,7 +169,7 @@ def permission_groupings_to_v2_role_bindings(
     # TODO: this is broken for system roles, need to have Tenant or Policies provided
     # so that we don't look up Policies across all Tenants!
     if v1_role.system:
-        raise NotImplementedError("System roles are not supported.")
+        raise ValueError("System roles are not supported.")
 
     updated_mappings: list[BindingMapping] = []
     latest_roles_by_id: dict[str, V2role] = {}
