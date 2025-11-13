@@ -554,3 +554,109 @@ class MigrateTestTupleStore(TestCase):
         )
 
         self.assertEqual(29, len(self.relations))
+
+    def test_playbook_dispatcher_permission_conversion_to_v2(self):
+        """Test that playbook-dispatcher permissions are correctly converted from v1 to v2 format."""
+        # Create a workspace for playbook dispatcher to bind to
+        tasks_workspace = Workspace.objects.create(
+            name="tasks",
+            tenant=self.o1.tenant,
+            parent=self.o1.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+
+        # Create playbook-dispatcher permissions in the public tenant
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        pbd_run_read = Permission.objects.create(permission="playbook-dispatcher:run:read", tenant=public_tenant)
+        pbd_run_write = Permission.objects.create(permission="playbook-dispatcher:run:write", tenant=public_tenant)
+
+        # Create a custom role with playbook-dispatcher permissions and service resource definition
+        role = Role.objects.create(name="pbd_role", tenant=self.o1.tenant)
+
+        # Add access with service resource definition pointing to "tasks" workspace
+        access_read = Access.objects.create(permission=pbd_run_read, role=role, tenant=self.o1.tenant)
+        ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "service",
+                "operation": "equal",
+                "value": "tasks",
+            },
+            access=access_read,
+            tenant=self.o1.tenant,
+        )
+
+        access_write = Access.objects.create(permission=pbd_run_write, role=role, tenant=self.o1.tenant)
+        ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "service",
+                "operation": "equal",
+                "value": "tasks",
+            },
+            access=access_write,
+            tenant=self.o1.tenant,
+        )
+
+        # Create a group and bind the role
+        group = self.fixture.new_group("pbd_group", self.o1.tenant, ["pbd_u1"])[0]
+        policy = Policy.objects.create(name="pbd_policy", group=group, tenant=self.o1.tenant)
+        policy.roles.add(role)
+
+        # Clear relations and migrate
+        self.relations.clear()
+        self.o1.tenant.ready = True
+        self.o1.tenant.save()
+
+        migrate_data(orgs=[self.o1.tenant.org_id], write_relationships=InMemoryRelationReplicator(self.relations))
+
+        # Verify the permissions were converted to v2 format correctly
+        # v1: "playbook-dispatcher:run:read" -> v2: "playbook_dispatcher_run_read"
+        # v1: "playbook-dispatcher:run:write" -> v2: "playbook_dispatcher_run_write"
+
+        # Find bindings to the tasks workspace
+        tasks_bindings = self.relations.find_tuples(
+            all_of(resource("rbac", "workspace", tasks_workspace.id), relation("binding"))
+        )
+
+        # Should have a role binding with playbook_dispatcher_run_read permission
+        self.assertTrue(
+            tasks_bindings.traverse_subject(
+                [
+                    all_of(
+                        relation("role"),
+                        self.relations.subject_is_resource_of(relation("playbook_dispatcher_run_read")),
+                    ),
+                    all_of(relation("subject"), subject("rbac", "group", group.uuid, "member")),
+                ]
+            ),
+            "missing playbook_dispatcher_run_read permission binding",
+        )
+
+        # Should have a role binding with playbook_dispatcher_run_write permission
+        self.assertTrue(
+            tasks_bindings.traverse_subject(
+                [
+                    all_of(
+                        relation("role"),
+                        self.relations.subject_is_resource_of(relation("playbook_dispatcher_run_write")),
+                    ),
+                    all_of(relation("subject"), subject("rbac", "group", group.uuid, "member")),
+                ]
+            ),
+            "missing playbook_dispatcher_run_write permission binding",
+        )
+
+        # Verify the role has both permissions
+        role_perms = [
+            t.relation
+            for t in self.relations
+            if t.resource_type_namespace == "rbac"
+            and t.resource_type_name == "role"
+            and (t.relation.startswith("playbook_dispatcher"))
+        ]
+
+        self.assertIn(
+            "playbook_dispatcher_run_read", role_perms, "v2 permission playbook_dispatcher_run_read not found"
+        )
+        self.assertIn(
+            "playbook_dispatcher_run_write", role_perms, "v2 permission playbook_dispatcher_run_write not found"
+        )
