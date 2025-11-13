@@ -4934,7 +4934,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
 
         # Create this so that we can check that BindingMappings aren't accidentally created.
         Access.objects.create(
-            tenant=self.public_tenant,
+            tenant=self.tenant,
             role=custom_role,
             permission=Permission.objects.create(
                 tenant=self.public_tenant,
