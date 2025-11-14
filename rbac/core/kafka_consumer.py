@@ -19,6 +19,7 @@
 
 import json
 import logging
+import random
 import threading
 import time
 from dataclasses import dataclass
@@ -99,10 +100,9 @@ class RetryConfig:
         - Attempt 3: 4.5s (5 * 3 * 0.3)
         - Attempt 10+: 30s (capped)
         """
-        import random
-
-        # Calculate exponential backoff: backoff_factor * attempt * base_delay
-        delay = self.backoff_factor * attempt * self.base_delay
+        # Calculate exponential backoff: backoff_factor * (attempt+1) * base_delay
+        # Note: attempt starts at 0, so we add 1 to get proper delay on first retry
+        delay = self.backoff_factor * (attempt + 1) * self.base_delay
         delay = min(delay, self.max_backoff_seconds)
 
         # Add jitter to avoid thundering herd problem
