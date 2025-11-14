@@ -934,14 +934,14 @@ class RetryConfigTests(TestCase):
         )
 
         # Test first few attempts
-        # Formula: backoff_factor * attempt * base_delay + jitter
-        delay_0 = config.calculate_delay(0)  # 5 * 0 * 0.3 + jitter = 0.0 + 0.0 = 0.0
-        delay_1 = config.calculate_delay(1)  # 5 * 1 * 0.3 + jitter = 1.5 + 0.075 = 1.575
-        delay_2 = config.calculate_delay(2)  # 5 * 2 * 0.3 + jitter = 3.0 + 0.15 = 3.15
+        # Formula: backoff_factor * (attempt+1) * base_delay + jitter
+        delay_0 = config.calculate_delay(0)  # 5 * 1 * 0.3 + jitter = 1.5 + 0.075 = 1.575
+        delay_1 = config.calculate_delay(1)  # 5 * 2 * 0.3 + jitter = 3.0 + 0.15 = 3.15
+        delay_2 = config.calculate_delay(2)  # 5 * 3 * 0.3 + jitter = 4.5 + 0.225 = 4.725
 
-        self.assertAlmostEqual(delay_0, 0.0, places=2)
-        self.assertAlmostEqual(delay_1, 1.575, places=2)
-        self.assertAlmostEqual(delay_2, 3.15, places=2)
+        self.assertAlmostEqual(delay_0, 1.575, places=2)
+        self.assertAlmostEqual(delay_1, 3.15, places=2)
+        self.assertAlmostEqual(delay_2, 4.725, places=2)
 
     @patch("random.random")
     def test_calculate_delay_max_limit(self, mock_random):
@@ -950,8 +950,8 @@ class RetryConfigTests(TestCase):
         config = RetryConfig(backoff_factor=5, base_delay=0.3, max_backoff_seconds=10, jitter_factor=0.1)
 
         # High attempt number should be capped at max_backoff_seconds
-        # Formula: backoff_factor * attempt * base_delay
-        # For attempt 10: 5 * 10 * 0.3 = 15, but capped at 10
+        # Formula: backoff_factor * (attempt+1) * base_delay
+        # For attempt 10: 5 * 11 * 0.3 = 16.5, but capped at 10
         delay = config.calculate_delay(10)
 
         self.assertLessEqual(delay, 10.0)
@@ -961,13 +961,13 @@ class RetryConfigTests(TestCase):
         config = RetryConfig(backoff_factor=5, base_delay=0.3, max_backoff_seconds=100, jitter_factor=0.1)
 
         # Calculate delays multiple times to check they're different due to jitter
-        # For attempt 1: 5 * 1 * 0.3 = 1.5, jitter up to 0.15
+        # For attempt 1: 5 * (1+1) * 0.3 = 3.0, jitter up to 0.3
         delays = [config.calculate_delay(1) for _ in range(10)]
 
-        # All delays should be around 1.5 but slightly different
+        # All delays should be around 3.0 but slightly different
         for delay in delays:
-            self.assertGreater(delay, 1.5)
-            self.assertLess(delay, 1.65)  # 1.5 + max jitter (0.15)
+            self.assertGreater(delay, 3.0)
+            self.assertLess(delay, 3.3)  # 3.0 + max jitter (0.3)
 
         # Check that we got some variation
         self.assertGreater(len(set(delays)), 5)  # Should have at least some different values
