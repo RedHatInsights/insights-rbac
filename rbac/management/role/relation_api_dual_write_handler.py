@@ -87,7 +87,11 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         self.role = role
 
         if not role.system:
-            raise ValueError("RelationApiDualWriteHandler must be used for custom roles.")
+            raise ValueError(
+                "SeedingRelationApiDualWriteHandler only supports system roles. "
+                "RelationApiDualWriteHandler must be used for custom roles. "
+                f"Provided custom role: pk={role.pk!r}."
+            )
 
     def prepare_for_update(self):
         """Generate & store role's current relations."""
@@ -245,8 +249,11 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         super().__init__(replicator)
 
         if role.system:
-            raise ValueError("SeedingRelationApiDualWriteHandler must be used for system roles.")
-
+            raise ValueError(
+                "RelationApiDualWriteHandler only supports custom roles. "
+                "SeedingRelationApiDualWriteHandler must be used for system roles. "
+                f"Provided system role: pk={role.pk!r}."
+            )
         if not self.replication_enabled():
             return
         try:

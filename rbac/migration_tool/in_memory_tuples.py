@@ -24,6 +24,7 @@ class RelationTuple(NamedTuple):
     subject_relation: str
 
     def as_message(self) -> Relationship:
+        """Get a Kessel Relationship message corresponding to the values in this RelationTuple."""
         return Relationship(
             resource=ObjectReference(
                 type=ObjectType(

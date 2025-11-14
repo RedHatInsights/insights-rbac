@@ -99,6 +99,7 @@ from management.utils import (
 from management.workspace.model import Workspace
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
+from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
@@ -111,7 +112,6 @@ from api.tasks import (
     run_reset_imported_tenants,
 )
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources, populate_tenant_org_id
-from migration_tool.in_memory_tuples import InMemoryTuples, InMemoryRelationReplicator
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
