@@ -838,7 +838,7 @@ class RBACKafkaConsumer:
                 raise ValidationError(error_msg)
 
         except ValidationError:
-            # Re-raise ValidationError to be handled by caller
+            # Re-raise ValidationError - will NOT be retried (non-retryable)
             raise
         except json.JSONDecodeError:
             # Re-raise JSONDecodeError to be handled by error handler
@@ -857,10 +857,10 @@ class RBACKafkaConsumer:
         leader_epoch: Optional[int] = None,
         error_handler=None,
     ) -> bool:
-        """Process a message with comprehensive retry logic - retry on ALL errors.
+        """Process a message with comprehensive retry logic.
 
-        This implements the at-least-once delivery guarantee by retrying on all errors
-        and committing offsets before retry attempts.
+        Retries transient errors (network, DB, etc.) but NOT ValidationError.
+        ValidationError indicates permanently malformed messages that won't become valid.
 
         Args:
             message_value: The Kafka message value to process
@@ -875,12 +875,28 @@ class RBACKafkaConsumer:
 
         Raises:
             Exception: Re-raises any exception that should stop the consumer
-        """
+        """  # noqa: D202
+
+        # Define error handler to skip retries for ValidationError
+        def should_skip_retry(exception: Exception) -> bool:
+            """Return True if retry should be skipped (non-retryable error)."""
+            # ValidationError means bad message format - retrying won't help
+            if isinstance(exception, ValidationError):
+                logger.error(
+                    f"ValidationError is non-retryable for message at partition {message_partition}, "
+                    f"offset {message_offset}. Consumer will stop."
+                )
+                return True
+            # Use custom error handler if provided
+            if error_handler and callable(error_handler):
+                return error_handler(exception)
+            return False
+
         # Create a retry helper with custom error handling
         retry_helper = RetryHelper(
             retry_config=self.retry_config,
             shutdown_event=self._stop_health_check,
-            error_handler=error_handler,
+            error_handler=should_skip_retry,
         )
 
         # Process message with retry logic
@@ -962,7 +978,7 @@ class RBACKafkaConsumer:
                 return self._process_relations_message(debezium_msg)
 
             except ValidationError:
-                # Re-raise ValidationError to be handled by retry logic
+                # Re-raise ValidationError - will NOT be retried (non-retryable)
                 raise
             except Exception as e:
                 logger.error(f"Error processing Debezium message: {e}")
@@ -1052,7 +1068,7 @@ class RBACKafkaConsumer:
             return True
 
         except ValidationError:
-            # Re-raise ValidationError to be handled by retry logic
+            # Re-raise ValidationError - will NOT be retried (non-retryable)
             raise
         except Exception as e:
             logger.error(f"Error processing relations message: {e}")
