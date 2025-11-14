@@ -319,7 +319,8 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
-    def test_create_workspace_authorized_through_custom_role(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_workspace_authorized_through_custom_role(self, send_kafka_message):
         """Test for creating a workspace."""
         workspace = {
             "name": "New Workspace",
@@ -345,7 +346,8 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], workspace["name"])
 
-    def test_create_workspace_authorized_through_platform_default_access(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_workspace_authorized_through_platform_default_access(self, send_kafka_message):
         """Test for creating a workspace."""
         workspace = {
             "name": "New Workspace",
@@ -371,7 +373,8 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], workspace["name"])
 
-    def test_create_workspace_authorized_through_platform_default_access_with_wildcard(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_workspace_authorized_through_platform_default_access_with_wildcard(self, send_kafka_message):
         """Test for creating a workspace."""
         workspace = {
             "name": "New Workspace",
@@ -402,7 +405,8 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], workspace["name"])
 
-    def test_create_workspace_authorized_with_default_workspace_permission_only(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_workspace_authorized_with_default_workspace_permission_only(self, send_kafka_message):
         """Test for creating a workspace with only Default Workspace permission."""
         workspace = {
             "name": "New Workspace Default Only",
@@ -428,7 +432,8 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.data["name"], workspace["name"])
         self.assertEqual(response.data["parent_id"], str(self.default_workspace.id))
 
-    def test_create_workspace_authorized_with_default_workspace_read_only_fails(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_workspace_authorized_with_default_workspace_read_only_fails(self, send_kafka_message):
         """Test that creating a workspace with only Default Workspace read permission fails."""
         workspace = {
             "name": "New Workspace Read Only",
@@ -452,7 +457,8 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         # This should still fail because we only have read permission
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_create_workspace_authorized_with_root_and_default_workspace_permissions(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_workspace_authorized_with_root_and_default_workspace_permissions(self, send_kafka_message):
         """Test for creating a workspace with both Root and Default Workspace permissions."""
         workspace = {
             "name": "New Workspace Both Permissions",
@@ -1616,9 +1622,10 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.user_without_access = {"username": "user_without_access", "email": "user_without_access@example.com"}
 
         # Set up access for user_with_access to have write permissions on default_workspace
-        self._setup_access_for_principal(
-            self.user_with_access["username"], "inventory:groups:write", str(self.default_workspace.id)
-        )
+        with patch("core.kafka.RBACProducer.send_kafka_message"):
+            self._setup_access_for_principal(
+                self.user_with_access["username"], "inventory:groups:write", str(self.default_workspace.id)
+            )
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -2164,7 +2171,8 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("not a valid UUID", str(response.data))
 
-    def test_move_with_read_only_access(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_move_with_read_only_access(self, send_kafka_message):
         """Test that move fails when user only has read access to target workspace."""
         # Create user with only read access
         read_only_user = {"username": "read_only_user", "email": "read_only@example.com"}
@@ -2188,7 +2196,8 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertIn("You do not have permission to perform this action", str(response.data))
 
-    def test_move_with_wildcard_permission(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_move_with_wildcard_permission(self, send_kafka_message):
         """Test that move succeeds when user has wildcard (*) permission on target workspace."""
         # Create user with wildcard permission
         wildcard_user = {"username": "wildcard_user", "email": "wildcard@example.com"}
@@ -2213,7 +2222,8 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(response_data["id"], str(self.test_workspace.id))
         self.assertEqual(response_data["parent_id"], str(self.default_workspace.id))
 
-    def test_move_with_source_access_but_no_target_access_unique(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_move_with_source_access_but_no_target_access_unique(self, send_kafka_message):
         """Test that move fails with PermissionDenied when user has write access to source workspace but not target workspace.
 
         This specifically tests our inner _check_target_workspace_write_access method.
@@ -2559,7 +2569,8 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertType(payload, "standard")
         assert payload.get("data")[0]["name"] == ws_name_1.upper()
 
-    def test_workspace_list_authorization_platform_default(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_workspace_list_authorization_platform_default(self, send_kafka_message):
         """List workspaces authorization."""
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
         request = request_context["request"]
@@ -2577,7 +2588,8 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
 
-    def test_workspace_list_authorization_platform_default_with_wildcard(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_workspace_list_authorization_platform_default_with_wildcard(self, send_kafka_message):
         """List workspaces authorization with wildcard permission."""
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
         request = request_context["request"]
@@ -2602,7 +2614,8 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self._setup_access_for_principal(self.user_data["username"], "inventory:*:*", platform_default=True)
         response = client.get(f"{url}?type=all", None, format="json", **headers)
 
-    def test_workspace_list_authorization_custom_role(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_workspace_list_authorization_custom_role(self, send_kafka_message):
         """List workspaces authorization."""
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
         request = request_context["request"]
@@ -2635,7 +2648,8 @@ class WorkspaceTestsList(WorkspaceViewTests):
         # Account for ungrouped and new standard workspace not having access
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count() - 2)
 
-    def test_workspace_list_no_limit(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_workspace_list_no_limit(self, send_kafka_message):
         """Test that when limit == -1, we return all records"""
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
         request = request_context["request"]
@@ -2756,7 +2770,8 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_get_workspace_authorized_through_custom_role(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_get_workspace_authorized_through_custom_role(self, send_kafka_message):
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
 
         request = request_context["request"]
@@ -2776,7 +2791,8 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_get_workspace_authorized_through_custom_role_with_resourcedef(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_get_workspace_authorized_through_custom_role_with_resourcedef(self, send_kafka_message):
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
 
         request = request_context["request"]
@@ -2818,7 +2834,8 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_get_workspace_authorized_through_platform_default_access(self):
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_get_workspace_authorized_through_platform_default_access(self, send_kafka_message):
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
 
         request = request_context["request"]
