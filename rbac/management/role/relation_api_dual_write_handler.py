@@ -86,6 +86,13 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         self.implicit_resource_service = ImplicitResourceService.from_settings()
         self.role = role
 
+        if not role.system:
+            raise ValueError(
+                "SeedingRelationApiDualWriteHandler only supports system roles. "
+                "RelationApiDualWriteHandler must be used for custom roles. "
+                f"Provided custom role: pk={role.pk!r}."
+            )
+
     def prepare_for_update(self):
         """Generate & store role's current relations."""
         if not self.replication_enabled():
@@ -233,9 +240,20 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         replicator: Optional[RelationReplicator] = None,
         tenant: Optional[Tenant] = None,
     ):
-        """Initialize RelationApiDualWriteHandler."""
+        """
+        Initialize RelationApiDualWriteHandler.
+
+        The provided role must be locked with select_for_update() before creating a RelationApiDualWriteHandler
+        (except for a role newly created during an uncommitted transaction).
+        """
         super().__init__(replicator)
 
+        if role.system:
+            raise ValueError(
+                "RelationApiDualWriteHandler only supports custom roles. "
+                "SeedingRelationApiDualWriteHandler must be used for system roles. "
+                f"Provided system role: pk={role.pk!r}."
+            )
         if not self.replication_enabled():
             return
         try:

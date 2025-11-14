@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar, Union
 
-from kessel.relations.v1beta1.common_pb2 import Relationship
+from kessel.relations.v1beta1.common_pb2 import ObjectReference, ObjectType, Relationship, SubjectReference
 from management.relation_replicator.relation_replicator import RelationReplicator
 
 
@@ -22,6 +22,29 @@ class RelationTuple(NamedTuple):
     subject_type_name: str
     subject_id: str
     subject_relation: str
+
+    def as_message(self) -> Relationship:
+        """Get a Kessel Relationship message corresponding to the values in this RelationTuple."""
+        return Relationship(
+            resource=ObjectReference(
+                type=ObjectType(
+                    namespace=self.resource_type_namespace,
+                    name=self.resource_type_name,
+                ),
+                id=self.resource_id,
+            ),
+            relation=self.relation,
+            subject=SubjectReference(
+                subject=ObjectReference(
+                    type=ObjectType(
+                        namespace=self.subject_type_namespace,
+                        name=self.subject_type_name,
+                    ),
+                    id=self.subject_id,
+                ),
+                relation=self.subject_relation,
+            ),
+        )
 
     def stringify(self):
         """Display all attributes in one line."""
