@@ -17,7 +17,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from api.views import CrossAccountRequestViewSet, openapi, status
+from api.views import CrossAccountRequestViewSet, openapi, openapi_v1_1, status
 
 ROUTER = DefaultRouter()
 ROUTER.register(r"cross-account-requests", CrossAccountRequestViewSet, basename="cross")
@@ -26,5 +26,6 @@ ROUTER.register(r"cross-account-requests", CrossAccountRequestViewSet, basename=
 urlpatterns = [
     path("status/", status, name="server-status"),
     path("openapi.json", openapi, name="openapi"),
+    path("v1.1/openapi.json", openapi_v1_1, name="openapi_v1_1"),
     path("", include(ROUTER.urls)),
 ]
