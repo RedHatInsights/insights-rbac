@@ -882,13 +882,16 @@ class RBACKafkaConsumer:
             Exception: Re-raises any exception that should stop the consumer
         """  # noqa: D202
 
-        # Define error handler to skip retries for ValidationError
+        # Define error handler to skip retries for non-retryable errors
         def should_skip_retry(exception: Exception) -> bool:
             """Return True if retry should be skipped (non-retryable error)."""
-            # ValidationError means bad message format - retrying won't help
-            if isinstance(exception, ValidationError):
+            # Import here to avoid circular dependency
+            from google.protobuf.json_format import ParseError
+
+            # ValidationError and ParseError mean bad message format - retrying won't help
+            if isinstance(exception, (ValidationError, ParseError)):
                 logger.error(
-                    f"ValidationError is non-retryable for message at partition {message_partition}, "
+                    f"{type(exception).__name__} is non-retryable for message at partition {message_partition}, "
                     f"offset {message_offset}. Consumer will stop."
                 )
                 return True
