@@ -487,6 +487,11 @@ class OffsetManager:
             logger.info(f"Committing {len(offset_dict)} offset(s) to Kafka: {offset_dict}")
             self.consumer.commit(offsets=offset_dict)
             logger.info("Successfully committed offsets")
+
+            # Clear stored offsets after successful commit
+            with self.offset_mutex:
+                self.stored_offsets.clear()
+
             return True
 
         except Exception as e:
