@@ -2035,6 +2035,69 @@ def check_role(request, role_uuid):
         )
 
 
+@require_http_methods(["POST"])
+def migrate_role(request, role_uuid):
+    """
+    Migrate a custom role.
+
+    POST /_private/api/utils/migrate_role/<role_uuid>
+    """
+    try:
+        raw_role = get_object_or_404(Role, uuid=role_uuid)
+
+        if raw_role.system:
+            return JsonResponse(
+                {"detail": "cannot migrate a system role"},
+                status=400,
+            )
+
+        with transaction.atomic():
+            role = get_object_or_404(Role.objects.select_for_update(), uuid=role_uuid)
+            assert not role.system
+
+            logger.info(f"Manually migrating role: pk={role.pk!r}, uuid={role.uuid}, name={role.name!r}")
+
+            relations_dual_write_handler = RelationApiDualWriteHandler(
+                role=role,
+                event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+                tenant=role.tenant,
+            )
+
+            if not relations_dual_write_handler.replication_enabled():
+                return JsonResponse(
+                    {"detail": "replication is not enabled"},
+                    status=400,
+                )
+
+            relations_dual_write_handler.prepare_for_update()
+            relations_dual_write_handler.replicate_new_or_updated_role(role)
+
+            return JsonResponse(
+                {
+                    "binding_mappings": [
+                        {
+                            "id": m.id,
+                            "resource_type_namespace": m.resource_type_namespace,
+                            "resource_type_name": m.resource_type_name,
+                            "resource_id": m.resource_id,
+                            "mappings": m.mappings,
+                        }
+                        for m in BindingMapping.objects.filter(role=role)
+                    ],
+                }
+            )
+    except RpcError as e:
+        return JsonResponse(
+            {"detail": "gRPC error occurred during migration", "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"detail": "Unexpected error occurred during migration", "error": str(e)},
+            status=500,
+        )
+
+
 @require_http_methods(["GET", "DELETE"])
 def workspace_removal(request):
     """

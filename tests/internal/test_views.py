@@ -42,6 +42,7 @@ from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ResourceDefinition
 from management.role.relation_api_dual_write_handler import (
@@ -2064,6 +2065,86 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(car.roles.filter(id=system_role.id).exists())
         self.assertFalse(car.roles.filter(id=custom_role.id).exists())
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_migrate_role(self):
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="XXXX")
+        V2TenantBootstrapService(OutboxReplicator()).bootstrap_tenant(tenant)
+
+        permission = Permission.objects.create(
+            tenant=self.public_tenant,
+            permission="app:resource:verb",
+        )
+
+        custom_role = Role.objects.create(
+            name="role 1",
+            system=False,
+            tenant=tenant,
+            platform_default=False,
+            admin_default=False,
+        )
+
+        Access.objects.create(
+            tenant=tenant,
+            role=custom_role,
+            permission=permission,
+        )
+
+        response = self.client.post(
+            f"/_private/api/utils/migrate_role/{custom_role.uuid}/",
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertGreater(BindingMapping.objects.filter(role=custom_role).count(), 0)
+
+        response_data = json.loads(response.content.decode())
+        self.assertIn("binding_mappings", response_data)
+
+        self.assertCountEqual(
+            list(BindingMapping.objects.filter(role=custom_role).values_list("id", flat=True)),
+            [m["id"] for m in response_data["binding_mappings"]],
+        )
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
+    def test_migrate_role_replication_disabled(self):
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="XXXX")
+        V2TenantBootstrapService(OutboxReplicator()).bootstrap_tenant(tenant)
+
+        custom_role = Role.objects.create(
+            name="role 1",
+            system=False,
+            tenant=tenant,
+            platform_default=False,
+            admin_default=False,
+        )
+
+        response = self.client.post(
+            f"/_private/api/utils/migrate_role/{custom_role.uuid}/",
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        self.assertEqual(400, response.status_code)
+
+        response_data = json.loads(response.content.decode())
+        self.assertIn("detail", response_data)
+        self.assertEqual("replication is not enabled", response_data["detail"])
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_migrate_role_replication_disabled(self):
+        response = self.client.post(
+            f"/_private/api/utils/migrate_role/{self.role.uuid}/",
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        self.assertEqual(400, response.status_code)
+
+        response_data = json.loads(response.content.decode())
+        self.assertIn("detail", response_data)
+        self.assertEqual("cannot migrate a system role", response_data["detail"])
 
 
 class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
