@@ -141,3 +141,6 @@ rbac/management/principal/umb_certs/
 
 # ai
 .claude
+
+# Sphinx documentation build output
+_build/

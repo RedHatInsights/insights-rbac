@@ -89,7 +89,7 @@ clean:
 	git clean -fdx -e .idea/ -e *env/
 
 html:
-	@cd docs; $(MAKE) html
+	@pipenv run sphinx-build -b html docs/source docs/_build/html
 
 lint:
 	tox -elint

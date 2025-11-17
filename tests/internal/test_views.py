@@ -501,6 +501,33 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         existing_tenant.refresh_from_db()
         self.assertEqual(existing_tenant.org_id, "org-777")
 
+    @patch("management.principal.proxy.PrincipalProxy.fetch_account_org_mapping")
+    def test_populate_tenant_org_id_no_bop_mapping(self, mock_fetch_bop):
+        """Test that tenants are deleted when BOP returns no mappings."""
+        # Create test tenants with account_id but no org_id
+        tenant1 = Tenant.objects.create(tenant_name="acct222333", account_id="222333", org_id=None)
+        tenant2 = Tenant.objects.create(tenant_name="acct444555", account_id="444555", org_id=None)
+
+        # Create workspaces for tenant1
+        root_ws_t1 = Workspace.objects.create(name="Root", tenant=tenant1, type=Workspace.Types.ROOT, parent=None)
+        default_ws_t1 = Workspace.objects.create(
+            name="Default", tenant=tenant1, type=Workspace.Types.DEFAULT, parent=root_ws_t1
+        )
+
+        # Create workspaces for tenant2
+        root_ws_t2 = Workspace.objects.create(name="Root", tenant=tenant2, type=Workspace.Types.ROOT, parent=None)
+
+        # Mock BOP response - returns empty dict (no mappings found)
+        mock_fetch_bop.return_value = {}
+
+        response = self.client.post("/_private/api/utils/populate_tenant_org_id/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify both tenants were deleted
+        self.assertFalse(Tenant.objects.filter(id=tenant1.id).exists())
+        self.assertFalse(Tenant.objects.filter(id=tenant2.id).exists())
+
     def test_get_invalid_default_admin_groups(self):
         """Test that we can get invalid groups."""
         invalid_admin_default_group = Group.objects.create(
