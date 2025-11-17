@@ -2059,7 +2059,7 @@ def migrate_role(request, role_uuid):
 
             relations_dual_write_handler = RelationApiDualWriteHandler(
                 role=role,
-                event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+                event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
                 tenant=role.tenant,
             )
 
