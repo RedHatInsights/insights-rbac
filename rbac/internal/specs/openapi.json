@@ -1883,7 +1883,7 @@
           "Utils"
         ],
         "summary": "Populate tenant org_id from BOP",
-        "description": "Automatically queries tenants with empty org_id (excluding 'public'), fetches account_id to org_id mapping from BOP, and updates the tenants.",
+        "description": "Automatically queries tenants with empty org_id (excluding 'public'), fetches account_id to org_id mapping from BOP, and updates the tenants. Deletes tenants if: (1) no org_id mapping found in BOP, or (2) the mapped org_id already exists for another tenant.",
         "operationId": "PopulateTenantOrgId",
         "responses": {
           "200": {
@@ -1916,14 +1916,19 @@
                           "description": "Number of tenants successfully updated",
                           "example": 95
                         },
-                        "not_found": {
+                        "deleted_no_mapping": {
                           "type": "integer",
-                          "description": "Number of account_ids not found in tenant database",
-                          "example": 0
+                          "description": "Number of tenants deleted because no org_id mapping was found in BOP",
+                          "example": 3
+                        },
+                        "deleted_duplicate": {
+                          "type": "integer",
+                          "description": "Number of tenants deleted because the mapped org_id already exists",
+                          "example": 2
                         },
                         "errors": {
                           "type": "integer",
-                          "description": "Number of errors encountered during update",
+                          "description": "Number of errors encountered during processing",
                           "example": 0
                         },
                         "error_details": {
@@ -1933,13 +1938,16 @@
                             "type": "object",
                             "properties": {
                               "account_id": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Account ID that encountered an error"
                               },
-                              "org_id": {
-                                "type": "string"
+                              "tenant_id": {
+                                "type": "integer",
+                                "description": "Tenant ID that encountered an error"
                               },
                               "error": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Error message"
                               }
                             }
                           }

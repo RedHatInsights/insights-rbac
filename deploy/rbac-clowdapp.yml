@@ -32,6 +32,9 @@ objects:
     - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
+    optionalDependencies:
+      - kessel-inventory
+      - kessel-relations
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -1208,6 +1211,22 @@ objects:
             - bootstrap_tenants
             - "--all"
             - "--force"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *workspace_job_env_vars
+      - name: fix-duplicate-role-binding-uuids
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - fix_duplicate_role_binding_uuids
+            - "--batch-size"
+            - "1000"
           resources:
             limits:
               cpu: 300m

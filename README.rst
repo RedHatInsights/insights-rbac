@@ -275,8 +275,22 @@ Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-org-id' header 
 
 You can also send a request *with* the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
 
+Building Documentation
+^^^^^^^^^^^^^^^^^^^^^^^
+
+The project uses Sphinx to build documentation from reStructuredText files and Python docstrings.
+Documentation is automatically published to `readthedocs`_ when changes are pushed.
+
+To build documentation locally::
+
+  $ make html
+  $ open docs/_build/html/index.html
+
+For detailed information about the documentation system, dependencies, and troubleshooting,
+see `docs/BUILD_DOCS.md`_.
+
 Generating v2 openAPI specification
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 OpenAPI v2 specification is located in `docs/source/specs/v2/openapi.yaml`.
 This OpenAPI v2 specification is generated from TypeSpec file which is located in `docs/source/specs/typespec/main.tsp`
@@ -382,6 +396,7 @@ Default roles can be found in the `RBAC config repo`_.
 For additional information please refer to Contributing_.
 
 .. _readthedocs: http://insights-rbac.readthedocs.io/en/latest/
+.. _`docs/BUILD_DOCS.md`: docs/BUILD_DOCS.md
 .. _platformdocs: https://consoledot.pages.redhat.com/docs/dev/services/rbac.html
 .. _tutorial: https://www.postgresql.org/docs/10/static/tutorial-start.html
 .. _`Working with Openshift`: https://insights-rbac.readthedocs.io/en/latest/openshift.html

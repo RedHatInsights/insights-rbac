@@ -76,7 +76,10 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
 from management.role.model import Access
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    SeedingRelationApiDualWriteHandler,
+)
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_binding_scope_in_worker,
@@ -96,6 +99,7 @@ from management.utils import (
 from management.workspace.model import Workspace
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
+from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
@@ -722,22 +726,13 @@ def populate_tenant_org_id_view(request):
                     status=500,
                 )
 
+            # If BOP returns no mappings, use empty dict so all tenants will be deleted
             if not account_org_mapping:
-                return JsonResponse(
-                    {
-                        "message": "No account-org mappings returned from BOP.",
-                        "statistics": {
-                            "updated": 0,
-                            "not_found": len(account_ids),
-                            "errors": 0,
-                            "error_details": [],
-                        },
-                    },
-                    status=200,
-                )
+                logger.warning("No account-org mappings returned from BOP. All tenants will be deleted.")
+                account_org_mapping = {}
 
             # Populate tenants with org_id (with transaction and row locking)
-            logger.info(f"Populating org_id for {len(account_org_mapping)} tenants from BOP mapping")
+            logger.info(f"Processing tenants: {len(account_ids)} checked, {len(account_org_mapping)} BOP mappings")
             with transaction.atomic():
                 # Re-fetch tenants with select_for_update to prevent concurrent modifications
                 tenants_without_org_id = (
@@ -1985,24 +1980,41 @@ def check_role(request, role_uuid):
     """POST to check a role has correct V2 relations and bindings are correct on Inventory API."""
     try:
         role = get_object_or_404(Role, uuid=role_uuid)
-        bindings = role.binding_mappings.all()
-        relations_dual_write_handler = RelationApiDualWriteHandler(
-            role=role, event_type=ReplicationEventType.UPDATE_SYSTEM_ROLE, tenant=role.tenant
-        )
 
-        if bindings:
+        # We will act as if we are about to replicate the role, resulting in the expected tuples ending up here.
+        tuples = InMemoryTuples()
+
+        if role.system:
             with transaction.atomic():
-                relations_dual_write_handler.prepare_for_update()
-                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+                relations_dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role,
+                    replicator=InMemoryRelationReplicator(tuples),
+                )
+
+                relations_dual_write_handler.replicate_new_system_role()
+
+                # Ensure that we don't accidentally update any models.
+                transaction.set_rollback(True)
         else:
+            # We have to lock the role before passing it to RelationApiDualWriteHandler.
             with transaction.atomic():
-                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+                role = get_object_or_404(Role.objects.select_for_update(), pk=role.pk)
 
-        role_relations = relations_dual_write_handler.role_relations
+                relations_dual_write_handler = RelationApiDualWriteHandler(
+                    role=role,
+                    event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+                    tenant=role.tenant,
+                    replicator=InMemoryRelationReplicator(tuples),
+                )
 
-        serialized_relations = [json_format.MessageToDict(rel) for rel in role_relations]
+                relations_dual_write_handler.replicate_new_or_updated_role(role)
 
+                # Ensure that we don't accidentally update any models.
+                transaction.set_rollback(True)
+
+        serialized_relations = [json_format.MessageToDict(rel.as_message()) for rel in tuples]
         role_correct = RoleRelationChecker.check_role(serialized_relations, role.uuid)
+
         return JsonResponse(
             {
                 "V2_role_checks": {

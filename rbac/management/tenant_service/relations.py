@@ -16,6 +16,7 @@
 #
 """Provide common helpers for V2 tenant relationships."""
 import logging
+from typing import Iterable, Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.platform import GlobalPolicyIdService
@@ -33,6 +34,7 @@ def default_role_binding_tuples(
     access_type: DefaultAccessType,
     policy_service: GlobalPolicyIdService,
     resource_binding_only: bool = False,
+    target_scopes: Optional[Iterable[Scope]] = None,
 ) -> list[Relationship]:
     """
     Create the tuples used to bootstrap default access for a Workspace.
@@ -43,11 +45,13 @@ def default_role_binding_tuples(
 
     The optional policy_cache argument can be used to prevent redundant policy UUID lookups across calls.
     """
+    target_scopes = set(target_scopes if target_scopes is not None else Scope)
+
     default_group_uuid = str(tenant_mapping.group_uuid_for(access_type))
 
     relationships: list[Relationship] = []
 
-    for scope in Scope:
+    for scope in target_scopes:
         # Always add the relationship from the role binding to the target resource.
         role_binding_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type, scope))
         target = target_resources.resource_for(scope)

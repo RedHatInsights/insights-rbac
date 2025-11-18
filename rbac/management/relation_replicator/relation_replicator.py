@@ -66,6 +66,7 @@ class ReplicationEventType(str, Enum):
     CREATE_UNGROUPED_HOSTS_WORKSPACE = "create_ungrouped_hosts_workspace"
     # Binding scope migration
     MIGRATE_BINDING_SCOPE = "migrate_binding_scope"
+    DUPLICATE_BINDING_CLEANUP = "duplicate_binding_cleanup"
     WORKSPACE_IMPORT = "workspace_import"
     CREATE_WORKSPACE = "create_workspace"
     UPDATE_WORKSPACE = "update_workspace"
