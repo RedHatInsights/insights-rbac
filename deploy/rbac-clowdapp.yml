@@ -710,8 +710,6 @@ objects:
                 key: rbac-client-secret
                 name: service-accounts
                 optional: true
-          - name: RELATION_API_SERVER
-            value: ${RELATION_API_SERVER}
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
             value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
           - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID

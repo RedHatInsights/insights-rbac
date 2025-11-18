@@ -61,9 +61,6 @@ inventory_auth_credentials = OAuth2ClientCredentials(
 
 inventory_call_credentials = oauth2_call_credentials(inventory_auth_credentials)
 
-# Legacy naming for backward compatibility
-call_credentials = inventory_call_credentials
-
 # Configure OAuth credentials with direct token URL for Relations API
 relation_auth_credentials = OAuth2ClientCredentials(
     client_id=settings.RELATIONS_API_CLIENT_ID,
