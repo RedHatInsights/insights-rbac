@@ -562,6 +562,11 @@ V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
 V2_READ_ONLY_API_MODE = ENVIRONMENT.bool("V2_READ_ONLY_API_MODE", default=False)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
 
+# Read-your-writes settings
+READ_YOUR_WRITES_WORKSPACE_ENABLED = ENVIRONMENT.bool("READ_YOUR_WRITES_WORKSPACE_ENABLED", default=False)
+READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="test")
+READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=2)
+
 # Workspace settings
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")
 # Comma-separated list of resource types that should trigger workspace hierarchy
