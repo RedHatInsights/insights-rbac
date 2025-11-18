@@ -52,14 +52,23 @@ SERVICE_ACCOUNT_KEY = "service-account"
 
 logger = logging.getLogger(__name__)
 
-# Configure OAuth credentials with direct token URL
+# Configure OAuth credentials with direct token URL for Inventory API
 inventory_auth_credentials = OAuth2ClientCredentials(
     client_id=settings.INVENTORY_API_CLIENT_ID,
     client_secret=settings.INVENTORY_API_CLIENT_SECRET,
     token_endpoint=settings.INVENTORY_API_TOKEN_URL,  # Direct token endpoint
 )
 
-call_credentials = oauth2_call_credentials(inventory_auth_credentials)
+inventory_call_credentials = oauth2_call_credentials(inventory_auth_credentials)
+
+# Configure OAuth credentials with direct token URL for Relations API
+relation_auth_credentials = OAuth2ClientCredentials(
+    client_id=settings.RELATIONS_API_CLIENT_ID,
+    client_secret=settings.RELATIONS_API_CLIENT_SECRET,
+    token_endpoint=settings.RELATIONS_API_TOKEN_URL,  # Direct token endpoint
+)
+
+relation_call_credentials = oauth2_call_credentials(relation_auth_credentials)
 
 
 @contextmanager
@@ -89,7 +98,21 @@ def create_client_channel_inventory(addr):
     else:
         # Combine with TLS for secure channel
         ssl_credentials = grpc.ssl_channel_credentials()
-        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
+        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, inventory_call_credentials)
+        secure_channel = grpc.secure_channel(addr, channel_credentials)
+        yield secure_channel
+
+
+@contextmanager
+def create_client_channel_relation(addr):
+    """Create secure channel for grpc requests for relations api."""
+    if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)
+        channel = grpc.insecure_channel(addr)
+        yield channel
+    else:
+        # Combine with TLS for secure channel
+        ssl_credentials = grpc.ssl_channel_credentials()
+        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, relation_call_credentials)
         secure_channel = grpc.secure_channel(addr, channel_credentials)
         yield secure_channel
 
