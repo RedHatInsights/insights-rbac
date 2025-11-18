@@ -138,8 +138,6 @@ def v1_role_to_v2_bindings(
             if resource_type is None:
                 # Resource type not mapped to v2
                 continue
-            if not is_for_enabled_resource(resource_type):
-                continue
             for resource_id in values_from_attribute_filter(attri_filter):
                 if resource_id is None:
                     if resource_type != ("rbac", "workspace"):
@@ -222,20 +220,6 @@ def permission_groupings_to_v2_role_bindings(
 def is_for_enabled_app(perm: Permission):
     """Return true if the permission is for an app that should migrate."""
     return perm.application not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
-
-
-def is_for_enabled_resource(resource: Tuple[str, str]):
-    """
-    Return true if the resource is for an app that should migrate.
-
-    This setting is used when the permission is valid for V2 but the resource model is not yet finalized.
-    It excludes role bindings for those specific resources, and only migrates those which are bound
-    at the workspace level.
-
-    Once the resource model is finalized, we should no longer exclude that app, and should instead update
-    the migration code to account for migrating those resources in whatever form they should migrate.
-    """
-    return f"{resource[0]}:{resource[1]}" not in settings.V2_MIGRATION_RESOURCE_EXCLUDE_LIST
 
 
 def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:
