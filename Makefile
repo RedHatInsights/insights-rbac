@@ -33,18 +33,47 @@ Please use `make <target>` where <target> is one of:
   typecheck                run type check
 
 --- Commands using local services ---
+  bootstrap-tenants        bootstrap ALL tenants in database via API (compact mode)
+  bootstrap-tenants-visual bootstrap ALL tenants in database with visual graph
+  bootstrap-tenants-visual-interactive bootstrap ALL tenants with interactive visualization
+  bootstrap-tenants-visual-interactive-execute bootstrap ALL tenants with interactive visualization and execute to SpiceDB
+  bootstrap-tenants-execute bootstrap ALL tenants in database and execute to SpiceDB
+  bootstrap-tenants-visual-execute bootstrap ALL tenants in database, visual graph and execute to SpiceDB
   create-test-db-file      create a Postgres DB dump file for RBAC
   collect-static           collect static files to host
   kafka-consumer           run the RBAC Kafka consumer with validation
   kafka-consumer-debug     run the RBAC Kafka consumer with debug logging
   make-migrations          make migrations for the database
+  migrate-relations        run relation migration and parse output (compact mode)
+  migrate-relations-visual run relation migration with visual graph display
+  migrate-relations-visual-interactive run relation migration with interactive visualization
+  migrate-relations-visual-interactive-execute run relation migration with interactive visualization and execute zed commands
+  migrate-relations-visual-execute run relation migration with visual graph and execute zed commands
+  migrate-relations-execute run relation migration and execute zed commands
   reinitdb                 drop and recreate the database
   run-migrations           run migrations against database
+  seeds-relations          run seeds with forced relation creation (compact mode)
+  seeds-relations-visual   run seeds with forced relation creation and visual graph
+  seeds-relations-visual-interactive run seeds with interactive visualization
+  seeds-relations-visual-interactive-execute run seeds with interactive visualization and execute to SpiceDB
+  seeds-relations-execute  run seeds with forced relation creation and execute to SpiceDB
+  seeds-relations-visual-execute run seeds with forced relation creation, visual graph and execute to SpiceDB
   serve                    run the Django server locally
+  serve-visual             run server and visualize relations in real-time
+  serve-visual-interactive run server with interactive visualization (check permissions)
+  serve-visual-interactive-execute run server with interactive visualization and execute to SpiceDB
+  serve-visual-execute     run server, visualize relations and execute to SpiceDB
+  serve-execute            run server and execute relations to SpiceDB (compact mode)
   serve-with-oc            run Django server locally against an Openshift DB
   start-db                 start the psql db in detached state
   stop-compose             stop all containers
   unittest                 run unittests
+  update-principals        update all principals to generate relations (compact mode)
+  update-principals-visual update all principals with visual graph display
+  update-principals-visual-interactive update all principals with interactive visualization
+  update-principals-visual-interactive-execute update all principals with interactive visualization and execute to SpiceDB
+  update-principals-execute update all principals and execute to SpiceDB (compact mode)
+  update-principals-visual-execute update all principals with visual graph and execute to SpiceDB
   user                     create a Django super user
 
 --- Commands using Docker Compose ---
@@ -114,6 +143,140 @@ make-migrations:
 
 run-migrations:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate
+
+migrate-relations:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py migrate_relations 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names
+
+migrate-relations-visual:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py migrate_relations 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names
+
+migrate-relations-visual-interactive:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py migrate_relations 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive
+
+migrate-relations-visual-interactive-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py migrate_relations 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive --zed --execute
+
+migrate-relations-visual-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py migrate_relations 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --zed --execute
+
+migrate-relations-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py migrate_relations 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names --execute
+
+seeds-relations:
+	@echo "Resetting role versions..."
+	@DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/reset_role_versions.py | grep "Reset"
+	@echo ""
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py seeds --force-create-relationships 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names
+
+seeds-relations-visual:
+	@echo "Resetting role versions..."
+	@DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/reset_role_versions.py | grep "Reset"
+	@echo ""
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py seeds --force-create-relationships 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual-static --show-names
+
+seeds-relations-visual-interactive:
+	@echo "Resetting role versions..."
+	@DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/reset_role_versions.py | grep "Reset"
+	@echo ""
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py seeds --force-create-relationships 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive
+
+seeds-relations-visual-interactive-execute:
+	@echo "Resetting role versions..."
+	@DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/reset_role_versions.py | grep "Reset"
+	@echo ""
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py seeds --force-create-relationships 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive --zed --execute
+
+seeds-relations-execute:
+	@echo "Resetting role versions..."
+	@DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/reset_role_versions.py | grep "Reset"
+	@echo ""
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py seeds --force-create-relationships 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names --execute
+
+seeds-relations-visual-execute:
+	@echo "Resetting role versions..."
+	@DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/reset_role_versions.py | grep "Reset"
+	@echo ""
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(PYDIR)/manage.py seeds --force-create-relationships 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --zed --execute
+
+bootstrap-tenants:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/bootstrap_all_tenants.py --force 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names
+
+bootstrap-tenants-visual:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/bootstrap_all_tenants.py --force 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names
+
+bootstrap-tenants-visual-interactive:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/bootstrap_all_tenants.py --force 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive
+
+bootstrap-tenants-visual-interactive-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/bootstrap_all_tenants.py --force 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive --zed --execute
+
+bootstrap-tenants-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/bootstrap_all_tenants.py --force 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names --execute
+
+bootstrap-tenants-visual-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/bootstrap_all_tenants.py --force 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --zed --execute
+
+serve-visual:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true $(PYTHON) $(PYDIR)/manage.py runserver $(PORT) 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --filter-seeds --quiet
+
+serve-visual-interactive:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true $(PYTHON) $(PYDIR)/manage.py runserver $(PORT) 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive --filter-seeds --quiet
+
+serve-visual-interactive-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true $(PYTHON) $(PYDIR)/manage.py runserver $(PORT) 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive --zed --execute --filter-seeds --quiet
+
+serve-visual-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true $(PYTHON) $(PYDIR)/manage.py runserver $(PORT) 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --zed --execute --filter-seeds --quiet
+
+serve-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true $(PYTHON) $(PYDIR)/manage.py runserver $(PORT) 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names --execute --filter-seeds --quiet
+
+update-principals:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/update_all_principals.py 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names --filter-seeds --quiet
+
+update-principals-visual:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/update_all_principals.py 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual-static --show-names --filter-seeds --quiet
+
+update-principals-visual-interactive:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/update_all_principals.py 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive --filter-seeds --quiet
+
+update-principals-visual-interactive-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/update_all_principals.py 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual --show-names --interactive --zed --execute --filter-seeds --quiet
+
+update-principals-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/update_all_principals.py 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --zed --compact --show-names --execute --filter-seeds --quiet
+
+update-principals-visual-execute:
+	DJANGO_READ_DOT_ENV_FILE=True RBAC_LOG_RELATIONS=true pipenv run python $(TOPDIR)/scripts/update_all_principals.py 2>&1 | \
+		env DJANGO_READ_DOT_ENV_FILE=True pipenv run python ./scripts/parse_relations.py --visual-static --show-names --zed --execute --filter-seeds --quiet
 
 shell:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py shell
