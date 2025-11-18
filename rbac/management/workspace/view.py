@@ -107,6 +107,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Create a Workspace."""
         try:
             return self._create_atomic(request, *args, **kwargs)
+        except TimeoutError as e:
+            logger.exception("TimeoutError in workspace creation operation")
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         except OperationalError as e:
             # Django wraps psycopg2 errors in OperationalError
             if hasattr(e, "__cause__"):
