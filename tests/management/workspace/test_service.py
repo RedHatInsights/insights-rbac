@@ -14,6 +14,132 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+"""Tests for WorkspaceService notify wait logic."""
+from collections import deque
+from dataclasses import dataclass
+from unittest.mock import Mock, call, patch
+
+from django.test import TestCase
+
+from management.workspace.service import WorkspaceService
+
+
+@dataclass
+class FakeNotify:
+    channel: str
+    payload: str
+
+
+class WorkspaceServiceTest(TestCase):
+    """Tests for WorkspaceService._wait_for_notify_post_commit."""
+
+    @patch("management.workspace.service.select.select")
+    @patch("management.workspace.service.connection")
+    def test_wait_for_notify_post_commit_listen_unlisten(self, mock_connection, mock_select):
+        # Arrange
+        mock_conn = Mock()
+        # Start with no notifications; they'll arrive after LISTEN
+        mock_conn.notifies = deque()
+        mock_conn.poll.side_effect = lambda: None
+
+        mock_connection.ensure_connection = lambda: None
+        mock_connection.connection = mock_conn
+
+        mock_cursor = Mock()
+        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
+
+        # Make select.select indicate readability and inject a notification just-in-time
+        def select_side_effect(*args, **kwargs):
+            mock_conn.notifies = deque([FakeNotify("test", "42")])
+            return ([mock_conn], [], [])
+
+        mock_select.side_effect = select_side_effect
+
+        service = WorkspaceService()
+
+        # Act
+        service._wait_for_notify_post_commit(workspace_id="42")
+
+        # Assert LISTEN/UNLISTEN executed
+        executed_sql_calls = [args[0] for args, _ in mock_cursor.execute.call_args_list]
+        self.assertTrue(any("LISTEN" in str(c) for c in executed_sql_calls))
+        self.assertTrue(any("UNLISTEN" in str(c) for c in executed_sql_calls))
+
+    @patch("management.workspace.service.select.select")
+    @patch("management.workspace.service.connection")
+    def test_wait_for_notify_post_commit_payload_trimmed(self, mock_connection, mock_select):
+        # Arrange: notification payload contains extra spaces; should still match
+        mock_conn = Mock()
+        mock_conn.notifies = deque()
+        mock_conn.poll.side_effect = lambda: None
+
+        mock_connection.ensure_connection = lambda: None
+        mock_connection.connection = mock_conn
+
+        mock_cursor = Mock()
+        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
+
+        def select_side_effect(*args, **kwargs):
+            mock_conn.notifies = deque([FakeNotify("test", "  42  ")])
+            return ([mock_conn], [], [])
+
+        mock_select.side_effect = select_side_effect
+
+        service = WorkspaceService()
+
+        # Act
+        service._wait_for_notify_post_commit(workspace_id="42")
+
+        # Assert LISTEN/UNLISTEN executed
+        executed_sql_calls = [args[0] for args, _ in mock_cursor.execute.call_args_list]
+        self.assertTrue(any("LISTEN" in str(c) for c in executed_sql_calls))
+        self.assertTrue(any("UNLISTEN" in str(c) for c in executed_sql_calls))
+
+    @patch("management.workspace.service.select.select")
+    @patch("management.workspace.service.connection")
+    def test_wait_for_notify_post_commit_timeout(self, mock_connection, mock_select):
+        # Arrange: no readability, so we loop until timeout and then exit
+        mock_conn = Mock()
+        mock_conn.notifies = deque()
+        mock_conn.poll.side_effect = lambda: None
+
+        mock_connection.ensure_connection = lambda: None
+        mock_connection.connection = mock_conn
+
+        mock_cursor = Mock()
+        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
+
+        # select.select returns no readable until the loop times out
+        mock_select.return_value = ([], [], [])
+
+        service = WorkspaceService()
+
+        with patch("management.workspace.service.settings.READ_YOUR_WRITES_TIMEOUT_SECONDS", 0.01):
+            # Act
+            service._wait_for_notify_post_commit(workspace_id="999")
+
+        # Assert LISTEN/UNLISTEN executed despite timeout
+        executed_sql_calls = [args[0] for args, _ in mock_cursor.execute.call_args_list]
+        self.assertTrue(any("LISTEN" in str(c) for c in executed_sql_calls))
+        self.assertTrue(any("UNLISTEN" in str(c) for c in executed_sql_calls))
+
+
+#
+# Copyright 2025 Red Hat, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
 from unittest.mock import patch
 
 from django.test import TestCase

@@ -36,7 +36,7 @@ import redis
 from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
-from app_common_python import LoadedConfig, KafkaTopics
+from app_common_python import LoadedConfig, KafkaTopics, DependencyEndpoints
 from feature_flags import FEATURE_FLAGS
 
 
@@ -530,6 +530,20 @@ OPENID_URL = ENVIRONMENT.get_value("OPENID_URL", default="/auth/realms/redhat-ex
 SCOPE = ENVIRONMENT.get_value("SCOPE", default="openid")
 TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_credentials")
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
+KESSEL_RELATION_CLOWDER_APPLICATION_NAME = "kessel-relations"
+
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+    try:
+        hostname = DependencyEndpoints[KESSEL_RELATION_CLOWDER_APPLICATION_NAME]["api"].hostname
+        RELATION_API_SERVER = f"{hostname}:9000"
+    except KeyError as e:
+        import logging
+
+        logging.warning(
+            f"Dependency endpoint for '{KESSEL_RELATION_CLOWDER_APPLICATION_NAME}' not found: {e}. "
+            f"Falling back to default RELATION_API_SERVER value: {RELATION_API_SERVER}"
+        )
+
 RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
 RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
 INVENTORY_API_CLIENT_ID = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_ID", default="")
@@ -546,6 +560,11 @@ ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
 V2_READ_ONLY_API_MODE = ENVIRONMENT.bool("V2_READ_ONLY_API_MODE", default=False)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
+
+# Read-your-writes settings
+READ_YOUR_WRITES_WORKSPACE_ENABLED = ENVIRONMENT.bool("READ_YOUR_WRITES_WORKSPACE_ENABLED", default=False)
+READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="test")
+READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=2)
 
 # Workspace settings
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")

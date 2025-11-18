@@ -15,17 +15,29 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Service for workspace management."""
+import logging
+import select
+import time
 import uuid
+from collections import deque
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import connection, transaction
+from feature_flags import FEATURE_FLAGS
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
+from psycopg2 import sql
 from rest_framework import serializers
 
 from api.models import Tenant
+
+# Module-level constants for performance optimization
+logger = logging.getLogger(__name__)
+READ_YOUR_WRITES_CHANNEL = settings.READ_YOUR_WRITES_CHANNEL
+LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
+UNLISTEN_SQL = sql.SQL("UNLISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 
 
 class WorkspaceService:
@@ -55,6 +67,11 @@ class WorkspaceService:
                     workspace, ReplicationEventType.CREATE_WORKSPACE
                 )
                 dual_write_handler.replicate_new_workspace()
+
+                # After the outbox message is created & committed, LISTEN for a NOTIFY
+
+                if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
+                    transaction.on_commit(lambda: self._wait_for_notify_post_commit(workspace.id))
 
                 return workspace
             except ValidationError as e:
@@ -189,3 +206,89 @@ class WorkspaceService:
         """Prevent moving workspace under own descendant."""
         if instance.descendants().filter(id=new_parent_id):
             raise serializers.ValidationError({"parent_id": "Cannot move workspace under one of its own descendants."})
+
+    def _wait_for_notify_post_commit(self, workspace_id: uuid.UUID) -> None:
+        """Wait for a NOTIFY on the configured channel for the given workspace id.
+
+        Intended for use as a transaction.on_commit callback.
+        """
+        try:
+            connection.ensure_connection()
+            conn = connection.connection
+            timeout_seconds = settings.READ_YOUR_WRITES_TIMEOUT_SECONDS
+
+            # Early exit if misconfigured
+            if timeout_seconds is None or timeout_seconds <= 0:
+                logger.debug(
+                    "[Service] RYW skipped waiting due to non-positive timeout for channel='%s' workspace_id='%s'",
+                    READ_YOUR_WRITES_CHANNEL,
+                    str(workspace_id),
+                )
+                return
+
+            with connection.cursor() as cursor:
+                cursor.execute(LISTEN_SQL)
+
+            logger.info(
+                "[Service] RYW waiting for NOTIFY channel='%s' workspace_id='%s' timeout=%ss",
+                READ_YOUR_WRITES_CHANNEL,
+                str(workspace_id),
+                timeout_seconds,
+            )
+
+            # Use monotonic clock and a strict deadline to avoid overshooting
+            started = time.monotonic()
+            deadline = started + float(timeout_seconds)
+            workspace_id_str = str(workspace_id)
+
+            # Clear any stale notifications from before LISTEN was issued
+            try:
+                conn.poll()  # bring any pending into conn.notifies
+                if getattr(conn, "notifies", None):
+                    conn.notifies.clear()
+            except Exception:
+                logger.debug("Failed to clear stale notifications before LISTEN, continuing anyway")
+
+            fd = conn.fileno() if hasattr(conn, "fileno") else conn
+
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+
+                readable, _, _ = select.select([fd], [], [], min(1.0, remaining))
+                if not readable:
+                    continue
+
+                conn.poll()
+                notifies = getattr(conn, "notifies", None)
+                if notifies:
+                    q = deque(notifies)
+                    notifies.clear()
+                    while q:
+                        n = q.popleft()
+                        payload = (getattr(n, "payload", "") or "").strip()
+                        if n.channel == READ_YOUR_WRITES_CHANNEL and payload == workspace_id_str:
+                            logger.info(
+                                "[Service] RYW received NOTIFY channel='%s' workspace_id='%s' after %.3fs",
+                                n.channel,
+                                payload,
+                                time.monotonic() - started,
+                            )
+                            return
+
+            logger.warning(
+                "[Service] RYW timed out waiting for NOTIFY channel='%s' workspace_id='%s' after %ss",
+                READ_YOUR_WRITES_CHANNEL,
+                str(workspace_id),
+                timeout_seconds,
+            )
+        except Exception:
+            logger.exception("Error while waiting for NOTIFY after workspace create")
+        finally:
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(UNLISTEN_SQL)
+            except Exception:
+                # Best-effort cleanup
+                pass

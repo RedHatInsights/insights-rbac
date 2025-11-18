@@ -19,16 +19,24 @@
 
 import json
 import logging
+import random
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import grpc
 from django.conf import settings
-from kafka import KafkaConsumer
+from google.protobuf import json_format
+from kafka import KafkaConsumer, TopicPartition
+from kafka.consumer.subscription_state import ConsumerRebalanceListener
 from kafka.errors import KafkaError
-from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
+from kafka.structs import OffsetAndMetadata
+from kessel.relations.v1beta1 import common_pb2
+from management.relation_replicator.relations_api_replicator import (
+    RelationsApiReplicator,
+)
 from prometheus_client import Counter, Histogram
 
 from api.models import Tenant
@@ -70,24 +78,46 @@ message_retry_duration = Histogram(
 
 @dataclass
 class RetryConfig:
-    """Configuration for retry logic."""
+    """Configuration for retry logic.
 
-    initial_delay: float = 1.0  # Initial delay in seconds
-    max_delay: float = 300.0  # Maximum delay (5 minutes)
-    backoff_multiplier: float = 2.0  # Exponential backoff multiplier
+    Implements exponential backoff with the formula:
+    backoff = min(backoff_factor * attempts * base_delay, max_backoff_seconds)
+    """
+
+    operation_max_retries: int = 10  # Max operation retry attempts (-1 = infinite)
+    backoff_factor: int = 5  # Exponential backoff multiplier
+    max_backoff_seconds: int = 30  # Maximum wait time between retries
+    base_delay: float = 0.3  # Base delay in seconds (300ms)
     jitter_factor: float = 0.1  # Random jitter to avoid thundering herd
 
     def calculate_delay(self, attempt: int) -> float:
-        """Calculate delay for retry attempt with exponential backoff and jitter."""
-        import random
+        """Calculate delay for retry attempt with exponential backoff and jitter.
 
-        # Exponential backoff: delay = initial_delay * (backoff_multiplier ^ attempt)
-        delay = self.initial_delay * (self.backoff_multiplier**attempt)
-        delay = min(delay, self.max_delay)
+        Formula: backoff = min(backoff_factor * attempts * base_delay, max_backoff_seconds)
+
+        Example with defaults (backoff_factor=5, base_delay=0.3s, max=30s):
+        - Attempt 1: 1.5s (5 * 1 * 0.3)
+        - Attempt 2: 3.0s (5 * 2 * 0.3)
+        - Attempt 3: 4.5s (5 * 3 * 0.3)
+        - Attempt 10+: 30s (capped)
+        """
+        # Calculate exponential backoff: backoff_factor * (attempt+1) * base_delay
+        # Note: attempt starts at 0, so we add 1 to get proper delay on first retry
+        delay = self.backoff_factor * (attempt + 1) * self.base_delay
+        delay = min(delay, self.max_backoff_seconds)
 
         # Add jitter to avoid thundering herd problem
         jitter = delay * self.jitter_factor * random.random()
         return delay + jitter
+
+
+@dataclass
+class CommitConfig:
+    """Configuration for offset commit policy."""
+
+    commit_modulo: int = 10  # Commit every N messages (batch commits)
+    commit_on_rebalance: bool = True  # Commit offsets on rebalance
+    commit_on_shutdown: bool = True  # Commit offsets on shutdown
 
 
 @dataclass
@@ -130,7 +160,6 @@ class MessageValidator:
     """Validates Kafka messages."""
 
     REQUIRED_PARSED_MESSAGE_FIELDS = ["aggregatetype", "aggregateid", "type", "payload"]
-    REQUIRED_REPLICATION_FIELDS = ["relations_to_add", "relations_to_remove"]
     VALID_AGGREGATE_TYPES = ["relations"]
 
     @staticmethod
@@ -143,30 +172,6 @@ class MessageValidator:
                     logger.error(f"Missing required field '{field}' in parsed message")
                     validation_errors_total.labels(error_type="missing_field").inc()
                     return False
-
-            # Validate aggregatetype
-            aggregatetype = message_value.get("aggregatetype", "").lower()
-            if aggregatetype not in MessageValidator.VALID_AGGREGATE_TYPES:
-                logger.error(
-                    f"Invalid aggregatetype '{aggregatetype}'. "
-                    f"Must be one of: {MessageValidator.VALID_AGGREGATE_TYPES}"
-                )
-                validation_errors_total.labels(error_type="invalid_aggregatetype").inc()
-                return False
-
-            # Validate aggregateid is not empty
-            aggregateid = message_value.get("aggregateid", "")
-            if not aggregateid or not str(aggregateid).strip():
-                logger.error("aggregateid cannot be empty")
-                validation_errors_total.labels(error_type="empty_aggregateid").inc()
-                return False
-
-            # Validate event_type is not empty
-            event_type = message_value.get("type", "")
-            if not event_type or not str(event_type).strip():
-                logger.error("event_type cannot be empty")
-                validation_errors_total.labels(error_type="empty_event_type").inc()
-                return False
 
             # Validate payload is a dict
             payload = message_value.get("payload")
@@ -186,23 +191,28 @@ class MessageValidator:
     def validate_replication_message(payload: Dict[str, Any]) -> bool:
         """Validate replication message payload."""
         try:
-            # Check required fields
-            for field in MessageValidator.REQUIRED_REPLICATION_FIELDS:
-                if field not in payload:
-                    logger.error(f"Missing required field '{field}' in replication message")
-                    validation_errors_total.labels(error_type="missing_replication_field").inc()
-                    return False
+            # Check that at least one of relations_to_add or relations_to_remove is present
+            has_relations_to_add = "relations_to_add" in payload
+            has_relations_to_remove = "relations_to_remove" in payload
 
-            # Validate relations_to_add is a list
-            relations_to_add = payload.get("relations_to_add")
-            if not isinstance(relations_to_add, list):
+            if not has_relations_to_add and not has_relations_to_remove:
+                logger.error(
+                    "Missing required field: at least one of 'relations_to_add' "
+                    "or 'relations_to_remove' must be present"
+                )
+                validation_errors_total.labels(error_type="missing_relations_fields").inc()
+                return False
+
+            # Validate relations_to_add is a list if present
+            relations_to_add = payload.get("relations_to_add", [])
+            if has_relations_to_add and not isinstance(relations_to_add, list):
                 logger.error("relations_to_add must be a list")
                 validation_errors_total.labels(error_type="invalid_relations_to_add_type").inc()
                 return False
 
-            # Validate relations_to_remove is a list
-            relations_to_remove = payload.get("relations_to_remove")
-            if not isinstance(relations_to_remove, list):
+            # Validate relations_to_remove is a list if present
+            relations_to_remove = payload.get("relations_to_remove", [])
+            if has_relations_to_remove and not isinstance(relations_to_remove, list):
                 logger.error("relations_to_remove must be a list")
                 validation_errors_total.labels(error_type="invalid_relations_to_remove_type").inc()
                 return False
@@ -213,23 +223,9 @@ class MessageValidator:
                 validation_errors_total.labels(error_type="empty_relations").inc()
                 return False
 
-            # Validate resource_context exists and contains org_id
-            resource_context = payload.get("resource_context")
-            if not resource_context:
-                logger.error("Missing required field 'resource_context' in replication message")
-                validation_errors_total.labels(error_type="missing_resource_context").inc()
-
-            if not isinstance(resource_context, dict):
-                logger.error("resource_context must be a dictionary")
-                validation_errors_total.labels(error_type="invalid_resource_context_type").inc()
-                return False
-
-            if "org_id" not in resource_context:
-                logger.error("Missing required field 'org_id' in resource_context")
-                validation_errors_total.labels(error_type="missing_org_id_in_context").inc()
-
             # Validate structure of relations
-            for relation in relations_to_add + relations_to_remove:
+            all_relations = list(relations_to_add) + list(relations_to_remove)
+            for relation in all_relations:
                 if not isinstance(relation, dict):
                     logger.error("Each relation must be a dictionary")
                     validation_errors_total.labels(error_type="invalid_relation_type").inc()
@@ -249,6 +245,356 @@ class MessageValidator:
             return False
 
 
+class ValidationError(Exception):
+    """Raised when message validation fails permanently (non-retryable)."""
+
+    pass
+
+
+class RetryHelper:
+    """Handles retry logic with exponential backoff for message processing.
+
+    This class encapsulates all retry policy and logic, making it easy to test
+    and maintain separately from the business logic.
+    """
+
+    def __init__(
+        self,
+        retry_config: RetryConfig,
+        shutdown_event: threading.Event,
+        error_handler=None,
+    ):
+        """Initialize the retry helper.
+
+        Args:
+            retry_config: Configuration for retry behavior
+            shutdown_event: Event to signal shutdown (interrupts retries)
+            error_handler: Optional callable(Exception) -> bool to short-circuit retries
+        """
+        self.retry_config = retry_config
+        self.shutdown_event = shutdown_event
+        self.error_handler = error_handler
+
+    def run(self, fn, *args, **kwargs):
+        """Execute a function with retry logic.
+
+        Args:
+            fn: The function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            The return value from the successful function execution
+
+        Raises:
+            The final exception if all retries are exhausted or shutdown occurs
+        """
+        attempt = 0
+        start_time = time.time()
+
+        while True:
+            try:
+                result = fn(*args, **kwargs)
+                if attempt > 0:
+                    total_duration = time.time() - start_time
+                    logger.info(
+                        f"Operation successful after {attempt + 1} attempts "
+                        f"(total retry time: {total_duration:.2f}s)"
+                    )
+                    message_retry_duration.labels(retry_reason="processing_error").observe(total_duration)
+                return result
+
+            except Exception as e:
+                # Check if error handler wants to short-circuit retry
+                if not self._should_retry(e):
+                    logger.warning(f"Error handler short-circuited retry: {e}. " f"Operation will be skipped.")
+                    raise
+
+                # Check if we've hit max retries (if configured)
+                if self._exceeded_max_retries(attempt):
+                    error_msg = f"Max operation retries ({self.retry_config.operation_max_retries}) " f"exceeded: {e}"
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg) from e
+
+                # Determine error type for logging
+                error_type = type(e).__name__
+                retry_reason = self._classify_error(e)
+
+                logger.warning(f"Error on attempt {attempt + 1}: {error_type}: {e}")
+
+                # Record retry attempt
+                retry_attempts_total.labels(
+                    retry_reason=retry_reason,
+                    attempt_number=min(attempt + 1, 10),  # Cap at 10 for cardinality
+                ).inc()
+
+                # Calculate delay and wait before retry
+                delay = self.retry_config.calculate_delay(attempt)
+                logger.info(f"Retrying in {delay:.2f}s (attempt {attempt + 1})")
+
+                # Sleep with ability to interrupt for shutdown
+                if self.shutdown_event.wait(delay):
+                    logger.info("Retry interrupted by shutdown signal")
+                    raise InterruptedError("Shutdown signal received during retry")
+
+                attempt += 1
+
+                # Log periodic status for long-running retries
+                if attempt % 10 == 0:
+                    elapsed = time.time() - start_time
+                    logger.warning(f"Operation still retrying after {attempt} attempts " f"(elapsed: {elapsed:.2f}s)")
+
+    def _should_retry(self, exception: Exception) -> bool:
+        """Determine if an exception should trigger a retry.
+
+        Args:
+            exception: The exception to evaluate
+
+        Returns:
+            bool: True if should retry, False if should skip retry
+        """
+        # Allow custom error handler to short-circuit retry logic
+        if self.error_handler and callable(self.error_handler):
+            if self.error_handler(exception):
+                return False
+
+        # Retry on ALL exceptions - we want to ensure at-least-once delivery
+        return True
+
+    def _exceeded_max_retries(self, attempt: int) -> bool:
+        """Check if max retries have been exceeded.
+
+        Args:
+            attempt: The current attempt number (0-indexed)
+
+        Returns:
+            bool: True if max retries exceeded
+        """
+        max_retries = self.retry_config.operation_max_retries
+        return 0 <= max_retries <= attempt
+
+    def _classify_error(self, exception: Exception) -> str:
+        """Classify error type for metrics.
+
+        Args:
+            exception: The exception to classify
+
+        Returns:
+            str: Error classification for metrics
+        """
+        if isinstance(exception, (json.JSONDecodeError, UnicodeDecodeError)):
+            return "json_error"
+        elif isinstance(exception, (ConnectionError, TimeoutError, OSError)):
+            return "network_error"
+        elif isinstance(exception, ValueError):
+            return "validation_error"
+        else:
+            return "error"
+
+
+class OffsetManager:
+    """Manages Kafka offset storage and batch commits.
+
+    This class encapsulates all offset management logic, making the main
+    consumer loop cleaner and easier to understand.
+    """
+
+    def __init__(self, consumer: KafkaConsumer, commit_config: CommitConfig):
+        """Initialize the offset manager.
+
+        Args:
+            consumer: The Kafka consumer instance
+            commit_config: Configuration for commit behavior
+        """
+        self.consumer = consumer
+        self.commit_config = commit_config
+        # Store tuples of (offset, leader_epoch) for each partition
+        self.stored_offsets: Dict[TopicPartition, tuple] = {}
+        self.offset_mutex = threading.Lock()
+
+    def store(
+        self,
+        topic_partition: TopicPartition,
+        offset: int,
+        leader_epoch: Optional[int] = None,
+    ):
+        """Store offset and leader_epoch for later batch commit (thread-safe).
+
+        Args:
+            topic_partition: The topic partition
+            offset: The message offset
+            leader_epoch: The leader epoch for the partition (optional)
+        """
+        with self.offset_mutex:
+            self.stored_offsets[topic_partition] = (offset, leader_epoch)
+            logger.debug(
+                f"Stored offset {offset} (leader_epoch={leader_epoch}) " f"for partition {topic_partition.partition}"
+            )
+
+    def should_commit(self, offset: int) -> bool:
+        """Check if offset should trigger a batch commit.
+
+        Args:
+            offset: The current message offset
+
+        Returns:
+            bool: True if offset should be committed now
+        """
+        if self.commit_config.commit_modulo <= 0:
+            return False  # Disabled
+
+        return (offset + 1) % self.commit_config.commit_modulo == 0
+
+    def commit(self) -> tuple[bool, int]:
+        """Commit all stored offsets to Kafka (thread-safe).
+
+        Returns:
+            tuple[bool, int]: (success, count) where success is True if commit succeeded,
+                              and count is the number of offsets committed (0 if none)
+        """
+        if not self.consumer:
+            logger.warning("Cannot commit offsets: consumer not initialized")
+            return False, 0
+
+        # Create a copy of offsets to avoid holding the lock during commit
+        with self.offset_mutex:
+            if not self.stored_offsets:
+                logger.debug("No stored offsets to commit")
+                return True, 0  # Success, but nothing to commit
+
+            offsets_to_commit = self.stored_offsets.copy()
+
+        # Initialize offset_dict before try block to avoid scoping issues
+        offset_dict = None
+
+        try:
+            # Commit the copied offsets
+            # Note: Kafka expects offset+1 for the next message to consume
+            # kafka-python requires OffsetAndMetadata objects with leader_epoch
+            offset_dict = {
+                tp: OffsetAndMetadata(offset + 1, None, leader_epoch)
+                for tp, (offset, leader_epoch) in offsets_to_commit.items()
+            }
+
+            # Verify all partitions are currently assigned before committing
+            assigned_partitions = self.consumer.assignment()
+            unassigned_partitions = set(offset_dict.keys()) - assigned_partitions
+            if unassigned_partitions:
+                logger.warning(
+                    f"Attempting to commit offsets for unassigned partitions: {unassigned_partitions}. "
+                    f"Currently assigned: {assigned_partitions}. Skipping unassigned partitions."
+                )
+                # Filter out unassigned partitions
+                offset_dict = {tp: om for tp, om in offset_dict.items() if tp in assigned_partitions}
+
+                if not offset_dict:
+                    logger.warning("No assigned partitions to commit after filtering")
+                    return False, 0
+
+            count = len(offset_dict)
+            logger.info(f"Committing {count} offset(s) to Kafka: {offset_dict}")
+            self.consumer.commit(offsets=offset_dict)
+            logger.info(f"Successfully committed {count} offset(s)")
+
+            # Clear stored offsets after successful commit
+            with self.offset_mutex:
+                self.stored_offsets.clear()
+
+            return True, count
+
+        except Exception as e:
+            # Build error message with safe access to offset_dict
+            error_details = f"Failed to commit offsets: {type(e).__name__}: {e}."
+            if offset_dict is not None:
+                error_details += f" Attempted to commit {len(offset_dict)} offset(s): {offset_dict}."
+            else:
+                error_details += f" Failed before creating offset_dict. Offsets to commit: {offsets_to_commit}."
+
+            error_details += (
+                f" Consumer state: group_id={self.consumer.config.get('group_id')}, "
+                f"bootstrap_servers={self.consumer.config.get('bootstrap_servers')}, "
+                f"assigned_partitions={self.consumer.assignment() if self.consumer else 'N/A'}"
+            )
+            logger.error(error_details)
+
+            # On commit failure, restore offsets back to storage for next attempt
+            with self.offset_mutex:
+                for tp, (offset, leader_epoch) in offsets_to_commit.items():
+                    # Only restore if not updated by another thread
+                    # Compare by offset only (first element of tuple)
+                    if tp not in self.stored_offsets or self.stored_offsets[tp][0] <= offset:
+                        self.stored_offsets[tp] = (offset, leader_epoch)
+
+            return False, 0
+
+    def clear(self):
+        """Clear all stored offsets (thread-safe)."""
+        with self.offset_mutex:
+            self.stored_offsets.clear()
+
+
+class RebalanceListener(ConsumerRebalanceListener):
+    """Listen for Kafka consumer rebalance events.
+
+    Inherits from ConsumerRebalanceListener to properly integrate with kafka-python.
+    """
+
+    def __init__(self, consumer_instance):
+        """Initialize the rebalance listener.
+
+        Args:
+            consumer_instance: The RBACKafkaConsumer instance
+        """
+        self.consumer_instance = consumer_instance
+
+    def on_partitions_revoked(self, revoked):
+        """Handle partition revocation during rebalance.
+
+        Args:
+            revoked: List of TopicPartition objects being revoked
+        """
+        self.consumer_instance._on_partitions_revoked(revoked)
+
+    def on_partitions_assigned(self, assigned):
+        """Handle partition assignment during rebalance.
+
+        Args:
+            assigned: List of TopicPartition objects being assigned
+        """
+        logger.info(f"Partitions assigned: {assigned}")
+
+        # Acquire lock token for assigned partitions
+        if len(assigned) > 0:
+            # Typically only one partition per consumer
+            partition = assigned[0]
+
+            # Get consumer group ID from the consumer instance
+            consumer_group_id = self.consumer_instance.consumer.config.get("group_id")
+
+            # Generate lock ID: {consumer_group_id}/{partition_number}
+            lock_id = f"{consumer_group_id}/{partition.partition}"
+
+            try:
+                # Acquire lock token from Relations API
+                lock_token = self.consumer_instance._acquire_lock_with_retry(lock_id)
+
+                # Store lock token in consumer instance (thread-safe)
+                with self.consumer_instance._lock_mutex:
+                    self.consumer_instance.lock_id = lock_id
+                    self.consumer_instance.lock_token = lock_token
+
+                logger.info(f"Acquired and stored lock token for partition {partition.partition}: {lock_token}")
+
+            except Exception as e:
+                logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
+                # Clear any partial state
+                with self.consumer_instance._lock_mutex:
+                    self.consumer_instance.lock_token = None
+                    self.consumer_instance.lock_id = None
+                # Re-raise to stop consumer - we cannot proceed without a valid lock token
+                raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
+
+
 class RBACKafkaConsumer:
     """RBAC Kafka consumer for processing Debezium and replication messages."""
 
@@ -257,22 +603,32 @@ class RBACKafkaConsumer:
         topic: Optional[str] = None,
         health_check_interval: int = 30,
         retry_config: Optional[RetryConfig] = None,
+        commit_config: Optional[CommitConfig] = None,
     ):
         """Initialize the consumer."""
         self.topic = topic or settings.RBAC_KAFKA_CONSUMER_TOPIC
         self.consumer: Optional[KafkaConsumer] = None
         self.validator = MessageValidator()
         self.retry_config = retry_config or RetryConfig()
+        self.commit_config = commit_config or CommitConfig()
         self.liveness_file = Path("/tmp/kubernetes-liveness")
         self.readiness_file = Path("/tmp/kubernetes-readiness")
         self.is_healthy = False
         self.is_consuming = False
+        self.is_paused_for_retry = False  # Track if consumer is paused due to max retries
         self.health_check_interval = health_check_interval
         self.health_check_thread: Optional[threading.Thread] = None
         self._stop_health_check = threading.Event()
         self.last_activity = time.time()
-        self.skipped_messages_count = 0
-        self.last_skipped_log_time = time.time()
+        self._shutdown_in_progress = False
+
+        # Offset manager (will be initialized when consumer is created)
+        self.offset_manager: Optional[OffsetManager] = None
+
+        # Fencing token state (thread-safe access required)
+        self.lock_id: Optional[str] = None
+        self.lock_token: Optional[str] = None
+        self._lock_mutex = threading.Lock()
 
     def _create_consumer(self) -> KafkaConsumer:
         """Create and configure Kafka consumer."""
@@ -319,8 +675,8 @@ class RBACKafkaConsumer:
                     logger.info(f"Filtered out producer-specific configs for consumer: {filtered_configs}")
                 consumer = KafkaConsumer(
                     self.topic,
-                    auto_offset_reset="latest",
-                    enable_auto_commit=False,  # Manual commit for exactly-once processing
+                    auto_offset_reset="earliest",  # Process all messages from beginning if no offset exists
+                    enable_auto_commit=False,  # Manual commit for at-least-once processing
                     group_id=settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
                     **consumer_auth,
                 )
@@ -329,8 +685,8 @@ class RBACKafkaConsumer:
                 consumer = KafkaConsumer(
                     self.topic,
                     bootstrap_servers=kafka_servers,
-                    auto_offset_reset="latest",
-                    enable_auto_commit=False,  # Manual commit for exactly-once processing
+                    auto_offset_reset="earliest",  # Process all messages from beginning if no offset exists
+                    enable_auto_commit=False,  # Manual commit for at-least-once processing
                     group_id=settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
                 )
                 logger.info(f"Kafka consumer created with servers {kafka_servers} for topic: {self.topic}")
@@ -340,6 +696,83 @@ class RBACKafkaConsumer:
         except Exception as e:
             logger.error(f"Failed to create Kafka consumer: {e}")
             raise
+
+    def _acquire_lock(self, lock_id: str) -> str:
+        """Acquire a lock token from the Relations API.
+
+        Args:
+            lock_id: Unique identifier for the lock (format: "consumer-group/partition")
+
+        Returns:
+            str: The lock token
+
+        Raises:
+            grpc.RpcError: If the lock acquisition fails
+        """
+        return relations_api_replication.acquire_lock(lock_id)
+
+    def _acquire_lock_with_retry(self, lock_id: str, max_retries: int = 3) -> str:
+        """Acquire lock with retry logic.
+
+        Args:
+            lock_id: Unique identifier for the lock
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            str: The acquired lock token
+
+        Raises:
+            RuntimeError: If max retries exceeded
+            grpc.RpcError: If lock acquisition fails permanently
+        """
+        for attempt in range(max_retries):
+            try:
+                return self._acquire_lock(lock_id)
+            except grpc.RpcError as e:
+                logger.warning(f"Lock acquisition attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt == max_retries - 1:
+                    logger.error(f"Max retries ({max_retries}) exceeded for lock acquisition")
+                    raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts") from e
+
+                # Exponential backoff
+                delay = 2**attempt
+                logger.info(f"Retrying lock acquisition in {delay}s...")
+                time.sleep(delay)
+
+        raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts")
+
+    def _on_partitions_revoked(self, revoked_partitions):
+        """Handle partition rebalance - commit offsets before partitions are revoked.
+
+        This is called by Kafka when partitions are being reassigned to other consumers.
+        We commit our current offsets to ensure we don't lose progress.
+        """
+        if not self.commit_config.commit_on_rebalance:
+            logger.debug("Rebalance offset commit disabled by config")
+            return
+
+        if self._shutdown_in_progress:
+            logger.debug("Skipping rebalance commit during shutdown")
+            return
+
+        logger.info(f"Partitions being revoked: {revoked_partitions}")
+
+        # Commit any stored offsets before losing the partitions
+        if self.offset_manager:
+            success, count = self.offset_manager.commit()
+            if success and count > 0:
+                logger.info(f"Successfully committed {count} offset(s) during rebalance")
+            elif success and count == 0:
+                logger.debug("No stored offsets to commit during rebalance")
+            else:
+                logger.warning("Failed to commit offsets during rebalance")
+
+        # Clear lock token since we no longer own the partition
+        with self._lock_mutex:
+            if self.lock_token:
+                logger.info(f"Clearing lock token for {self.lock_id} due to partition revocation")
+                self.lock_token = None
+                self.lock_id = None
 
     def _update_health_status(self, healthy: bool):
         """Update health status files."""
@@ -422,27 +855,30 @@ class RBACKafkaConsumer:
                 if self.readiness_file.exists():
                     self.readiness_file.unlink()
 
-    def _should_retry_exception(self, exception: Exception) -> bool:
-        """Determine if an exception should trigger a retry."""
-        # JSON parsing errors - don't retry (permanent)
-        if isinstance(exception, (json.JSONDecodeError, UnicodeDecodeError)):
-            return False
+    def _process_single(self, message_value: Dict[str, Any], message_partition: int, message_offset: int) -> bool:
+        """Process a single message (parse and handle).
 
-        # Validation errors - don't retry (permanent)
-        if isinstance(exception, ValueError) and "validation" in str(exception).lower():
-            return False
+        This is the core message processing logic without retry concerns.
 
-        # Future: Add network/gRPC exception types here when gRPC calls are added
-        # if isinstance(exception, grpc.RpcError):
-        #     return True
-        # if isinstance(exception, requests.exceptions.RequestException):
-        #     return True
+        Args:
+            message_value: The Kafka message value to process
+            message_partition: The partition number (for logging)
+            message_offset: The message offset (for logging)
 
-        # For now, retry connection, timeout errors, and generic ValueErrors (but not validation-specific ones)
-        # This will be expanded when network calls are added to _process_relations_message
-        return isinstance(exception, (ConnectionError, TimeoutError, OSError, ValueError))
+        Returns:
+            bool: True if message processed successfully
 
-    def _parse_debezium_message(self, message_value: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        Raises:
+            ValidationError: If message validation fails
+            Other exceptions: If processing fails
+        """
+        # Parse Debezium message (may raise ValidationError or JSONDecodeError)
+        parsed_message = self._parse_debezium_message(message_value)
+
+        # Process the message (may raise ValidationError or other exceptions)
+        return self._process_debezium_message(parsed_message)
+
+    def _parse_debezium_message(self, message_value: Dict[str, Any]) -> Dict[str, Any]:
         """Parse standard Debezium message format with schema/payload wrapper.
 
         Standard Debezium messages come in this format:
@@ -452,193 +888,210 @@ class RBACKafkaConsumer:
         }
 
         This method extracts and parses the payload to get the actual business data.
+
+        Raises:
+            ValidationError: If message format is invalid
         """
         try:
             # Only accept standard Debezium message format with schema and payload
             if "schema" not in message_value or "payload" not in message_value:
-                logger.error(
+                error_msg = (
                     f"Message is not in standard Debezium format. "
                     f"Expected 'schema' and 'payload' fields. Got: {list(message_value.keys())}"
                 )
-                return None
+                logger.error(error_msg)
+                raise ValidationError(error_msg)
 
             payload_str = message_value.get("payload")
 
+            # Parse payload to dict if it's a string
             if isinstance(payload_str, str):
-                # Parse the JSON string in the payload
                 try:
                     payload_data = json.loads(payload_str)
                     logger.debug(f"Parsed Debezium payload: {payload_data}")
-
-                    # For relation messages, wrap the payload in the expected structure
-                    if "relations_to_add" in payload_data or "relations_to_remove" in payload_data:
-                        return {
-                            "aggregatetype": "relations",
-                            "aggregateid": "debezium-message",  # Default ID for Debezium messages
-                            "type": "relation_change",  # Default type for relation changes
-                            "payload": payload_data,
-                        }
-                    else:
-                        logger.error(
-                            f"Unknown payload structure in Debezium message. "
-                            f"Expected 'relations_to_add' or 'relations_to_remove'. "
-                            f"Got: {list(payload_data.keys())}"
-                        )
-                        return None
-
                 except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse Debezium payload JSON: {e}, payload: {payload_str}")
-                    return None
-
+                    error_msg = f"Failed to parse Debezium payload JSON: {e}, payload: {payload_str}"
+                    logger.error(error_msg)
+                    # JSONDecodeError will be caught by default error handler
+                    raise
             elif isinstance(payload_str, dict):
                 # Payload is already parsed as dict
-                logger.debug(f"Debezium payload already parsed: {payload_str}")
-
-                # For relation messages, wrap the payload in the expected structure
-                if "relations_to_add" in payload_str or "relations_to_remove" in payload_str:
-                    return {
-                        "aggregatetype": "relations",
-                        "aggregateid": "debezium-message",  # Default ID for Debezium messages
-                        "type": "relation_change",  # Default type for relation changes
-                        "payload": payload_str,
-                    }
-                else:
-                    logger.error(
-                        f"Unknown payload structure in Debezium message. "
-                        f"Expected 'relations_to_add' or 'relations_to_remove'. "
-                        f"Got: {list(payload_str.keys())}"
-                    )
-                    return None
+                payload_data = payload_str
+                logger.debug(f"Debezium payload already parsed: {payload_data}")
             else:
-                logger.error(f"Debezium payload must be a string or dict, got: {type(payload_str)}")
-                return None
+                error_msg = f"Debezium payload must be a string or dict, got: {type(payload_str)}"
+                logger.error(error_msg)
+                raise ValidationError(error_msg)
 
+            # Validate payload structure - common logic for both string and dict payloads
+            if "relations_to_add" in payload_data or "relations_to_remove" in payload_data:
+                # Extract aggregatetype and aggregateid from the event if available
+                return {
+                    "aggregatetype": payload_data.get("aggregatetype", ""),
+                    "aggregateid": payload_data.get("aggregateid", ""),
+                    "type": payload_data.get("type", ""),
+                    "payload": payload_data,
+                }
+            else:
+                error_msg = (
+                    f"Unknown payload structure in Debezium message. "
+                    f"Expected 'relations_to_add' or 'relations_to_remove'. "
+                    f"Got: {list(payload_data.keys())}"
+                )
+                logger.error(error_msg)
+                raise ValidationError(error_msg)
+
+        except ValidationError:
+            # Re-raise ValidationError - will NOT be retried (non-retryable)
+            raise
+        except json.JSONDecodeError:
+            # Re-raise JSONDecodeError to be handled by error handler
+            raise
         except Exception as e:
             logger.error(f"Error parsing Debezium message: {e}")
-            return None
+            # Re-raise other exceptions to be handled by retry logic
+            raise
 
     def _process_message_with_retry(
-        self, message_value: Dict[str, Any], message_offset: int, message_partition: int
+        self,
+        message_value: Dict[str, Any],
+        message_offset: int,
+        message_partition: int,
+        topic_partition: TopicPartition,
+        leader_epoch: Optional[int] = None,
+        error_handler=None,
     ) -> bool:
-        """Process a message with selective retry logic - only retry network/processing errors."""
-        attempt = 0
-        start_time = time.time()
+        """Process a message with comprehensive retry logic.
 
-        while True:
-            try:
-                # Check if this is a standard Debezium message format
-                parsed_message = self._parse_debezium_message(message_value)
-                if parsed_message is None:
-                    logger.error(f"Failed to parse Debezium message format: {message_value}")
-                    return False
+        Retries transient errors (network, DB, etc.) but NOT ValidationError.
+        ValidationError indicates permanently malformed messages that won't become valid.
 
-                # Attempt to process the message
-                success = self._process_debezium_message(parsed_message)
+        Args:
+            message_value: The Kafka message value to process
+            message_offset: The message offset
+            message_partition: The partition number
+            topic_partition: TopicPartition object for offset tracking
+            leader_epoch: The leader epoch for the partition (optional)
+            error_handler: Optional callable(Exception) -> bool to short-circuit retries
 
-                if success:
-                    if attempt > 0:
-                        total_duration = time.time() - start_time
-                        logger.info(
-                            f"Message successfully processed after {attempt + 1} attempts "
-                            f"(partition: {message_partition}, offset: {message_offset}, "
-                            f"total retry time: {total_duration:.2f}s)"
-                        )
-                        message_retry_duration.labels(retry_reason="processing_error").observe(total_duration)
+        Returns:
+            bool: True if message processed successfully, False only on shutdown (InterruptedError)
 
-                    return True
+        Raises:
+            Exception: Re-raises any exception that should stop the consumer
+        """  # noqa: D202
 
-                # If processing failed, this could be validation or business logic failure
-                # Don't retry - validation failures and business logic errors are permanent
+        # Define error handler to skip retries for non-retryable errors
+        def should_skip_retry(exception: Exception) -> bool:
+            """Return True if retry should be skipped (non-retryable error)."""
+            # Import here to avoid circular dependency
+            from google.protobuf.json_format import ParseError
+
+            # ValidationError and ParseError mean bad message format - retrying won't help
+            if isinstance(exception, (ValidationError, ParseError)):
                 logger.error(
-                    f"Message processing failed (partition: {message_partition}, "
-                    f"offset: {message_offset}). Message will be skipped.\n"
-                    f"Message content: {message_value}"
+                    f"{type(exception).__name__} is non-retryable for message at partition {message_partition}, "
+                    f"offset {message_offset}. Consumer will stop."
                 )
-                messages_processed_total.labels(message_type="unknown", status="processing_failed").inc()
-                return False
+                return True
+            # Use custom error handler if provided
+            if error_handler and callable(error_handler):
+                return error_handler(exception)
+            return False
 
-            except json.JSONDecodeError as e:
-                # JSON decode errors are permanent - should not retry
-                logger.error(
-                    f"Permanent JSON decode error for message (partition: {message_partition}, "
-                    f"offset: {message_offset}): {e}. Message will be skipped.\n"
-                    f"Message content: {message_value}"
-                )
-                messages_processed_total.labels(message_type="unknown", status="json_error").inc()
-                return False
+        # Create a retry helper with custom error handling
+        retry_helper = RetryHelper(
+            retry_config=self.retry_config,
+            shutdown_event=self._stop_health_check,
+            error_handler=should_skip_retry,
+        )
 
-            except Exception as e:
-                # Only retry specific network/processing exceptions
-                if self._should_retry_exception(e):
-                    retry_reason = "network_error"
-                    logger.warning(
-                        f"Retryable network error for message (partition: {message_partition}, "
-                        f"offset: {message_offset}) on attempt {attempt + 1}: {e}\n"
-                        f"Message content: {message_value}"
-                    )
-                else:
-                    # Permanent errors - don't retry
-                    logger.error(
-                        f"Permanent error for message (partition: {message_partition}, "
-                        f"offset: {message_offset}): {e}. Message will be skipped.\n"
-                        f"Message content: {message_value}"
-                    )
-                    messages_processed_total.labels(message_type="unknown", status="permanent_error").inc()
-                    return False
+        # Process message with retry logic
+        def process_wrapper():
+            """Wrap message processing for retry logic."""
+            # Process the message
+            success = self._process_single(message_value, message_partition, message_offset)
 
-            # Calculate delay and wait before retry
-            delay = self.retry_config.calculate_delay(attempt)
-            retry_attempts_total.labels(
-                retry_reason=retry_reason,
-                attempt_number=min(attempt + 1, 10),  # Cap at 10 for cardinality
-            ).inc()
+            # If processing returned False, treat as an error and retry
+            if not success:
+                raise RuntimeError("Message processing failed with False return value")
 
-            logger.info(
-                f"Retrying message processing in {delay:.2f}s "
-                f"(attempt {attempt + 1}, partition: {message_partition}, offset: {message_offset})"
+            return True
+
+        try:
+            # Run with retry logic
+            # IMPORTANT: We do NOT commit offsets during retries
+            # Offsets are only committed after successful processing
+            retry_helper.run(process_wrapper)
+            logger.info(f"Message processed successfully (partition: {message_partition}, offset: {message_offset})")
+            return True
+
+        except InterruptedError:
+            # Shutdown signal received - this is the ONLY case where we return False
+            logger.info("Message processing interrupted by shutdown signal")
+            return False
+
+        except RuntimeError as e:
+            # Max retries exceeded - pause consumer and wait for manual restart
+            error_msg = (
+                f"Max operation retries exceeded for message "
+                f"(partition: {message_partition}, offset: {message_offset}): {e}. "
+                f"Consumer will PAUSE and wait for manual restart.\n"
+                f"Offset NOT committed - message will be retried on restart.\n"
+                f"To resolve: Fix the issue and restart the pod manually.\n"
+                f"Message content: {message_value}"
+            )
+            logger.error(error_msg)
+            messages_processed_total.labels(message_type="unknown", status="max_retries_exceeded").inc()
+
+            # Mark consumer as paused to prevent offset commit on shutdown
+            self.is_paused_for_retry = True
+
+            # Pause indefinitely - keep pod alive, wait for manual restart
+            logger.critical(
+                "CONSUMER PAUSED: Max retries exceeded. Manual intervention required. "
+                "Pod will remain running. Restart the pod to retry the message."
             )
 
-            # Sleep with ability to interrupt for shutdown
-            if self._stop_health_check.wait(delay):
-                logger.info("Retry interrupted by shutdown signal")
-                return False
-
-            attempt += 1
-
-            # Log periodic status for long-running retries
-            if attempt % 10 == 0:
-                elapsed = time.time() - start_time
+            # Enter infinite sleep to keep pod alive but not processing
+            while True:
+                time.sleep(60)
                 logger.warning(
-                    f"Message still retrying after {attempt} attempts "
-                    f"(partition: {message_partition}, offset: {message_offset}, "
-                    f"elapsed: {elapsed:.2f}s)"
+                    f"Consumer still paused waiting for restart "
+                    f"(partition: {message_partition}, offset: {message_offset})"
                 )
+
+        except Exception as e:
+            # Error handler short-circuited retry or other unexpected error
+            # This should NOT be silently ignored - raise to stop the consumer
+            error_msg = (
+                f"Error handler short-circuited retry for message "
+                f"(partition: {message_partition}, offset: {message_offset}): {e}. "
+                f"Consumer will stop to prevent silent message loss."
+            )
+            logger.error(error_msg)
+            messages_processed_total.labels(message_type="unknown", status="error_handler_skip").inc()
+            raise
 
     def _process_debezium_message(self, message_value: Dict[str, Any]) -> bool:
         """Process a Debezium message."""
         with message_processing_duration.labels(message_type="debezium").time():
             try:
-                # Validate parsed message structure
-                if not self.validator.validate_parsed_message(message_value):
-                    logger.error(f"Parsed message validation failed. Message content: {message_value}")
-                    messages_processed_total.labels(message_type="debezium", status="validation_failed").inc()
-                    return False
-
                 # Create structured message
+                # Note: message structure is already validated by _parse_debezium_message
                 debezium_msg = DebeziumMessage.from_kafka_message(message_value)
 
-                # Process based on aggregate type
-                if debezium_msg.aggregatetype.lower() == "relations":
-                    return self._process_relations_message(debezium_msg)
-                else:
-                    logger.warning(f"Unknown aggregate type: {debezium_msg.aggregatetype}")
-                    messages_processed_total.labels(message_type="debezium", status="unknown_type").inc()
-                    return False
+                # Process all messages with relations - no strict aggregate type checking
+                return self._process_relations_message(debezium_msg)
 
+            except ValidationError:
+                # Re-raise ValidationError - will NOT be retried (non-retryable)
+                raise
             except Exception as e:
                 logger.error(f"Error processing Debezium message: {e}")
                 messages_processed_total.labels(message_type="debezium", status="error").inc()
-                return False
+                # Re-raise to allow retry logic to handle
+                raise
 
     def _process_relations_message(self, debezium_msg: DebeziumMessage) -> bool:
         """Process a relations Debezium message."""
@@ -647,46 +1100,74 @@ class RBACKafkaConsumer:
             if not self.validator.validate_replication_message(debezium_msg.payload):
                 logger.error(f"Replication message validation failed. Payload content: {debezium_msg.payload}")
                 messages_processed_total.labels(message_type="relations", status="validation_failed").inc()
-                return False
+                # Raise ValidationError instead of returning False
+                # This signals a permanent validation failure that shouldn't be retried
+                raise ValidationError(
+                    f"Replication message validation failed for aggregateid: {debezium_msg.aggregateid}"
+                )
 
             resource_context = debezium_msg.payload.get("resource_context")
+            org_id = None
+            event_type = None
 
-            # Validate that resource_context is present
-            if resource_context is None:
-                logger.error(f"Missing resource_context." f"aggregateid: {debezium_msg.aggregateid}")
-                messages_processed_total.labels(message_type="relations", status="missing_resource_context").inc()
-                return False
-
-            org_id = resource_context.get("org_id")
-
-            # Validate that org_id is present
-            if org_id is None:
-                logger.warning(
-                    f"Missing org_id in resource_context. "
-                    f"resource_context: {resource_context}, "
+            # Extract org_id and event_type from resource_context if present
+            if resource_context and isinstance(resource_context, dict):
+                org_id = resource_context.get("org_id")
+                event_type = resource_context.get("event_type")
+            else:
+                logger.debug(
+                    f"No resource_context found, skipping org_id and event_type extraction. "
                     f"aggregateid: {debezium_msg.aggregateid}"
                 )
-                messages_processed_total.labels(message_type="relations", status="missing_org_id").inc()
 
             # Create structured replication message
             replication_msg = ReplicationMessage.from_payload(debezium_msg.payload)
 
             logger.info(
                 f"Processing relations message - org_id: {org_id}, "
-                f"aggregateid: {debezium_msg.aggregateid}, "
-                f"event_type: {debezium_msg.event_type}, "
+                f"event_type: {event_type}, "
                 f"relations_to_add: {len(replication_msg.relations_to_add)}, "
                 f"relations_to_remove: {len(replication_msg.relations_to_remove)}"
             )
 
-            # Do tuple deletes for relationships
-            replication_delete_response = relations_api_replication._delete_relationships(
-                relationships=replication_msg.relations_to_remove
+            # Convert JSON dictionaries to protobuf objects
+            relations_to_add_pb = []
+            for relation_dict in replication_msg.relations_to_add:
+                relation_pb = json_format.ParseDict(relation_dict, common_pb2.Relationship())
+                relations_to_add_pb.append(relation_pb)
+
+            relations_to_remove_pb = []
+            for relation_dict in replication_msg.relations_to_remove:
+                relation_pb = json_format.ParseDict(relation_dict, common_pb2.Relationship())
+                relations_to_remove_pb.append(relation_pb)
+
+            # Build fencing check if lock token is available (thread-safe read)
+            fencing_check = None
+            with self._lock_mutex:
+                if self.lock_id and self.lock_token:
+                    from kessel.relations.v1beta1 import relation_tuples_pb2
+
+                    fencing_check = relation_tuples_pb2.FencingCheck(
+                        lock_id=self.lock_id,
+                        lock_token=self.lock_token,
+                    )
+                    logger.debug(
+                        f"Using fencing check - lock_id: {self.lock_id}, " f"lock_token: {self.lock_token[:8]}..."
+                    )
+                else:
+                    logger.warning(
+                        "No lock token available - processing without fencing check. "
+                        "This may allow stale updates during rebalancing."
+                    )
+
+            # Do tuple deletes for relationships with fencing check
+            replication_delete_response = relations_api_replication.delete_relationships(
+                relationships=relations_to_remove_pb, fencing_check=fencing_check
             )
 
-            # Do tuple writes for relationships
-            replication_add_response = relations_api_replication._write_relationships(
-                relationships=replication_msg.relations_to_add
+            # Do tuple writes for relationships with fencing check
+            replication_add_response = relations_api_replication.write_relationships(
+                relationships=relations_to_add_pb, fencing_check=fencing_check
             )
 
             # Extract consistency token from responses
@@ -699,8 +1180,6 @@ class RBACKafkaConsumer:
                     tenant = Tenant.objects.get(org_id=org_id)
                     tenant.relations_consistency_token = token
                     tenant.save()
-
-                    logger.info(f"Updated consistency token for org_id {org_id}: {token}")
                 except Tenant.DoesNotExist:
                     logger.warning(
                         f"Tenant not found for org_id: {org_id}. " f"Unable to save consistency token: {token}"
@@ -714,109 +1193,383 @@ class RBACKafkaConsumer:
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True
 
+        except ValidationError:
+            # Re-raise ValidationError - will NOT be retried (non-retryable)
+            raise
+        except grpc.RpcError as e:
+            # Handle gRPC errors specially to check for invalid fencing tokens
+            if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                # Invalid fencing token - partition was reassigned to another consumer
+                error_msg = (
+                    f"Fencing token validation failed - partition reassigned. "
+                    f"Lock ID: {self.lock_id}, Token: {self.lock_token}. "
+                    f"Consumer will stop processing to prevent stale updates."
+                )
+                logger.error(error_msg)
+                messages_processed_total.labels(message_type="relations", status="fencing_failed").inc()
+                # Raise a RuntimeError to stop the consumer - this is a fatal error
+                # The partition has been reassigned, so we should not continue processing
+                raise RuntimeError(error_msg) from e
+            else:
+                # Other gRPC errors - log and re-raise to trigger retry
+                logger.error(f"gRPC error processing relations message: {e.code()}: {e.details()}")
+                messages_processed_total.labels(message_type="relations", status="grpc_error").inc()
+                raise
         except Exception as e:
             logger.error(f"Error processing relations message: {e}")
             messages_processed_total.labels(message_type="relations", status="error").inc()
-            return False
+            # Re-raise to trigger retry logic
+            raise
+
+    def _wait_for_partition_assignment(self, max_attempts=30, timeout_ms=2000):
+        """Wait for initial partition assignment and acquire lock token.
+
+        The subscribe() call is asynchronous, so we need to poll to trigger
+        the initial partition assignment. This may take several seconds in
+        production environments with multiple consumers and rebalancing.
+
+        Note: It's normal for this to take time even when there are no messages
+        in the topic. The consumer group coordinator needs to assign partitions,
+        which happens asynchronously.
+
+        Args:
+            max_attempts: Maximum number of poll attempts (default: 30)
+            timeout_ms: Timeout for each poll attempt (default: 2000ms)
+
+        Raises:
+            RuntimeError: If no partitions assigned after max attempts or lock acquisition fails
+            KafkaError: If Kafka becomes unavailable during polling
+        """
+        # First verify the topic exists and has partitions
+        try:
+            topic_partitions = self.consumer.partitions_for_topic(self.topic)
+            if topic_partitions is None or len(topic_partitions) == 0:
+                raise RuntimeError(
+                    f"Topic '{self.topic}' does not exist or has no partitions. "
+                    f"Check your Kafka configuration and topic setup."
+                )
+            logger.info(f"Topic '{self.topic}' exists with {len(topic_partitions)} partition(s): {topic_partitions}")
+        except KafkaError as e:
+            logger.error(f"Kafka error while checking topic partitions: {e}")
+            raise RuntimeError(
+                f"Kafka is unavailable or unreachable while checking topic '{self.topic}'. "
+                f"Check Kafka broker connectivity and cluster health."
+            ) from e
+        except Exception as e:
+            logger.error(f"Failed to check topic partitions: {e}")
+            raise RuntimeError(
+                f"Cannot verify topic '{self.topic}' exists. Check Kafka connectivity and topic configuration."
+            ) from e
+
+        logger.info("Waiting for consumer group coordinator to assign partitions...")
+        logger.info(
+            f"Will poll up to {max_attempts} times with {timeout_ms}ms timeout "
+            f"(total wait: up to {max_attempts * timeout_ms / 1000}s)"
+        )
+        logger.info("Note: This may take time even with no messages - partition assignment is asynchronous")
+
+        for attempt in range(max_attempts):
+            # Check if consumer is still valid before polling
+            if self.consumer is None:
+                raise RuntimeError("Consumer became None during partition assignment loop")
+
+            try:
+                # Poll with timeout to trigger partition assignment
+                # We discard any messages returned - they'll be re-consumed in the main loop
+                messages = self.consumer.poll(timeout_ms=timeout_ms, max_records=1)
+                assigned = self.consumer.assignment()
+
+                if assigned:
+                    logger.info(f"Initial partitions assigned after {attempt + 1} attempts: {assigned}")
+
+                    # IMPORTANT: If we consumed any messages during polling, we must seek back
+                    # to the committed offset to ensure we re-process them in the main loop
+                    if messages:
+                        msg_count = sum(len(msgs) for msgs in messages.values())
+                        logger.warning(
+                            f"Consumed {msg_count} message(s) during initialization poll. "
+                            f"Seeking back to committed offsets to re-process them."
+                        )
+
+                        # Seek back to committed offset for each partition
+                        for tp in assigned:
+                            committed = self.consumer.committed(tp)
+                            if committed is not None:
+                                logger.info(f"Seeking {tp} to committed offset {committed}")
+                                self.consumer.seek(tp, committed)
+                            else:
+                                # No committed offset - seek to beginning (auto_offset_reset=earliest)
+                                logger.info(f"No committed offset for {tp}, seeking to beginning")
+                                self.consumer.seek_to_beginning(tp)
+
+                    self._acquire_initial_lock_token(assigned)
+                    return  # Success
+
+                # Log every 5 attempts to avoid spam
+                if (attempt + 1) % 5 == 0:
+                    logger.info(
+                        f"Still waiting for partition assignment... "
+                        f"(attempt {attempt + 1}/{max_attempts}, "
+                        f"elapsed: ~{(attempt + 1) * timeout_ms / 1000:.1f}s)"
+                    )
+                else:
+                    logger.debug(f"No partitions assigned yet, attempt {attempt + 1}/{max_attempts}")
+
+            except KafkaError as e:
+                logger.error(
+                    f"Kafka error during partition assignment polling (attempt {attempt + 1}/{max_attempts}): {e}. "
+                    f"Kafka broker may be unavailable or unreachable."
+                )
+                # Re-raise KafkaError to stop consumer - don't retry indefinitely when Kafka is down
+                raise RuntimeError(
+                    f"Kafka became unavailable during partition assignment after {attempt + 1} attempts. "
+                    f"Error: {e}. Check Kafka broker connectivity and cluster health."
+                ) from e
+
+        # Failed to get partition assignment after max attempts
+        total_wait = max_attempts * timeout_ms / 1000
+        raise RuntimeError(
+            f"No partitions assigned after {max_attempts} poll attempts ({total_wait}s). "
+            f"Topic exists but consumer group coordinator did not assign partitions. "
+            f"This may indicate:\n"
+            f"  - Consumer group rebalancing issues\n"
+            f"  - Kafka broker connectivity problems\n"
+            f"  - Consumer group coordinator unavailable\n"
+            f"  - Max consumers already assigned to all partitions\n"
+            f"Check Kafka broker logs and consumer group status."
+        )
+
+    def _acquire_initial_lock_token(self, assigned_partitions):
+        """Acquire lock token for initially assigned partition(s).
+
+        Args:
+            assigned_partitions: Set of TopicPartition objects
+
+        Raises:
+            RuntimeError: If lock acquisition fails
+        """
+        if len(assigned_partitions) == 0:
+            return
+
+        # Typically only one partition per consumer
+        partition = list(assigned_partitions)[0]
+        consumer_group_id = self.consumer.config.get("group_id")
+        lock_id = f"{consumer_group_id}/{partition.partition}"
+
+        try:
+            lock_token = self._acquire_lock_with_retry(lock_id)
+            with self._lock_mutex:
+                self.lock_id = lock_id
+                self.lock_token = lock_token
+            logger.info(f"Acquired lock token for initial partition {partition.partition}: {lock_token}")
+        except Exception as e:
+            logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
+            with self._lock_mutex:
+                self.lock_token = None
+                self.lock_id = None
+            raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
+
+    def _initialize_consumer_setup(self):
+        """Initialize consumer, subscribe to topic, and prepare for consumption.
+
+        Returns:
+            RebalanceListener: The rebalance listener instance
+        """
+        self.consumer = self._create_consumer()
+        self.offset_manager = OffsetManager(self.consumer, self.commit_config)
+
+        # Subscribe to topic with rebalance listener
+        rebalance_listener = RebalanceListener(self)
+        self.consumer.subscribe([self.topic], listener=rebalance_listener)
+
+        self.is_consuming = True
+        self._start_health_check_thread()
+        self._update_health_status(True)
+
+        logger.info(f'RBAC Kafka consumer started, listening on topic "{self.topic}"')
+        logger.info(f"Batch commit enabled: every {self.commit_config.commit_modulo} messages")
+        logger.info("Waiting for messages from Kafka...")
+
+        return rebalance_listener
+
+    def _initialize_partition_offset_tracking(self, topic_partition, last_committed_offsets):
+        """Initialize offset tracking for a new partition.
+
+        Args:
+            topic_partition: TopicPartition object
+            last_committed_offsets: Dict tracking last committed offsets per partition
+        """
+        try:
+            committed = self.consumer.committed(topic_partition)
+            last_committed_offsets[topic_partition] = committed if committed is not None else -1
+            logger.info(
+                f"Partition {topic_partition.partition}: last committed offset: "
+                f"{last_committed_offsets[topic_partition]}"
+            )
+        except Exception as e:
+            logger.warning(f"Could not get committed offset for partition {topic_partition.partition}: {e}")
+            last_committed_offsets[topic_partition] = -1
+
+    def _handle_tombstone_message(self, message, topic_partition):
+        """Handle tombstone (None value) messages.
+
+        Args:
+            message: Kafka message with None value
+            topic_partition: TopicPartition object
+
+        Returns:
+            bool: True (tombstone handled successfully)
+        """
+        logger.warning(
+            f"Received message with None value, skipping "
+            f"(partition: {message.partition}, offset: {message.offset})"
+        )
+        # Treat None messages as successfully processed
+        self.offset_manager.store(topic_partition, message.offset, message.leader_epoch)
+        if self.offset_manager.should_commit(message.offset):
+            self.offset_manager.commit()  # Don't need to check return value here
+        return True
+
+    def _parse_message_value(self, message):
+        """Parse JSON from raw Kafka message bytes.
+
+        Args:
+            message: Kafka message
+
+        Returns:
+            dict: Parsed JSON message
+
+        Raises:
+            json.JSONDecodeError, UnicodeDecodeError: If parsing fails
+        """
+        try:
+            return json.loads(message.value.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            # Fail fast on JSON parse errors
+            raw_content = message.value[:100] if len(message.value) > 100 else message.value
+            error_msg = (
+                f"Failed to parse JSON from message at partition {message.partition}, "
+                f"offset {message.offset}: {e}. "
+                f"Sample content: {raw_content}. "
+                f"This indicates a malformed message in the Kafka topic. "
+                f"Fix the producer or manually skip the offset, then restart the consumer."
+            )
+            logger.error(error_msg)
+            messages_processed_total.labels(message_type="unknown", status="json_error").inc()
+            raise
+
+    def _process_and_commit_message(self, message, message_value, topic_partition, last_committed_offsets):
+        """Process a message and handle offset commits.
+
+        Args:
+            message: Kafka message
+            message_value: Parsed message value (dict)
+            topic_partition: TopicPartition object
+            last_committed_offsets: Dict tracking last committed offsets
+
+        Returns:
+            bool: True if should continue processing, False if should break loop
+        """
+        # Log processing
+        last_committed = last_committed_offsets.get(topic_partition, -1)
+        logger.info(
+            f"Processing message (partition: {message.partition}, offset: {message.offset}, "
+            f"last_committed: {last_committed})"
+        )
+        logger.debug(f"Message content (partition: {message.partition}, offset: {message.offset}): {message_value}")
+
+        # Process with retry logic
+        success = self._process_message_with_retry(
+            message_value,
+            message.offset,
+            message.partition,
+            topic_partition,
+            message.leader_epoch,
+        )
+
+        if success:
+            # Store offset after successful processing
+            self.offset_manager.store(topic_partition, message.offset, message.leader_epoch)
+
+            # Check if we should commit based on batch size
+            if self.offset_manager.should_commit(message.offset):
+                logger.info(
+                    f"Batch commit triggered at offset {message.offset} "
+                    f"(CommitModulo: {self.commit_config.commit_modulo})"
+                )
+                success, count = self.offset_manager.commit()
+                if success:
+                    last_committed_offsets[topic_partition] = message.offset + 1
+            else:
+                logger.debug(f"Offset {message.offset} stored, waiting for batch commit")
+
+            # Update activity timestamp
+            self.last_activity = time.time()
+            return True  # Continue processing
+        else:
+            # Shutdown interrupted - InterruptedError
+            logger.info(
+                f"Message processing interrupted by shutdown "
+                f"(partition: {message.partition}, offset: {message.offset}). "
+                f"Offset NOT committed - message will be retried on restart."
+            )
+            return False  # Break loop
+
+    def _run_message_loop(self):
+        """Run the main message consumption loop."""
+        last_committed_offsets = {}
+
+        for message in self.consumer:
+            try:
+                topic_partition = TopicPartition(message.topic, message.partition)
+
+                # Initialize offset tracking for new partitions
+                if topic_partition not in last_committed_offsets:
+                    self._initialize_partition_offset_tracking(topic_partition, last_committed_offsets)
+
+                # Handle tombstone messages
+                if message.value is None:
+                    self._handle_tombstone_message(message, topic_partition)
+                    continue
+
+                # Parse JSON message
+                message_value = self._parse_message_value(message)
+
+                # Process and commit
+                should_continue = self._process_and_commit_message(
+                    message, message_value, topic_partition, last_committed_offsets
+                )
+
+                if not should_continue:
+                    break  # Shutdown requested
+
+            except Exception as e:
+                # Fail fast on unexpected exceptions
+                logger.error(
+                    f"Unexpected error in message loop "
+                    f"(partition: {getattr(message, 'partition', 'unknown')}, "
+                    f"offset: {getattr(message, 'offset', 'unknown')}): {e}. "
+                    f"Consumer will stop to prevent data loss. "
+                    f"Message will be retried on restart."
+                )
+                messages_processed_total.labels(message_type="unknown", status="unexpected_error").inc()
+                raise
 
     def start_consuming(self):
-        """Start consuming messages from Kafka."""
+        """Start consuming messages from Kafka.
+
+        The consumer will stop on fatal errors (e.g., max retries exceeded).
+        Use Kubernetes/orchestration layer to restart the consumer pod on failure.
+        """
         try:
-            self.consumer = self._create_consumer()
-            self.is_consuming = True
+            # Initialize consumer and subscribe to topic
+            self._initialize_consumer_setup()
 
-            # Start health check thread
-            self._start_health_check_thread()
+            # Wait for partition assignment and acquire lock token
+            self._wait_for_partition_assignment()
 
-            # Initial health status
-            self._update_health_status(True)
-
-            logger.info(f'RBAC Kafka consumer started, listening on topic "{self.topic}"')
-            logger.info("Waiting for messages from Kafka...")
-
-            # Process incoming messages with infinite retry
-            for message in self.consumer:
-                try:
-                    if message.value is None:
-                        logger.warning(
-                            f"Received message with None value, skipping "
-                            f"(partition: {message.partition}, offset: {message.offset})"
-                        )
-                        self.consumer.commit()  # Commit the offset for None messages
-                        continue
-
-                    # Parse JSON from raw message bytes
-                    try:
-                        message_value = json.loads(message.value.decode("utf-8"))
-                    except (json.JSONDecodeError, UnicodeDecodeError):
-                        # Count skipped messages and log periodically to reduce noise
-                        self.skipped_messages_count += 1
-                        current_time = time.time()
-
-                        # Log every 10 skipped messages or every 30 seconds
-                        if self.skipped_messages_count % 10 == 0 or current_time - self.last_skipped_log_time > 30:
-
-                            raw_content = message.value[:100] if len(message.value) > 100 else message.value
-                            logger.info(
-                                f"Skipped {self.skipped_messages_count} non-JSON messages "
-                                f"(latest: partition {message.partition}, offset {message.offset}) - "
-                                f"Sample content: {raw_content}"
-                            )
-                            self.last_skipped_log_time = current_time
-
-                        messages_processed_total.labels(message_type="unknown", status="json_error").inc()
-                        # Skip malformed JSON messages and commit offset
-                        self.consumer.commit()
-                        continue
-
-                    logger.info(f"Processing message (partition: {message.partition}, offset: {message.offset})")
-                    logger.debug(
-                        f"Message content (partition: {message.partition}, offset: {message.offset}): {message_value}"
-                    )
-
-                    # Process the message with retry logic
-                    # This will keep retrying until success or shutdown
-                    success = self._process_message_with_retry(message_value, message.offset, message.partition)
-
-                    if success:
-                        logger.info(
-                            f"Message processed successfully (partition: {message.partition}, offset: {message.offset})"
-                        )
-
-                        # Commit the offset only after successful processing
-                        # This ensures exactly-once processing and message ordering
-                        try:
-                            self.consumer.commit()
-                            logger.info(f"Committed offset (partition: {message.partition}, offset: {message.offset})")
-                        except Exception as commit_error:
-                            logger.error(f"Failed to commit offset: {commit_error}")
-                            # Don't raise - we'll retry on next consumer restart
-
-                        # Update activity timestamp (health check thread handles status updates)
-                        self.last_activity = time.time()
-                    else:
-                        # Only happens on shutdown or permanent errors (like JSON decode)
-                        logger.warning(
-                            f"Message processing abandoned (partition: {message.partition}, offset: {message.offset})"
-                        )
-                        # For permanent errors, we still commit to avoid reprocessing the same bad message
-                        try:
-                            self.consumer.commit()
-                            logger.debug(
-                                f"Committed offset for abandoned message "
-                                f"(partition: {message.partition}, offset: {message.offset})"
-                            )
-                        except Exception as commit_error:
-                            logger.error(f"Failed to commit offset for abandoned message: {commit_error}")
-
-                except Exception as e:
-                    # This should rarely happen as retry logic handles most exceptions
-                    logger.error(
-                        f"Unexpected error in message loop (partition: {getattr(message, 'partition', 'unknown')}, "
-                        f"offset: {getattr(message, 'offset', 'unknown')}): {e}"
-                    )
-                    messages_processed_total.labels(message_type="unknown", status="unexpected_error").inc()
-                    # Continue to next message - don't let one bad message break the entire consumer
+            # Start main message processing loop
+            self._run_message_loop()
 
         except KafkaError as e:
             logger.error(f"Kafka error: {e}")
@@ -827,16 +1580,53 @@ class RBACKafkaConsumer:
             self._update_health_status(False)
             raise
         finally:
+            self._shutdown_in_progress = True
             self.is_consuming = False
             self._stop_health_check_thread()
+
+            # Commit any remaining offsets on shutdown ONLY if not paused for retry
+            if self.commit_config.commit_on_shutdown and self.offset_manager:
+                if self.is_paused_for_retry:
+                    logger.warning(
+                        "Consumer was paused due to max retries - NOT committing offsets on shutdown. "
+                        "Message will be retried on next restart."
+                    )
+                else:
+                    logger.info("Committing remaining offsets on shutdown")
+                    success, count = self.offset_manager.commit()
+                    if success and count > 0:
+                        logger.info(f"Successfully committed {count} offset(s) on shutdown")
+                    elif success and count == 0:
+                        logger.debug("No stored offsets to commit on shutdown")
+                    else:
+                        logger.warning("Failed to commit offsets on shutdown")
+
             if self.consumer:
                 self.consumer.close()
                 logger.info("Kafka consumer closed")
 
     def stop_consuming(self):
         """Stop consuming messages."""
+        self._shutdown_in_progress = True
         self.is_consuming = False
         self._stop_health_check_thread()
+
+        # Commit any remaining offsets on stop ONLY if not paused for retry
+        if self.commit_config.commit_on_shutdown and self.offset_manager:
+            if self.is_paused_for_retry:
+                logger.warning(
+                    "Consumer was paused due to max retries - NOT committing offsets on stop. "
+                    "Message will be retried on next restart."
+                )
+            else:
+                logger.info("Committing remaining offsets on stop")
+                success, count = self.offset_manager.commit()
+                if success and count > 0:
+                    logger.info(f"Successfully committed {count} offset(s) on stop")
+                elif success and count == 0:
+                    logger.debug("No stored offsets to commit on stop")
+                else:
+                    logger.warning("Failed to commit offsets on stop")
 
         if self.consumer:
             self.consumer.close()

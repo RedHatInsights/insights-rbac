@@ -64,9 +64,20 @@ call_credentials = oauth2_call_credentials(inventory_auth_credentials)
 
 @contextmanager
 def create_client_channel(addr):
-    """Create secure channel for grpc requests for relations api."""
-    secure_channel = grpc.insecure_channel(addr)
-    yield secure_channel
+    """Create secure channel for grpc requests for relations api.
+
+    Uses insecure channel in development/Clowder environments.
+    Uses TLS in production environments.
+    """
+    if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
+        # Flag for local dev or Clowder (avoids ssl error)
+        channel = grpc.insecure_channel(addr)
+        yield channel
+    else:
+        # Use TLS for secure channel in production
+        ssl_credentials = grpc.ssl_channel_credentials()
+        secure_channel = grpc.secure_channel(addr, ssl_credentials)
+        yield secure_channel
 
 
 @contextmanager
@@ -153,7 +164,8 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
             if user.org_id:
                 if user.org_id != request.META.get(RH_RBAC_ORG_ID, user.org_id):
                     logger.warning(
-                        "Token org_id does not match org_id header. Ignoring token for user_id %s", user.user_id
+                        "Token org_id does not match org_id header. Ignoring token for user_id %s",
+                        user.user_id,
                     )
                     return None
                 return user
@@ -231,7 +243,10 @@ def get_principal(
             client_id: uuid.UUID = ITService.extract_client_id_service_account_username(username)
 
             principal, _ = Principal.objects.get_or_create(
-                username=username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
+                username=username,
+                tenant=tenant,
+                type=SERVICE_ACCOUNT_KEY,
+                service_account_id=client_id,
             )
         else:
             # Avoid possible race condition if the user was created while checking BOP
@@ -450,7 +465,8 @@ def get_admin_from_proxy(username, request):
         raise serializers.ValidationError({key: _(message)})
 
     index = next(
-        (i for i, x in enumerate(bop_resp.get("data")) if x["username"].casefold() == username.casefold()), None
+        (i for i, x in enumerate(bop_resp.get("data")) if x["username"].casefold() == username.casefold()),
+        None,
     )
 
     if index is None:
