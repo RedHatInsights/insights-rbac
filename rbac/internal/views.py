@@ -82,6 +82,7 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
     run_migrations_in_worker,
@@ -2235,5 +2236,41 @@ def migrate_binding_scope(request):
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},
+        status=202,
+    )
+
+
+@require_http_methods(["POST"])
+def fix_missing_binding_base_tuples(request):
+    """Fix missing t_role and t_binding tuples for bindings created before replication was enabled.
+
+    POST /_private/api/utils/fix_missing_binding_base_tuples/?binding_ids=1,2,3
+
+    Query params:
+        binding_ids (optional): Comma-separated list of binding IDs to fix. If not provided, fixes ALL.
+
+    Triggers a background worker to replicate all tuples for the specified bindings.
+    Kessel/SpiceDB handles duplicate tuples gracefully.
+
+    Returns 202 Accepted with a message that the worker is running.
+    """
+    binding_ids_param = request.GET.get("binding_ids", "")
+
+    logger.info("Fixing missing binding base tuples")
+
+    # Parse binding IDs if provided
+    binding_ids = None
+    if binding_ids_param:
+        binding_ids = [int(id.strip()) for id in binding_ids_param.split(",")]
+        logger.info(f"Will fix {len(binding_ids)} specific bindings: {binding_ids}")
+
+    # Trigger the background worker
+    fix_missing_binding_base_tuples_in_worker.delay(binding_ids=binding_ids)
+
+    return JsonResponse(
+        {
+            "message": "Fix missing binding base tuples is running in a background worker.",
+            "binding_ids": binding_ids if binding_ids else "all",
+        },
         status=202,
     )
