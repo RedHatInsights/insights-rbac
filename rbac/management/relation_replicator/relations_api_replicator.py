@@ -31,7 +31,7 @@ from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEvent,
 )
-from management.utils import create_client_channel
+from management.utils import create_client_channel_relation
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -95,7 +95,7 @@ class RelationsApiReplicator(RelationReplicator):
         Raises:
             grpc.RpcError: If the lock acquisition fails
         """
-        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+        with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
 
             request = relation_tuples_pb2.AcquireLockRequest(lock_id=lock_id)
@@ -123,7 +123,7 @@ class RelationsApiReplicator(RelationReplicator):
         Raises:
             grpc.RpcError: If the API call fails (including FAILED_PRECONDITION for invalid fencing token)
         """
-        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+        with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
 
             # Build request with optional fencing check
@@ -169,7 +169,7 @@ class RelationsApiReplicator(RelationReplicator):
                 {"consistency_token": type("obj", (object,), {"token": None})()},
             )()
 
-        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+        with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
 
             # Delete each relationship individually using filters

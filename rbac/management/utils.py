@@ -52,14 +52,26 @@ SERVICE_ACCOUNT_KEY = "service-account"
 
 logger = logging.getLogger(__name__)
 
-# Configure OAuth credentials with direct token URL
+# Configure OAuth credentials with direct token URL for Inventory API
 inventory_auth_credentials = OAuth2ClientCredentials(
     client_id=settings.INVENTORY_API_CLIENT_ID,
     client_secret=settings.INVENTORY_API_CLIENT_SECRET,
     token_endpoint=settings.INVENTORY_API_TOKEN_URL,  # Direct token endpoint
 )
 
-call_credentials = oauth2_call_credentials(inventory_auth_credentials)
+inventory_call_credentials = oauth2_call_credentials(inventory_auth_credentials)
+
+# Legacy naming for backward compatibility
+call_credentials = inventory_call_credentials
+
+# Configure OAuth credentials with direct token URL for Relations API
+relation_auth_credentials = OAuth2ClientCredentials(
+    client_id=settings.RELATIONS_API_CLIENT_ID,
+    client_secret=settings.RELATIONS_API_CLIENT_SECRET,
+    token_endpoint=settings.RELATIONS_API_TOKEN_URL,  # Direct token endpoint
+)
+
+relation_call_credentials = oauth2_call_credentials(relation_auth_credentials)
 
 
 @contextmanager
@@ -89,7 +101,25 @@ def create_client_channel_inventory(addr):
     else:
         # Combine with TLS for secure channel
         ssl_credentials = grpc.ssl_channel_credentials()
-        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
+        channel_credentials = grpc.composite_channel_credentials(
+            ssl_credentials, inventory_call_credentials
+        )
+        secure_channel = grpc.secure_channel(addr, channel_credentials)
+        yield secure_channel
+
+
+@contextmanager
+def create_client_channel_relation(addr):
+    """Create secure channel for grpc requests for relations api."""
+    if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)
+        channel = grpc.insecure_channel(addr)
+        yield channel
+    else:
+        # Combine with TLS for secure channel
+        ssl_credentials = grpc.ssl_channel_credentials()
+        channel_credentials = grpc.composite_channel_credentials(
+            ssl_credentials, relation_call_credentials
+        )
         secure_channel = grpc.secure_channel(addr, channel_credentials)
         yield secure_channel
 
@@ -142,7 +172,9 @@ class SystemUserConfig(TypedDict, total=False):
     allow_any_org: bool
 
 
-def build_system_user_from_token(request, token_validator: TokenValidator) -> Optional[User]:
+def build_system_user_from_token(
+    request, token_validator: TokenValidator
+) -> Optional[User]:
     """Build a system user from the token."""
     # Token validator class uses a singleton
     try:
@@ -181,14 +213,18 @@ def get_principal_from_request(request):
     qs_user = request.query_params.get(USERNAME_KEY)
     username = current_user
     from_query = False
-    if qs_user and not PRINCIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
+    if qs_user and not PRINCIPAL_PERMISSION_INSTANCE.has_permission(
+        request=request, view=None
+    ):
         raise PermissionDenied()
 
     if qs_user:
         username = qs_user
         from_query = True
 
-    return get_principal(username, request, verify_principal=bool(qs_user), from_query=from_query)
+    return get_principal(
+        username, request, verify_principal=bool(qs_user), from_query=from_query
+    )
 
 
 def get_principal(
@@ -226,7 +262,9 @@ def get_principal(
     try:
         # If the username was provided through a query we must verify if it exists in the corresponding services first.
         if from_query and not is_username_service_account:
-            verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
+            verify_principal_with_proxy(
+                username=username, request=request, verify_principal=verify_principal
+            )
 
         principal = PRINCIPAL_CACHE.get_principal(tenant.org_id, username)
         if not principal:
@@ -237,10 +275,14 @@ def get_principal(
         # If the "from query" parameter was specified, the username was validated above, so there is no need to
         # validate it again.
         if not from_query and not is_username_service_account:
-            verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
+            verify_principal_with_proxy(
+                username=username, request=request, verify_principal=verify_principal
+            )
 
         if is_username_service_account:
-            client_id: uuid.UUID = ITService.extract_client_id_service_account_username(username)
+            client_id: uuid.UUID = ITService.extract_client_id_service_account_username(
+                username
+            )
 
             principal, _ = Principal.objects.get_or_create(
                 username=username,
@@ -250,7 +292,9 @@ def get_principal(
             )
         else:
             # Avoid possible race condition if the user was created while checking BOP
-            principal, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
+            principal, _ = Principal.objects.get_or_create(
+                username=username, tenant=tenant
+            )
             PRINCIPAL_CACHE.cache_principal(org_id=tenant.org_id, principal=principal)
 
     return principal
@@ -261,10 +305,14 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
     if verify_principal:
         org_id = request.user.org_id
         proxy = PrincipalProxy()
-        resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
+        resp = proxy.request_filtered_principals(
+            [username], org_id=org_id, options=request.query_params
+        )
 
         if isinstance(resp, dict) and "errors" in resp:
-            raise Exception("Dependency error: request to get users from dependent service failed.")
+            raise Exception(
+                "Dependency error: request to get users from dependent service failed."
+            )
 
         if not resp.get("data"):
             key = "detail"
@@ -290,7 +338,9 @@ def access_for_roles(roles, param_applications):
     """Gathers all access for the given roles and application(s)."""
     if param_applications:
         param_applications_list = param_applications.split(",")
-        access = Access.objects.filter(role__in=roles).filter(permission__application__in=param_applications_list)
+        access = Access.objects.filter(role__in=roles).filter(
+            permission__application__in=param_applications_list
+        )
     else:
         access = Access.objects.filter(role__in=roles)
     return set(access)
@@ -306,10 +356,12 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
     # need to explicitly add the service accounts to a group.
     if principal.type == "user":
         admin_default_group_set = (
-            Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().public_tenant_only()
+            Group.admin_default_set().filter(tenant=tenant)
+            or Group.admin_default_set().public_tenant_only()
         )
         platform_default_group_set = (
-            Group.platform_default_set().filter(tenant=tenant) or Group.platform_default_set().public_tenant_only()
+            Group.platform_default_set().filter(tenant=tenant)
+            or Group.platform_default_set().public_tenant_only()
         )
     else:
         admin_default_group_set = Group.objects.none()
@@ -321,10 +373,14 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
         assigned_group_set = assigned_group_set.prefetch_related(prefetch_lookups)
 
         if principal.type == "user":
-            platform_default_group_set = platform_default_group_set.prefetch_related(prefetch_lookups)
+            platform_default_group_set = platform_default_group_set.prefetch_related(
+                prefetch_lookups
+            )
 
     if kwargs.get("is_org_admin"):
-        return set(assigned_group_set | platform_default_group_set | admin_default_group_set)
+        return set(
+            assigned_group_set | platform_default_group_set | admin_default_group_set
+        )
 
     return set(assigned_group_set | platform_default_group_set)
 
@@ -367,7 +423,9 @@ def filter_queryset_by_tenant(queryset, tenant):
     return queryset.filter(tenant=tenant)
 
 
-def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
+def validate_and_get_key(
+    params, query_key, valid_values, default_value=None, required=True
+):
     """Validate and return the key."""
     value = params.get(query_key, default_value)
     if not value:
@@ -381,8 +439,10 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
 
     elif value.lower() not in valid_values:
         key = "detail"
-        message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
-            query_key, value, [str(v) for v in valid_values]
+        message = (
+            "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
+                query_key, value, [str(v) for v in valid_values]
+            )
         )
         raise serializers.ValidationError({key: _(message)})
     return value.lower()
@@ -393,8 +453,10 @@ def validate_key(params, query_key, valid_values, default_value=None, required=T
     value = params.get(query_key, default_value)
     if value.lower() not in valid_values:
         key = "detail"
-        message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
-            query_key, value, valid_values
+        message = (
+            "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
+                query_key, value, valid_values
+            )
         )
         raise serializers.ValidationError({key: _(message)})
 
@@ -465,7 +527,11 @@ def get_admin_from_proxy(username, request):
         raise serializers.ValidationError({key: _(message)})
 
     index = next(
-        (i for i, x in enumerate(bop_resp.get("data")) if x["username"].casefold() == username.casefold()),
+        (
+            i
+            for i, x in enumerate(bop_resp.get("data"))
+            if x["username"].casefold() == username.casefold()
+        ),
         None,
     )
 
@@ -493,7 +559,9 @@ def v2response_error_from_errors(errors, exc=None, context=None):
     """Convert v1 error format to v2."""
     detail = ""
     status_code = 0
-    if errors and any(isinstance(error, dict) and "detail" in error for error in errors):
+    if errors and any(
+        isinstance(error, dict) and "detail" in error for error in errors
+    ):
         detail = str(errors[0]["detail"])
         status_code = int(errors[0]["status"])
 
@@ -517,7 +585,11 @@ def raise_validation_error(source, message):
 def flatten_validation_error(e: ValidationError):
     """Flatten a Django ValidationError into a list of (field, message) tuples."""
     if hasattr(e, "message_dict"):
-        return [(field, str(msg)) for field, messages in e.message_dict.items() for msg in messages]
+        return [
+            (field, str(msg))
+            for field, messages in e.message_dict.items()
+            for msg in messages
+        ]
     elif hasattr(e, "messages"):
         return [("__all__", str(msg)) for msg in e.messages]
     else:
