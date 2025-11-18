@@ -19,6 +19,7 @@
 import json
 import logging
 import uuid
+from typing import Optional
 
 import jsonschema
 from django.conf import settings
@@ -26,7 +27,7 @@ from django.db import transaction
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
-from management.models import Workspace
+from management.models import BindingMapping, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
@@ -101,6 +102,83 @@ def delete_bindings(bindings):
             bindings.delete()
         info["relations"] = [stringify_spicedb_relationship(relation) for relation in relations_to_remove]
     return info
+
+
+def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) -> dict:
+    """
+    Replicate all tuples for specified bindings to fix missing relationships in Kessel.
+
+    This fixes bindings created before REPLICATION_TO_RELATION_ENABLED=True that are missing
+    base tuples (t_role and t_binding) in Kessel.
+
+    Args:
+        binding_ids (list[int], optional): List of binding IDs to fix. If None, fixes ALL bindings.
+
+    Returns:
+        dict: Results with bindings_checked, bindings_fixed, and tuples_added count.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Get bindings to fix
+    if binding_ids:
+        bindings_query = BindingMapping.objects.filter(id__in=binding_ids)
+        logger.info(f"Fixing {len(binding_ids)} specific bindings: {binding_ids}")
+    else:
+        bindings_query = BindingMapping.objects.all()
+        logger.warning(f"Fixing ALL bindings ({bindings_query.count()} total) - this may take a while")
+
+    bindings_checked = 0
+    bindings_fixed = 0
+    total_tuples = 0
+
+    # Process each binding in a separate transaction with locking
+    for raw_binding in bindings_query.iterator():
+        with transaction.atomic():
+            # Lock the binding to prevent concurrent modifications
+            binding = BindingMapping.objects.select_for_update().filter(pk=raw_binding.pk).first()
+
+            if binding is None:
+                logger.warning(f"Binding vanished before it could be fixed: pk={raw_binding.pk!r}")
+                continue
+
+            bindings_checked += 1
+
+            # Get ALL tuples for this binding (t_role, t_binding, and all subject tuples)
+            # Kessel/SpiceDB handles duplicates gracefully, so it's safe to replicate existing tuples
+            all_tuples = binding.as_tuples()
+
+            # Replicate ALL tuples - any that already exist will be handled as duplicates
+            replicator = OutboxReplicator()
+            replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
+                    info={
+                        "binding_id": binding.id,
+                        "role_uuid": str(binding.role.uuid),
+                        "org_id": str(binding.role.tenant.org_id),
+                        "fix": "missing_binding_tuples",
+                    },
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=all_tuples,
+                )
+            )
+
+            bindings_fixed += 1
+            total_tuples += len(all_tuples)
+
+        # Log progress for large batches (outside transaction)
+        if bindings_checked % 100 == 0:
+            logger.info(f"Progress: {bindings_checked} bindings processed, {total_tuples} tuples added")
+
+    results = {
+        "bindings_checked": bindings_checked,
+        "bindings_fixed": bindings_fixed,
+        "tuples_added": total_tuples,
+    }
+
+    logger.info(f"Completed: Fixed {bindings_fixed} bindings with {total_tuples} total tuples")
+
+    return results
 
 
 @transaction.atomic
