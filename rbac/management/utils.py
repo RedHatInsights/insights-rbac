@@ -19,6 +19,7 @@ import logging
 import os
 import uuid
 from contextlib import contextmanager
+from fnmatch import fnmatch
 from typing import Optional, TypedDict
 from uuid import UUID
 
@@ -541,3 +542,39 @@ def flatten_validation_error(e: ValidationError):
         return [("__all__", str(msg)) for msg in e.messages]
     else:
         return [("__all__", str(e))]
+
+
+def matches_permission_pattern(permission, pattern):
+    """
+    Check if a permission matches a pattern with wildcard support.
+
+    Examples:
+        matches_permission_pattern("rbac:role:read", "rbac:*:*") -> True
+        matches_permission_pattern("inventory:hosts:write", "rbac:*:*") -> False
+        matches_permission_pattern("rbac:role:read", "rbac:*:read") -> True
+    """
+    return fnmatch(permission, pattern)
+
+
+def is_permission_blocked_for_v1(permission_str, request=None):
+    """
+    Check if permission should be blocked from v1 API endpoints.
+
+    This is used to hide permissions from v1 that are only meant for v2.
+
+    Args:
+        permission_str: The permission string to check (e.g., "rbac:role:read")
+        request: Optional request object to check if this is a v1 API call
+
+    Returns:
+        True if the permission should be blocked from v1, False otherwise
+    """
+    # Only apply to v1 requests - block from v1, show in v2
+    if request and not request.path.startswith(f"/{api_path_prefix()}v1/"):
+        return False
+
+    for pattern in settings.V1_ROLE_PERMISSION_BLOCK_LIST:
+        if matches_permission_pattern(permission_str, pattern):
+            return True
+
+    return False

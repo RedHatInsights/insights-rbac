@@ -24,7 +24,12 @@ from management.filters import CommonFilters
 from management.models import Access, Permission, Role
 from management.permission.serializer import PermissionSerializer
 from management.permissions.permission_access import PermissionAccessPermission
-from management.utils import validate_and_get_key, validate_uuid
+from management.utils import (
+    api_path_prefix,
+    matches_permission_pattern,
+    validate_and_get_key,
+    validate_uuid,
+)
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -94,6 +99,30 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         "verb",
     )
     ordering = ("permission_collate",)
+
+    def get_queryset(self):
+        """Override to filter out blocked permissions for v1 API."""
+        queryset = super().get_queryset()
+
+        # Check if this is a v1 request and filter blocked permissions
+        # This hides permissions from v1 that are only meant for v2
+        if self.request.path.startswith(f"/{api_path_prefix()}v1/"):
+            blocked_patterns = settings.V1_ROLE_PERMISSION_BLOCK_LIST
+
+            if blocked_patterns:
+                # Exclude permissions matching any of the block list patterns
+                for pattern in blocked_patterns:
+                    # Get all permissions from queryset and filter in Python
+                    # (complex wildcard patterns are hard to express in Django Q objects)
+                    excluded_ids = []
+                    for perm in queryset:
+                        if matches_permission_pattern(perm.permission, pattern):
+                            excluded_ids.append(perm.id)
+
+                    if excluded_ids:
+                        queryset = queryset.exclude(id__in=excluded_ids)
+
+        return queryset
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of permissions for the tenant.
