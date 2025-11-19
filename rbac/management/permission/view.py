@@ -110,17 +110,20 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             blocked_patterns = settings.V1_ROLE_PERMISSION_BLOCK_LIST
 
             if blocked_patterns:
-                # Exclude permissions matching any of the block list patterns
-                for pattern in blocked_patterns:
-                    # Get all permissions from queryset and filter in Python
-                    # (complex wildcard patterns are hard to express in Django Q objects)
-                    excluded_ids = []
-                    for perm in queryset:
+                # Evaluate queryset once and filter in Python
+                # We have to do this in Python because wildcard patterns (fnmatch)
+                # cannot be efficiently expressed in Django Q objects
+                all_permissions = list(queryset)  # Evaluate queryset once
+                excluded_ids = []
+
+                for perm in all_permissions:
+                    for pattern in blocked_patterns:
                         if matches_permission_pattern(perm.permission, pattern):
                             excluded_ids.append(perm.id)
+                            break  # No need to check other patterns
 
-                    if excluded_ids:
-                        queryset = queryset.exclude(id__in=excluded_ids)
+                if excluded_ids:
+                    queryset = queryset.exclude(id__in=excluded_ids)
 
         return queryset
 

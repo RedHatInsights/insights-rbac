@@ -569,12 +569,24 @@ def is_permission_blocked_for_v1(permission_str, request=None):
     Returns:
         True if the permission should be blocked from v1, False otherwise
     """
-    # Only apply to v1 requests - block from v1, show in v2
-    if request and not request.path.startswith(f"/{api_path_prefix()}v1/"):
+    # Safety checks
+    if not permission_str:
         return False
 
-    for pattern in settings.V1_ROLE_PERMISSION_BLOCK_LIST:
-        if matches_permission_pattern(permission_str, pattern):
+    # Only apply to v1 requests - block from v1, show in v2
+    if not request or not hasattr(request, "path"):
+        return False
+
+    if not request.path.startswith(f"/{api_path_prefix()}v1/"):
+        return False
+
+    # Check against block list
+    block_list = getattr(settings, "V1_ROLE_PERMISSION_BLOCK_LIST", [])
+    if not block_list:
+        return False
+
+    for pattern in block_list:
+        if pattern and matches_permission_pattern(permission_str, pattern):
             return True
 
     return False

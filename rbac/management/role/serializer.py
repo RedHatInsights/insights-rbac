@@ -137,9 +137,10 @@ class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerialize
         request = self.context.get("request")
 
         # Check if permission is blocked for v1 API (hide from v1, show in v2)
+        # This enables gradual migration of permissions from v1 to v2 UI
         if request and is_permission_blocked_for_v1(instance.permission.permission, request):
             # Return None to indicate this item should be skipped
-            # The parent serializer will handle filtering out None values
+            # RoleSerializer.to_representation() will filter out these None values
             return None
 
         return super().to_representation(instance)
