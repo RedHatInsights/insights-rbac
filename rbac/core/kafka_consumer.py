@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 
 import grpc
 from django.conf import settings
+from django.db import connection
 from google.protobuf import json_format
 from kafka import KafkaConsumer, TopicPartition
 from kafka.consumer.subscription_state import ConsumerRebalanceListener
@@ -38,6 +39,7 @@ from management.relation_replicator.relations_api_replicator import (
     RelationsApiReplicator,
 )
 from prometheus_client import Counter, Histogram
+from psycopg2 import sql
 
 from api.models import Tenant
 
@@ -1109,11 +1111,13 @@ class RBACKafkaConsumer:
             resource_context = debezium_msg.payload.get("resource_context")
             org_id = None
             event_type = None
+            resource_id = None
 
-            # Extract org_id and event_type from resource_context if present
+            # Extract org_id, event_type, and resource_id from resource_context if present
             if resource_context and isinstance(resource_context, dict):
                 org_id = resource_context.get("org_id")
                 event_type = resource_context.get("event_type")
+                resource_id = resource_context.get("resource_id")
             else:
                 logger.debug(
                     f"No resource_context found, skipping org_id and event_type extraction. "
@@ -1190,6 +1194,27 @@ class RBACKafkaConsumer:
                     f"org_id: {org_id}, "
                     f"aggregateid: {debezium_msg.aggregateid}"
                 )
+
+            # Send NOTIFY for workspace creation events (Read-Your-Writes support)
+            if event_type == "create_workspace" and resource_id:
+                try:
+                    notify_channel = settings.READ_YOUR_WRITES_CHANNEL
+                    notify_sql = sql.SQL("NOTIFY {}, %s").format(sql.Identifier(notify_channel))
+                    with connection.cursor() as cursor:
+                        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+                        # Safe: Using psycopg2.sql.SQL with sql.Identifier for channel name
+                        # and parameterized query (%s) for resource_id
+                        cursor.execute(notify_sql, [resource_id])
+                    logger.info(
+                        f"Sent NOTIFY on channel '{notify_channel}' for workspace_id '{resource_id}' "
+                        f"after successful replication"
+                    )
+                except Exception as e:
+                    # Log error but don't fail the processing - NOTIFY is best-effort
+                    logger.error(
+                        f"Failed to send NOTIFY for workspace_id '{resource_id}' on channel '{notify_channel}': {e}"
+                    )
+
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True
 
