@@ -361,7 +361,29 @@ class InMemoryTuples(TupleSet):
         self._tuples.discard(key)
 
     def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
-        """Add / remove tuples."""
+        """
+        Add / remove tuples, checking for duplicates within this batch.
+
+        Raises ValueError if duplicate relationships are found within the add list,
+        as this indicates a bug in tuple generation logic.
+        """
+        # Check for duplicates within tuples_to_add (indicates bug in tuple generation)
+        seen_in_batch = set()
+        for tuple in add:
+            key = self._relationship_key(tuple)
+            tuple_str = (
+                f"{key.resource_type_name}:{key.resource_id}#{key.relation}"
+                f"@{key.subject_type_name}:{key.subject_id}"
+            )
+
+            if key in seen_in_batch:
+                raise ValueError(
+                    f"Duplicate relationship detected in single replication event: {tuple_str}. "
+                    "This indicates a bug in tuple generation logic that should be fixed."
+                )
+            seen_in_batch.add(key)
+
+        # Now add all tuples (duplicates with existing tuples are OK - Kessel handles this)
         for tuple in remove:
             self.remove(tuple)
         for tuple in add:
