@@ -19,6 +19,7 @@ from __future__ import absolute_import, unicode_literals
 
 from celery import shared_task
 from django.core.management import call_command
+from internal.utils import clean_invalid_workspace_resource_definitions, replicate_missing_binding_tuples
 from management.health.healthcheck import redis_health
 from management.principal.cleaner import (
     clean_tenants_principals,
@@ -80,3 +81,28 @@ def migrate_data_in_worker(kwargs):
 def migrate_binding_scope_in_worker():
     """Celery task to migrate role binding scopes."""
     return migrate_all_role_bindings()
+
+
+@shared_task
+def fix_missing_binding_base_tuples_in_worker(binding_ids=None):
+    """
+    Celery task to fix missing base tuples for bindings.
+
+    Args:
+        binding_ids (list[int], optional): List of binding IDs to fix. If None, fixes all bindings.
+
+    Returns:
+        dict: Results with bindings_checked, bindings_fixed, and tuples_added count.
+    """
+    return replicate_missing_binding_tuples(binding_ids=binding_ids)
+
+
+@shared_task
+def clean_invalid_workspace_resource_definitions_in_worker():
+    """
+    Celery task to clean invalid workspace resource definitions.
+
+    Returns:
+        dict: Results with roles_checked, resource_definitions_fixed, bindings_deleted, and changes list.
+    """
+    return clean_invalid_workspace_resource_definitions()
