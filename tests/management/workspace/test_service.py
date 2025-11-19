@@ -115,8 +115,11 @@ class WorkspaceServiceTest(TestCase):
         service = WorkspaceService()
 
         with patch("management.workspace.service.settings.READ_YOUR_WRITES_TIMEOUT_SECONDS", 0.01):
-            # Act
-            service._wait_for_notify_post_commit(workspace_id="999")
+            # Act & Assert - should raise TimeoutError
+            with self.assertRaises(TimeoutError) as context:
+                service._wait_for_notify_post_commit(workspace_id="999")
+
+            self.assertIn("Read-your-writes consistency check timed out", str(context.exception))
 
         # Assert LISTEN/UNLISTEN executed despite timeout
         executed_sql_calls = [args[0] for args, _ in mock_cursor.execute.call_args_list]

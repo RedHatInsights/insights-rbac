@@ -277,14 +277,18 @@ class WorkspaceService:
                             )
                             return
 
-            logger.warning(
+            logger.error(
                 "[Service] RYW timed out waiting for NOTIFY channel='%s' workspace_id='%s' after %ss",
                 READ_YOUR_WRITES_CHANNEL,
                 str(workspace_id),
                 timeout_seconds,
             )
+            raise TimeoutError(
+                f"Read-your-writes consistency check timed out after {timeout_seconds}s for workspace {workspace_id}"
+            )
         except Exception:
             logger.exception("Error while waiting for NOTIFY after workspace create")
+            raise
         finally:
             try:
                 with connection.cursor() as cursor:

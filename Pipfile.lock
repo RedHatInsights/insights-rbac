@@ -715,12 +715,12 @@
         },
         "joserfc": {
             "hashes": [
-                "sha256:1b4cebf769eeb8105d2e3433cae49e7217c83e4abf8493e91e7d0f0ad3579fdd",
-                "sha256:b15a5ea3a464c37e8006105665c159a288892fa73856fa40be60266dbc20b49d"
+                "sha256:3cb2f1c1e3285c44a50ca9cb3287f37c2c665442028a4983aed87a75285164dc",
+                "sha256:dcbd447ff70c64d75f4cbdc5fb1d48f6914bff67b97fa0f779dd5c581d1bb81d"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.4.2"
+            "version": "==1.4.3"
         },
         "jsonschema": {
             "hashes": [
