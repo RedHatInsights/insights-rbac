@@ -23,6 +23,7 @@ from typing import Any, Dict, List, NotRequired, Optional, Protocol, TypedDict
 from django.db import transaction
 from google.protobuf import json_format
 from management.models import Outbox
+from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.relation_replicator import (
     AggregateTypes,
     RelationReplicator,
@@ -78,6 +79,33 @@ class OutboxReplicator(RelationReplicator):
         payload = self._build_replication_event(event)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
+    def _check_for_duplicate_relationships(self, relationships):
+        """
+        Check for duplicate relationships and raise an error if any are found.
+
+        Duplicate relationships indicate a bug in tuple generation and must be fixed at the source.
+        """
+        seen = set()
+        duplicates = []
+
+        for rel in relationships:
+            # Use string representation as unique key (cleaner than tuple of components)
+            key = stringify_spicedb_relationship(rel)
+
+            if key in seen:
+                # Duplicate found - this is a bug!
+                duplicates.append(key)
+            else:
+                seen.add(key)
+
+        if duplicates:
+            # This indicates a bug in tuple generation - fail fast
+            dup_info = "\n".join(f"  - {dup}" for dup in duplicates[:10])
+            raise ValueError(
+                f"Found {len(duplicates)} duplicate relationships (bug in tuple generation!):\n{dup_info}\n"
+                f"Total relationships: {len(relationships)}, Duplicates: {len(duplicates)}"
+            )
+
     def replicate_workspace(self, event: WorkspaceEvent):
         """Replicate the event of workspace."""
         payload = WorkspaceEventPayload(
@@ -90,6 +118,9 @@ class OutboxReplicator(RelationReplicator):
 
     def _build_replication_event(self, event: ReplicationEvent) -> ReplicationEventPayload:
         """Build replication event."""
+        # Check for duplicates in relationships to add (will raise error if found)
+        self._check_for_duplicate_relationships(event.add)
+
         add_json: list[dict[str, Any]] = []
         for relation in event.add:
             add_json.append(json_format.MessageToDict(relation))
