@@ -27,7 +27,7 @@ from django.db import transaction
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
-from management.models import BindingMapping, Workspace
+from management.models import BindingMapping, Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
@@ -177,6 +177,113 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
     }
 
     logger.info(f"Completed: Fixed {bindings_fixed} bindings with {total_tuples} total tuples")
+
+    return results
+
+
+def clean_invalid_workspace_resource_definitions() -> dict:
+    """
+    Clean resource definitions with invalid workspace IDs and update bindings accordingly.
+
+    This finds custom roles with resource definitions pointing to non-existent workspaces,
+    removes invalid workspace IDs, and uses the dual write handler to update bindings.
+
+    Returns:
+        dict: Results with roles_checked, resource_definitions_fixed, and changes list.
+    """
+    logger = logging.getLogger(__name__)
+    from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+    from management.relation_replicator.relation_replicator import ReplicationEventType
+
+    roles_checked = 0
+    resource_defs_fixed = 0
+    changes = []
+
+    # Get all custom roles with resource definitions
+    custom_roles_with_rds = Role.objects.filter(system=False, access__resourceDefinitions__isnull=False).distinct()
+
+    for raw_role in custom_roles_with_rds.iterator():
+        role_had_invalid_rds = False
+
+        with transaction.atomic():
+            # Lock the role to prevent concurrent modifications
+            role = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+
+            if role is None:
+                logger.warning(f"Role vanished before it could be cleaned: pk={raw_role.pk!r}")
+                continue
+
+            roles_checked += 1
+
+            for access in role.access.all():
+                permission = access.permission
+
+                # Only check workspace-related resource definitions
+                for rd in access.resourceDefinitions.all():
+                    if not is_resource_a_workspace(
+                        permission.application, permission.resource_type, rd.attributeFilter
+                    ):
+                        continue
+
+                    # Get workspace IDs from resource definition
+                    workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
+
+                    if not workspace_ids:
+                        continue
+
+                    # Check which workspaces exist in the role's tenant
+                    valid_workspace_ids = set(
+                        str(ws_id)
+                        for ws_id in Workspace.objects.filter(id__in=workspace_ids, tenant=role.tenant).values_list(
+                            "id", flat=True
+                        )
+                    )
+
+                    invalid_workspace_ids = set(str(ws_id) for ws_id in workspace_ids) - valid_workspace_ids
+
+                    if invalid_workspace_ids:
+                        role_had_invalid_rds = True
+                        change_info = {
+                            "role_uuid": str(role.uuid),
+                            "role_name": role.name,
+                            "permission": permission.permission,
+                            "resource_definition_id": rd.id,
+                            "invalid_workspaces": list(invalid_workspace_ids),
+                            "valid_workspaces": list(valid_workspace_ids),
+                        }
+
+                        # Update resource definition to remove invalid workspace IDs
+                        # Create new dict to ensure Django detects the change (JSONField mutation issue)
+                        updated_filter = rd.attributeFilter.copy()
+
+                        # Preserve the value type based on operation
+                        if updated_filter.get("operation") == "equal":
+                            # For "equal" operation, value should be a single string or empty string
+                            updated_filter["value"] = list(valid_workspace_ids)[0] if valid_workspace_ids else ""
+                        else:
+                            # For "in" operation, value should be a list
+                            updated_filter["value"] = list(valid_workspace_ids) if valid_workspace_ids else []
+
+                        rd.attributeFilter = updated_filter
+                        rd.save()
+                        resource_defs_fixed += 1
+                        change_info["action"] = "updated"
+
+                        changes.append(change_info)
+
+            # If we fixed any resource definitions, trigger dual write to update bindings
+            if role_had_invalid_rds:
+                dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE)
+                dual_write.prepare_for_update()  # Capture current bindings
+                dual_write.replicate_new_or_updated_role(role)  # Update bindings based on new RDs
+
+    results = {
+        "roles_checked": roles_checked,
+        "resource_definitions_fixed": resource_defs_fixed,
+        "changes": changes,
+    }
+
+    logger.info(f"Cleaned invalid workspace RDs: {resource_defs_fixed} RDs fixed for {len(changes)} permissions")
 
     return results
 

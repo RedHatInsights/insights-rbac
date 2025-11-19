@@ -110,6 +110,9 @@ urlpatterns = [
     path("api/utils/kafka_test_message/", views.send_kafka_test_message),
     path("api/utils/migrate_binding_scope/", views.migrate_binding_scope),
     path("api/utils/fix_missing_binding_base_tuples/", views.fix_missing_binding_base_tuples),
+    path(
+        "api/utils/clean_invalid_workspace_resource_definitions/", views.clean_invalid_workspace_resource_definitions
+    ),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

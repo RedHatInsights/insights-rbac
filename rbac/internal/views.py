@@ -82,6 +82,7 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
@@ -2236,6 +2237,31 @@ def migrate_binding_scope(request):
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},
+        status=202,
+    )
+
+
+@require_http_methods(["POST"])
+def clean_invalid_workspace_resource_definitions(request):
+    """Clean resource definitions with invalid workspace IDs and delete corresponding bindings.
+
+    POST /_private/api/utils/clean_invalid_workspace_resource_definitions/
+
+    This endpoint:
+    1. Finds custom roles with resource definitions pointing to non-existent workspaces
+    2. Removes invalid workspace IDs from resource definitions
+    3. Deletes bindings to non-existent workspaces
+    4. Runs in background worker
+
+    Returns 202 Accepted with a message that the worker is running.
+    """
+    logger.info("Cleaning invalid workspace resource definitions")
+
+    # Trigger the background worker
+    clean_invalid_workspace_resource_definitions_in_worker.delay()
+
+    return JsonResponse(
+        {"message": "Clean invalid workspace resource definitions is running in a background worker."},
         status=202,
     )
 
