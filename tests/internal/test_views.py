@@ -2618,6 +2618,239 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         self.assertEqual(resp_groups[0]["name"], "test_group_platform_default")
 
 
+class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
+    """Test the fix_missing_binding_base_tuples internal API endpoint."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.url = "/_private/api/utils/fix_missing_binding_base_tuples/"
+        self._tuples = InMemoryTuples()
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.tasks.fix_missing_binding_base_tuples_in_worker.delay")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_fix_missing_base_tuples(self, mock_replicate, mock_worker):
+        """
+        Test that API adds missing t_role and t_binding tuples for bindings.
+
+        Setup: Create a binding without base tuples (simulating pre-V2 binding)
+        Action: Call fix API
+        Verify: Base tuples now exist in Kessel
+        """
+        # Redirect replication to in-memory tuples for verification
+        replicator = InMemoryRelationReplicator(self._tuples)
+        mock_replicate.side_effect = replicator.replicate
+
+        # Create a system role
+        role = Role.objects.create(name="Test System Role Missing Tuples", system=True, tenant=self.public_tenant)
+        perm = Permission.objects.create(
+            permission="test:resource:read",
+            application="test",
+            resource_type="resource",
+            verb="read",
+            tenant=self.public_tenant,
+        )
+        Access.objects.create(role=role, permission=perm, tenant=self.public_tenant)
+
+        # Get or create workspace hierarchy
+        root_ws, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+            defaults={"name": "Root Workspace for Fix Test"},
+        )
+
+        # Create binding WITHOUT replication (simulating pre-V2 state - missing base tuples)
+        binding = BindingMapping.objects.create(
+            role=role,
+            mappings={
+                "id": "test-binding-no-base-tuples",
+                "groups": [str(self.group.uuid)],
+                "users": {},
+                "role": {"id": str(role.uuid), "is_system": True, "permissions": []},
+            },
+            resource_type_namespace="rbac",
+            resource_type_name="workspace",
+            resource_id=str(root_ws.id),
+        )
+
+        binding_id = binding.mappings["id"]
+
+        # BEFORE FIX: Verify NO tuples exist (simulating missing Kessel relationships)
+        self.assertEqual(len(self._tuples), 0, "Should have NO tuples before fix")
+
+        # Simulate worker running synchronously by calling it directly
+        from management.tasks import fix_missing_binding_base_tuples_in_worker
+
+        mock_worker.side_effect = lambda **kwargs: fix_missing_binding_base_tuples_in_worker(**kwargs)
+
+        # CALL THE FIX API
+        response = self.client.post(f"{self.url}?binding_ids={binding.id}", **self.request.META)
+        self.assertEqual(response.status_code, 202)  # Now returns 202 (Accepted) since it's async
+
+        data = response.json()
+        self.assertIn("message", data)
+        self.assertEqual(data["binding_ids"], [binding.id])
+
+        # Verify worker was called
+        mock_worker.assert_called_once_with(binding_ids=[binding.id])
+
+        # AFTER FIX: Verify ALL tuples now exist (API replicates all tuples via binding.as_tuples())
+
+        # Verify t_role tuple was created
+        t_role_after = self._tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_id),
+                relation("role"),
+                subject("rbac", "role", str(role.uuid)),
+            )
+        )
+        self.assertEqual(len(t_role_after), 1, "Should have t_role tuple after fix")
+
+        # Verify t_binding tuple was created
+        t_binding_after = self._tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", str(root_ws.id)),
+                relation("binding"),
+                subject("rbac", "role_binding", binding_id),
+            )
+        )
+        self.assertEqual(len(t_binding_after), 1, "Should have t_binding tuple after fix")
+
+        # Verify subject tuple was created
+        subject_after = self._tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_id),
+                relation("subject"),
+                subject("rbac", "group", str(self.group.uuid), "member"),
+            )
+        )
+        self.assertEqual(len(subject_after), 1, "Should have subject tuple after fix")
+
+        # Total: API replicates ALL tuples (t_role + t_binding + subject = 3 tuples)
+        # Note: No permission tuples because system role has empty permissions array
+        self.assertEqual(len(self._tuples), 3, "Should have all 3 tuples after fix (t_role + t_binding + subject)")
+
+
+class CleanInvalidWorkspaceResourceDefinitionsTests(BaseInternalViewsetTests):
+    """Test the clean_invalid_workspace_resource_definitions internal API endpoint."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.url = "/_private/api/utils/clean_invalid_workspace_resource_definitions/"
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.tasks.clean_invalid_workspace_resource_definitions_in_worker.delay")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_clean_removes_invalid_workspace_ids_and_deletes_bindings(self, mock_replicate, mock_worker):
+        """
+        Test that API removes invalid workspace IDs from resource definitions and deletes bad bindings.
+
+        Setup: Create role with resource definition containing valid and invalid workspace IDs
+        Action: Call cleanup API
+        Verify: Invalid IDs removed, invalid bindings deleted, valid data preserved
+        """
+        # Redirect replication to in-memory tuples
+        self._tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(self._tuples)
+        mock_replicate.side_effect = replicator.replicate
+
+        # Create a custom role
+        role = Role.objects.create(name="Test Role Invalid Workspaces", system=False, tenant=self.tenant)
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create workspace hierarchy (need both root and default for dual write handler)
+        root_ws, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant, type=Workspace.Types.ROOT, defaults={"name": "Root Workspace"}
+        )
+        default_ws, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "Default Workspace", "parent": root_ws},
+        )
+        valid_ws = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=root_ws,
+            name="Valid Workspace",
+        )
+
+        # Create resource definition with one valid and one invalid workspace ID
+        fake_ws_id = "95473d62-56ea-4c0c-8945-4f3f6a620669"  # Doesn't exist
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [str(valid_ws.id), fake_ws_id],
+            },
+            tenant=self.tenant,
+        )
+
+        # Create bindings for both workspaces (one valid, one invalid)
+        valid_binding = BindingMapping.objects.create(
+            role=role,
+            mappings={
+                "id": "valid-binding",
+                "groups": [],
+                "users": {},
+                "role": {"id": str(role.uuid), "is_system": False, "permissions": ["inventory_groups_read"]},
+            },
+            resource_type_namespace="rbac",
+            resource_type_name="workspace",
+            resource_id=str(valid_ws.id),
+        )
+
+        invalid_binding = BindingMapping.objects.create(
+            role=role,
+            mappings={
+                "id": "invalid-binding",
+                "groups": [],
+                "users": {},
+                "role": {"id": str(role.uuid), "is_system": False, "permissions": ["inventory_groups_read"]},
+            },
+            resource_type_namespace="rbac",
+            resource_type_name="workspace",
+            resource_id=fake_ws_id,
+        )
+
+        # BEFORE: Verify resource definition has 2 workspace IDs
+        self.assertEqual(len(rd.attributeFilter["value"]), 2)
+
+        # BEFORE: Verify 2 bindings exist
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 2)
+
+        # Simulate worker running synchronously by calling it directly
+        from internal.utils import clean_invalid_workspace_resource_definitions as cleanup_function
+
+        mock_worker.side_effect = lambda: cleanup_function()
+
+        # Call the cleanup API
+        response = self.client.post(f"{self.url}", **self.request.META)
+        self.assertEqual(response.status_code, 202)  # Async - returns 202
+
+        # Verify worker was called
+        mock_worker.assert_called_once()
+
+        # AFTER: Verify resource definition now has only 1 workspace ID (the valid one)
+        rd.refresh_from_db()
+        self.assertEqual(len(rd.attributeFilter["value"]), 1)
+        self.assertEqual(rd.attributeFilter["value"][0], str(valid_ws.id))
+
+        # AFTER: Verify only 1 binding remains (the valid one)
+        remaining_bindings = BindingMapping.objects.filter(role=role)
+        self.assertEqual(remaining_bindings.count(), 1)
+        self.assertEqual(remaining_bindings.first().resource_id, str(valid_ws.id))
+
+
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
         """Set up the access view tests."""

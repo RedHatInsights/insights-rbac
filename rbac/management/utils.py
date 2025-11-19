@@ -59,16 +59,7 @@ inventory_auth_credentials = OAuth2ClientCredentials(
     token_endpoint=settings.INVENTORY_API_TOKEN_URL,  # Direct token endpoint
 )
 
-inventory_call_credentials = oauth2_call_credentials(inventory_auth_credentials)
-
-# Configure OAuth credentials with direct token URL for Relations API
-relation_auth_credentials = OAuth2ClientCredentials(
-    client_id=settings.RELATIONS_API_CLIENT_ID,
-    client_secret=settings.RELATIONS_API_CLIENT_SECRET,
-    token_endpoint=settings.RELATIONS_API_TOKEN_URL,  # Direct token endpoint
-)
-
-relation_call_credentials = oauth2_call_credentials(relation_auth_credentials)
+call_credentials = oauth2_call_credentials(inventory_auth_credentials)
 
 
 @contextmanager
@@ -92,28 +83,33 @@ def create_client_channel(addr):
 @contextmanager
 def create_client_channel_inventory(addr):
     """Create secure channel for grpc requests for inventory api."""
-    if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)
+    if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
         channel = grpc.insecure_channel(addr)
         yield channel
     else:
         # Combine with TLS for secure channel
         ssl_credentials = grpc.ssl_channel_credentials()
-        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, inventory_call_credentials)
+        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
         secure_channel = grpc.secure_channel(addr, channel_credentials)
         yield secure_channel
 
 
 @contextmanager
 def create_client_channel_relation(addr):
-    """Create secure channel for grpc requests for relations api."""
-    if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)
+    """Create secure channel for grpc requests for relations api.
+
+    Uses insecure channel in development/Clowder environments.
+    Uses TLS in production environments.
+    Authentication is handled via JWT tokens passed in gRPC metadata.
+    """
+    if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
+        # Flag for local dev or Clowder (avoids ssl error)
         channel = grpc.insecure_channel(addr)
         yield channel
     else:
-        # Combine with TLS for secure channel
+        # Use TLS for secure channel in production
         ssl_credentials = grpc.ssl_channel_credentials()
-        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, relation_call_credentials)
-        secure_channel = grpc.secure_channel(addr, channel_credentials)
+        secure_channel = grpc.secure_channel(addr, ssl_credentials)
         yield secure_channel
 
 
