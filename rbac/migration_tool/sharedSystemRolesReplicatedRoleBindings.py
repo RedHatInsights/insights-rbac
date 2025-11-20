@@ -252,13 +252,10 @@ def permission_groupings_to_v2_role_bindings(
     latest_role_bindings: list[RoleBinding] = []
     latest_binding_mappings: list[BindingMapping] = []
 
-    for resource, expected_permissions in perm_groupings.items():
-        expected_permissions = frozenset(expected_permissions)
+    for resource, raw_expected_permissions in perm_groupings.items():
+        expected_permissions = frozenset(raw_expected_permissions)
         existing_mapping = existing_mappings_by_resource.get(resource)
         existing_binding_value = existing_mapping.get_role_binding() if existing_mapping is not None else None
-
-        # get_role_binding should always return non-None, and we don't want to check both later.
-        assert (existing_mapping is None) == (existing_binding_value is None)
 
         # Try to find an existing role with the permissions we want.
         new_role = latest_roles_by_permissions.get(expected_permissions)
@@ -279,6 +276,9 @@ def permission_groupings_to_v2_role_bindings(
         assert new_role is not None
 
         if existing_mapping is not None:
+            # Silence mypy. get_role_binding always returns non-None.
+            assert existing_binding_value is not None
+
             role_binding, _ = RoleBinding.objects.update_or_create(
                 tenant=v1_role.tenant,
                 uuid=existing_binding_value.id,
