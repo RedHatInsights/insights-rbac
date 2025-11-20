@@ -98,11 +98,14 @@ def fix_missing_binding_base_tuples_in_worker(binding_ids=None):
 
 
 @shared_task
-def clean_invalid_workspace_resource_definitions_in_worker():
+def clean_invalid_workspace_resource_definitions_in_worker(dry_run=False):
     """
     Celery task to clean invalid workspace resource definitions.
+
+    Args:
+        dry_run (bool): If True, only report what would be changed without making changes.
 
     Returns:
         dict: Results with roles_checked, resource_definitions_fixed, bindings_deleted, and changes list.
     """
-    return clean_invalid_workspace_resource_definitions()
+    return clean_invalid_workspace_resource_definitions(dry_run=dry_run)

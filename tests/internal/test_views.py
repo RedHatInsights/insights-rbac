@@ -2831,7 +2831,7 @@ class CleanInvalidWorkspaceResourceDefinitionsTests(BaseInternalViewsetTests):
         # Simulate worker running synchronously by calling it directly
         from internal.utils import clean_invalid_workspace_resource_definitions as cleanup_function
 
-        mock_worker.side_effect = lambda: cleanup_function()
+        mock_worker.side_effect = lambda dry_run=False: cleanup_function(dry_run=dry_run)
 
         # Call the cleanup API
         response = self.client.post(f"{self.url}", **self.request.META)
