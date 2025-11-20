@@ -50,6 +50,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.role.v2_model import RoleV2, CustomRoleV2, RoleBinding
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -1956,6 +1957,137 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
     """Test dual write logic when we are working with custom roles."""
 
+    def tearDown(self):
+        # Run this in a subtest so as to not cover up any earlier failures.
+        with self.subTest(msg="tuple consistency"):
+            self._expect_tuples_consistent()
+
+        super().tearDown()
+
+    def _v2_permissions(self, role: RoleV2) -> set[str]:
+        return set(p.v2_string() for p in role.permissions.all())
+
+    def _expect_role_mappings_consistent(self, role: CustomRoleV2, mappings: list[BindingMapping]):
+        expected_permissions = self._v2_permissions(role)
+
+        self.assertGreater(len(mappings), 0, "Expected V2 role to be used in at least one BindingMapping.")
+
+        for binding_mapping in mappings:
+            self.assertFalse(binding_mapping.mappings["role"]["is_system"])
+
+            self.assertEqual(
+                expected_permissions,
+                set(binding_mapping.mappings["role"]["permissions"]),
+                f"Mismatched permissions between RoleV2 {role.uuid} and BindingMapping {binding_mapping.id} "
+                f"({binding_mapping.mappings["id"]})",
+            )
+
+    def _expect_role_tuples_consistent(self, role: RoleV2):
+        expected_permissions = self._v2_permissions(role)
+
+        tuple_permissions = set(
+            t.relation
+            for t in self.tuples.find_tuples(
+                all_of(
+                    resource("rbac", "role", str(role.uuid)),
+                    subject("rbac", "principal", "*"),
+                )
+            )
+        )
+
+        self.assertEqual(
+            expected_permissions,
+            tuple_permissions,
+            f"Database and relations permissions do not match for role {role.uuid}",
+        )
+
+    def _expect_binding_tuples_consistent(self, binding: RoleBinding):
+        resource_predicate = resource("rbac", "role_binding", str(binding.uuid))
+
+        role_tuples = self.tuples.find_tuples(
+            all_of(
+                resource_predicate,
+                relation("role"),
+                subject_type("rbac", "role"),
+            )
+        )
+
+        self.assertEqual(1, len(role_tuples))
+        self.assertEqual(str(binding.role.uuid), role_tuples.only.subject_id)
+
+        resource_tuples = self.tuples.find_tuples(
+            all_of(
+                relation("binding"),
+                subject(
+                    "rbac",
+                    "role_binding",
+                    str(binding.uuid),
+                ),
+            )
+        )
+
+        self.assertEqual(1, len(resource_tuples))
+        self.assertEqual(binding.resource_type, resource_tuples.only.resource_type_name)
+        self.assertEqual(binding.resource_id, resource_tuples.only.resource_id)
+
+        db_groups = set(str(rbg.group.uuid) for rbg in binding.group_entries.all())
+
+        tuple_groups = set(
+            t.subject_id
+            for t in self.tuples.find_tuples(
+                all_of(
+                    resource_predicate,
+                    relation("subject"),
+                    subject_type("rbac", "group", "member"),
+                )
+            )
+        )
+
+        self.assertEqual(
+            db_groups,
+            tuple_groups,
+            f"Database and relations groups do not match for role binding {binding.uuid} "
+            f"for role ({binding.role.uuid})",
+        )
+
+    def _expect_binding_mapping_consistent(self, binding: RoleBinding, mapping: BindingMapping):
+        self.assertEqual(str(binding.uuid), mapping.mappings["id"])
+        self.assertEqual(binding.role.v1_source, mapping.role)
+        self.assertEqual(binding.resource_type, mapping.resource_type_name)
+        self.assertEqual(binding.resource_id, mapping.resource_id)
+        self.assertEqual(str(binding.role.uuid), mapping.mappings["role"]["id"])
+
+        v1_groups = set(mapping.mappings["groups"])
+        v2_groups = set(str(rbg.group.uuid) for rbg in binding.group_entries.all())
+
+        self.assertEqual(v1_groups, v2_groups)
+
+        # Principals cannot currently be represented in RoleBindings (and shouldn't exist for custom groups anyway).
+        self.assertEqual(0, len(mapping.mappings["users"]))
+
+    def _expect_tuples_consistent(self):
+        binding_mappings_by_uuid = {
+            str(m.mappings["id"]): m
+            for m in BindingMapping.objects.filter(role__system=False).prefetch_related("role")
+        }
+
+        role_bindings_by_uuid = {str(b.uuid): b for b in RoleBinding.objects.filter(role__type=RoleV2.Types.CUSTOM)}
+
+        # We should have the same UUIDs for both BindingMappings and RoleBindings.
+        self.assertCountEqual(role_bindings_by_uuid.keys(), binding_mappings_by_uuid.keys())
+
+        for role in CustomRoleV2.objects.all():
+            self._expect_role_tuples_consistent(role)
+
+            self._expect_role_mappings_consistent(
+                role,
+                [m for m in binding_mappings_by_uuid.values() if m.mappings["role"]["id"] == str(role.uuid)],
+            )
+
+        for binding_uuid, binding in role_bindings_by_uuid.items():
+            self._expect_binding_tuples_consistent(binding)
+            self._expect_binding_mapping_consistent(binding, binding_mappings_by_uuid[binding_uuid])
+
     def test_role_with_same_default_and_resource_permission_reuses_same_v2_role(self):
         """With same resource permissions (when one of those is the default workspace), reuse the same v2 role."""
         role = self.given_v1_role(
@@ -2171,6 +2303,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.expect_binding_present(default_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_absent(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_absent(tenant, v2_role_id=v2_role_id, group_id=group_id)
+        self._expect_tuples_consistent()
 
         # Put the existing permission into root scope, then try removing it.
         with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
@@ -2181,6 +2314,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         # changed since it was created.
         self.assertFalse(BindingMapping.objects.filter(role=role).exists())
         self.assertEqual(0, len(self.tuples.find_tuples(relation("binding"))))
+        self._expect_tuples_consistent()
 
         # Re-adding the permission (but now in root scope) should bind the role in the root workspace.
         with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS=""):
@@ -2190,6 +2324,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.expect_binding_absent(default_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_present(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_absent(tenant, v2_role_id=v2_role_id, group_id=group_id)
+        self._expect_tuples_consistent()
 
         # Adding a new permission in tenant scope should bind the role to the tenant.
         with self.settings(ROOT_SCOPE_PERMISSIONS="app:*:*", TENANT_SCOPE_PERMISSIONS="other_app:*:*"):
@@ -2199,6 +2334,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.expect_binding_absent(default_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_absent(root_workspace, v2_role_id=v2_role_id, group_id=group_id)
         self.expect_binding_present(tenant, v2_role_id=v2_role_id, group_id=group_id)
+        self._expect_tuples_consistent()
 
     def test_role_with_mixed_resource_definitions_creates_multiple_bindings(self):
         """
