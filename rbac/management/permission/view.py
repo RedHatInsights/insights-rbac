@@ -26,7 +26,6 @@ from management.permission.serializer import PermissionSerializer
 from management.permissions.permission_access import PermissionAccessPermission
 from management.utils import (
     api_path_prefix,
-    matches_permission_pattern,
     validate_and_get_key,
     validate_uuid,
 )
@@ -110,20 +109,8 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             blocked_patterns = settings.V1_ROLE_PERMISSION_BLOCK_LIST
 
             if blocked_patterns:
-                # Evaluate queryset once and filter in Python
-                # We have to do this in Python because wildcard patterns (fnmatch)
-                # cannot be efficiently expressed in Django Q objects
-                all_permissions = list(queryset)  # Evaluate queryset once
-                excluded_ids = []
-
-                for perm in all_permissions:
-                    for pattern in blocked_patterns:
-                        if matches_permission_pattern(perm.permission, pattern):
-                            excluded_ids.append(perm.id)
-                            break  # No need to check other patterns
-
-                if excluded_ids:
-                    queryset = queryset.exclude(id__in=excluded_ids)
+                # Filter using exact string matches at the database level
+                queryset = queryset.exclude(permission__in=blocked_patterns)
 
         return queryset
 

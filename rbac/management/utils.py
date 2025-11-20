@@ -19,7 +19,6 @@ import logging
 import os
 import uuid
 from contextlib import contextmanager
-from fnmatch import fnmatch
 from typing import Optional, TypedDict
 from uuid import UUID
 
@@ -546,14 +545,14 @@ def flatten_validation_error(e: ValidationError):
 
 def matches_permission_pattern(permission, pattern):
     """
-    Check if a permission matches a pattern with wildcard support.
+    Check if a permission matches a pattern using exact string comparison.
 
     Examples:
-        matches_permission_pattern("rbac:role:read", "rbac:*:*") -> True
-        matches_permission_pattern("inventory:hosts:write", "rbac:*:*") -> False
-        matches_permission_pattern("rbac:role:read", "rbac:*:read") -> True
+        matches_permission_pattern("rbac:role:read", "rbac:role:read") -> True
+        matches_permission_pattern("rbac:role:read", "rbac:role:write") -> False
+        matches_permission_pattern("inventory:hosts:write", "rbac:role:read") -> False
     """
-    return fnmatch(permission, pattern)
+    return permission == pattern
 
 
 def is_permission_blocked_for_v1(permission_str, request=None):
@@ -580,13 +579,6 @@ def is_permission_blocked_for_v1(permission_str, request=None):
     if not request.path.startswith(f"/{api_path_prefix()}v1/"):
         return False
 
-    # Check against block list
+    # Check against block list using exact string matching
     block_list = getattr(settings, "V1_ROLE_PERMISSION_BLOCK_LIST", [])
-    if not block_list:
-        return False
-
-    for pattern in block_list:
-        if pattern and matches_permission_pattern(permission_str, pattern):
-            return True
-
-    return False
+    return permission_str in block_list
