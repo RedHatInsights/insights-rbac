@@ -15,6 +15,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import uuid
 from unittest.mock import patch, Mock
 from django.contrib.auth.models import User as DjangoUser
 from django.test import TestCase, override_settings
@@ -208,11 +209,14 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         role = Role.objects.create(tenant=self.tenant, name="Multi-Binding Role", system=False)
         Access.objects.create(role=role, permission=self.default_permission, tenant=self.tenant)
 
+        binding_root_uuid = uuid.uuid4()
+        binding_default_uuid = uuid.uuid4()
+
         # Create bindings at both root and default workspace (simulating incorrect historical state)
         binding_root = BindingMapping.objects.create(
             role=role,
             mappings={
-                "id": "binding-root",
+                "id": str(binding_root_uuid),
                 "groups": [],
                 "users": {},
                 "role": {"id": str(role.uuid), "is_system": False, "permissions": []},
@@ -225,7 +229,7 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         binding_default = BindingMapping.objects.create(
             role=role,
             mappings={
-                "id": "binding-default",
+                "id": str(binding_default_uuid),
                 "groups": [],
                 "users": {},
                 "role": {"id": str(role.uuid), "is_system": False, "permissions": []},
@@ -242,8 +246,10 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
             self.tuples.add(tuple_item)
 
         # Verify initial state: both bindings have tuples
-        root_tuples_before = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", "binding-root")))
-        default_tuples_before = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", "binding-default")))
+        root_tuples_before = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", str(binding_root_uuid))))
+        default_tuples_before = self.tuples.find_tuples(
+            all_of(resource("rbac", "role_binding", str(binding_default_uuid)))
+        )
         self.assertGreater(len(root_tuples_before), 0)
         self.assertGreater(len(default_tuples_before), 0)
 
@@ -276,7 +282,7 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         binding = BindingMapping.objects.create(
             role=role,
             mappings={
-                "id": "idempotent-binding",
+                "id": str(uuid.uuid4()),
                 "groups": [],
                 "users": {},
                 "role": {"id": str(role.uuid), "is_system": False, "permissions": []},
