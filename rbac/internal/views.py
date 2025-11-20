@@ -811,6 +811,8 @@ def role_removal(request):
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
+                dual_write_handler = SeedingRelationApiDualWriteHandler(role_obj)
+                dual_write_handler.replicate_deleted_system_role()
                 role_obj.delete()
                 return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
