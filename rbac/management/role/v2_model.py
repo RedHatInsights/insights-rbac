@@ -20,7 +20,7 @@ from typing import Optional
 
 import uuid_utils.compat as uuid
 from django.db import models
-from django.db.models import signals
+from django.db.models import signals, QuerySet
 from django.utils import timezone
 from management.models import Group, Permission, Role
 from management.rbac_fields import AutoDateTimeField
@@ -171,6 +171,9 @@ class RoleBinding(TenantAwareModel):
 
     resource_type = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
+
+    def bound_groups(self) -> QuerySet:
+        return Group.objects.filter(role_binding_entries__in=self.group_entries.all())
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]]) -> V2rolebinding:
         """

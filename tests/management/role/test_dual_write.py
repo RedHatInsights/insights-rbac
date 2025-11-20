@@ -2030,7 +2030,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.assertEqual(binding.resource_type, resource_tuples.only.resource_type_name)
         self.assertEqual(binding.resource_id, resource_tuples.only.resource_id)
 
-        db_groups = set(str(rbg.group.uuid) for rbg in binding.group_entries.all())
+        db_groups = set(str(g.uuid) for g in binding.bound_groups())
 
         tuple_groups = set(
             t.subject_id
@@ -2058,7 +2058,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.assertEqual(str(binding.role.uuid), mapping.mappings["role"]["id"])
 
         v1_groups = set(mapping.mappings["groups"])
-        v2_groups = set(str(rbg.group.uuid) for rbg in binding.group_entries.all())
+        v2_groups = set(str(g.uuid) for g in binding.bound_groups())
 
         self.assertEqual(v1_groups, v2_groups)
 
