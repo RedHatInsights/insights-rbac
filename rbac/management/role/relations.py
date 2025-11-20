@@ -15,10 +15,63 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Contains utilities for handling relations between V2 roles."""
+import logging
 from uuid import UUID
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
+from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from migration_tool.utils import create_relationship
+
+
+logger = logging.getLogger(__name__)
+
+
+def deduplicate_role_permission_relationships(relationships: list[Relationship]) -> list[Relationship]:
+    """
+    Deduplicate role-to-principal permission relationships.
+
+    When multiple bindings share the same V2 role, each binding generates identical
+    role-to-principal permission tuples (e.g., rbac/role:X#inventory_groups_read@rbac/principal:*).
+    This function deduplicates these expected duplicates while preserving all other relationships.
+
+    Args:
+        relationships: List of Relationship objects
+
+    Returns:
+        Deduplicated list of Relationship objects
+    """
+    seen = set()
+    deduplicated = []
+    role_permission_duplicates = []
+
+    for rel in relationships:
+        key = stringify_spicedb_relationship(rel)
+
+        if key in seen:
+            # Check if this is a role-to-principal permission tuple
+            is_role_permission = (
+                rel.resource.type.namespace == "rbac"
+                and rel.resource.type.name == "role"
+                and rel.subject.subject.type.namespace == "rbac"
+                and rel.subject.subject.type.name == "principal"
+                and rel.subject.subject.id == "*"
+            )
+
+            if is_role_permission:
+                # Expected duplicate - multiple bindings share same V2role
+                role_permission_duplicates.append(key)
+                continue
+
+        seen.add(key)
+        deduplicated.append(rel)
+
+    if role_permission_duplicates:
+        logger.info(
+            f"Deduplicated {len(role_permission_duplicates)} role-to-principal permission tuples "
+            f"(had {len(relationships)} relationships, kept {len(deduplicated)})"
+        )
+
+    return deduplicated
 
 
 def role_child_relationship(parent_uuid: UUID | str, child_uuid: UUID | str) -> Relationship:

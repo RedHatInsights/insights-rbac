@@ -33,7 +33,7 @@ from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import BindingMapping, Role
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.relations import role_child_relationship
+from management.role.relations import deduplicate_role_permission_relationships, role_child_relationship
 from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.migrate_role import migrate_role, relation_tuples_for_bindings
 from migration_tool.models import V2boundresource
@@ -370,6 +370,10 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 default_resource=target_resource,
                 current_bindings=self.binding_mappings.values(),
             )
+
+            # Deduplicate role-to-principal permission tuples which are expected when
+            # multiple bindings share the same V2role
+            relations = deduplicate_role_permission_relationships(relations)
 
             prior_mappings = self.binding_mappings
 
