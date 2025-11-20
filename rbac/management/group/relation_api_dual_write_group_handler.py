@@ -30,7 +30,6 @@ from management.permission.scope_service import (
     TenantScopeResources,
 )
 from management.principal.model import Principal
-from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
     PartitionKey,
@@ -143,7 +142,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         try:
             # Deduplicate relations_to_add to avoid duplicates when generate_relations
             # is called multiple times with the same data
-            deduplicated_add = self._deduplicate_relations(self.relations_to_add)
+            deduplicated_add = self._deduplicate_subject_relations(self.relations_to_add, handler_name="Group")
 
             self._replicator.replicate(
                 ReplicationEvent(
@@ -157,51 +156,6 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         except Exception as e:
             logger.error(f"Replication event failed for group: {self.group.uuid}: {e}")
             raise DualWriteException(e)
-
-    def _deduplicate_relations(self, relationships):
-        """
-        Deduplicate role_binding#subject relationships.
-
-        When generate_relations_reset_roles is called multiple times with the same role/group,
-        duplicate subject tuples are created. These are expected and should be deduplicated.
-        Other duplicates are bugs.
-        """
-        seen = set()
-        deduplicated = []
-        subject_duplicates = []
-
-        for rel in relationships:
-            key = stringify_spicedb_relationship(rel)
-
-            if key in seen:
-                # Check if this is a role_binding#subject tuple
-                is_subject_tuple = (
-                    rel.resource.type.namespace == "rbac"
-                    and rel.resource.type.name == "role_binding"
-                    and rel.relation == "subject"
-                )
-
-                if is_subject_tuple:
-                    # Expected duplicate - generate_relations called multiple times
-                    subject_duplicates.append(key)
-                    continue
-                else:
-                    # Unexpected duplicate - this is a bug!
-                    raise ValueError(
-                        f"Unexpected duplicate relationship in Group handler: {key}. "
-                        "This indicates a bug in tuple generation logic."
-                    )
-
-            seen.add(key)
-            deduplicated.append(rel)
-
-        if subject_duplicates:
-            logger.info(
-                f"[Group Dual Write] Deduplicated {len(subject_duplicates)} subject tuples "
-                f"(had {len(relationships)}, kept {len(deduplicated)})"
-            )
-
-        return deduplicated
 
     def generate_relations_reset_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
