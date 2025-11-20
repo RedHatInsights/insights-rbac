@@ -18,9 +18,10 @@
 """Class to handle Dual Write API related operations."""
 import logging
 from abc import ABC
-from typing import Optional
+from typing import Optional, Iterable
 
 from django.conf import settings
+from django.db.models import Model
 from kessel.relations.v1beta1 import common_pb2
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import Workspace
@@ -34,6 +35,7 @@ from management.relation_replicator.relation_replicator import ReplicationEventT
 from management.role.model import BindingMapping, Role
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.relations import deduplicate_role_permission_relationships, role_child_relationship
+from management.role.v2_model import CustomRoleV2, RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.migrate_role import migrate_role, relation_tuples_for_bindings
 from migration_tool.models import V2boundresource
@@ -230,6 +232,28 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             raise DualWriteException(e)
 
 
+def _by_pk(models: Iterable[Model]) -> dict:
+    out = {m.pk: m for m in models}
+
+    if None in out:
+        raise ValueError("Cannot have an unsaved model in a dict by primary key.")
+
+    return out
+
+
+def _update_by_pk(old_by_pk: dict, new: Iterable[Model]):
+    old_by_pk = dict(old_by_pk)
+
+    for model in new:
+        if model.pk is not None:
+            old_by_pk.pop(model.pk, None)
+
+        model.save()
+
+    for removed in old_by_pk.values():
+        removed.delete()
+
+
 class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations."""
 
@@ -261,7 +285,9 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             self.role_relations: list[common_pb2.Relationship] = []
             self.current_role_relations: list[common_pb2.Relationship] = []
             self.role = role
-            self.binding_mappings: dict[str, BindingMapping] = {}
+            self.binding_mappings: dict[int, BindingMapping] = {}
+            self.role_bindings: dict[int, BindingMapping] = {}
+            self.v2_roles: dict[int, CustomRoleV2] = {}
 
             binding_tenant = tenant if tenant is not None else role.tenant
 
@@ -291,7 +317,9 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 "[Dual Write] Generate relations from current state of role(%s): '%s'", self.role.uuid, self.role.name
             )
 
-            self.binding_mappings = {m.id: m for m in self.role.binding_mappings.select_for_update().all()}
+            self.binding_mappings = _by_pk(self.role.binding_mappings.select_for_update())
+            self.role_bindings = _by_pk(RoleBinding.objects.filter(role__v1_source=self.role).select_for_update())
+            self.v2_roles = _by_pk(self.role.v2_roles.select_for_update())
 
             if not self.binding_mappings:
                 logger.warning(
@@ -365,30 +393,25 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
             target_resource = V2boundresource.for_model(target_model)
 
-            relations, mappings = migrate_role(
+            relations, migrate_result = migrate_role(
                 self.role,
                 default_resource=target_resource,
                 current_bindings=self.binding_mappings.values(),
+                current_v2_roles=self.v2_roles.values(),
             )
 
             # Deduplicate role-to-principal permission tuples which are expected when
             # multiple bindings share the same V2role
             relations = deduplicate_role_permission_relationships(relations)
 
-            prior_mappings = self.binding_mappings
+            _update_by_pk(old_by_pk=self.binding_mappings, new=migrate_result.binding_mappings)
+            _update_by_pk(old_by_pk=self.role_bindings, new=migrate_result.role_bindings)
+            _update_by_pk(old_by_pk=self.v2_roles, new=migrate_result.v2_roles)
 
             self.role_relations = relations
-            self.binding_mappings = {m.id: m for m in mappings}
-
-            # Create or update mappings as needed
-            for mapping in mappings:
-                if mapping.id is not None:
-                    prior_mappings.pop(mapping.id)
-                mapping.save()
-
-            # Delete any mappings to resources this role no longer gives access to
-            for mapping in prior_mappings.values():
-                mapping.delete()
+            self.binding_mappings = _by_pk(migrate_result.binding_mappings)
+            self.role_bindings = _by_pk(migrate_result.role_bindings)
+            self.v2_roles = _by_pk(migrate_result.v2_roles)
 
             return relations
         except Exception as e:
