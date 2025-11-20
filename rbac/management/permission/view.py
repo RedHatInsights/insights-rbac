@@ -24,7 +24,11 @@ from management.filters import CommonFilters
 from management.models import Access, Permission, Role
 from management.permission.serializer import PermissionSerializer
 from management.permissions.permission_access import PermissionAccessPermission
-from management.utils import validate_and_get_key, validate_uuid
+from management.utils import (
+    api_path_prefix,
+    validate_and_get_key,
+    validate_uuid,
+)
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -94,6 +98,21 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         "verb",
     )
     ordering = ("permission_collate",)
+
+    def get_queryset(self):
+        """Override to filter out blocked permissions for v1 API."""
+        queryset = super().get_queryset()
+
+        # Check if this is a v1 request and filter blocked permissions
+        # This hides permissions from v1 that are only meant for v2
+        if self.request.path.startswith(f"/{api_path_prefix()}v1/"):
+            blocked_permissions = settings.V1_ROLE_PERMISSION_BLOCK_LIST
+
+            if blocked_permissions:
+                # Filter using exact string matches at the database level
+                queryset = queryset.exclude(permission__in=blocked_permissions)
+
+        return queryset
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of permissions for the tenant.
