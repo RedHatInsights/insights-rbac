@@ -16,6 +16,7 @@
 #
 
 """Model for role V2 management."""
+from typing import Optional
 
 import uuid_utils.compat as uuid
 from django.db import models
@@ -26,6 +27,7 @@ from management.rbac_fields import AutoDateTimeField
 from rest_framework import serializers
 
 from api.models import TenantAwareModel
+from migration_tool.models import V2role, V2rolebinding, V2boundresource
 
 
 class RoleV2(TenantAwareModel):
@@ -58,6 +60,22 @@ class RoleV2(TenantAwareModel):
         """Save the model and run all validations from the model."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def as_migration_value(self) -> V2role:
+        if self.type == RoleV2.Types.PLATFORM:
+            raise ValueError("V2roles are not supported for PLATFORM roles.")
+
+        if self.type == RoleV2.Types.SEEDED:
+            return V2role.for_system_role(id=str(self.uuid))
+
+        if self.type == RoleV2.Types.CUSTOM:
+            return V2role(
+                id=str(self.uuid),
+                is_system=False,
+                permissions=frozenset(p.v2_string() for p in self.permissions.all()),
+            )
+
+        raise ValueError(f"Unexpected type of role: {self.type} for {self}")
 
 
 class TypedRoleV2Manager(models.Manager):
@@ -153,6 +171,30 @@ class RoleBinding(TenantAwareModel):
 
     resource_type = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
+
+    def as_migration_value(self, force_group_uuids: Optional[list[str]]) -> V2rolebinding:
+        """
+        Return the V2rolebinding equivalent of this role binding.
+
+        group_uuids is provided in the case where
+        """
+        if force_group_uuids is None:
+            force_group_uuids = [self.group_entries.select_related("group").values("group.uuid", flat=True)]
+
+        return V2rolebinding(
+            id=str(self.uuid),
+            role=self.role.as_migration_value(),
+            resource=V2boundresource(
+                # TODO: we currently assume all resources types are in namespace "rbac". This is currently true for
+                #  all the types we care about, but is not necessarily true in general. The semantics of the
+                #  Inventory API (which we will eventually have to migrate to) are different and do not have a
+                #  resource type namespace, per se.
+                resource_type=("rbac", self.resource_type),
+                resource_id=self.resource_id,
+            ),
+            groups=force_group_uuids,
+            users={},
+        )
 
     class Meta:
         constraints = [
