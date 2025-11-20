@@ -24,6 +24,8 @@ from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Workspace, Access, Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
+from management.policy.model import Policy
+from management.role.model import ResourceDefinition
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
@@ -547,6 +549,93 @@ class SystemRoleBindingMigrationTest(TestCase):
         group_uuids_in_tuples = {t.subject_id for t in all_group_tuples}
         self.assertIn(str(groupA.uuid), group_uuids_in_tuples, "GroupA UUID should be in tuples")
         self.assertIn(str(groupB.uuid), group_uuids_in_tuples, "GroupB UUID should be in tuples")
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+    def test_migration_creates_bindings_for_roles_with_no_bindings(self):
+        """
+        Test that migration creates bindings for custom roles that have zero bindings.
+
+        This reproduces the issue where roles created before replication was enabled
+        have no bindings at all, and migration should create them.
+
+        Scenario:
+        - Custom role with inventory:groups:read and resource definition
+        - Role created before replication (no bindings exist)
+        - Run migration
+        - Verify binding is created with correct data
+        """
+        # Create permission
+        perm = Permission.objects.create(
+            tenant=self.tenant,
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            permission="inventory:groups:read",
+        )
+
+        # Create a specific workspace for the resource definition
+        specific_workspace = Workspace.objects.create(
+            name="Specific Workspace No Bindings",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.root_workspace,
+        )
+
+        # Create a group
+        group = Group.objects.create(name="Test Group No Bindings", tenant=self.tenant)
+
+        # Create custom role WITHOUT dual write (simulating pre-V2 creation)
+        role = Role.objects.create(tenant=self.tenant, name="Role With No Bindings", system=False)
+
+        # Add permission with resource definition
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+        ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [str(specific_workspace.id)],
+            },
+            tenant=self.tenant,
+        )
+
+        # Assign role to group via policy
+        policy = Policy.objects.create(name="Test Policy No Bindings", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.group = group
+        policy.save()
+
+        # Verify initial state: NO bindings exist
+        bindings_before = BindingMapping.objects.filter(role=role)
+        self.assertEqual(bindings_before.count(), 0, "Should have NO bindings before migration")
+
+        # Run migration
+        replicator = InMemoryRelationReplicator(self.tuples)
+        result = migrate_custom_role_bindings(role, replicator)
+
+        # Should return 1 (migrated)
+        self.assertEqual(result, 1)
+
+        # After migration: verify binding is created
+        bindings_after = BindingMapping.objects.filter(role=role)
+        self.assertEqual(bindings_after.count(), 1, "Should have 1 binding after migration")
+
+        # Verify the binding is at the correct workspace
+        binding = bindings_after.first()
+        self.assertEqual(binding.resource_id, str(specific_workspace.id))
+
+        # Verify the binding has the group assigned
+        self.assertIn(str(group.uuid), binding.mappings["groups"])
+
+        # Verify the binding has the correct permission
+        permissions = binding.mappings.get("role", {}).get("permissions", [])
+        self.assertIn("inventory_groups_read", permissions)
+
+        # Verify tuples were created
+        binding_id = binding.mappings["id"]
+        all_tuples = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
+        # Should have at least the group subject tuple
+        self.assertGreater(len(all_tuples), 0, "Should have tuples for the new binding")
 
 
 class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):

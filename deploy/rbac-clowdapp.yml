@@ -233,8 +233,6 @@ objects:
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_APPLICATION_NAME
@@ -526,8 +524,6 @@ objects:
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_APPLICATION_NAME
@@ -701,6 +697,19 @@ objects:
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          # Relations API variables
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
             value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
           - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
@@ -919,8 +928,6 @@ objects:
               value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
             - name: V2_MIGRATION_APP_EXCLUDE_LIST
               value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-            - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-              value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
             - name: WORKSPACE_APPLICATION_NAME
@@ -1142,8 +1149,6 @@ objects:
               value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
             - name: V2_MIGRATION_APP_EXCLUDE_LIST
               value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-            - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-              value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
             - name: WORKSPACE_APPLICATION_NAME
@@ -1434,9 +1439,6 @@ parameters:
 - description: Application exclude list for v2 migration (all permissions)
   name: V2_MIGRATION_APP_EXCLUDE_LIST
   value: approval
-- description: Resources (by namespace:name) exclude list for v2 migration (resource definitions only)
-  name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-  value: rbac:workspace
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'False'

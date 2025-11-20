@@ -446,6 +446,31 @@ class OutboxReplicatorTest(TestCase):
         self.replicator.replicate(event)
         self.assertEqual(len(self.log), 1)
 
+    def test_deduplicate_raises_error_on_any_duplicates(self):
+        """
+        Test that ANY duplicate tuples raise an error.
+
+        All duplicates indicate a bug and should raise a ValueError.
+        """
+        replicator = OutboxReplicator()
+
+        # Create duplicate role_binding tuples (this is a bug!)
+        binding_id = "binding-123"
+        role_id = "role-456"
+        dup_binding1 = create_relationship(("rbac", "role_binding"), binding_id, ("rbac", "role"), role_id, "role")
+        dup_binding2 = create_relationship(("rbac", "role_binding"), binding_id, ("rbac", "role"), role_id, "role")
+
+        relationships = [dup_binding1, dup_binding2]
+
+        # Should raise ValueError for duplicates
+        with self.assertRaises(ValueError) as context:
+            replicator._check_for_duplicate_relationships(relationships)
+
+        # Verify error message contains useful information
+        error_message = str(context.exception)
+        self.assertIn("duplicate relationships", error_message)
+        self.assertIn("role_binding", error_message)
+
 
 class OutboxReplicatorPrometheusTest(TestCase):
     """Test OutboxReplicator Prometheus Metrics."""

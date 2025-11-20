@@ -440,57 +440,6 @@ class RoleViewsetTests(IdentityRequest):
                 ANY,
             )
 
-    @override_settings(V2_MIGRATION_RESOURCE_EXCLUDE_LIST=["rbac:workspace"])
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-    def test_role_replication_exluded_resource(self, mock_method):
-        """Test that excluded resources do not replicate via dual write."""
-        # Set up
-        role_name = "test_update_role"
-        access_data = [
-            {
-                "permission": "app:*:*",
-                "resourceDefinitions": [
-                    {
-                        "attributeFilter": {
-                            "key": "group.id",
-                            "operation": "equal",
-                            "value": "valueA",
-                        }
-                    }
-                ],
-            },
-            {"permission": "app:*:read", "resourceDefinitions": []},
-        ]
-
-        response = self.create_role(role_name, in_access_data=access_data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        actual_call_arg = mock_method.call_args[0][0]
-        actual_sorted = normalize_and_sort(actual_call_arg)
-        to_add = actual_sorted["relations_to_add"]
-
-        self.assertEqual([], actual_sorted["relations_to_remove"])
-        self.assertEqual(
-            3,
-            len(to_add),
-            "too many relations (should not add relations for excluded resource)",
-        )
-
-        role_binding = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role_binding")["resource"][
-            "id"
-        ]
-        workspace = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "workspace")
-
-        self.assertEqual(
-            role_binding,
-            workspace["subject"]["subject"]["id"],
-            "expected binding to workspace (not to excluded resource)",
-        )
-
-        role = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role")
-
-        self.assertEqual(role["relation"], "app_all_read", "expected workspace permission")
-
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_create_role_with_display_success(self, mock_method):
         """Test that we can create a role."""
