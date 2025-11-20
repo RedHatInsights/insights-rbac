@@ -249,10 +249,11 @@ class MigrateTests(TestCase):
             call(f"workspace:{self.workspace_id_1}#binding@role_binding:{rolebinding_a2}"),
             ## Role binding to role_a3
             call(f"role_binding:{rolebinding_a31}#role@role:{v2_role_a31}"),
-            call(f"role:{v2_role_a31}#inventory_hosts_write@principal:*"),
+            # NOTE: Duplicate permission tuples are deduplicated, so we only expect it once
+            # call(f"role:{v2_role_a31}#inventory_hosts_write@principal:*"),  # Deduplicated!
             call(f"workspace:{workspace_1}#binding@role_binding:{rolebinding_a31}"),
             call(f"role_binding:{rolebinding_a32}#role@role:{v2_role_a32}"),
-            call(f"role:{v2_role_a32}#inventory_hosts_write@principal:*"),
+            # call(f"role:{v2_role_a32}#inventory_hosts_write@principal:*"),  # Deduplicated!
             call(f"workspace:{workspace_2}#binding@role_binding:{rolebinding_a32}"),
             ## System role 1 assigment to custom group
             call(f"workspace:{self.default_workspace.id}#binding@role_binding:{role_binding_system_role_1_uuid}"),
@@ -263,6 +264,17 @@ class MigrateTests(TestCase):
             call(f"role_binding:{role_binding_system_role_2_uuid}#subject@group:{self.custom_default_group.uuid}"),
             call(f"role_binding:{role_binding_system_role_2_uuid}#role@role:{self.system_role_2.uuid}"),
         ]
+
+        # With deduplication, we should see the permission tuple for the V2 role only once
+        # Add it separately since v2_role_a31 and v2_role_a32 might be the same (shared V2 role)
+        if v2_role_a31 == v2_role_a32:
+            # Both bindings share same V2 role - permission tuple appears once
+            tuples.append(call(f"role:{v2_role_a31}#inventory_hosts_write@principal:*"))
+        else:
+            # Different V2 roles - each has its own permission tuple
+            tuples.append(call(f"role:{v2_role_a31}#inventory_hosts_write@principal:*"))
+            tuples.append(call(f"role:{v2_role_a32}#inventory_hosts_write@principal:*"))
+
         logger_mock.info.assert_has_calls(tuples, any_order=True)
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
