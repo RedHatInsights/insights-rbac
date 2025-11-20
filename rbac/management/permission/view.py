@@ -106,11 +106,11 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         # Check if this is a v1 request and filter blocked permissions
         # This hides permissions from v1 that are only meant for v2
         if self.request.path.startswith(f"/{api_path_prefix()}v1/"):
-            blocked_patterns = settings.V1_ROLE_PERMISSION_BLOCK_LIST
+            blocked_permissions = settings.V1_ROLE_PERMISSION_BLOCK_LIST
 
-            if blocked_patterns:
+            if blocked_permissions:
                 # Filter using exact string matches at the database level
-                queryset = queryset.exclude(permission__in=blocked_patterns)
+                queryset = queryset.exclude(permission__in=blocked_permissions)
 
         return queryset
 

@@ -1651,7 +1651,7 @@ parameters:
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
 - name: V1_ROLE_PERMISSION_BLOCK_LIST
-  description: Comma-separated list of permission patterns to hide from v1 API (e.g., rbac:*:role_binding_view)
+  description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
   value: ''
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
