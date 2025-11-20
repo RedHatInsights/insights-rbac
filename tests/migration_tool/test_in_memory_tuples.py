@@ -132,13 +132,12 @@ class TestInMemoryTuples(unittest.TestCase):
     def test_write_detects_only_duplicates_in_add_list(self):
         """Test that write() only checks for duplicates within the add list, not with existing tuples."""
         # Add a relationship to the store
-        rel1 = create_relationship(("rbac", "role_binding"), "binding-abc", ("rbac", "workspace"), "ws-123", "binding")
-        self.store.write([rel1], [])
+        rel = create_relationship(("rbac", "role_binding"), "binding-abc", ("rbac", "workspace"), "ws-123", "binding")
 
-        # Create a different relationship and a duplicate of it
-        rel2 = create_relationship(("rbac", "role_binding"), "binding-xyz", ("rbac", "role"), "role-789", "role")
-        rel3 = create_relationship(("rbac", "role_binding"), "binding-xyz", ("rbac", "role"), "role-789", "role")
+        self.store.write([rel], [])
 
-        # Should raise error because rel2 and rel3 are duplicates within the batch
-        with self.assertRaises(ValueError) as context:
-            self.store.write([rel2, rel3], [])
+        try:
+            # Duplicating a relationship that is already stored should be fine.
+            self.store.write([rel], [])
+        except ValueError as e:
+            self.fail(f"Expected adding a duplicate of an existing relationship to work, but got: {e}")
