@@ -21,7 +21,7 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
-from management.models import Workspace
+from management.models import BindingMapping, Group, Role, RoleBinding, RoleBindingGroup, Workspace
 from management.permission.scope_service import Scope, bound_model_for_scope
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -30,7 +30,7 @@ from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEventType,
 )
-from management.role.model import BindingMapping, Role
+from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 from api.models import Tenant
@@ -178,25 +178,10 @@ class RelationApiDualWriteSubjectHandler:
                 resource_locked=False,
             )
         else:
-            # NOTE: The custom Role MUST be locked before this point in Read Committed isolation.
-            # There is a risk of write skew here otherwise, in the case that permissions are added
-            # to a custom role that currently has no permissions.
-            # In that case there would be no bindings to lock.
-            # We must lock something to prevent concurrent updates, so we lock the Role.
-            # Because custom roles must be locked already by this point,
-            # we don't need to lock the binding here.
-            bindings: Iterable[BindingMapping] = role.binding_mappings.all()
-            if not bindings:
-                logger.warning(
-                    "[Dual Write] Binding mappings not found for role(%s): '%s'. "
-                    "Assuming no current relations exist. "
-                    "If this is NOT the case, relations are inconsistent!",
-                    role.uuid,
-                    role.name,
-                )
-            for mapping in bindings:
-                update_mapping(mapping)
-                mapping.save(force_update=True)
+            self._update_mapping_for_custom_role(
+                role=role,
+                update_mapping=update_mapping,
+            )
 
     def _lock_resource_for_update(self, resource: Tenant | Workspace):
         if isinstance(resource, Tenant):
@@ -273,3 +258,85 @@ class RelationApiDualWriteSubjectHandler:
                     # otherwise we can end up with extra untracked mapping tuples.
                     mapping = create_default_mapping_for_system_role(v2_resource)
                     mapping.save(force_insert=True)
+
+    def _update_mapping_for_custom_role(
+        self, role: Role, update_mapping: Callable[[BindingMapping], None], migrated: bool = False
+    ):
+        # NOTE: The custom Role MUST be locked before this point in Read Committed isolation.
+        # There is a risk of write skew here otherwise, in the case that permissions are added
+        # to a custom role that currently has no permissions.
+        # In that case there would be no bindings to lock.
+        # We must lock something to prevent concurrent updates, so we lock the Role.
+        # Because custom roles must be locked already by this point,
+        # we don't need to lock the binding here.
+        #
+        # If this assumption is ever changed, then we must be sure to explicitly lock the role below when migrating it.
+        mappings: list[BindingMapping] = list(role.binding_mappings.all())
+        bindings_by_id: dict[str, RoleBinding] = {
+            str(b.uuid): b for b in RoleBinding.objects.filter(role__v1_source=role)
+        }
+
+        if not mappings:
+            logger.warning(
+                "[Dual Write] Binding mappings not found for role(%s): '%s'. "
+                "Assuming no current relations exist. "
+                "If this is NOT the case, relations are inconsistent!",
+                role.uuid,
+                role.name,
+            )
+
+        if not migrated and (mappings and not bindings_by_id):
+            # We can have a state where the BindingMappings exist, but the RoleBindings have not yet been created.
+            # We need the appropriate RoleBindings to exist so that we can update them below, so migrate the role now
+            # in order to create them.
+            #
+            # We must have already locked the custom role at this point, so we don't need to lock it again here.
+            role_handler = RelationApiDualWriteHandler(
+                role=role,
+                event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
+                replicator=self._replicator,
+                tenant=self.tenant,
+            )
+
+            role_handler.prepare_for_update()
+            role_handler.replicate_new_or_updated_role(role)
+
+            return self._update_mapping_for_custom_role(
+                role=role,
+                update_mapping=update_mapping,
+                migrated=True,
+            )
+
+        # If migration is not needed, then we should have the same number of BindingMappings and RoleBindings.
+        assert len(mappings) == len(bindings_by_id)
+
+        def _key_attrs_for(mapping: BindingMapping):
+            return (
+                mapping.mappings["id"],
+                mapping.role,
+                mapping.resource_type_namespace,
+                mapping.resource_type_name,
+                mapping.resource_id,
+            )
+
+        for mapping in mappings:
+            prior_key = _key_attrs_for(mapping)
+
+            update_mapping(mapping)
+            mapping.save(force_update=True)
+
+            updated_key = _key_attrs_for(mapping)
+
+            if prior_key != updated_key:
+                raise ValueError("Expected ID, role, and resource of role binding not to be updated.")
+
+            new_groups = Group.objects.filter(uuid__in=mapping.mappings["groups"])
+            missing_groups = set(mapping.mappings["groups"]).difference(str(g.uuid) for g in new_groups)
+
+            if missing_groups:
+                raise ValueError(f"Not all expected groups could be found. Missing UUIDs: {missing_groups}")
+
+            role_binding = bindings_by_id[mapping.mappings["id"]]
+
+            RoleBindingGroup.objects.filter(binding=role_binding).delete()
+            RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=role_binding, group=g) for g in new_groups])
