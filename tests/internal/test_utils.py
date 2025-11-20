@@ -254,3 +254,157 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         self.assertIsInstance(rd_equal.attributeFilter["value"], str)
 
         # Note: Dual write handler manages binding updates automatically
+
+    def test_clean_preserves_none_value_for_ungrouped_workspace(self):
+        """
+        Test that None values (representing ungrouped workspace) are preserved.
+
+        Setup: Create RD with None value mixed with valid and invalid workspace IDs
+        Action: Call cleanup function
+        Verify: None is preserved, valid IDs kept, invalid IDs removed
+        """
+        # Create a custom role
+        role = Role.objects.create(name="Test Role Ungrouped", system=False, tenant=self.tenant)
+
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create a valid workspace (use STANDARD type to avoid unique constraint)
+        valid_ws = Workspace.objects.create(
+            tenant=self.tenant, type=Workspace.Types.STANDARD, name="Valid Workspace", parent=self.default_ws
+        )
+
+        # Create RD with None (ungrouped), valid UUID, and invalid UUID
+        fake_ws_id = "95473d62-56ea-4c0c-8945-4f3f6a620669"
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [None, str(valid_ws.id), fake_ws_id],
+            },
+            tenant=self.tenant,
+        )
+
+        # BEFORE: Verify setup
+        self.assertEqual(len(rd.attributeFilter["value"]), 3)
+        self.assertIn(None, rd.attributeFilter["value"])
+        self.assertIn(str(valid_ws.id), rd.attributeFilter["value"])
+        self.assertIn(fake_ws_id, rd.attributeFilter["value"])
+
+        # Call the cleanup function
+        results = clean_invalid_workspace_resource_definitions()
+
+        # Verify results
+        self.assertEqual(results["resource_definitions_fixed"], 1)
+        self.assertEqual(len(results["changes"]), 1)
+
+        # AFTER: Verify None is preserved, valid ID kept, invalid ID removed
+        rd.refresh_from_db()
+        self.assertIn(None, rd.attributeFilter["value"], "None value should be preserved for ungrouped workspace")
+        self.assertIn(str(valid_ws.id), rd.attributeFilter["value"])
+        self.assertNotIn(fake_ws_id, rd.attributeFilter["value"])
+
+    def test_clean_preserves_none_when_all_other_ids_invalid(self):
+        """
+        Test that None value is preserved even when all other IDs are invalid.
+
+        Setup: Create RD with only None and invalid workspace IDs
+        Action: Call cleanup function
+        Verify: None is preserved, invalid IDs removed
+        """
+        # Create a custom role
+        role = Role.objects.create(name="Test Role Only Ungrouped", system=False, tenant=self.tenant)
+
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create RD with only None and invalid UUIDs
+        fake_ws_id_1 = "95473d62-56ea-4c0c-8945-4f3f6a620669"
+        fake_ws_id_2 = "64f65afb-e6f7-4dbb-ba43-ffcdb4a7fb9b"
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [None, fake_ws_id_1, fake_ws_id_2],
+            },
+            tenant=self.tenant,
+        )
+
+        # BEFORE: Verify setup
+        self.assertEqual(len(rd.attributeFilter["value"]), 3)
+        self.assertIn(None, rd.attributeFilter["value"])
+
+        # Call the cleanup function
+        results = clean_invalid_workspace_resource_definitions()
+
+        # Verify results
+        self.assertEqual(results["resource_definitions_fixed"], 1)
+
+        # AFTER: Verify None is preserved, invalid IDs removed
+        rd.refresh_from_db()
+        self.assertIn(
+            None, rd.attributeFilter["value"], "None value should be preserved even when all other IDs are invalid"
+        )
+        self.assertNotIn(fake_ws_id_1, rd.attributeFilter["value"])
+        self.assertNotIn(fake_ws_id_2, rd.attributeFilter["value"])
+
+    def test_clean_preserves_none_for_equal_operation_ungrouped(self):
+        """
+        Test that None value is preserved for operation='equal' (ungrouped workspace).
+
+        Setup: Create RD with operation='equal' and value=None
+        Action: Call cleanup function (should not process since workspace_ids is empty)
+        Verify: None is preserved, RD is not modified
+
+        Note: When value=None, workspace_ids is empty, so the function skips processing
+        at line 241-242. This is correct behavior - None doesn't need cleaning.
+        """
+        # Create a custom role
+        role = Role.objects.create(name="Test Role Equal None", system=False, tenant=self.tenant)
+
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create RD with operation='equal' and value=None (ungrouped workspace)
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "equal",
+                "value": None,
+            },
+            tenant=self.tenant,
+        )
+
+        # BEFORE: Verify setup
+        self.assertIsNone(rd.attributeFilter["value"])
+
+        # Call the cleanup function - should not process this RD since workspace_ids is empty
+        results = clean_invalid_workspace_resource_definitions()
+
+        # Verify no changes (continues at line 241-242 since workspace_ids is empty)
+        self.assertEqual(results["resource_definitions_fixed"], 0)
+
+        # AFTER: Verify None is preserved
+        rd.refresh_from_db()
+        self.assertIsNone(rd.attributeFilter["value"], "None value should be preserved for operation='equal'")

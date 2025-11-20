@@ -228,6 +228,16 @@ def clean_invalid_workspace_resource_definitions() -> dict:
                     # Get workspace IDs from resource definition
                     workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
 
+                    # Check if the resource definition has None (for ungrouped workspace)
+                    operation = rd.attributeFilter.get("operation")
+                    original_value = rd.attributeFilter.get("value")
+                    has_none_value = False
+
+                    if operation == "in" and isinstance(original_value, list):
+                        has_none_value = None in original_value
+                    elif operation == "equal":
+                        has_none_value = original_value is None
+
                     if not workspace_ids:
                         continue
 
@@ -258,11 +268,19 @@ def clean_invalid_workspace_resource_definitions() -> dict:
 
                         # Preserve the value type based on operation
                         if updated_filter.get("operation") == "equal":
-                            # For "equal" operation, value should be a single string or empty string
-                            updated_filter["value"] = list(valid_workspace_ids)[0] if valid_workspace_ids else ""
+                            # For "equal" operation, value should be a single string, None, or empty string
+                            # Preserve None if it existed (for ungrouped workspace reference)
+                            if has_none_value and not valid_workspace_ids:
+                                updated_filter["value"] = None
+                            else:
+                                updated_filter["value"] = list(valid_workspace_ids)[0] if valid_workspace_ids else ""
                         else:
                             # For "in" operation, value should be a list
-                            updated_filter["value"] = list(valid_workspace_ids) if valid_workspace_ids else []
+                            # Preserve None value if it existed (for ungrouped workspace reference)
+                            new_value = list(valid_workspace_ids) if valid_workspace_ids else []
+                            if has_none_value:
+                                new_value.append(None)
+                            updated_filter["value"] = new_value
 
                         rd.attributeFilter = updated_filter
                         rd.save()
