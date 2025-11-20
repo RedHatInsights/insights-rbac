@@ -543,18 +543,6 @@ def flatten_validation_error(e: ValidationError):
         return [("__all__", str(e))]
 
 
-def matches_permission_pattern(permission, pattern):
-    """
-    Check if a permission matches a pattern using exact string comparison.
-
-    Examples:
-        matches_permission_pattern("rbac:role:read", "rbac:role:read") -> True
-        matches_permission_pattern("rbac:role:read", "rbac:role:write") -> False
-        matches_permission_pattern("inventory:hosts:write", "rbac:role:read") -> False
-    """
-    return permission == pattern
-
-
 def is_permission_blocked_for_v1(permission_str, request=None):
     """
     Check if permission should be blocked from v1 API endpoints.
