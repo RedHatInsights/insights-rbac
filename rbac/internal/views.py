@@ -76,7 +76,10 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
 from management.role.model import Access
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    SeedingRelationApiDualWriteHandler,
+)
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_binding_scope_in_worker,
@@ -805,6 +808,8 @@ def role_removal(request):
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
+                dual_write_handler = SeedingRelationApiDualWriteHandler(role_obj)
+                dual_write_handler.replicate_deleted_system_role()
                 role_obj.delete()
                 return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
