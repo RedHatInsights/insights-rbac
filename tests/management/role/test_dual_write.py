@@ -2280,6 +2280,30 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[])
 
+    def test_assign_group_no_rolebindngs(self):
+        """Test assigning a group to a custom role before RoleBindings have been created for it."""
+        role = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        group, _ = self.given_group("a group")
+
+        # Emulate RoleBindings not having been created for the role.
+        RoleBinding.objects.all().delete()
+
+        self.given_roles_assigned_to_group(group, [role])
+
+        v2_id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[v2_id], for_groups=[str(group.uuid)]
+        )
+
+        # The role should have been automatically migrated when assigning the group.
+        self.assertTrue(RoleBinding.objects.filter(role__v1_source=role).exists())
+        self._expect_tuples_consistent()
+
     def test_change_role_scope(self):
         with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
             role = self.given_v1_role(name="test role", default=["app:resource:verb"])
