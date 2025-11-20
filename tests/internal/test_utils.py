@@ -408,3 +408,71 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         # AFTER: Verify None is preserved
         rd.refresh_from_db()
         self.assertIsNone(rd.attributeFilter["value"], "None value should be preserved for operation='equal'")
+
+    def test_clean_dry_run_mode(self):
+        """
+        Test that dry_run mode reports changes without making them.
+
+        Setup: Create RD with invalid workspace IDs
+        Action: Call cleanup function with dry_run=True
+        Verify: Changes are reported but not applied to database
+        """
+        # Create a custom role
+        role = Role.objects.create(name="Test Role Dry Run", system=False, tenant=self.tenant)
+
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create RD with invalid workspace IDs
+        fake_ws_id_1 = "95473d62-56ea-4c0c-8945-4f3f6a620669"
+        fake_ws_id_2 = "64f65afb-e6f7-4dbb-ba43-ffcdb4a7fb9b"
+        original_value = [None, fake_ws_id_1, fake_ws_id_2]
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": original_value,
+            },
+            tenant=self.tenant,
+        )
+
+        # Call the cleanup function in DRY RUN mode
+        results = clean_invalid_workspace_resource_definitions(dry_run=True)
+
+        # Verify results show what WOULD be changed
+        self.assertTrue(results["dry_run"])
+        self.assertEqual(results["resource_definitions_fixed"], 0)  # Nothing actually fixed
+        self.assertEqual(len(results["changes"]), 1)  # But one change was detected
+
+        # Verify change info contains before/after details
+        change = results["changes"][0]
+        self.assertEqual(change["action"], "would_update")
+        self.assertEqual(change["original_value"], original_value)
+        self.assertEqual(change["new_value"], [None])  # Only None preserved
+        self.assertEqual(len(change["invalid_workspaces"]), 2)
+        self.assertTrue(change["preserved_none"])
+
+        # CRITICAL: Verify database was NOT changed
+        rd.refresh_from_db()
+        self.assertEqual(rd.attributeFilter["value"], original_value)
+        self.assertIn(fake_ws_id_1, rd.attributeFilter["value"])
+        self.assertIn(fake_ws_id_2, rd.attributeFilter["value"])
+
+        # Now run without dry_run to verify it actually makes changes
+        results = clean_invalid_workspace_resource_definitions(dry_run=False)
+        self.assertFalse(results["dry_run"])
+        self.assertEqual(results["resource_definitions_fixed"], 1)
+        self.assertEqual(results["changes"][0]["action"], "updated")
+
+        # Verify database WAS changed this time
+        rd.refresh_from_db()
+        self.assertEqual(rd.attributeFilter["value"], [None])
+        self.assertNotIn(fake_ws_id_1, rd.attributeFilter["value"])
+        self.assertNotIn(fake_ws_id_2, rd.attributeFilter["value"])
