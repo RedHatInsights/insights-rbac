@@ -222,6 +222,52 @@ def _v2_custom_role_from_v1(v1_role: Role, target_uuid: uuid.UUID):
     return new_role
 
 
+def _get_or_create_binding(
+    v1_role: Role,
+    v2_role: RoleV2,
+    resource: V2boundresource,
+    existing_mapping: Optional[BindingMapping],
+    group_uuids: list[str],
+) -> tuple[BindingMapping, RoleBinding]:
+    if v2_role.v1_source != v1_role:
+        raise ValueError("Expected V2 role to have the provided V1 role as its source.")
+
+    if existing_mapping is not None:
+        role_binding: RoleBinding
+        existing_binding_value = existing_mapping.get_role_binding()
+
+        role_binding, _ = RoleBinding.objects.update_or_create(
+            tenant=v1_role.tenant,
+            uuid=existing_binding_value.id,
+            defaults=dict(
+                role=v2_role,
+                resource_type=resource.resource_type[1],
+                resource_id=resource.resource_id,
+            ),
+        )
+
+        existing_mapping.update_mappings_from_role_binding(
+            role_binding.as_migration_value(force_group_uuids=group_uuids)
+        )
+
+        return existing_mapping, role_binding
+    else:
+        # No existing binding for this resource, have to create one
+        role_binding: RoleBinding = RoleBinding.objects.create(
+            tenant=v1_role.tenant,
+            role=v2_role,
+            resource_type=resource.resource_type[1],
+            resource_id=resource.resource_id,
+        )
+
+        new_mapping = BindingMapping.for_role_binding(
+            role_binding=role_binding.as_migration_value(force_group_uuids=group_uuids),
+            v1_role=v1_role,
+        )
+
+        return new_mapping, role_binding
+
+
 def permission_groupings_to_v2_role_bindings(
     perm_groupings: _PermissionGroupings,
     v1_role: Role,
@@ -255,12 +301,13 @@ def permission_groupings_to_v2_role_bindings(
     for resource, raw_expected_permissions in perm_groupings.items():
         expected_permissions = frozenset(raw_expected_permissions)
         existing_mapping = existing_mappings_by_resource.get(resource)
-        existing_binding_value = existing_mapping.get_role_binding() if existing_mapping is not None else None
 
         # Try to find an existing role with the permissions we want.
         new_role = latest_roles_by_permissions.get(expected_permissions)
 
         if new_role is None:
+            existing_binding_value = existing_mapping.get_role_binding() if existing_mapping is not None else None
+
             new_role = _v2_custom_role_from_v1(
                 v1_role=v1_role,
                 target_uuid=_target_role_uuid_for(
@@ -275,41 +322,16 @@ def permission_groupings_to_v2_role_bindings(
         # We should now have a role that we've either reused or created.
         assert new_role is not None
 
-        if existing_mapping is not None:
-            # Silence mypy. get_role_binding always returns non-None.
-            assert existing_binding_value is not None
+        new_binding_mapping, new_role_binding = _get_or_create_binding(
+            v1_role=v1_role,
+            v2_role=new_role,
+            resource=resource,
+            existing_mapping=existing_mapping,
+            group_uuids=list(latest_group_uuids),
+        )
 
-            role_binding, _ = RoleBinding.objects.update_or_create(
-                tenant=v1_role.tenant,
-                uuid=existing_binding_value.id,
-                defaults=dict(
-                    role=new_role,
-                    resource_type=resource.resource_type[1],
-                    resource_id=resource.resource_id,
-                ),
-            )
-
-            existing_mapping.update_mappings_from_role_binding(
-                role_binding=(role_binding.as_migration_value(force_group_uuids=latest_group_uuids))
-            )
-
-            latest_binding_mappings.append(existing_mapping)
-        else:
-            # No existing binding for this resource, have to create one
-            role_binding = RoleBinding.objects.create(
-                tenant=v1_role.tenant,
-                role=new_role,
-                resource_type=resource.resource_type[1],
-                resource_id=resource.resource_id,
-            )
-
-            latest_binding_mappings.append(
-                BindingMapping.for_role_binding(
-                    role_binding.as_migration_value(force_group_uuids=latest_group_uuids), v1_role=v1_role
-                )
-            )
-
-        latest_role_bindings.append(role_binding)
+        latest_binding_mappings.append(new_binding_mapping)
+        latest_role_bindings.append(new_role_binding)
 
     # Ensure that the RoleBindings we're returning have the correct set of groups.
     latest_binding_groups = [RoleBindingGroup(binding=b, group=g) for b in latest_role_bindings for g in latest_groups]
