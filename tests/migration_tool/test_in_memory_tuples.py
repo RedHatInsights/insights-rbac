@@ -168,9 +168,23 @@ class TestCreateRelationship(unittest.TestCase):
             )
 
         error_message = str(context.exception)
-        self.assertIn("Cannot create relationship with None resource_id", error_message)
+        self.assertIn("Cannot create relationship with None or empty resource_id", error_message)
         self.assertIn("workspace", error_message)
-        self.assertIn("None values should have been converted", error_message)
+
+    def test_create_relationship_raises_error_on_empty_resource_id(self):
+        """Test that create_relationship raises ValueError when resource_id is empty string."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                "",  # Invalid: empty resource_id
+                ("rbac", "role_binding"),
+                "binding-456",
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None or empty resource_id", error_message)
+        self.assertIn("workspace", error_message)
 
     def test_create_relationship_raises_error_on_none_subject_id(self):
         """Test that create_relationship raises ValueError when subject_id is None."""
@@ -184,6 +198,20 @@ class TestCreateRelationship(unittest.TestCase):
             )
 
         error_message = str(context.exception)
-        self.assertIn("Cannot create relationship with None subject_id", error_message)
+        self.assertIn("Cannot create relationship with None or empty subject_id", error_message)
         self.assertIn("role_binding", error_message)
-        self.assertIn("None values should have been converted", error_message)
+
+    def test_create_relationship_raises_error_on_empty_subject_id(self):
+        """Test that create_relationship raises ValueError when subject_id is empty string."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                "workspace-123",
+                ("rbac", "role_binding"),
+                "",  # Invalid: empty subject_id
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None or empty subject_id", error_message)
+        self.assertIn("role_binding", error_message)
