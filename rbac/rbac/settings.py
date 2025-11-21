@@ -575,7 +575,7 @@ READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SEC
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")
 # Comma-separated list of resource types that should trigger workspace hierarchy
 WORKSPACE_RESOURCE_TYPE = [
-    t.strip() for t in ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups,*").split(",")
+    t.strip() for t in ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups,hosts,*").split(",")
 ]
 WORKSPACE_ATTRIBUTE_FILTER = ENVIRONMENT.get_value("WORKSPACE_ATTRIBUTE_FILTER", default="group.id")
 WORKSPACE_HIERARCHY_ENABLED = ENVIRONMENT.bool("WORKSPACE_HIERARCHY_ENABLED", False)
