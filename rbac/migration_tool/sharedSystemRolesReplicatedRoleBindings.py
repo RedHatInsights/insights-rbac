@@ -148,6 +148,8 @@ def v1_role_to_v2_bindings(
                         resource_id = str(ungrouped_ws.id)
                     else:
                         continue
+                elif resource_id == "":
+                    continue
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
             add_element(

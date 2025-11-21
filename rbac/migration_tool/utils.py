@@ -34,18 +34,16 @@ def create_relationship(
     subject_relation: Optional[str] = None,
 ):
     """Create a relationship between a resource and a subject."""
-    # Validation gate: Ensure no None values in IDs
-    if resource_id is None:
+    # Validation gate: Ensure no None or empty values in IDs
+    if resource_id is None or resource_id == "":
         raise ValueError(
-            f"Cannot create relationship with None resource_id. "
+            f"Cannot create relationship with None or empty resource_id. "
             f"Resource: {resource_name}, Subject: {subject_name}, Subject ID: {subject_id}, Relation: {relation}. "
-            f"None values should have been converted to ungrouped workspace IDs before tuple creation."
         )
-    if subject_id is None:
+    if subject_id is None or subject_id == "":
         raise ValueError(
-            f"Cannot create relationship with None subject_id. "
+            f"Cannot create relationship with None or empty subject_id. "
             f"Resource: {resource_name}, Resource ID: {resource_id}, Subject: {subject_name}, Relation: {relation}. "
-            f"None values should have been converted to appropriate IDs before tuple creation."
         )
 
     return common_pb2.Relationship(
