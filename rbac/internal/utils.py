@@ -151,7 +151,7 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
             replicator = OutboxReplicator()
             replicator.replicate(
                 ReplicationEvent(
-                    event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
+                    event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
                     info={
                         "binding_id": binding.id,
                         "role_uuid": str(binding.role.uuid),

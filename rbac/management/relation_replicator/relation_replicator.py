@@ -67,6 +67,7 @@ class ReplicationEventType(str, Enum):
     FIX_RESOURCE_DEFINITIONS = "fix_resource_definitions"
     # Binding scope migration
     MIGRATE_BINDING_SCOPE = "migrate_binding_scope"
+    REMIGRATE_ROLE_BINDING = "remigrate_role_binding"
     DUPLICATE_BINDING_CLEANUP = "duplicate_binding_cleanup"
     WORKSPACE_IMPORT = "workspace_import"
     CREATE_WORKSPACE = "create_workspace"
