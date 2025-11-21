@@ -38,7 +38,7 @@ from kessel.relations.v1beta1 import common_pb2
 from management.relation_replicator.relations_api_replicator import (
     RelationsApiReplicator,
 )
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 from psycopg2 import sql
 
 from api.models import Tenant
@@ -47,6 +47,17 @@ relations_api_replication = RelationsApiReplicator()
 logger = logging.getLogger("rbac.core.kafka_consumer")
 
 # Metrics
+consumer_start_time = Gauge(
+    "rbac_kafka_consumer_start_time_seconds",
+    "Unix timestamp when the consumer started",
+)
+
+consumer_info = Gauge(
+    "rbac_kafka_consumer_info",
+    "Consumer running state: 1=running, 0=stopped",
+    ["topic", "group_id"],
+)
+
 messages_processed_total = Counter(
     "rbac_kafka_consumer_messages_processed_total",
     "Total number of messages processed",
@@ -1587,11 +1598,24 @@ class RBACKafkaConsumer:
         Use Kubernetes/orchestration layer to restart the consumer pod on failure.
         """
         try:
+            # Record consumer start time
+            consumer_start_time.set_to_current_time()
+            logger.info("Consumer start time recorded in metrics")
+
             # Initialize consumer and subscribe to topic
             self._initialize_consumer_setup()
 
             # Wait for partition assignment and acquire lock token
             self._wait_for_partition_assignment()
+
+            # Record consumer info after successful initialization
+            consumer_info.labels(
+                topic=self.topic,
+                group_id=settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
+            ).set(1)
+            logger.info(
+                f"Consumer info metric set: topic={self.topic}, group_id={settings.RBAC_KAFKA_CONSUMER_GROUP_ID}"
+            )
 
             # Start main message processing loop
             self._run_message_loop()
@@ -1635,6 +1659,14 @@ class RBACKafkaConsumer:
         self._shutdown_in_progress = True
         self.is_consuming = False
         self._stop_health_check_thread()
+
+        # Update consumer status metric
+        if hasattr(self, "topic"):
+            consumer_info.labels(
+                topic=self.topic,
+                group_id=settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
+            ).set(0)
+            logger.info("Consumer status metric updated to stopped")
 
         # Commit any remaining offsets on stop ONLY if not paused for retry
         if self.commit_config.commit_on_shutdown and self.offset_manager:
