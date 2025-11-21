@@ -221,7 +221,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
             roles_checked += 1
 
-            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE)
+            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
             dual_write.prepare_for_update()
 
             for access in role.access.all():

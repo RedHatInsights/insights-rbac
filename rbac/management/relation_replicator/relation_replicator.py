@@ -64,6 +64,7 @@ class ReplicationEventType(str, Enum):
     MIGRATE_CROSS_ACCOUNT_REQUEST = "migrate_cross_account_request"
     DELETE_BINDING_MAPPINGS = "delete_binding_mappings"
     CREATE_UNGROUPED_HOSTS_WORKSPACE = "create_ungrouped_hosts_workspace"
+    FIX_RESOURCE_DEFINITIONS = "fix_resource_definitions"
     # Binding scope migration
     MIGRATE_BINDING_SCOPE = "migrate_binding_scope"
     DUPLICATE_BINDING_CLEANUP = "duplicate_binding_cleanup"

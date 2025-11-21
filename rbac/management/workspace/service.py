@@ -80,7 +80,7 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID, tenant) -> dict:
                 logger.warning(f"Role vanished before it could be updated: pk={raw_role.pk!r}")
                 continue
 
-            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE)
+            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
             dual_write.prepare_for_update()  # Capture current bindings
 
             for access in role.access.all():
