@@ -255,13 +255,13 @@ class ReplicateMissingBindingTuplesTest(TestCase):
 
         # Note: Dual write handler manages binding updates automatically
 
-    def test_clean_preserves_none_value_for_ungrouped_workspace(self):
+    def test_clean_replaces_none_with_ungrouped_workspace_id(self):
         """
-        Test that None values (representing ungrouped workspace) are preserved.
+        Test that None values (representing ungrouped workspace) are replaced with ungrouped workspace ID.
 
         Setup: Create RD with None value mixed with valid and invalid workspace IDs
         Action: Call cleanup function
-        Verify: None is preserved, valid IDs kept, invalid IDs removed
+        Verify: None is replaced with ungrouped workspace ID, valid IDs kept, invalid IDs removed
         """
         # Create a custom role
         role = Role.objects.create(name="Test Role Ungrouped", system=False, tenant=self.tenant)
@@ -305,19 +305,30 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         self.assertEqual(results["resource_definitions_fixed"], 1)
         self.assertEqual(len(results["changes"]), 1)
 
-        # AFTER: Verify None is preserved, valid ID kept, invalid ID removed
+        # Get the ungrouped workspace ID for verification
+        ungrouped_ws = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+
+        # AFTER: Verify None is replaced with ungrouped workspace ID, valid ID kept, invalid ID removed
         rd.refresh_from_db()
-        self.assertIn(None, rd.attributeFilter["value"], "None value should be preserved for ungrouped workspace")
+        self.assertNotIn(
+            None, rd.attributeFilter["value"], "None value should be replaced with ungrouped workspace ID"
+        )
+        self.assertIn(str(ungrouped_ws.id), rd.attributeFilter["value"], "Ungrouped workspace ID should be present")
         self.assertIn(str(valid_ws.id), rd.attributeFilter["value"])
         self.assertNotIn(fake_ws_id, rd.attributeFilter["value"])
 
-    def test_clean_preserves_none_when_all_other_ids_invalid(self):
+        # Verify the change info reports the replacement
+        change = results["changes"][0]
+        self.assertTrue(change["none_replaced_with_ungrouped"])
+        self.assertEqual(change["ungrouped_workspace_id"], str(ungrouped_ws.id))
+
+    def test_clean_replaces_none_when_all_other_ids_invalid(self):
         """
-        Test that None value is preserved even when all other IDs are invalid.
+        Test that None value is replaced with ungrouped workspace ID even when all other IDs are invalid.
 
         Setup: Create RD with only None and invalid workspace IDs
         Action: Call cleanup function
-        Verify: None is preserved, invalid IDs removed
+        Verify: None is replaced with ungrouped workspace ID, invalid IDs removed
         """
         # Create a custom role
         role = Role.objects.create(name="Test Role Only Ungrouped", system=False, tenant=self.tenant)
@@ -354,24 +365,28 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         # Verify results
         self.assertEqual(results["resource_definitions_fixed"], 1)
 
-        # AFTER: Verify None is preserved, invalid IDs removed
+        # Get the ungrouped workspace ID for verification
+        ungrouped_ws = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+
+        # AFTER: Verify None is replaced with ungrouped workspace ID, invalid IDs removed
         rd.refresh_from_db()
+        self.assertNotIn(None, rd.attributeFilter["value"], "None should be replaced with ungrouped workspace ID")
         self.assertIn(
-            None, rd.attributeFilter["value"], "None value should be preserved even when all other IDs are invalid"
+            str(ungrouped_ws.id),
+            rd.attributeFilter["value"],
+            "Ungrouped workspace ID should be present even when all other IDs are invalid",
         )
         self.assertNotIn(fake_ws_id_1, rd.attributeFilter["value"])
         self.assertNotIn(fake_ws_id_2, rd.attributeFilter["value"])
+        self.assertEqual(len(rd.attributeFilter["value"]), 1, "Should have only ungrouped workspace ID")
 
-    def test_clean_preserves_none_for_equal_operation_ungrouped(self):
+    def test_clean_replaces_none_for_equal_operation_ungrouped(self):
         """
-        Test that None value is preserved for operation='equal' (ungrouped workspace).
+        Test that None value is replaced with ungrouped workspace ID for operation='equal'.
 
         Setup: Create RD with operation='equal' and value=None
-        Action: Call cleanup function (should not process since workspace_ids is empty)
-        Verify: None is preserved, RD is not modified
-
-        Note: When value=None, workspace_ids is empty, so the function skips processing
-        at line 241-242. This is correct behavior - None doesn't need cleaning.
+        Action: Call cleanup function
+        Verify: None is replaced with ungrouped workspace ID
         """
         # Create a custom role
         role = Role.objects.create(name="Test Role Equal None", system=False, tenant=self.tenant)
@@ -399,21 +414,33 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         # BEFORE: Verify setup
         self.assertIsNone(rd.attributeFilter["value"])
 
-        # Call the cleanup function - should not process this RD since workspace_ids is empty
+        # Call the cleanup function - should process this RD and replace None with ungrouped workspace ID
         results = clean_invalid_workspace_resource_definitions()
 
-        # Verify no changes (continues at line 241-242 since workspace_ids is empty)
-        self.assertEqual(results["resource_definitions_fixed"], 0)
+        # Verify one RD was fixed
+        self.assertEqual(results["resource_definitions_fixed"], 1)
+        self.assertEqual(len(results["changes"]), 1)
 
-        # AFTER: Verify None is preserved
+        # Get the ungrouped workspace ID for verification
+        ungrouped_ws = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+
+        # AFTER: Verify None is replaced with ungrouped workspace ID
         rd.refresh_from_db()
-        self.assertIsNone(rd.attributeFilter["value"], "None value should be preserved for operation='equal'")
+        self.assertIsNotNone(rd.attributeFilter["value"], "None value should be replaced")
+        self.assertEqual(
+            rd.attributeFilter["value"], str(ungrouped_ws.id), "Should be replaced with ungrouped workspace ID"
+        )
+
+        # Verify the change info
+        change = results["changes"][0]
+        self.assertTrue(change["none_replaced_with_ungrouped"])
+        self.assertEqual(change["ungrouped_workspace_id"], str(ungrouped_ws.id))
 
     def test_clean_dry_run_mode(self):
         """
         Test that dry_run mode reports changes without making them.
 
-        Setup: Create RD with invalid workspace IDs
+        Setup: Create RD with invalid workspace IDs and None value
         Action: Call cleanup function with dry_run=True
         Verify: Changes are reported but not applied to database
         """
@@ -446,6 +473,9 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         # Call the cleanup function in DRY RUN mode
         results = clean_invalid_workspace_resource_definitions(dry_run=True)
 
+        # Get the ungrouped workspace ID for verification (created during cleanup function call)
+        ungrouped_ws = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+
         # Verify results show what WOULD be changed
         self.assertTrue(results["dry_run"])
         self.assertEqual(results["resource_definitions_fixed"], 0)  # Nothing actually fixed
@@ -455,9 +485,10 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         change = results["changes"][0]
         self.assertEqual(change["action"], "would_update")
         self.assertEqual(change["original_value"], original_value)
-        self.assertEqual(change["new_value"], [None])  # Only None preserved
+        self.assertEqual(change["new_value"], [str(ungrouped_ws.id)])  # None replaced with ungrouped workspace ID
         self.assertEqual(len(change["invalid_workspaces"]), 2)
-        self.assertTrue(change["preserved_none"])
+        self.assertTrue(change["none_replaced_with_ungrouped"])
+        self.assertEqual(change["ungrouped_workspace_id"], str(ungrouped_ws.id))
 
         # CRITICAL: Verify database was NOT changed
         rd.refresh_from_db()
@@ -473,6 +504,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
 
         # Verify database WAS changed this time
         rd.refresh_from_db()
-        self.assertEqual(rd.attributeFilter["value"], [None])
+        self.assertEqual(rd.attributeFilter["value"], [str(ungrouped_ws.id)])
+        self.assertNotIn(None, rd.attributeFilter["value"])
         self.assertNotIn(fake_ws_id_1, rd.attributeFilter["value"])
         self.assertNotIn(fake_ws_id_2, rd.attributeFilter["value"])

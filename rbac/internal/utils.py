@@ -186,7 +186,8 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
     Clean resource definitions with invalid workspace IDs and update bindings accordingly.
 
     This finds custom roles with resource definitions pointing to non-existent workspaces,
-    removes invalid workspace IDs, and uses the dual write handler to update bindings.
+    removes invalid workspace IDs, replaces None values with ungrouped workspace IDs,
+    and uses the dual write handler to update bindings.
 
     Args:
         dry_run (bool): If True, only report what would be changed without making changes.
@@ -221,6 +222,10 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
             roles_checked += 1
 
+            # Get the ungrouped workspace ID for this tenant to replace None values
+            ungrouped_workspace = get_or_create_ungrouped_workspace(role.tenant)
+            ungrouped_workspace_id = str(ungrouped_workspace.id)
+
             for access in role.access.all():
                 permission = access.permission
 
@@ -244,7 +249,8 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                     elif operation == "equal":
                         has_none_value = original_value is None
 
-                    if not workspace_ids:
+                    # Skip if no workspace IDs and no None value to replace
+                    if not workspace_ids and not has_none_value:
                         continue
 
                     # Check which workspaces exist in the role's tenant
@@ -257,25 +263,28 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
                     invalid_workspace_ids = set(str(ws_id) for ws_id in workspace_ids) - valid_workspace_ids
 
-                    if invalid_workspace_ids:
+                    if invalid_workspace_ids or has_none_value:
                         role_had_invalid_rds = True
 
                         # Calculate what the new value would be
                         operation_type = rd.attributeFilter.get("operation")
                         new_value: str | list | None
                         if operation_type == "equal":
-                            # For "equal" operation, value should be a single string, None, or empty string
-                            # Preserve None if it existed (for ungrouped workspace reference)
+                            # For "equal" operation, value should be a single string
+                            # Replace None with ungrouped workspace ID if it existed
                             if has_none_value and not valid_workspace_ids:
-                                new_value = None
+                                new_value = ungrouped_workspace_id
+                            elif has_none_value and valid_workspace_ids:
+                                # If there are valid workspaces but None was present, use first valid or ungrouped
+                                new_value = list(valid_workspace_ids)[0]
                             else:
                                 new_value = list(valid_workspace_ids)[0] if valid_workspace_ids else ""
                         else:
                             # For "in" operation, value should be a list
-                            # Preserve None value if it existed (for ungrouped workspace reference)
-                            new_value_list: list[str | None] = list(valid_workspace_ids) if valid_workspace_ids else []
+                            # Replace None with ungrouped workspace ID if it existed
+                            new_value_list: list[str] = list(valid_workspace_ids) if valid_workspace_ids else []
                             if has_none_value:
-                                new_value_list.append(None)
+                                new_value_list.append(ungrouped_workspace_id)
                             new_value = new_value_list
 
                         change_info = {
@@ -288,10 +297,12 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                             "new_value": new_value,
                             "invalid_workspaces": list(invalid_workspace_ids),
                             "valid_workspaces": list(valid_workspace_ids),
-                            "preserved_none": has_none_value,
+                            "none_replaced_with_ungrouped": has_none_value,
+                            "ungrouped_workspace_id": ungrouped_workspace_id if has_none_value else None,
                         }
 
                         if dry_run:
+                            ungrouped_info = ungrouped_workspace_id if has_none_value else "N/A"
                             logger.info(
                                 f"[DRY RUN] Would update role '{role.name}' (uuid={role.uuid}), "
                                 f"permission '{permission.permission}', RD #{rd.id}:\n"
@@ -299,7 +310,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                                 f"  New value: {new_value}\n"
                                 f"  Invalid workspace IDs removed: {list(invalid_workspace_ids)}\n"
                                 f"  Valid workspace IDs kept: {list(valid_workspace_ids)}\n"
-                                f"  None preserved: {has_none_value}"
+                                f"  None replaced with ungrouped workspace ID: {ungrouped_info}"
                             )
                             change_info["action"] = "would_update"
                         else:
