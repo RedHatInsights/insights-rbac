@@ -20,14 +20,14 @@ from typing import Optional
 
 import uuid_utils.compat as uuid
 from django.db import models
-from django.db.models import signals, QuerySet
+from django.db.models import QuerySet, signals
 from django.utils import timezone
 from management.models import Group, Permission, Role
 from management.rbac_fields import AutoDateTimeField
+from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from rest_framework import serializers
 
 from api.models import TenantAwareModel
-from migration_tool.models import V2role, V2rolebinding, V2boundresource
 
 
 class RoleV2(TenantAwareModel):
@@ -62,6 +62,7 @@ class RoleV2(TenantAwareModel):
         super().save(*args, **kwargs)
 
     def as_migration_value(self) -> V2role:
+        """Get the V2role representing to this role's daya."""
         if self.type == RoleV2.Types.PLATFORM:
             raise ValueError("V2roles are not supported for PLATFORM roles.")
 
@@ -173,6 +174,7 @@ class RoleBinding(TenantAwareModel):
     resource_id = models.CharField(max_length=256, null=False)
 
     def bound_groups(self) -> QuerySet:
+        """Get a QuerySet for all gorups bound to this RoleBinding."""
         return Group.objects.filter(role_binding_entries__in=self.group_entries.all())
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:

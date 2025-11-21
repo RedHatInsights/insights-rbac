@@ -19,9 +19,9 @@
 import dataclasses
 
 from django.db import models
+from migration_tool.models import cleanNameForV2SchemaCompatibility
 
 from api.models import TenantAwareModel
-from migration_tool.models import cleanNameForV2SchemaCompatibility
 
 
 @dataclasses.dataclass(frozen=True)

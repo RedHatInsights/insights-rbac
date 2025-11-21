@@ -17,15 +17,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import dataclasses
 import logging
-import uuid_utils.compat as uuid
 from typing import Any, Iterable, Optional, Tuple, Union
 
+import uuid_utils.compat as uuid
 from django.conf import settings
 from feature_flags import FEATURE_FLAGS
 from management.models import BindingMapping, Workspace
 from management.permission.model import Permission
 from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, RoleV2, RoleBinding, RoleBindingGroup
+from management.role.v2_model import CustomRoleV2, RoleBinding, RoleBindingGroup, RoleV2
 from migration_tool.ingest import add_element
 from migration_tool.models import (
     V2boundresource,
@@ -90,11 +90,14 @@ class SystemRole:
 
 @dataclasses.dataclass(frozen=True)
 class MigrateCustomRoleResult:
+    """The models resulting from migrating a V1 custom role to V2."""
+
     v2_roles: tuple[CustomRoleV2, ...]
     binding_mappings: tuple[BindingMapping, ...]
     role_bindings: tuple[RoleBinding, ...]
 
     def __post_init__(self):
+        """Check tha tthis object is in a valid state."""
         if len(self.binding_mappings) != len(self.role_bindings):
             raise ValueError("BindingMappings and RoleBindings must be one-to-one")
 
