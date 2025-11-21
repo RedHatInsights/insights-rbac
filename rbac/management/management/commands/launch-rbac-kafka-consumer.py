@@ -4,8 +4,11 @@ import logging
 import signal
 import sys
 
+import sentry_sdk
+from app_common_python import LoadedConfig
 from core.kafka_consumer import RBACKafkaConsumer
 from django.core.management import BaseCommand
+from prometheus_client import start_http_server
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,21 @@ class Command(BaseCommand):
         signal.signal(signal.SIGINT, self._signal_handler)
 
         try:
+            # Start Prometheus metrics HTTP server
+            # Use the same port configuration as Celery workers
+            # Note: Consumer is single-process, so we use the default REGISTRY
+            # (Celery uses a custom registry with MultiProcessCollector for multi-process)
+            metrics_port = getattr(LoadedConfig, "metricsPort", 9000)
+
+            try:
+                start_http_server(metrics_port, addr="0.0.0.0")
+                logger.info(f"Prometheus metrics server started on port {metrics_port}")
+            except Exception as e:
+                sentry_sdk.capture_exception(e)
+                logger.error(f"Failed to start metrics server on port {metrics_port}: {e}")
+                # Exit the entire process, we don't want to spin up the consumer without metrics
+                sys.exit(1)
+
             # Create and start consumer
             topic = options.get("topic")
             self.consumer = RBACKafkaConsumer(topic=topic)
