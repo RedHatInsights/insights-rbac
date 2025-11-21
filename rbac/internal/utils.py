@@ -132,8 +132,20 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
     total_tuples = 0
 
     # Process each binding in a separate transaction with locking
-    for raw_binding in bindings_query.iterator():
+    for raw_binding in bindings_query.prefetch_related("role").iterator(chunk_size=2000):
         with transaction.atomic():
+            # Custom roles must be locked, since other code that updates them locks only the role (and not the binding).
+            if not raw_binding.role.system:
+                locked_role = Role.objects.select_for_update().filter(pk=raw_binding.role.pk).first()
+
+                if locked_role is None:
+                    logger.warning(
+                        f"Role vanished before its binding could be fixed: binding pk={raw_binding.pk!r}, "
+                        f"role pk={raw_binding.role.pk!r}"
+                    )
+
+                    continue
+
             # Lock the binding to prevent concurrent modifications
             binding = BindingMapping.objects.select_for_update().filter(pk=raw_binding.pk).first()
 
@@ -151,7 +163,7 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
             replicator = OutboxReplicator()
             replicator.replicate(
                 ReplicationEvent(
-                    event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
+                    event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
                     info={
                         "binding_id": binding.id,
                         "role_uuid": str(binding.role.uuid),
@@ -220,6 +232,9 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                 continue
 
             roles_checked += 1
+
+            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
+            dual_write.prepare_for_update()
 
             for access in role.access.all():
                 permission = access.permission
@@ -323,8 +338,6 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
             # If we fixed any resource definitions, trigger dual write to update bindings
             if role_had_invalid_rds and not dry_run:
-                dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE)
-                dual_write.prepare_for_update()  # Capture current bindings
                 dual_write.replicate_new_or_updated_role(role)  # Update bindings based on new RDs
 
     results = {

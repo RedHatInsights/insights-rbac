@@ -80,6 +80,9 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID, tenant) -> dict:
                 logger.warning(f"Role vanished before it could be updated: pk={raw_role.pk!r}")
                 continue
 
+            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
+            dual_write.prepare_for_update()  # Capture current bindings
+
             for access in role.access.all():
                 permission = access.permission
 
@@ -169,8 +172,6 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID, tenant) -> dict:
                 # Refresh role from DB to clear Django ORM's cached related objects
                 # This ensures the dual write handler sees the updated resource definitions
                 role.refresh_from_db()
-                dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE)
-                dual_write.prepare_for_update()  # Capture current bindings
                 dual_write.replicate_new_or_updated_role(role)  # Update bindings based on new RDs
 
                 logger.info(
