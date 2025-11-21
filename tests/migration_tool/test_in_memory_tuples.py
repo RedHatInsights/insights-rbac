@@ -141,3 +141,49 @@ class TestInMemoryTuples(unittest.TestCase):
             self.store.write([rel], [])
         except ValueError as e:
             self.fail(f"Expected adding a duplicate of an existing relationship to work, but got: {e}")
+
+
+class TestCreateRelationship(unittest.TestCase):
+    """Test the create_relationship utility function."""
+
+    def test_create_relationship_with_valid_ids(self):
+        """Test that create_relationship works with valid non-None IDs."""
+        rel = create_relationship(
+            ("rbac", "workspace"), "workspace-123", ("rbac", "role_binding"), "binding-456", "binding"
+        )
+
+        self.assertIsNotNone(rel)
+        self.assertEqual(rel.resource.id, "workspace-123")
+        self.assertEqual(rel.subject.subject.id, "binding-456")
+
+    def test_create_relationship_raises_error_on_none_resource_id(self):
+        """Test that create_relationship raises ValueError when resource_id is None."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                None,  # Invalid: None resource_id
+                ("rbac", "role_binding"),
+                "binding-456",
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None resource_id", error_message)
+        self.assertIn("workspace", error_message)
+        self.assertIn("None values should have been converted", error_message)
+
+    def test_create_relationship_raises_error_on_none_subject_id(self):
+        """Test that create_relationship raises ValueError when subject_id is None."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                "workspace-123",
+                ("rbac", "role_binding"),
+                None,  # Invalid: None subject_id
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None subject_id", error_message)
+        self.assertIn("role_binding", error_message)
+        self.assertIn("None values should have been converted", error_message)
