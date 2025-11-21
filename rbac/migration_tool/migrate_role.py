@@ -19,8 +19,9 @@ from typing import Iterable
 
 from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role
+from management.role.v2_model import CustomRoleV2
 from migration_tool.models import V2boundresource, V2rolebinding
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import MigrateCustomRoleResult, v1_role_to_v2_bindings
 
 
 def _get_kessel_relation_tuples(
@@ -42,14 +43,15 @@ def relation_tuples_for_bindings(bindings: Iterable[BindingMapping]) -> list[com
 def migrate_role(
     role: Role,
     default_resource: V2boundresource,
-    current_bindings: Iterable[BindingMapping] = [],
-) -> tuple[list[common_pb2.Relationship], list[BindingMapping]]:
+    current_bindings: Iterable[BindingMapping],
+    current_v2_roles: Iterable[CustomRoleV2],
+) -> tuple[list[common_pb2.Relationship], MigrateCustomRoleResult]:
     """
     Migrate a role from v1 to v2, returning the tuples and mappings.
 
     The mappings are returned so that we can reconstitute the corresponding tuples for a given role.
     This is needed so we can remove those tuples when the role changes if needed.
     """
-    v2_role_bindings = v1_role_to_v2_bindings(role, default_resource, current_bindings)
-    relationships = relation_tuples_for_bindings(v2_role_bindings)
-    return relationships, v2_role_bindings
+    migrate_result = v1_role_to_v2_bindings(role, default_resource, current_bindings, current_v2_roles)
+    relationships = relation_tuples_for_bindings(migrate_result.binding_mappings)
+    return relationships, migrate_result
