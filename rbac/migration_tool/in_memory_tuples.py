@@ -1,8 +1,9 @@
 """This module contains the in-memory representation of a tuple store."""
 
+import dataclasses
 import re
 from collections import defaultdict
-from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar, Union
+from typing import Callable, Hashable, Iterable, List, Set, Tuple, TypeVar, Union
 
 from kessel.relations.v1beta1.common_pb2 import ObjectReference, ObjectType, Relationship, SubjectReference
 from management.relation_replicator.relation_replicator import RelationReplicator
@@ -11,7 +12,8 @@ from management.relation_replicator.relation_replicator import RelationReplicato
 _OBJECT_ID_REGEX = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"
 
 
-class RelationTuple(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class RelationTuple:
     """Simple representation of a relation tuple."""
 
     resource_type_namespace: str
