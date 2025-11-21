@@ -140,7 +140,7 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
 
                 if locked_role is None:
                     logger.warning(
-                        f"Role vanished before it could be fixed: binding pk={raw_binding.pk!r}, "
+                        f"Role vanished before its binding could be fixed: binding pk={raw_binding.pk!r}, "
                         f"role pk={raw_binding.role.pk!r}"
                     )
 
