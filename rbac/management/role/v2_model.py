@@ -175,14 +175,14 @@ class RoleBinding(TenantAwareModel):
     def bound_groups(self) -> QuerySet:
         return Group.objects.filter(role_binding_entries__in=self.group_entries.all())
 
-    def as_migration_value(self, force_group_uuids: Optional[list[str]]) -> V2rolebinding:
+    def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
         """
         Return the V2rolebinding equivalent of this role binding.
 
         group_uuids is provided in the case where
         """
         if force_group_uuids is None:
-            force_group_uuids = [self.group_entries.select_related("group").values("group.uuid", flat=True)]
+            force_group_uuids = [str(u) for u in self.bound_groups().values_list("uuid", flat=True)]
 
         return V2rolebinding(
             id=str(self.uuid),
