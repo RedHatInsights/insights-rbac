@@ -132,8 +132,20 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
     total_tuples = 0
 
     # Process each binding in a separate transaction with locking
-    for raw_binding in bindings_query.iterator():
+    for raw_binding in bindings_query.prefetch_related("role").iterator(chunk_size=2000):
         with transaction.atomic():
+            # Custom roles must be locked, since other code that updates them locks only the role (and not the binding).
+            if not raw_binding.role.system:
+                locked_role = Role.objects.select_for_update().filter(pk=raw_binding.role.pk).first()
+
+                if locked_role is None:
+                    logger.warning(
+                        f"Role vanished before it could be fixed: binding pk={raw_binding.pk!r}, "
+                        f"role pk={raw_binding.role.pk!r}"
+                    )
+
+                    continue
+
             # Lock the binding to prevent concurrent modifications
             binding = BindingMapping.objects.select_for_update().filter(pk=raw_binding.pk).first()
 
