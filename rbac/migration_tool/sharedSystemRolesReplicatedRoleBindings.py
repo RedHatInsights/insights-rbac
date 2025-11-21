@@ -232,8 +232,10 @@ def _get_or_create_binding(
     if v2_role.v1_source != v1_role:
         raise ValueError("Expected V2 role to have the provided V1 role as its source.")
 
+    # Satisfy mypy.
+    role_binding: RoleBinding
+
     if existing_mapping is not None:
-        role_binding: RoleBinding
         existing_binding_value = existing_mapping.get_role_binding()
 
         role_binding, _ = RoleBinding.objects.update_or_create(
@@ -253,7 +255,7 @@ def _get_or_create_binding(
         return existing_mapping, role_binding
     else:
         # No existing binding for this resource, have to create one
-        role_binding: RoleBinding = RoleBinding.objects.create(
+        role_binding = RoleBinding.objects.create(
             tenant=v1_role.tenant,
             role=v2_role,
             resource_type=resource.resource_type[1],
