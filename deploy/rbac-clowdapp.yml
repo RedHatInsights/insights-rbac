@@ -1194,6 +1194,8 @@ objects:
               value: ${RBAC_HBI_S3_AWS_BUCKET}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
+            - name: REMOVE_NULL_VALUE
+              value: ${REMOVE_NULL_VALUE}
           resources:
             limits:
               cpu: 300m
