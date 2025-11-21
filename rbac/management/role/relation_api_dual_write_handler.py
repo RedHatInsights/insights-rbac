@@ -18,7 +18,7 @@
 """Class to handle Dual Write API related operations."""
 import logging
 from abc import ABC
-from typing import Optional, Iterable
+from typing import Iterable, Optional
 
 from django.conf import settings
 from django.db.models import Model

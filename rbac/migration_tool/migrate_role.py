@@ -21,7 +21,7 @@ from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role
 from management.role.v2_model import CustomRoleV2
 from migration_tool.models import V2boundresource, V2rolebinding
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings, MigrateCustomRoleResult
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import MigrateCustomRoleResult, v1_role_to_v2_bindings
 
 
 def _get_kessel_relation_tuples(
