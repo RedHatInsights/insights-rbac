@@ -28,6 +28,13 @@ class RelationTuple:
     _id_regex: ClassVar[re.Pattern] = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"
 
     def __post_init__(self):
+
+        def relation_type_error(msg: str) -> TypeError:
+            return TypeError(msg + f"\nFull relationship: {self!r}")
+
+        def relation_value_error(msg: str) -> ValueError:
+            return ValueError(msg + f"\nFull relationship: {self!r}")
+
         required_attrs = [
             "resource_type_namespace",
             "resource_type_name",
@@ -46,13 +53,13 @@ class RelationTuple:
             value = getattr(self, attr)
 
             if value is None:
-                raise TypeError(f"{attr} is required, but was None")
+                raise relation_type_error(f"{attr} is required, but was None.")
 
             if not isinstance(value, str):
-                raise TypeError(f"{attr} must be a string")
+                raise relation_type_error(f"{attr} must be a string.")
 
             if value == "":
-                raise ValueError(f"{attr} cannot be empty")
+                raise relation_value_error(f"{attr} cannot be empty. (You may have initialized a message with None.)")
 
         for attr in optional_attrs:
             value = getattr(self, attr)
@@ -61,16 +68,16 @@ class RelationTuple:
                 continue
 
             if not isinstance(value, str):
-                raise TypeError(f"{attr} must be a string or None")
+                raise relation_type_error(f"{attr} must be a string or None.")
 
             if value == "":
-                raise ValueError(f"{attr} cannot be empty (for an absent value, use None)")
+                raise relation_value_error(f"{attr} cannot be empty (for an absent value, use None).")
 
         for attr in ["resource_type_name", "subject_type_name"]:
             value = getattr(self, attr)
 
             if not re.fullmatch(self._type_regex, value):
-                raise ValueError(
+                raise relation_value_error(
                     f"Expected {attr} to be composed of alphanumeric characters and underscores, "
                     f"but got: {value!r}"
                 )
@@ -79,10 +86,10 @@ class RelationTuple:
             value = getattr(self, attr)
 
             if not allow_asterisk and value == "*":
-                raise ValueError(f"Expected {attr} not to be an asterisk")
+                raise relation_value_error(f"Expected {attr} not to be an asterisk.")
 
             if not re.fullmatch(self._id_regex, value):
-                raise ValueError(
+                raise relation_value_error(
                     f"Expected {attr} to be composed of alphanumeric characters, underscores, hyphens, pipes, "
                     f"equals signs, plus signs, and forward slashes, "
                     + (", or to be exactly '*', " if allow_asterisk else "")

@@ -22,7 +22,7 @@ from django.test import TestCase, override_settings
 from google.protobuf import json_format
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from migration_tool.utils import create_relationship
+from migration_tool.utils import create_relationship, create_relationship_unchecked
 from prometheus_client import REGISTRY
 
 
@@ -479,7 +479,7 @@ class OutboxReplicatorTest(TestCase):
             event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
             partition_key=PartitionKey.byEnvironment(),
             add=[
-                create_relationship(
+                create_relationship_unchecked(
                     ("rbac", "workspace"), "some-ws", ("rbac", "role_binding"), "invalid-id!", "binding"
                 )
             ],
@@ -495,7 +495,7 @@ class OutboxReplicatorTest(TestCase):
             event_type=ReplicationEventType.DELETE_BINDING_MAPPINGS,
             partition_key=PartitionKey.byEnvironment(),
             remove=[
-                create_relationship(
+                create_relationship_unchecked(
                     ("rbac", "workspace"), "some-ws", ("rbac", "role_binding"), "invalid-id!", "binding"
                 )
             ],
