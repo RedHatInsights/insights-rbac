@@ -27,75 +27,78 @@ class RelationTuple:
     _type_regex: ClassVar[re.Pattern] = re.compile(r"^[A-Za-z0-9_]+$")
     _id_regex: ClassVar[re.Pattern] = re.compile(r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$")
 
+    def _relation_type_error(self, msg: str) -> TypeError:
+        return TypeError(msg + f"\nFull relationship: {self!r}")
+
+    def _relation_value_error(self, msg: str) -> ValueError:
+        return ValueError(msg + f"\nFull relationship: {self!r}")
+
+    def _validate_required(self, attr: str):
+        value = getattr(self, attr)
+
+        if value is None:
+            raise self._relation_type_error(f"{attr} is required, but was None.")
+
+        if not isinstance(value, str):
+            raise self._relation_type_error(f"{attr} must be a string.")
+
+        if value == "":
+            raise self._relation_value_error(
+                f"{attr} cannot be empty. (You may have initialized a message with None.)"
+            )
+
+    def _validate_optional(self, attr: str):
+        value = getattr(self, attr)
+
+        if value is None:
+            return
+
+        if not isinstance(value, str):
+            raise self._relation_type_error(f"{attr} must be a string or None.")
+
+        if value == "":
+            raise self._relation_value_error(f"{attr} cannot be empty (for an absent value, use None).")
+
+    def _validate_type_name(self, attr: str):
+        value = getattr(self, attr)
+
+        if not re.fullmatch(self._type_regex, value):
+            raise self._relation_value_error(
+                f"Expected {attr} to be composed of alphanumeric characters and underscores, but got: {value!r}"
+            )
+
+    def _validate_object_id(self, attr: str, allow_asterisk: bool):
+        value = getattr(self, attr)
+
+        if not allow_asterisk and value == "*":
+            raise self._relation_value_error(f"Expected {attr} not to be an asterisk.")
+
+        if not re.fullmatch(self._id_regex, value):
+            raise self._relation_value_error(
+                f"Expected {attr} to be composed of alphanumeric characters, underscores, hyphens, pipes, "
+                f"equals signs, plus signs, and forward slashes, "
+                + (", or to be exactly '*', " if allow_asterisk else "")
+                + f"but got: {value!r}"
+            )
+
     def __post_init__(self):
         """Check that this RelationTuple is valid."""
 
-        def relation_type_error(msg: str) -> TypeError:
-            return TypeError(msg + f"\nFull relationship: {self!r}")
+        self._validate_required("resource_type_namespace")
+        self._validate_required("resource_type_name")
+        self._validate_required("resource_id")
+        self._validate_required("relation")
+        self._validate_required("subject_type_namespace")
+        self._validate_required("subject_type_name")
+        self._validate_required("subject_id")
 
-        def relation_value_error(msg: str) -> ValueError:
-            return ValueError(msg + f"\nFull relationship: {self!r}")
+        self._validate_optional("subject_relation")
 
-        required_attrs = [
-            "resource_type_namespace",
-            "resource_type_name",
-            "resource_id",
-            "relation",
-            "subject_type_namespace",
-            "subject_type_name",
-            "subject_id",
-        ]
+        self._validate_type_name("resource_type_name")
+        self._validate_type_name("subject_type_name")
 
-        optional_attrs = [
-            "subject_relation",
-        ]
-
-        for attr in required_attrs:
-            value = getattr(self, attr)
-
-            if value is None:
-                raise relation_type_error(f"{attr} is required, but was None.")
-
-            if not isinstance(value, str):
-                raise relation_type_error(f"{attr} must be a string.")
-
-            if value == "":
-                raise relation_value_error(f"{attr} cannot be empty. (You may have initialized a message with None.)")
-
-        for attr in optional_attrs:
-            value = getattr(self, attr)
-
-            if value is None:
-                continue
-
-            if not isinstance(value, str):
-                raise relation_type_error(f"{attr} must be a string or None.")
-
-            if value == "":
-                raise relation_value_error(f"{attr} cannot be empty (for an absent value, use None).")
-
-        for attr in ["resource_type_name", "subject_type_name"]:
-            value = getattr(self, attr)
-
-            if not re.fullmatch(self._type_regex, value):
-                raise relation_value_error(
-                    f"Expected {attr} to be composed of alphanumeric characters and underscores, "
-                    f"but got: {value!r}"
-                )
-
-        for attr, allow_asterisk in [("resource_id", False), ("subject_id", True)]:
-            value = getattr(self, attr)
-
-            if not allow_asterisk and value == "*":
-                raise relation_value_error(f"Expected {attr} not to be an asterisk.")
-
-            if not re.fullmatch(self._id_regex, value):
-                raise relation_value_error(
-                    f"Expected {attr} to be composed of alphanumeric characters, underscores, hyphens, pipes, "
-                    f"equals signs, plus signs, and forward slashes, "
-                    + (", or to be exactly '*', " if allow_asterisk else "")
-                    + f"but got: {value!r}"
-                )
+        self._validate_object_id("resource_id", allow_asterisk=False)
+        self._validate_object_id("subject_id", allow_asterisk=True)
 
     @classmethod
     def from_message(cls, relationship: Relationship):
