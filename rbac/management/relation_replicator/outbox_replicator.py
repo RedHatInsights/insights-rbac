@@ -33,6 +33,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from prometheus_client import Counter
 
+from migration_tool.in_memory_tuples import RelationTuple
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -123,10 +124,12 @@ class OutboxReplicator(RelationReplicator):
 
         add_json: list[dict[str, Any]] = []
         for relation in event.add:
+            RelationTuple.validate_message(relation)
             add_json.append(json_format.MessageToDict(relation))
 
         remove_json: list[dict[str, Any]] = []
         for relation in event.remove:
+            RelationTuple.validate_message(relation)
             remove_json.append(json_format.MessageToDict(relation))
 
         payload: ReplicationEventPayload = {

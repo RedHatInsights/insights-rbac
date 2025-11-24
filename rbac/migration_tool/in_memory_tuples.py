@@ -130,6 +130,13 @@ class RelationTuple:
             ),
         )
 
+    @classmethod
+    def validate_message(cls, message: Relationship):
+        """Check that the provided Relationship represents a valid tuple."""
+        # Constructing the RelationTuple will raise an exception if the message is invalid.
+        parsed = RelationTuple.from_message(message)
+        assert parsed.as_message() == message
+
     def stringify(self):
         """Display all attributes in one line."""
         subject_part = f"{self.subject_type_namespace}/{self.subject_type_name}:{self.subject_id}"
