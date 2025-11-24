@@ -31,9 +31,9 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
     WorkspaceEvent,
 )
+from migration_tool.in_memory_tuples import RelationTuple
 from prometheus_client import Counter
 
-from migration_tool.in_memory_tuples import RelationTuple
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

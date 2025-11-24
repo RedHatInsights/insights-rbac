@@ -3,7 +3,7 @@
 import dataclasses
 import re
 from collections import defaultdict
-from typing import Callable, Hashable, Iterable, List, Set, Tuple, TypeVar, Union, Optional, ClassVar
+from typing import Callable, ClassVar, Hashable, Iterable, List, Optional, Set, Tuple, TypeVar, Union
 
 from kessel.relations.v1beta1.common_pb2 import ObjectReference, ObjectType, Relationship, SubjectReference
 from management.relation_replicator.relation_replicator import RelationReplicator
@@ -24,10 +24,11 @@ class RelationTuple:
 
     # From, e.g.:
     # https://github.com/project-kessel/inventory-api/blob/201189922078084f9bca47dc8ed3d298fed65921/api/kessel/inventory/v1beta2/resource_reference.proto#L14
-    _type_regex: ClassVar[re.Pattern] = r"^[A-Za-z0-9_]+$"
-    _id_regex: ClassVar[re.Pattern] = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"
+    _type_regex: ClassVar[re.Pattern] = re.compile(r"^[A-Za-z0-9_]+$")
+    _id_regex: ClassVar[re.Pattern] = re.compile(r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$")
 
     def __post_init__(self):
+        """Check that this RelationTuple is valid."""
 
         def relation_type_error(msg: str) -> TypeError:
             return TypeError(msg + f"\nFull relationship: {self!r}")
