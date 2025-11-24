@@ -1,6 +1,7 @@
 import unittest
 from kessel.relations.v1beta1.common_pb2 import Relationship, ObjectReference, ObjectType, SubjectReference
 from migration_tool.in_memory_tuples import InMemoryTuples, RelationTuple
+from migration_tool.utils import create_relationship
 
 
 class TestInMemoryTuples(unittest.TestCase):
@@ -111,3 +112,106 @@ class TestInMemoryTuples(unittest.TestCase):
             predicates=[lambda x: x.subject_id == "sub_id1", lambda x: x.subject_id == "sub_id3"],
         )
         self.assertEqual(len(tuples), 0)
+
+    def test_write_detects_duplicates_in_single_batch(self):
+        """Test that write() raises ValueError when duplicates are found in the same batch."""
+        # Create duplicate relationships
+        rel1 = create_relationship(("rbac", "role_binding"), "binding-123", ("rbac", "role"), "role-456", "role")
+        rel2 = create_relationship(("rbac", "role_binding"), "binding-123", ("rbac", "role"), "role-456", "role")
+
+        # Should raise ValueError for duplicates in the same batch
+        with self.assertRaises(ValueError) as context:
+            self.store.write([rel1, rel2], [])
+
+        # Verify error message
+        error_message = str(context.exception)
+        self.assertIn("Duplicate relationship detected", error_message)
+        self.assertIn("role_binding:binding-123#role@role:role-456", error_message)
+        self.assertIn("single replication event", error_message)
+
+    def test_write_detects_only_duplicates_in_add_list(self):
+        """Test that write() only checks for duplicates within the add list, not with existing tuples."""
+        # Add a relationship to the store
+        rel = create_relationship(("rbac", "role_binding"), "binding-abc", ("rbac", "workspace"), "ws-123", "binding")
+
+        self.store.write([rel], [])
+
+        try:
+            # Duplicating a relationship that is already stored should be fine.
+            self.store.write([rel], [])
+        except ValueError as e:
+            self.fail(f"Expected adding a duplicate of an existing relationship to work, but got: {e}")
+
+
+class TestCreateRelationship(unittest.TestCase):
+    """Test the create_relationship utility function."""
+
+    def test_create_relationship_with_valid_ids(self):
+        """Test that create_relationship works with valid non-None IDs."""
+        rel = create_relationship(
+            ("rbac", "workspace"), "workspace-123", ("rbac", "role_binding"), "binding-456", "binding"
+        )
+
+        self.assertIsNotNone(rel)
+        self.assertEqual(rel.resource.id, "workspace-123")
+        self.assertEqual(rel.subject.subject.id, "binding-456")
+
+    def test_create_relationship_raises_error_on_none_resource_id(self):
+        """Test that create_relationship raises ValueError when resource_id is None."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                None,  # Invalid: None resource_id
+                ("rbac", "role_binding"),
+                "binding-456",
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None or empty resource_id", error_message)
+        self.assertIn("workspace", error_message)
+
+    def test_create_relationship_raises_error_on_empty_resource_id(self):
+        """Test that create_relationship raises ValueError when resource_id is empty string."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                "",  # Invalid: empty resource_id
+                ("rbac", "role_binding"),
+                "binding-456",
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None or empty resource_id", error_message)
+        self.assertIn("workspace", error_message)
+
+    def test_create_relationship_raises_error_on_none_subject_id(self):
+        """Test that create_relationship raises ValueError when subject_id is None."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                "workspace-123",
+                ("rbac", "role_binding"),
+                None,  # Invalid: None subject_id
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None or empty subject_id", error_message)
+        self.assertIn("role_binding", error_message)
+
+    def test_create_relationship_raises_error_on_empty_subject_id(self):
+        """Test that create_relationship raises ValueError when subject_id is empty string."""
+        with self.assertRaises(ValueError) as context:
+            create_relationship(
+                ("rbac", "workspace"),
+                "workspace-123",
+                ("rbac", "role_binding"),
+                "",  # Invalid: empty subject_id
+                "binding",
+            )
+
+        error_message = str(context.exception)
+        self.assertIn("Cannot create relationship with None or empty subject_id", error_message)
+        self.assertIn("role_binding", error_message)

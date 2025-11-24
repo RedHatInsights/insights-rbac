@@ -5339,6 +5339,9 @@ class GroupViewNonAdminTests(IdentityRequest):
     def test_add_and_remove_role_to_group(self, mock_method):
         Permission.objects.create(permission="app:inventory:read", tenant=self.tenant)
 
+        # Use a valid UUID for workspace ID (group.id requires UUID validation)
+        test_workspace_id = str(self.default_workspace.id)
+
         access_data = [
             {
                 "permission": "app:inventory:read",
@@ -5347,7 +5350,7 @@ class GroupViewNonAdminTests(IdentityRequest):
                         "attributeFilter": {
                             "key": "group.id",
                             "operation": "equal",
-                            "value": "111",
+                            "value": test_workspace_id,
                         }
                     }
                 ],
@@ -5367,7 +5370,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         role = Role.objects.get(uuid=response.data["uuid"])
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        binding_mapping = BindingMapping.objects.get(role=role, resource_type_name="workspace", resource_id="111")
+        binding_mapping = BindingMapping.objects.get(
+            role=role, resource_type_name="workspace", resource_id=test_workspace_id
+        )
 
         # Create a group and role we need for the test
         group = Group.objects.create(name="test group", tenant=self.tenant)

@@ -23,6 +23,7 @@ from uuid import uuid4
 from django.conf import settings
 from management.models import Workspace
 from management.permission.scope_service import Scope, bound_model_for_scope
+from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -79,6 +80,58 @@ class RelationApiDualWriteSubjectHandler:
     def replication_enabled(self):
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
+
+    def _deduplicate_subject_relations(self, relationships, handler_name="Subject"):
+        """
+        Deduplicate role_binding#subject relationships.
+
+        When generate_relations methods are called multiple times with the same data,
+        duplicate subject tuples (role_binding#subject) are created. These are expected
+        and should be deduplicated. Other duplicates are bugs and will raise an error.
+
+        Args:
+            relationships: List of Relationship objects
+            handler_name: Name of the handler for logging (e.g., "Group", "CAR")
+
+        Returns:
+            Deduplicated list of Relationship objects
+        """
+        seen = set()
+        deduplicated = []
+        subject_duplicates = []
+
+        for rel in relationships:
+            key = stringify_spicedb_relationship(rel)
+
+            if key in seen:
+                # Check if this is a role_binding#subject tuple
+                is_subject_tuple = (
+                    rel.resource.type.namespace == "rbac"
+                    and rel.resource.type.name == "role_binding"
+                    and rel.relation == "subject"
+                )
+
+                if is_subject_tuple:
+                    # Expected duplicate - generate_relations called multiple times
+                    subject_duplicates.append(key)
+                    continue
+                else:
+                    # Unexpected duplicate - this is a bug!
+                    raise ValueError(
+                        f"Unexpected duplicate relationship in {handler_name} handler: {key}. "
+                        "This indicates a bug in tuple generation logic."
+                    )
+
+            seen.add(key)
+            deduplicated.append(rel)
+
+        if subject_duplicates:
+            logger.info(
+                f"[{handler_name} Dual Write] Deduplicated {len(subject_duplicates)} subject tuples "
+                f"(had {len(relationships)}, kept {len(deduplicated)})"
+            )
+
+        return deduplicated
 
     def _create_default_mapping_for_system_role(
         self,
