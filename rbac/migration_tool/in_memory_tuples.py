@@ -83,7 +83,6 @@ class RelationTuple:
 
     def __post_init__(self):
         """Check that this RelationTuple is valid."""
-
         self._validate_required("resource_type_namespace")
         self._validate_required("resource_type_name")
         self._validate_required("resource_id")
