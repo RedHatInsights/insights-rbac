@@ -9,9 +9,6 @@ from kessel.relations.v1beta1.common_pb2 import ObjectReference, ObjectType, Rel
 from management.relation_replicator.relation_replicator import RelationReplicator
 
 
-_OBJECT_ID_REGEX = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"
-
-
 @dataclasses.dataclass(frozen=True)
 class RelationTuple:
     """Simple representation of a relation tuple."""
@@ -28,6 +25,7 @@ class RelationTuple:
     # From, e.g.:
     # https://github.com/project-kessel/inventory-api/blob/201189922078084f9bca47dc8ed3d298fed65921/api/kessel/inventory/v1beta2/resource_reference.proto#L14
     _type_regex: ClassVar[re.Pattern] = r"^[A-Za-z0-9_]+$"
+    _id_regex: ClassVar[re.Pattern] = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"
 
     def __post_init__(self):
         required_attrs = [
@@ -83,13 +81,31 @@ class RelationTuple:
             if not allow_asterisk and value == "*":
                 raise ValueError(f"Expected {attr} not to be an asterisk")
 
-            if not re.fullmatch(_OBJECT_ID_REGEX, value):
+            if not re.fullmatch(self._id_regex, value):
                 raise ValueError(
                     f"Expected {attr} to be composed of alphanumeric characters, underscores, hyphens, pipes, "
                     f"equals signs, plus signs, and forward slashes, "
                     + (", or to be exactly '*', " if allow_asterisk else "")
                     + f"but got: {value!r}"
                 )
+
+    @classmethod
+    def from_message(cls, relationship: Relationship):
+        """Create a RelationTuple from a Relationship message."""
+
+        def as_optional(value: str) -> Optional[str]:
+            return value if value != "" else None
+
+        return RelationTuple(
+            resource_type_namespace=relationship.resource.type.namespace,
+            resource_type_name=relationship.resource.type.name,
+            resource_id=relationship.resource.id,
+            relation=relationship.relation,
+            subject_type_namespace=relationship.subject.subject.type.namespace,
+            subject_type_name=relationship.subject.subject.type.name,
+            subject_id=relationship.subject.subject.id,
+            subject_relation=as_optional(relationship.subject.relation),
+        )
 
     def as_message(self) -> Relationship:
         """Get a Kessel Relationship message corresponding to the values in this RelationTuple."""
@@ -394,43 +410,13 @@ class InMemoryTuples(TupleSet):
         self._tuples: Set[RelationTuple] = set(tuples) if tuples is not None else set()
         super().__init__(self, self._tuples)
 
-    def _relationship_key(self, relationship: Relationship):
-
-        def as_optional(value: str) -> Optional[str]:
-            return value if value != "" else None
-
-        return RelationTuple(
-            resource_type_namespace=relationship.resource.type.namespace,
-            resource_type_name=relationship.resource.type.name,
-            resource_id=relationship.resource.id,
-            relation=relationship.relation,
-            subject_type_namespace=relationship.subject.subject.type.namespace,
-            subject_type_name=relationship.subject.subject.type.name,
-            subject_id=relationship.subject.subject.id,
-            subject_relation=as_optional(relationship.subject.relation),
-        )
-
     def add(self, tuple: Relationship):
         """Add a tuple to the store."""
-        key = self._relationship_key(tuple)
-
-        invalid_resource_id = not re.match(_OBJECT_ID_REGEX, key.resource_id)
-        invalid_subject_id = not re.match(_OBJECT_ID_REGEX, key.subject_id)
-
-        if invalid_resource_id or invalid_subject_id:
-            invalid_fields = []
-            if invalid_resource_id:
-                invalid_fields.append(f"resource_id: {key.resource_id}")
-            if invalid_subject_id:
-                invalid_fields.append(f"subject_id: {key.subject_id}")
-            raise ValueError(f"Invalid format for: {', '.join(invalid_fields)}.")
-
-        self._tuples.add(key)
+        self._tuples.add(RelationTuple.from_message(tuple))
 
     def remove(self, tuple: Relationship):
         """Remove a tuple from the store."""
-        key = self._relationship_key(tuple)
-        self._tuples.discard(key)
+        self._tuples.discard(RelationTuple.from_message(tuple))
 
     def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
         """
@@ -442,7 +428,7 @@ class InMemoryTuples(TupleSet):
         # Check for duplicates within tuples_to_add (indicates bug in tuple generation)
         seen_in_batch = set()
         for tuple in add:
-            key = self._relationship_key(tuple)
+            key = RelationTuple.from_message(tuple)
             tuple_str = (
                 f"{key.resource_type_name}:{key.resource_id}#{key.relation}"
                 f"@{key.subject_type_name}:{key.subject_id}"
