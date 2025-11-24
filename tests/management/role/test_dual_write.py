@@ -1836,7 +1836,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
             relation="child",
             subject_name=("rbac", "role"),
             subject_id=str(role.uuid),
-            subject_relation="",
+            subject_relation=None,
         )
         self.tuples.add(platform_incorrect_relationship)
         admin_incorrect_relationship = create_relationship(
@@ -1845,7 +1845,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
             relation="child",
             subject_name=("rbac", "role"),
             subject_id=str(role.uuid),
-            subject_relation="",
+            subject_relation=None,
         )
         self.tuples.add(admin_incorrect_relationship)
 
@@ -2279,7 +2279,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}", ""),
+                subject("rbac", "principal", f"localhost/{user_id}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2297,7 +2297,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}", ""),
+                subject("rbac", "principal", f"localhost/{user_id}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2317,7 +2317,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_1}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2325,7 +2325,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_2}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_2}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2348,7 +2348,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_1}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2357,7 +2357,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_2}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_2}"),
             )
         )
         self.assertEqual(len(tuples), 0)
@@ -2374,7 +2374,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_1}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2399,7 +2399,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_2}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_2}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2426,7 +2426,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_1}"),
             )
         )
         self.assertEqual(len(tuples), 1)

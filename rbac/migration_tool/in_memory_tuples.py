@@ -3,7 +3,7 @@
 import dataclasses
 import re
 from collections import defaultdict
-from typing import Callable, Hashable, Iterable, List, Set, Tuple, TypeVar, Union
+from typing import Callable, Hashable, Iterable, List, Set, Tuple, TypeVar, Union, Optional, ClassVar
 
 from kessel.relations.v1beta1.common_pb2 import ObjectReference, ObjectType, Relationship, SubjectReference
 from management.relation_replicator.relation_replicator import RelationReplicator
@@ -23,7 +23,73 @@ class RelationTuple:
     subject_type_namespace: str
     subject_type_name: str
     subject_id: str
-    subject_relation: str
+    subject_relation: Optional[str]
+
+    # From, e.g.:
+    # https://github.com/project-kessel/inventory-api/blob/201189922078084f9bca47dc8ed3d298fed65921/api/kessel/inventory/v1beta2/resource_reference.proto#L14
+    _type_regex: ClassVar[re.Pattern] = r"^[A-Za-z0-9_]+$"
+
+    def __post_init__(self):
+        required_attrs = [
+            "resource_type_namespace",
+            "resource_type_name",
+            "resource_id",
+            "relation",
+            "subject_type_namespace",
+            "subject_type_name",
+            "subject_id",
+        ]
+
+        optional_attrs = [
+            "subject_relation",
+        ]
+
+        for attr in required_attrs:
+            value = getattr(self, attr)
+
+            if value is None:
+                raise TypeError(f"{attr} is required, but was None")
+
+            if not isinstance(value, str):
+                raise TypeError(f"{attr} must be a string")
+
+            if value == "":
+                raise ValueError(f"{attr} cannot be empty")
+
+        for attr in optional_attrs:
+            value = getattr(self, attr)
+
+            if value is None:
+                continue
+
+            if not isinstance(value, str):
+                raise TypeError(f"{attr} must be a string or None")
+
+            if value == "":
+                raise ValueError(f"{attr} cannot be empty (for an absent value, use None)")
+
+        for attr in ["resource_type_name", "subject_type_name"]:
+            value = getattr(self, attr)
+
+            if not re.fullmatch(self._type_regex, value):
+                raise ValueError(
+                    f"Expected {attr} to be composed of alphanumeric characters and underscores, "
+                    f"but got: {value!r}"
+                )
+
+        for attr, allow_asterisk in [("resource_id", False), ("subject_id", True)]:
+            value = getattr(self, attr)
+
+            if not allow_asterisk and value == "*":
+                raise ValueError(f"Expected {attr} not to be an asterisk")
+
+            if not re.fullmatch(_OBJECT_ID_REGEX, value):
+                raise ValueError(
+                    f"Expected {attr} to be composed of alphanumeric characters, underscores, hyphens, pipes, "
+                    f"equals signs, plus signs, and forward slashes, "
+                    + (", or to be exactly '*', " if allow_asterisk else "")
+                    + f"but got: {value!r}"
+                )
 
     def as_message(self) -> Relationship:
         """Get a Kessel Relationship message corresponding to the values in this RelationTuple."""
@@ -329,6 +395,10 @@ class InMemoryTuples(TupleSet):
         super().__init__(self, self._tuples)
 
     def _relationship_key(self, relationship: Relationship):
+
+        def as_optional(value: str) -> Optional[str]:
+            return value if value != "" else None
+
         return RelationTuple(
             resource_type_namespace=relationship.resource.type.namespace,
             resource_type_name=relationship.resource.type.name,
@@ -337,7 +407,7 @@ class InMemoryTuples(TupleSet):
             subject_type_namespace=relationship.subject.subject.type.namespace,
             subject_type_name=relationship.subject.subject.type.name,
             subject_id=relationship.subject.subject.id,
-            subject_relation=relationship.subject.relation,
+            subject_relation=as_optional(relationship.subject.relation),
         )
 
     def add(self, tuple: Relationship):
@@ -488,7 +558,7 @@ def relation(relation: str) -> RelationPredicate:
     return TuplePredicate(predicate, f'relation("{relation}")')
 
 
-def subject_type(namespace: str, name: str, relation: str = "") -> RelationPredicate:
+def subject_type(namespace: str, name: str, relation: Optional[str] = None) -> RelationPredicate:
     """Return a predicate that is true if the subject type matches the given namespace and name."""
 
     def predicate(rel: RelationTuple) -> bool:
@@ -510,7 +580,7 @@ def subject_id(id: str) -> RelationPredicate:
     return TuplePredicate(predicate, f'subject_id("{id}")')
 
 
-def subject(namespace: str, name: str, id: object, relation: str = "") -> RelationPredicate:
+def subject(namespace: str, name: str, id: object, relation: Optional[str] = None) -> RelationPredicate:
     """Return a predicate that is true if the subject matches the given namespace and name."""
     return all_of(subject_type(namespace, name, relation), subject_id(str(id)))
 
