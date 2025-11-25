@@ -260,15 +260,16 @@ class JWTCache(BasicCache):
 
     def set_cache(self, pipe, key, item):
         """Set cache to redis."""
-        pipe.hset(key=key, value=json.dumps(item), name="token")
+        pipe.set(name=key, value=item)
         pipe.expire(name=key, time=settings.IT_TOKEN_JKWS_CACHE_LIFETIME)
         pipe.execute()
 
-    def get_from_redis(self, args):
-        """Get object from redis based on args."""
-        obj = self.connection.hget(*(self.JWT_CACHE_KEY, args[1]))
+    def get_from_redis(self, key):
+        """Get object from redis based on key."""
+        obj = self.connection.get(name=key)
         if obj:
-            return json.loads(obj)
+            return obj.decode("utf-8") if isinstance(obj, bytes) else obj
+        return None
 
     def get_jwt_response(self):
         """Get the JWT token response from Redis."""
