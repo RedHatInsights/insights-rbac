@@ -1156,7 +1156,10 @@ class RBACKafkaConsumer:
                 relation_pb = json_format.ParseDict(relation_dict, common_pb2.Relationship())
                 relations_to_remove_pb.append(relation_pb)
 
-            # Build fencing check if lock token is available (thread-safe read)
+            # Build fencing check with lock token (thread-safe read)
+            # Note: Lock token should be available because _run_message_loop calls
+            # _ensure_lock_token_on_assignment before processing the first message.
+            # However, if that acquisition failed or token was cleared, we fail fast here.
             fencing_check = None
             with self._lock_mutex:
                 if self.lock_id and self.lock_token:
@@ -1170,10 +1173,14 @@ class RBACKafkaConsumer:
                         f"Using fencing check - lock_id: {self.lock_id}, " f"lock_token: {self.lock_token[:8]}..."
                     )
                 else:
-                    logger.warning(
-                        "No lock token available - processing without fencing check. "
-                        "This may allow stale updates during rebalancing."
+                    # Lock token not available - fail fast to prevent writes without fencing
+                    error_msg = (
+                        "Lock token not available during message processing. "
+                        "This indicates partition assignment failed or token was cleared. "
+                        "Cannot process message without fencing token."
                     )
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
 
             # Do tuple deletes for relationships with fencing check
             replication_delete_response = relations_api_replication.delete_relationships(
@@ -1256,154 +1263,6 @@ class RBACKafkaConsumer:
             messages_processed_total.labels(message_type="relations", status="error").inc()
             # Re-raise to trigger retry logic
             raise
-
-    def _wait_for_partition_assignment(self, max_attempts=30, timeout_ms=2000):
-        """Wait for initial partition assignment and acquire lock token.
-
-        The subscribe() call is asynchronous, so we need to poll to trigger
-        the initial partition assignment. This may take several seconds in
-        production environments with multiple consumers and rebalancing.
-
-        Note: It's normal for this to take time even when there are no messages
-        in the topic. The consumer group coordinator needs to assign partitions,
-        which happens asynchronously.
-
-        Args:
-            max_attempts: Maximum number of poll attempts (default: 30)
-            timeout_ms: Timeout for each poll attempt (default: 2000ms)
-
-        Raises:
-            RuntimeError: If no partitions assigned after max attempts or lock acquisition fails
-            KafkaError: If Kafka becomes unavailable during polling
-        """
-        # First verify the topic exists and has partitions
-        try:
-            topic_partitions = self.consumer.partitions_for_topic(self.topic)
-            if topic_partitions is None or len(topic_partitions) == 0:
-                raise RuntimeError(
-                    f"Topic '{self.topic}' does not exist or has no partitions. "
-                    f"Check your Kafka configuration and topic setup."
-                )
-            logger.info(f"Topic '{self.topic}' exists with {len(topic_partitions)} partition(s): {topic_partitions}")
-        except KafkaError as e:
-            logger.error(f"Kafka error while checking topic partitions: {e}")
-            raise RuntimeError(
-                f"Kafka is unavailable or unreachable while checking topic '{self.topic}'. "
-                f"Check Kafka broker connectivity and cluster health."
-            ) from e
-        except Exception as e:
-            logger.error(f"Failed to check topic partitions: {e}")
-            raise RuntimeError(
-                f"Cannot verify topic '{self.topic}' exists. Check Kafka connectivity and topic configuration."
-            ) from e
-
-        logger.info("Waiting for consumer group coordinator to assign partitions...")
-        logger.info(
-            f"Will poll up to {max_attempts} times with {timeout_ms}ms timeout "
-            f"(total wait: up to {max_attempts * timeout_ms / 1000}s)"
-        )
-        logger.info("Note: This may take time even with no messages - partition assignment is asynchronous")
-
-        for attempt in range(max_attempts):
-            # Check if consumer is still valid before polling
-            if self.consumer is None:
-                raise RuntimeError("Consumer became None during partition assignment loop")
-
-            try:
-                # Poll with timeout to trigger partition assignment
-                # We discard any messages returned - they'll be re-consumed in the main loop
-                messages = self.consumer.poll(timeout_ms=timeout_ms, max_records=1)
-                assigned = self.consumer.assignment()
-
-                if assigned:
-                    logger.info(f"Initial partitions assigned after {attempt + 1} attempts: {assigned}")
-
-                    # IMPORTANT: If we consumed any messages during polling, we must seek back
-                    # to the committed offset to ensure we re-process them in the main loop
-                    if messages:
-                        msg_count = sum(len(msgs) for msgs in messages.values())
-                        logger.warning(
-                            f"Consumed {msg_count} message(s) during initialization poll. "
-                            f"Seeking back to committed offsets to re-process them."
-                        )
-
-                        # Seek back to committed offset for each partition
-                        for tp in assigned:
-                            committed = self.consumer.committed(tp)
-                            if committed is not None:
-                                logger.info(f"Seeking {tp} to committed offset {committed}")
-                                self.consumer.seek(tp, committed)
-                            else:
-                                # No committed offset - seek to beginning (auto_offset_reset=earliest)
-                                logger.info(f"No committed offset for {tp}, seeking to beginning")
-                                self.consumer.seek_to_beginning(tp)
-
-                    self._acquire_initial_lock_token(assigned)
-                    return  # Success
-
-                # Log every 5 attempts to avoid spam
-                if (attempt + 1) % 5 == 0:
-                    logger.info(
-                        f"Still waiting for partition assignment... "
-                        f"(attempt {attempt + 1}/{max_attempts}, "
-                        f"elapsed: ~{(attempt + 1) * timeout_ms / 1000:.1f}s)"
-                    )
-                else:
-                    logger.debug(f"No partitions assigned yet, attempt {attempt + 1}/{max_attempts}")
-
-            except KafkaError as e:
-                logger.error(
-                    f"Kafka error during partition assignment polling (attempt {attempt + 1}/{max_attempts}): {e}. "
-                    f"Kafka broker may be unavailable or unreachable."
-                )
-                # Re-raise KafkaError to stop consumer - don't retry indefinitely when Kafka is down
-                raise RuntimeError(
-                    f"Kafka became unavailable during partition assignment after {attempt + 1} attempts. "
-                    f"Error: {e}. Check Kafka broker connectivity and cluster health."
-                ) from e
-
-        # Failed to get partition assignment after max attempts
-        total_wait = max_attempts * timeout_ms / 1000
-        raise RuntimeError(
-            f"No partitions assigned after {max_attempts} poll attempts ({total_wait}s). "
-            f"Topic exists but consumer group coordinator did not assign partitions. "
-            f"This may indicate:\n"
-            f"  - Consumer group rebalancing issues\n"
-            f"  - Kafka broker connectivity problems\n"
-            f"  - Consumer group coordinator unavailable\n"
-            f"  - Max consumers already assigned to all partitions\n"
-            f"Check Kafka broker logs and consumer group status."
-        )
-
-    def _acquire_initial_lock_token(self, assigned_partitions):
-        """Acquire lock token for initially assigned partition(s).
-
-        Args:
-            assigned_partitions: Set of TopicPartition objects
-
-        Raises:
-            RuntimeError: If lock acquisition fails
-        """
-        if len(assigned_partitions) == 0:
-            return
-
-        # Typically only one partition per consumer
-        partition = list(assigned_partitions)[0]
-        consumer_group_id = self.consumer.config.get("group_id")
-        lock_id = f"{consumer_group_id}/{partition.partition}"
-
-        try:
-            lock_token = self._acquire_lock_with_retry(lock_id)
-            with self._lock_mutex:
-                self.lock_id = lock_id
-                self.lock_token = lock_token
-            logger.info(f"Acquired lock token for initial partition {partition.partition}: {lock_token}")
-        except Exception as e:
-            logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
-            with self._lock_mutex:
-                self.lock_token = None
-                self.lock_id = None
-            raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
 
     def _initialize_consumer_setup(self):
         """Initialize consumer, subscribe to topic, and prepare for consumption.
@@ -1551,11 +1410,82 @@ class RBACKafkaConsumer:
             )
             return False  # Break loop
 
+    def _ensure_lock_token_on_assignment(self):
+        """Ensure lock token is acquired when partitions are assigned.
+
+        This handles the case where on_partitions_assigned callback might not fire
+        on consumer restart if partition assignment hasn't changed.
+        """
+        assigned = self.consumer.assignment()
+        if not assigned:
+            return False
+
+        # Get the expected lock_id for the currently assigned partition
+        # Note: We assume single partition per consumer - assert this invariant
+        if len(assigned) > 1:
+            logger.warning(
+                f"Consumer has multiple partitions assigned: {assigned}. "
+                f"RBAC consumer is designed for single partition per consumer. "
+                f"Using first partition only."
+            )
+
+        partition = list(assigned)[0]
+        consumer_group_id = self.consumer.config.get("group_id")
+        expected_lock_id = f"{consumer_group_id}/{partition.partition}"
+
+        # Check if we already have a lock token for the correct partition
+        with self._lock_mutex:
+            if self.lock_token and self.lock_id == expected_lock_id:
+                # Token exists and matches current assignment
+                logger.debug(f"Lock token already valid for {self.lock_id}")
+                return True
+            elif self.lock_token:
+                # Token exists but for wrong partition - clear stale token
+                logger.warning(
+                    f"Stale lock token detected. Current: {self.lock_id}, "
+                    f"Expected: {expected_lock_id}. Clearing and reacquiring."
+                )
+                self.lock_token = None
+                self.lock_id = None
+
+        # Acquire lock token for assigned partition
+        lock_id = expected_lock_id
+
+        logger.info(f"Acquiring lock token for assigned partition: {lock_id}")
+        try:
+            lock_token = self._acquire_lock_with_retry(lock_id)
+            with self._lock_mutex:
+                self.lock_id = lock_id
+                self.lock_token = lock_token
+            logger.info(f"Acquired lock token for partition {partition.partition}: {lock_token}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
+            raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
+
     def _run_message_loop(self):
         """Run the main message consumption loop."""
         last_committed_offsets = {}
 
         for message in self.consumer:
+            # On first message, ensure we have a lock token
+            # This handles cases where on_partitions_assigned doesn't fire
+            if not last_committed_offsets:
+                token_acquired = self._ensure_lock_token_on_assignment()
+                if not token_acquired:
+                    # Partitions not assigned yet - this should not happen since we have a message
+                    # This is a fatal error - we cannot process without partition assignment
+                    error_msg = (
+                        f"Received message but no partitions assigned. "
+                        f"Message partition: {message.partition}, offset: {message.offset}. "
+                        f"This indicates a Kafka consumer state issue. "
+                        f"Cannot proceed without partition assignment - stopping consumer."
+                    )
+                    logger.error(error_msg)
+                    # Raise error to stop consumer - at-least-once delivery will be preserved
+                    # because offset was not committed. Message will be retried on restart.
+                    raise RuntimeError(error_msg)
+
             try:
                 topic_partition = TopicPartition(message.topic, message.partition)
 
@@ -1605,9 +1535,6 @@ class RBACKafkaConsumer:
             # Initialize consumer and subscribe to topic
             self._initialize_consumer_setup()
 
-            # Wait for partition assignment and acquire lock token
-            self._wait_for_partition_assignment()
-
             # Record consumer info after successful initialization
             consumer_info.labels(
                 topic=self.topic,
@@ -1618,6 +1545,8 @@ class RBACKafkaConsumer:
             )
 
             # Start main message processing loop
+            # Note: Partition assignment and lock token acquisition happen automatically
+            # via the on_partitions_assigned callback during the first poll
             self._run_message_loop()
 
         except KafkaError as e:
