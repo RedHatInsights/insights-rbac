@@ -1,7 +1,80 @@
 import unittest
+import uuid
+from typing import Optional
+
 from kessel.relations.v1beta1.common_pb2 import Relationship, ObjectReference, ObjectType, SubjectReference
 from migration_tool.in_memory_tuples import InMemoryTuples, RelationTuple
 from migration_tool.utils import create_relationship
+
+
+class TestRelationTuple(unittest.TestCase):
+    def _make_args(
+        self,
+        resource_type_namespace: str = "rbac",
+        resource_type_name: str = "workspace",
+        resource_id: str = "c7a3ff11-10d5-4326-9570-9fbbd3e06e17",
+        relation: str = "binding",
+        subject_type_namespace: str = "rbac",
+        subject_type_name: str = "role_binding",
+        subject_id: str = "d3431795-b368-448d-8835-0e77c0b7ded1",
+        subject_relation: Optional[str] = None,
+    ) -> dict[str, str]:
+        return {
+            "resource_type_namespace": resource_type_namespace,
+            "resource_type_name": resource_type_name,
+            "resource_id": resource_id,
+            "relation": relation,
+            "subject_type_namespace": subject_type_namespace,
+            "subject_type_name": subject_type_name,
+            "subject_id": subject_id,
+            "subject_relation": subject_relation,
+        }
+
+    def test_valid(self):
+        for args in [
+            {},
+            {"resource_type_name": "This_is_A_valid_type_name_123"},
+            {"subject_type_name": "This_is_A_valid_type_name_123"},
+            {"subject_relation": "members"},
+            {"subject_relation": None},
+            {"resource_id": "Valid/-|_+=1"},
+            {"subject_id": "Valid/-|_+=1"},
+            {"subject_id": "*"},
+        ]:
+            with self.subTest(args=args):
+                RelationTuple(**self._make_args(**args))
+
+    def test_invalid(self):
+        for args, type in [
+            ({"resource_type_namespace": None}, TypeError),
+            ({"resource_type_name": None}, TypeError),
+            ({"resource_id": None}, TypeError),
+            ({"relation": None}, TypeError),
+            ({"subject_type_namespace": None}, TypeError),
+            ({"subject_type_name": None}, TypeError),
+            ({"subject_id": None}, TypeError),
+            # subject_relation is optional.
+            ({"resource_type_namespace": ""}, ValueError),
+            ({"resource_type_name": ""}, ValueError),
+            ({"resource_id": ""}, ValueError),
+            ({"relation": ""}, ValueError),
+            ({"subject_type_namespace": ""}, ValueError),
+            ({"subject_type_name": ""}, ValueError),
+            ({"subject_id": ""}, ValueError),
+            ({"subject_relation": ""}, ValueError),
+            # Ensure that UUID objects are rejected.
+            ({"resource_id": uuid.uuid4()}, TypeError),
+            ({"subject_id": uuid.uuid4()}, TypeError),
+            ({"resource_type_name": "hyphens-prohibited"}, ValueError),
+            ({"subject_type_name": "hyphens-prohibited"}, ValueError),
+            ({"resource_id": "a$b"}, ValueError),
+            ({"resource_id": "foo-*"}, ValueError),
+            ({"resource_id": "*"}, ValueError),
+            ({"subject_id": "a$b"}, ValueError),
+            ({"subject_id": "foo-*"}, ValueError),
+        ]:
+            with self.subTest(args=args):
+                self.assertRaises(type, RelationTuple, **self._make_args(**args))
 
 
 class TestInMemoryTuples(unittest.TestCase):
@@ -168,8 +241,9 @@ class TestCreateRelationship(unittest.TestCase):
             )
 
         error_message = str(context.exception)
-        self.assertIn("Cannot create relationship with None or empty resource_id", error_message)
+        self.assertIn("resource_id cannot be empty", error_message)
         self.assertIn("workspace", error_message)
+        self.assertIn("None", error_message)
 
     def test_create_relationship_raises_error_on_empty_resource_id(self):
         """Test that create_relationship raises ValueError when resource_id is empty string."""
@@ -183,8 +257,7 @@ class TestCreateRelationship(unittest.TestCase):
             )
 
         error_message = str(context.exception)
-        self.assertIn("Cannot create relationship with None or empty resource_id", error_message)
-        self.assertIn("workspace", error_message)
+        self.assertIn("resource_id cannot be empty", error_message)
 
     def test_create_relationship_raises_error_on_none_subject_id(self):
         """Test that create_relationship raises ValueError when subject_id is None."""
@@ -198,8 +271,9 @@ class TestCreateRelationship(unittest.TestCase):
             )
 
         error_message = str(context.exception)
-        self.assertIn("Cannot create relationship with None or empty subject_id", error_message)
-        self.assertIn("role_binding", error_message)
+        self.assertIn("subject_id cannot be empty", error_message)
+        self.assertIn("workspace", error_message)
+        self.assertIn("None", error_message)
 
     def test_create_relationship_raises_error_on_empty_subject_id(self):
         """Test that create_relationship raises ValueError when subject_id is empty string."""
@@ -213,5 +287,5 @@ class TestCreateRelationship(unittest.TestCase):
             )
 
         error_message = str(context.exception)
-        self.assertIn("Cannot create relationship with None or empty subject_id", error_message)
+        self.assertIn("subject_id cannot be empty", error_message)
         self.assertIn("role_binding", error_message)

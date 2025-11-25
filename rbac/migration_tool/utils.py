@@ -4,6 +4,7 @@ import logging
 from typing import Optional, Tuple
 
 from kessel.relations.v1beta1 import common_pb2
+from migration_tool.in_memory_tuples import RelationTuple
 from protoc_gen_validate.validator import ValidationFailed, validate_all
 
 
@@ -34,22 +35,13 @@ def create_relationship(
     subject_relation: Optional[str] = None,
 ):
     """Create a relationship between a resource and a subject."""
-    # Validation gate: Ensure no None or empty values in IDs
-    if resource_id is None or resource_id == "":
-        raise ValueError(
-            f"Cannot create relationship with None or empty resource_id. "
-            f"Resource: {resource_name}, Subject: {subject_name}, Subject ID: {subject_id}, Relation: {relation}. "
-        )
-    if subject_id is None or subject_id == "":
-        raise ValueError(
-            f"Cannot create relationship with None or empty subject_id. "
-            f"Resource: {resource_name}, Resource ID: {resource_id}, Subject: {subject_name}, Relation: {relation}. "
-        )
-
-    return common_pb2.Relationship(
+    message = common_pb2.Relationship(
         resource=validate_and_create_obj_ref(resource_name, resource_id),
         relation=relation,
         subject=common_pb2.SubjectReference(
             subject=validate_and_create_obj_ref(subject_name, subject_id), relation=subject_relation
         ),
     )
+
+    RelationTuple.validate_message(message)
+    return message
