@@ -118,7 +118,7 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
 
             for rd in locked_rds:
                 # Use metadata from initial query to avoid traversing FKs (access.permission)
-                meta = rds_metadata.get(rd.id)
+                meta = rds_metadata[rd.id]
                 app_name = meta["access__permission__application"]
                 res_type = meta["access__permission__resource_type"]
 
@@ -288,6 +288,10 @@ class WorkspaceService:
             raise serializers.ValidationError("Unable to delete due to workspace dependencies")
 
         with transaction.atomic():
+            # Lock the workspace to prevent concurrent modifications or referencing
+            # by new/updated roles during deletion
+            Workspace.objects.select_for_update().get(pk=instance.pk)
+
             # Update roles that reference this workspace before deleting it
             role_update_results = update_roles_for_removed_workspace(instance.id)
             logger.info(f"Updated {role_update_results} roles for workspace {instance.id} removal")

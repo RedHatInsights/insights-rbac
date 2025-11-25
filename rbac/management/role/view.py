@@ -649,9 +649,14 @@ class RoleViewSet(
                     if is_resource_a_workspace(app, resource_type, attributeFilter):
                         workspace_ids = get_workspace_ids_from_resource_definition(attributeFilter)
                         if len(workspace_ids) >= 1:
-                            is_same_tenant = Workspace.objects.filter(
-                                id__in=workspace_ids, tenant=request.tenant
-                            ).exists()
+                            # Use select_for_update to prevent race conditions where a workspace
+                            # might be in the process of being deleted.
+                            with transaction.atomic():
+                                is_same_tenant = (
+                                    Workspace.objects.select_for_update()
+                                    .filter(id__in=workspace_ids, tenant=request.tenant)
+                                    .exists()
+                                )
                             if not is_same_tenant:
                                 key = "role"
                                 message = (
