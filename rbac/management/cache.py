@@ -324,7 +324,11 @@ class PrincipalCache(BasicCache):
         :param org_id: The tenant of the principal.
         :param principal: The principal object to cache.
         """
-        super().save(key=self.key_for(org_id, principal.username), item=principal, obj_name="principal")
+        super().save(
+            key=self.key_for(org_id, principal.username),
+            item=principal,
+            obj_name="principal",
+        )
 
     def delete_all_principals_for_tenant(self, org_id: str):
         """Purge all principals for a given tenant from the cache.

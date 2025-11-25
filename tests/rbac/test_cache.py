@@ -302,3 +302,69 @@ class TenantCacheTest(TestCase):
         tenant = tenant_cache.get_tenant(tenant_org_id)
         redis_health_check.assert_called_once()
         self.assertNotEqual(tenant, self.tenant)
+
+
+class JWTCacheTest(TestCase):
+    """Test JWT token caching."""
+
+    @patch("management.cache.JWTCache.connection")
+    @patch("management.cache.BasicCache.redis_health_check")
+    def test_jwt_cache_set_and_get(self, redis_health_check, redis_connection):
+        """Test that JWT tokens are correctly stored and retrieved from cache."""
+        from management.cache import JWTCache
+
+        jwt_cache = JWTCache()
+        # Sample JWT token for testing (header.payload.signature)
+        test_token = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        )
+        key = "rbac::jwt::relations"
+
+        # Test setting JWT token
+        jwt_cache.set_jwt_response(test_token)
+        self.assertTrue(call().__enter__().set(name=key, value=test_token) in redis_connection.pipeline.mock_calls)
+        self.assertTrue(
+            call().__enter__().expire(name=key, time=settings.IT_TOKEN_JKWS_CACHE_LIFETIME)
+            in redis_connection.pipeline.mock_calls
+        )
+
+        # Test getting JWT token
+        redis_connection.get.return_value = test_token.encode("utf-8")
+        redis_health_check.return_value = True
+
+        retrieved_token = jwt_cache.get_jwt_response()
+        redis_health_check.assert_called_once()
+        redis_connection.get.assert_called_once_with(name=key)
+        self.assertEqual(retrieved_token, test_token)
+
+    @patch("management.cache.JWTCache.connection")
+    @patch("management.cache.BasicCache.redis_health_check")
+    def test_jwt_cache_get_returns_none_when_empty(self, redis_health_check, redis_connection):
+        """Test that get_jwt_response returns None when cache is empty."""
+        from management.cache import JWTCache
+
+        jwt_cache = JWTCache()
+
+        redis_connection.get.return_value = None
+        redis_health_check.return_value = True
+
+        retrieved_token = jwt_cache.get_jwt_response()
+        self.assertIsNone(retrieved_token)
+
+    @patch("management.cache.JWTCache.connection")
+    @patch("management.cache.BasicCache.redis_health_check")
+    def test_jwt_cache_handles_string_response(self, redis_health_check, redis_connection):
+        """Test that JWT cache handles both bytes and string responses from Redis."""
+        from management.cache import JWTCache
+
+        jwt_cache = JWTCache()
+        test_token = "test.jwt.token"
+
+        # Test with string (already decoded)
+        redis_connection.get.return_value = test_token
+        redis_health_check.return_value = True
+
+        retrieved_token = jwt_cache.get_jwt_response()
+        self.assertEqual(retrieved_token, test_token)
