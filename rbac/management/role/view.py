@@ -269,9 +269,9 @@ class RoleViewSet(
                 ]
             }
         """
-        self.validate_role(request)
         try:
             with transaction.atomic():
+                self.validate_role(request)
                 return super().create(request=request, args=args, kwargs=kwargs)
         except IntegrityError as e:
             if DUPLICATE_KEY_ERROR_MSG in e.args[0]:
@@ -464,10 +464,9 @@ class RoleViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        self.validate_role(request)
-
         try:
             with transaction.atomic():
+                self.validate_role(request)
                 return super().update(request=request, args=args, kwargs=kwargs)
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
@@ -649,19 +648,23 @@ class RoleViewSet(
                     if is_resource_a_workspace(app, resource_type, attributeFilter):
                         workspace_ids = get_workspace_ids_from_resource_definition(attributeFilter)
                         if len(workspace_ids) >= 1:
-                            # Use select_for_update to prevent race conditions where a workspace
-                            # might be in the process of being deleted.
-                            with transaction.atomic():
-                                is_same_tenant = (
-                                    Workspace.objects.select_for_update()
-                                    .filter(id__in=workspace_ids, tenant=request.tenant)
-                                    .exists()
-                                )
-                            if not is_same_tenant:
+                            unique_workspace_ids = set(workspace_ids)
+                            valid_workspaces = (
+                                Workspace.objects.select_for_update()
+                                .filter(id__in=unique_workspace_ids, tenant=request.tenant)
+                                .values_list("id", flat=True)
+                            )
+
+                            valid_workspace_ids = set(valid_workspaces)
+                            invalid_workspace_ids = unique_workspace_ids - valid_workspace_ids
+
+                            if invalid_workspace_ids:
+                                invalid_ids_str = ", ".join(sorted([str(uid) for uid in invalid_workspace_ids]))
                                 key = "role"
                                 message = (
                                     f"user from org '{request.user.org_id}' cannot add "
-                                    f"permission '{permission}' to workspace outside their org"
+                                    f"permission '{permission}' to workspace outside their org. "
+                                    f"Invalid workspace IDs: {invalid_ids_str}"
                                 )
                                 error = {key: [_(message)]}
                                 raise serializers.ValidationError(error)
