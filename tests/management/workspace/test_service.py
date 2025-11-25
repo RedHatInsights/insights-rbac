@@ -50,7 +50,7 @@ class WorkspaceServiceTest(TestCase):
 
         # Make select.select indicate readability and inject a notification just-in-time
         def select_side_effect(*args, **kwargs):
-            mock_conn.notifies = deque([FakeNotify("test", "42")])
+            mock_conn.notifies = deque([FakeNotify("READ_YOUR_WRITES_CHANNEL", "42")])
             return ([mock_conn], [], [])
 
         mock_select.side_effect = select_side_effect
@@ -80,7 +80,7 @@ class WorkspaceServiceTest(TestCase):
         mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
 
         def select_side_effect(*args, **kwargs):
-            mock_conn.notifies = deque([FakeNotify("test", "  42  ")])
+            mock_conn.notifies = deque([FakeNotify("READ_YOUR_WRITES_CHANNEL", "  42  ")])
             return ([mock_conn], [], [])
 
         mock_select.side_effect = select_side_effect
