@@ -30,7 +30,11 @@ LABEL summary="$SUMMARY" \
       com.redhat.component="python312-docker" \
       name="insights-rbac" \
       version="1" \
-      maintainer="Red Hat Insights"
+      maintainer="Red Hat Insights" \
+      distribution-scope="private" \
+      release="1" \
+      url="https://github.com/RedHatInsights/insights-rbac" \
+      vendor="Red Hat, Inc."
 
 
 # Very minimal set of packages
