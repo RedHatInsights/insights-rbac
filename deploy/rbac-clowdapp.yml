@@ -673,6 +673,8 @@ objects:
                 fieldPath: metadata.namespace
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
+          - name: CW_NULL_WORKAROUND
+            value: ${CW_NULL_WORKAROUND}
           - name: DJANGO_DEBUG
             value: ${DJANGO_DEBUG}
           - name: DJANGO_LOG_LEVEL
