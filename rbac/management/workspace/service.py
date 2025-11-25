@@ -20,13 +20,15 @@ import select
 import time
 import uuid
 from collections import deque
+from itertools import groupby
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
+from django.db.models import Q
 from feature_flags import FEATURE_FLAGS
 from internal.utils import get_workspace_ids_from_resource_definition, is_resource_a_workspace
-from management.models import Role, Workspace
+from management.models import ResourceDefinition, Role, Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
@@ -42,7 +44,7 @@ LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNE
 UNLISTEN_SQL = sql.SQL("UNLISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 
 
-def update_roles_for_removed_workspace(workspace_id: uuid.UUID, tenant) -> dict:
+def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
     """
     Update roles that reference a removed workspace and replicate the changes.
 
@@ -52,7 +54,6 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID, tenant) -> dict:
 
     Args:
         workspace_id (uuid.UUID): The ID of the workspace being removed.
-        tenant: The tenant object for the workspace.
 
     Returns:
         dict: Results with roles_updated, bindings_updated, and changes list.
@@ -60,111 +61,131 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID, tenant) -> dict:
     workspace_id_str = str(workspace_id)
     roles_updated = 0
     resource_defs_updated = 0
-    changes = []
 
     logger.info(f"Searching for roles that reference workspace {workspace_id_str}")
 
     # Get all custom roles with resource definitions
-    custom_roles_with_rds = Role.objects.filter(
-        system=False, access__resourceDefinitions__isnull=False, tenant=tenant
-    ).distinct()
+    # Optimize search by filtering for roles that reference this workspace in their RDs
+    workspace_filter_key = settings.WORKSPACE_ATTRIBUTE_FILTER
+    rds_data = (
+        ResourceDefinition.objects.filter(
+            Q(
+                attributeFilter__operation="equal",
+                attributeFilter__value=workspace_id_str,
+            )
+            | Q(
+                attributeFilter__operation="in",
+                attributeFilter__value__contains=[workspace_id_str],
+            ),
+            attributeFilter__key=workspace_filter_key,
+        )
+        .values(
+            "id",
+            "access__role_id",
+            "access__permission__permission",
+            "access__permission__application",
+            "access__permission__resource_type",
+        )
+        .order_by("access__role_id")
+    )
 
-    for raw_role in custom_roles_with_rds.iterator():
+    # Group by Role ID
+    for role_id, group in groupby(rds_data.iterator(), key=lambda x: x["access__role_id"]):
+        # Create a map of RD ID -> metadata for this role's RDs
+        rds_metadata = {item["id"]: item for item in group}
+        rd_ids = list(rds_metadata.keys())
+
         role_had_updates = False
 
         with transaction.atomic():
             # Lock the role to prevent concurrent modifications
-            role = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+            # select_related('tenant') to avoid extra query in DualWriteHandler
+            role = Role.objects.select_for_update().select_related("tenant").filter(pk=role_id).first()
 
             if role is None:
-                logger.warning(f"Role vanished before it could be updated: pk={raw_role.pk!r}")
+                logger.warning(f"Role vanished before it could be updated: pk={role_id!r}")
                 continue
 
             dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
             dual_write.prepare_for_update()  # Capture current bindings
 
-            for access in role.access.all():
-                permission = access.permission
+            # Lock the ResourceDefinitions to prevent concurrent modifications
+            # We already know these RDs reference the workspace (from the query),
+            # but we need to fetch the full objects to update them.
+            locked_rds = ResourceDefinition.objects.select_for_update().filter(id__in=rd_ids)
 
-                # Only check workspace-related resource definitions
-                for rd in access.resourceDefinitions.all():
-                    if not is_resource_a_workspace(
-                        permission.application, permission.resource_type, rd.attributeFilter
-                    ):
-                        continue
+            rds_to_update = []
 
-                    # Get workspace IDs from resource definition
-                    workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
+            for rd in locked_rds:
+                # Use metadata from initial query to avoid traversing FKs (access.permission)
+                meta = rds_metadata.get(rd.id)
+                app_name = meta["access__permission__application"]
+                res_type = meta["access__permission__resource_type"]
 
-                    # Check if this resource definition references the removed workspace
-                    if workspace_id not in workspace_ids:
-                        continue
+                # Double-check is_resource_a_workspace
+                if not is_resource_a_workspace(app_name, res_type, rd.attributeFilter):
+                    continue
 
-                    # This resource definition references the removed workspace
-                    role_had_updates = True
+                # Get workspace IDs from resource definition
+                workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
 
-                    # Check if the resource definition has None (for ungrouped workspace)
-                    operation = rd.attributeFilter.get("operation")
-                    original_value = rd.attributeFilter.get("value")
-                    has_none_value = False
+                # Check if this resource definition references the removed workspace
+                if workspace_id not in workspace_ids:
+                    continue
 
-                    if operation == "in" and isinstance(original_value, list):
-                        has_none_value = None in original_value
-                    elif operation == "equal":
-                        has_none_value = original_value is None
+                # This resource definition references the removed workspace
+                role_had_updates = True
 
-                    # Remove the workspace ID from the list
-                    remaining_workspace_ids = [ws_id for ws_id in workspace_ids if ws_id != workspace_id]
+                # Check if the resource definition has None (for ungrouped workspace)
+                operation = rd.attributeFilter.get("operation")
+                original_value = rd.attributeFilter.get("value")
+                has_none_value = False
 
-                    # Calculate what the new value should be
-                    operation_type = rd.attributeFilter.get("operation")
-                    new_value: str | list | None
+                if operation == "in" and isinstance(original_value, list):
+                    has_none_value = None in original_value
+                elif operation == "equal":
+                    has_none_value = original_value is None
 
-                    if operation_type == "equal":
-                        # For "equal" operation, value should be a single string, None, or empty string
-                        # Preserve None if it existed (for ungrouped workspace reference)
-                        if has_none_value and not remaining_workspace_ids:
-                            new_value = None
-                        else:
-                            new_value = str(remaining_workspace_ids[0]) if remaining_workspace_ids else ""
+                # Remove the workspace ID from the list
+                remaining_workspace_ids = [ws_id for ws_id in workspace_ids if ws_id != workspace_id]
+
+                # Calculate what the new value should be
+                operation_type = rd.attributeFilter.get("operation")
+                new_value: str | list | None
+
+                if operation_type == "equal":
+                    # For "equal" operation, value should be a single string, None, or empty string
+                    # Preserve None if it existed (for ungrouped workspace reference)
+                    if has_none_value and not remaining_workspace_ids:
+                        new_value = None
                     else:
-                        # For "in" operation, value should be a list
-                        # Preserve None value if it existed (for ungrouped workspace reference)
-                        new_value_list: list[str | None] = [str(ws_id) for ws_id in remaining_workspace_ids]
-                        if has_none_value:
-                            new_value_list.append(None)
-                        new_value = new_value_list
+                        new_value = str(remaining_workspace_ids[0]) if remaining_workspace_ids else ""
+                else:
+                    # For "in" operation, value should be a list
+                    # Preserve None value if it existed (for ungrouped workspace reference)
+                    new_value_list: list[str | None] = [str(ws_id) for ws_id in remaining_workspace_ids]
+                    if has_none_value:
+                        new_value_list.append(None)
+                    new_value = new_value_list
 
-                    change_info = {
-                        "role_uuid": str(role.uuid),
-                        "role_name": role.name,
-                        "permission": permission.permission,
-                        "resource_definition_id": rd.id,
-                        "operation": operation_type,
-                        "original_value": original_value,
-                        "new_value": new_value,
-                        "removed_workspace": workspace_id_str,
-                        "remaining_workspaces": [str(ws_id) for ws_id in remaining_workspace_ids],
-                        "preserved_none": has_none_value,
-                    }
+                # Update resource definition to remove the workspace ID
+                # Create new dict to ensure Django detects the change (JSONField mutation issue)
+                updated_filter = rd.attributeFilter.copy()
+                updated_filter["value"] = new_value
 
-                    # Update resource definition to remove the workspace ID
-                    # Create new dict to ensure Django detects the change (JSONField mutation issue)
-                    updated_filter = rd.attributeFilter.copy()
-                    updated_filter["value"] = new_value
+                rd.attributeFilter = updated_filter
+                rds_to_update.append(rd)
+                resource_defs_updated += 1
 
-                    rd.attributeFilter = updated_filter
-                    rd.save()
-                    resource_defs_updated += 1
+                logger.info(
+                    f"Updated role '{role.name}' (uuid={role.uuid}), "
+                    f"removed workspace {workspace_id_str}, "
+                    f"{original_value} -> {new_value}"
+                )
 
-                    logger.info(
-                        f"Updated role '{role.name}' (uuid={role.uuid}), "
-                        f"permission '{permission.permission}', RD #{rd.id}: "
-                        f"removed workspace {workspace_id_str}, "
-                        f"{original_value} -> {new_value}"
-                    )
-
-                    changes.append(change_info)
+            # Bulk update all RDs for this role
+            if rds_to_update:
+                ResourceDefinition.objects.bulk_update(rds_to_update, ["attributeFilter"])
 
             # If we updated any resource definitions, trigger dual write to update bindings
             if role_had_updates:
@@ -179,19 +200,7 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID, tenant) -> dict:
                     f"after removing workspace {workspace_id_str}"
                 )
 
-    results = {
-        "workspace_id": workspace_id_str,
-        "roles_updated": roles_updated,
-        "resource_definitions_updated": resource_defs_updated,
-        "changes": changes,
-    }
-
-    logger.info(
-        f"Completed workspace removal updates: {roles_updated} roles updated, "
-        f"{resource_defs_updated} resource definitions updated for workspace {workspace_id_str}"
-    )
-
-    return results
+    return roles_updated
 
 
 class WorkspaceService:
@@ -280,8 +289,8 @@ class WorkspaceService:
 
         with transaction.atomic():
             # Update roles that reference this workspace before deleting it
-            role_update_results = update_roles_for_removed_workspace(instance.id, instance.tenant)
-            logger.info(f"Updated {role_update_results['roles_updated']} roles for workspace {instance.id} removal")
+            role_update_results = update_roles_for_removed_workspace(instance.id)
+            logger.info(f"Updated {role_update_results} roles for workspace {instance.id} removal")
 
             dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
             dual_write_handler.replicate_deleted_workspace()
