@@ -26,28 +26,6 @@ def validate_and_create_obj_ref(obj_name: Tuple[str, str], obj_id):
     return obj_ref
 
 
-def create_relationship_unchecked(
-    resource_name: Tuple[str, str],
-    resource_id: str,
-    subject_name: Tuple[str, str],
-    subject_id: str,
-    relation: str,
-    subject_relation: Optional[str] = None,
-):
-    """
-    Create a relationship between a resource and a subject without performing any validation.
-
-    You should typically use create_relationship instead. Using this directly is primarily intended for testing.
-    """
-    return common_pb2.Relationship(
-        resource=validate_and_create_obj_ref(resource_name, resource_id),
-        relation=relation,
-        subject=common_pb2.SubjectReference(
-            subject=validate_and_create_obj_ref(subject_name, subject_id), relation=subject_relation
-        ),
-    )
-
-
 def create_relationship(
     resource_name: Tuple[str, str],
     resource_id: str,
@@ -57,13 +35,12 @@ def create_relationship(
     subject_relation: Optional[str] = None,
 ):
     """Create a relationship between a resource and a subject."""
-    message = create_relationship_unchecked(
-        resource_name=resource_name,
-        resource_id=resource_id,
-        subject_name=subject_name,
-        subject_id=subject_id,
+    message = common_pb2.Relationship(
+        resource=validate_and_create_obj_ref(resource_name, resource_id),
         relation=relation,
-        subject_relation=subject_relation,
+        subject=common_pb2.SubjectReference(
+            subject=validate_and_create_obj_ref(subject_name, subject_id), relation=subject_relation
+        ),
     )
 
     RelationTuple.validate_message(message)

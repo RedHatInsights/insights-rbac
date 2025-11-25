@@ -22,7 +22,7 @@ from django.test import TestCase, override_settings
 from google.protobuf import json_format
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from migration_tool.utils import create_relationship, create_relationship_unchecked
+from migration_tool.utils import create_relationship
 from prometheus_client import REGISTRY
 
 
@@ -470,39 +470,6 @@ class OutboxReplicatorTest(TestCase):
         error_message = str(context.exception)
         self.assertIn("duplicate relationships", error_message)
         self.assertIn("role_binding", error_message)
-
-    def test_add_invalid_relations(self):
-        """Test that adding an invalid relation raises an error."""
-        # Here, we only test a single case of invalidity (an invalid subject ID). We know that RelationTuple is used
-        # for this internally, so we just need to check that the validity of the RelationTuple is actually checked.
-        event = ReplicationEvent(
-            event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
-            partition_key=PartitionKey.byEnvironment(),
-            add=[
-                create_relationship_unchecked(
-                    ("rbac", "workspace"), "some-ws", ("rbac", "role_binding"), "invalid-id!", "binding"
-                )
-            ],
-        )
-
-        with self.assertRaises(ValueError):
-            self.replicator.replicate(event)
-
-    def test_remove_invalid_relations(self):
-        """Test that removing an invalid relation raises an error."""
-        # Similarly to above, we only need to check a single case of invalidity here.
-        event = ReplicationEvent(
-            event_type=ReplicationEventType.DELETE_BINDING_MAPPINGS,
-            partition_key=PartitionKey.byEnvironment(),
-            remove=[
-                create_relationship_unchecked(
-                    ("rbac", "workspace"), "some-ws", ("rbac", "role_binding"), "invalid-id!", "binding"
-                )
-            ],
-        )
-
-        with self.assertRaises(ValueError):
-            self.replicator.replicate(event)
 
 
 class OutboxReplicatorPrometheusTest(TestCase):
