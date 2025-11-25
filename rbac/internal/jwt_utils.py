@@ -125,7 +125,7 @@ class JWTManager:
 
             # Check if token exists and is not expired
             if token and not self.is_token_expired(token):
-                logger.info("Valid token retrieved from redis.")
+                logger.debug("Valid token retrieved from redis.")
                 return token
 
             # Token missing or expired, get new one
