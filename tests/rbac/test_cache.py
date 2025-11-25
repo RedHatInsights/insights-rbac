@@ -23,6 +23,7 @@ from django.conf import settings
 from django.test import TestCase
 from management.cache import TenantCache
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
+from redis import exceptions
 
 from api.models import Tenant
 from rbac.settings import ACCESS_CACHE_ENABLED
@@ -368,3 +369,60 @@ class JWTCacheTest(TestCase):
 
         retrieved_token = jwt_cache.get_jwt_response()
         self.assertEqual(retrieved_token, test_token)
+
+
+class JWTCacheOptimizedTest(TestCase):
+    """Test optimized JWT token caching for Kafka consumer."""
+
+    @patch("management.cache.JWTCacheOptimized.connection")
+    def test_jwt_cache_optimized_skips_health_check(self, redis_connection):
+        """Test that optimized cache bypasses health check for performance."""
+        from management.cache import JWTCacheOptimized
+
+        jwt_cache = JWTCacheOptimized()
+        test_token = "optimized.test.token"
+
+        # Simulate cache is enabled and connected
+        jwt_cache.use_caching = True
+        jwt_cache._connection = redis_connection
+        redis_connection.get.return_value = test_token.encode("utf-8")
+
+        # Get token multiple times
+        for _ in range(10):
+            token = jwt_cache.get_jwt_response()
+            self.assertEqual(token, test_token)
+
+        # Should call get() 10 times but never call ping() for health check
+        self.assertEqual(redis_connection.get.call_count, 10)
+        # Verify ping was not called (no health check)
+        redis_connection.ping.assert_not_called()
+
+    @patch("management.cache.JWTCacheOptimized.connection")
+    def test_jwt_cache_optimized_handles_redis_error(self, redis_connection):
+        """Test that optimized cache handles Redis errors gracefully."""
+        from management.cache import JWTCacheOptimized
+
+        jwt_cache = JWTCacheOptimized()
+
+        # Simulate Redis error
+        redis_connection.get.side_effect = exceptions.RedisError("Connection lost")
+
+        # Should return None and disable caching
+        token = jwt_cache.get_jwt_response()
+
+        self.assertIsNone(token)
+        self.assertFalse(jwt_cache.use_caching)
+
+    @patch("management.cache.JWTCacheOptimized.connection")
+    def test_jwt_cache_optimized_respects_disabled_caching(self, redis_connection):
+        """Test that optimized cache respects use_caching flag."""
+        from management.cache import JWTCacheOptimized
+
+        jwt_cache = JWTCacheOptimized()
+        jwt_cache.use_caching = False
+
+        # Should return None without calling Redis
+        token = jwt_cache.get_jwt_response()
+
+        self.assertIsNone(token)
+        redis_connection.get.assert_not_called()
