@@ -65,12 +65,34 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
                 key = "format"
                 message = "attributeFilter operation 'in' expects a List value"
                 error = {key: [_(message)]}
-            elif op == "equal" and not isinstance(values, str):
+            elif op == "equal" and not isinstance(values, (str, type(None))):
                 key = "format"
-                message = "attributeFilter operation 'equal' expects a String value"
+                message = "attributeFilter operation 'equal' expects a String value or None"
                 error = {key: [_(message)]}
             if error:
                 raise serializers.ValidationError(error)
+
+            # Validate that group.id only contains UUIDs or None
+            filter_key = value.get("key")
+            if filter_key == "group.id":
+                if op == "in":
+                    if isinstance(values, list):
+                        invalid_values = [v for v in values if v is not None and not is_valid_uuid(v)]
+                        if invalid_values:
+                            key = "format"
+                            message = (
+                                f"attributeFilter with key 'group.id' must contain only valid UUIDs or None, "
+                                f"invalid values: {invalid_values}"
+                            )
+                            error = {key: [_(message)]}
+                            raise serializers.ValidationError(error)
+                elif op == "equal":
+                    if values is not None and not is_valid_uuid(values):
+                        key = "format"
+                        message = f"attributeFilter with key 'group.id' must be a valid UUID or None, got: {values}"
+                        error = {key: [_(message)]}
+                        raise serializers.ValidationError(error)
+
         return value
 
     def to_representation(self, instance):
