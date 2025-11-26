@@ -23,8 +23,17 @@ from unittest.mock import ANY, call, patch, mock_open
 from api.models import Tenant
 from management.group.definer import seed_group
 from management.group.platform import GlobalPolicyIdService
-from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
-from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
+from management.models import (
+    Access,
+    ExtRoleRelation,
+    Permission,
+    ResourceDefinition,
+    Role,
+)
+from management.relation_replicator.relation_replicator import (
+    ReplicationEvent,
+    ReplicationEventType,
+)
 from management.role.definer import seed_roles, seed_permissions
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
@@ -163,10 +172,14 @@ class RoleDefinerTests(IdentityRequest):
         access.save()
 
         # Update platform default role
-        platform_role_to_update = Role.objects.get(name="User Access principal viewer")
+        platform_role_to_update = Role.objects.get(name="Notifications viewer")
         platform_role_to_update.version = 0
         access = platform_role_to_update.access.first()
-        access.permission = Permission.objects.get(permission="rbac:*:*")
+        # Create the permission if it doesn't exist, then use it
+        write_permission, _ = Permission.objects.get_or_create(
+            permission="notifications:notifications:write", tenant=self.public_tenant
+        )
+        access.permission = write_permission
         platform_role_to_update.save()
         access.save()
 
@@ -179,8 +192,14 @@ class RoleDefinerTests(IdentityRequest):
 
             platform_role_to_update.refresh_from_db()
             non_platform_role_to_update.refresh_from_db()
-            self.assertEqual(non_platform_role_to_update.access.first().permission.permission, "rbac:*:*")
-            self.assertEqual(platform_role_to_update.access.first().permission.permission, "rbac:principal:read")
+            self.assertEqual(
+                non_platform_role_to_update.access.first().permission.permission,
+                "rbac:*:*",
+            )
+            self.assertEqual(
+                platform_role_to_update.access.first().permission.permission,
+                "notifications:notifications:read",
+            )
 
             notification_messages = [
                 call(
@@ -233,7 +252,11 @@ class RoleDefinerTests(IdentityRequest):
                 if topic != settings.NOTIFICATIONS_TOPIC:
                     continue
                 body = call_args.args[1]
-                self.assertNotIn(body.get("org_id"), ["unready1", "unready2"], "Unready tenant should not be notified")
+                self.assertNotIn(
+                    body.get("org_id"),
+                    ["unready1", "unready2"],
+                    "Unready tenant should not be notified",
+                )
 
     def try_seed_roles(self):
         """Try to seed roles"""
@@ -518,7 +541,10 @@ class RoleDefinerTests(IdentityRequest):
 
         # create a role in the database that exists in config with no changes.
         existing_role = Role.objects.create(
-            name="existing_system_role", system=True, version=1, tenant=self.public_tenant
+            name="existing_system_role",
+            system=True,
+            version=1,
+            tenant=self.public_tenant,
         )
         permission, _ = Permission.objects.get_or_create(permission="dummy:hosts:read", tenant=self.public_tenant)
         _ = Access.objects.create(permission=permission, role=existing_role, tenant=self.public_tenant)
@@ -599,7 +625,12 @@ class RoleDefinerTests(IdentityRequest):
 
     def test_force_conflict(self):
         """Test that attempting to set both force_create_relationships and force_update_relationships fails."""
-        self.assertRaises(ValueError, seed_roles, force_create_relationships=True, force_update_relationships=True)
+        self.assertRaises(
+            ValueError,
+            seed_roles,
+            force_create_relationships=True,
+            force_update_relationships=True,
+        )
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -629,9 +660,21 @@ class RoleDefinerTests(IdentityRequest):
         inventory_role = Role.objects.public_tenant_only().get(name="Inventory Groups Administrator")
 
         # Assert that seed_role creates relations in the default scope.
-        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=notifications_role.uuid)
-        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=approval_role.uuid)
-        self._assert_child(tuples, parent_uuid=default_admin_default_uuid, child_uuid=inventory_role.uuid)
+        self._assert_child(
+            tuples,
+            parent_uuid=default_platform_default_uuid,
+            child_uuid=notifications_role.uuid,
+        )
+        self._assert_child(
+            tuples,
+            parent_uuid=default_platform_default_uuid,
+            child_uuid=approval_role.uuid,
+        )
+        self._assert_child(
+            tuples,
+            parent_uuid=default_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
 
         # Force updating the existing relationships even though the role version numbers have not changed.
         # This puts approval_role in root scope and inventory_role in tenant scope.
@@ -642,15 +685,39 @@ class RoleDefinerTests(IdentityRequest):
             seed_roles(force_update_relationships=True)
 
         # Assert that relations for non-default-scope roles were removed.
-        self._assert_not_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=approval_role.uuid)
-        self._assert_not_child(tuples, parent_uuid=default_admin_default_uuid, child_uuid=inventory_role.uuid)
+        self._assert_not_child(
+            tuples,
+            parent_uuid=default_platform_default_uuid,
+            child_uuid=approval_role.uuid,
+        )
+        self._assert_not_child(
+            tuples,
+            parent_uuid=default_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
 
         # Assert that we end up with the correct relations.
-        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=notifications_role.uuid)
-        self._assert_child(tuples, parent_uuid=root_platform_default_uuid, child_uuid=approval_role.uuid)
-        self._assert_child(tuples, parent_uuid=tenant_admin_default_uuid, child_uuid=inventory_role.uuid)
+        self._assert_child(
+            tuples,
+            parent_uuid=default_platform_default_uuid,
+            child_uuid=notifications_role.uuid,
+        )
+        self._assert_child(
+            tuples,
+            parent_uuid=root_platform_default_uuid,
+            child_uuid=approval_role.uuid,
+        )
+        self._assert_child(
+            tuples,
+            parent_uuid=tenant_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
 
-        self.assertEqual(initial_count, len(tuples), "Expected overall number of tuples not to change.")
+        self.assertEqual(
+            initial_count,
+            len(tuples),
+            "Expected overall number of tuples not to change.",
+        )
 
         # Check that we can also move roles between non-default scopes.
         # This puts both approval_role and inventory_role in tenant scope.
@@ -661,11 +728,31 @@ class RoleDefinerTests(IdentityRequest):
             seed_roles(force_update_relationships=True)
 
         # Assert that relations for non-default-scope roles were removed.
-        self._assert_not_child(tuples, parent_uuid=root_platform_default_uuid, child_uuid=approval_role.uuid)
+        self._assert_not_child(
+            tuples,
+            parent_uuid=root_platform_default_uuid,
+            child_uuid=approval_role.uuid,
+        )
 
         # Assert that we end up with the correct relations.
-        self._assert_child(tuples, parent_uuid=default_platform_default_uuid, child_uuid=notifications_role.uuid)
-        self._assert_child(tuples, parent_uuid=tenant_platform_default_uuid, child_uuid=approval_role.uuid)
-        self._assert_child(tuples, parent_uuid=tenant_admin_default_uuid, child_uuid=inventory_role.uuid)
+        self._assert_child(
+            tuples,
+            parent_uuid=default_platform_default_uuid,
+            child_uuid=notifications_role.uuid,
+        )
+        self._assert_child(
+            tuples,
+            parent_uuid=tenant_platform_default_uuid,
+            child_uuid=approval_role.uuid,
+        )
+        self._assert_child(
+            tuples,
+            parent_uuid=tenant_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
 
-        self.assertEqual(initial_count, len(tuples), "Expected overall number of tuples not to change.")
+        self.assertEqual(
+            initial_count,
+            len(tuples),
+            "Expected overall number of tuples not to change.",
+        )

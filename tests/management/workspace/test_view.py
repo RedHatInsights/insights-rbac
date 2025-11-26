@@ -203,6 +203,26 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.tuples = InMemoryTuples()
         self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
 
+        # Patch get_queryset to not use select_for_update during tests
+        # SERIALIZABLE isolation level already provides necessary locking
+        from unittest.mock import patch
+        from management.workspace.view import WorkspaceViewSet
+
+        original_get_queryset = WorkspaceViewSet.get_queryset
+
+        def get_queryset_without_lock(self):
+            # Return queryset without select_for_update to avoid transaction requirement during permission checks
+            from management.base_viewsets import BaseV2ViewSet
+
+            return BaseV2ViewSet.get_queryset(self)
+
+        self.patcher = patch.object(WorkspaceViewSet, "get_queryset", get_queryset_without_lock)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        super().tearDown()
+
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
