@@ -539,10 +539,9 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         hostname = DependencyEndpoints[KESSEL_RELATION_CLOWDER_APPLICATION_NAME]["api"].hostname
         RELATION_API_SERVER = f"{hostname}:9000"
     except KeyError as e:
-        import logging
-
-        logging.warning(
-            f"Dependency endpoint for '{KESSEL_RELATION_CLOWDER_APPLICATION_NAME}' not found: {e}. "
+        # Note: Can't use logging here as it runs before Django logging config is applied
+        print(
+            f"WARNING: Dependency endpoint for '{KESSEL_RELATION_CLOWDER_APPLICATION_NAME}' not found: {e}. "
             f"Falling back to default RELATION_API_SERVER value: {RELATION_API_SERVER}"
         )
 
@@ -568,10 +567,9 @@ if CLOWDER_ENABLED:
         hostname = DependencyEndpoints[KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME]["api"].hostname
         INVENTORY_API_SERVER = f"{hostname}:{INVENTORY_API_PORT}"
     except KeyError as e:
-        import logging
-
-        logging.warning(
-            f"Dependency endpoint for '{KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME}' not found: {e}. "
+        # Note: Can't use logging here as it runs before Django logging config is applied
+        print(
+            f"WARNING: Dependency endpoint for '{KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME}' not found: {e}. "
             f"Falling back to default INVENTORY_API_SERVER value: {INVENTORY_API_SERVER}"
         )
 
