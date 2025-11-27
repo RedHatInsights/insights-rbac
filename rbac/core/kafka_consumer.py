@@ -1107,13 +1107,13 @@ class RBACKafkaConsumer:
             return False
 
         except RuntimeError as e:
-            # Max retries exceeded - pause consumer and wait for manual restart
+            # Max retries exceeded - stop consumer to allow Kubernetes restart
             error_msg = (
                 f"Max operation retries exceeded for message "
                 f"(partition: {message_partition}, offset: {message_offset}): {e}. "
-                f"Consumer will PAUSE and wait for manual restart.\n"
+                f"Consumer will STOP to allow Kubernetes restart.\n"
                 f"Offset NOT committed - message will be retried on restart.\n"
-                f"To resolve: Fix the issue and restart the pod manually.\n"
+                f"To resolve: Fix the issue. Kubernetes will restart the pod automatically.\n"
                 f"Message content: {message_value}"
             )
             logger.error(error_msg)
@@ -1122,19 +1122,14 @@ class RBACKafkaConsumer:
             # Mark consumer as paused to prevent offset commit on shutdown
             self.is_paused_for_retry = True
 
-            # Pause indefinitely - keep pod alive, wait for manual restart
+            # Stop consumer and let Kubernetes handle restart
             logger.critical(
-                "CONSUMER PAUSED: Max retries exceeded. Manual intervention required. "
-                "Pod will remain running. Restart the pod to retry the message."
+                "CONSUMER STOPPING: Max retries exceeded. Manual intervention required. "
+                "Kubernetes will restart the pod. Offset NOT committed - message will be retried."
             )
 
-            # Enter infinite sleep to keep pod alive but not processing
-            while True:
-                time.sleep(60)
-                logger.warning(
-                    f"Consumer still paused waiting for restart "
-                    f"(partition: {message_partition}, offset: {message_offset})"
-                )
+            # Raise exception to stop consumer - Kubernetes will restart the pod
+            raise
 
         except Exception as e:
             # Error handler short-circuited retry or other unexpected error
