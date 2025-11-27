@@ -605,7 +605,15 @@ class RebalanceListener(ConsumerRebalanceListener):
             partition = assigned[0]
 
             # Get consumer group ID from the consumer instance
-            consumer_group_id = self.consumer_instance.consumer.config.get("group_id")
+            try:
+                consumer_group_id = self.consumer_instance.consumer.config.get("group_id")
+                if not consumer_group_id:
+                    logger.error("Consumer group_id is not set in consumer config!")
+                    consumer_group_id = "unknown"
+            except AttributeError as e:
+                logger.error(f"Failed to get consumer group_id - consumer may not be initialized: {e}")
+                self.consumer_instance.lock_acquisition_failed = True
+                return
 
             # Generate lock ID: {consumer_group_id}/{partition_number}
             lock_id = f"{consumer_group_id}/{partition.partition}"
@@ -630,6 +638,8 @@ class RebalanceListener(ConsumerRebalanceListener):
                 with self.consumer_instance._lock_mutex:
                     self.consumer_instance.lock_id = lock_id
                     self.consumer_instance.lock_token = lock_token
+                    # Reset failure flag on successful acquisition
+                    self.consumer_instance.lock_acquisition_failed = False
 
                 logger.info(f"Acquired and stored lock token for partition {partition.partition}: {lock_token}")
 
@@ -781,12 +791,20 @@ class RBACKafkaConsumer:
         """
         return relations_api_replication.acquire_lock(lock_id)
 
-    def _acquire_lock_with_retry(self, lock_id: str, max_retries: int = 3) -> str:
+    def _acquire_lock_with_retry(
+        self,
+        lock_id: str,
+        max_retries: Optional[int] = None,
+        backoff_base: Optional[float] = None,
+        max_backoff: Optional[float] = None,
+    ) -> str:
         """Acquire lock with retry logic.
 
         Args:
             lock_id: Unique identifier for the lock
-            max_retries: Maximum number of retry attempts
+            max_retries: Maximum number of retry attempts (default: from env or 5)
+            backoff_base: Base for exponential backoff in seconds (default: 2)
+            max_backoff: Maximum backoff delay in seconds (default: 30)
 
         Returns:
             str: The acquired lock token
@@ -795,6 +813,14 @@ class RBACKafkaConsumer:
             RuntimeError: If max retries exceeded
             grpc.RpcError: If lock acquisition fails permanently
         """
+        # Use configurable defaults from environment or fallback to safe values
+        if max_retries is None:
+            max_retries = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_MAX_RETRIES", 5)
+        if backoff_base is None:
+            backoff_base = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_BACKOFF_BASE", 2.0)
+        if max_backoff is None:
+            max_backoff = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_MAX_BACKOFF", 30.0)
+
         for attempt in range(max_retries):
             try:
                 return self._acquire_lock(lock_id)
@@ -804,9 +830,9 @@ class RBACKafkaConsumer:
                     logger.error(f"Max retries ({max_retries}) exceeded for lock acquisition")
                     raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts") from e
 
-                # Exponential backoff
-                delay = 2**attempt
-                logger.info(f"Retrying lock acquisition in {delay}s...")
+                # Exponential backoff with max cap
+                delay = min(backoff_base**attempt, max_backoff)
+                logger.info(f"Retrying lock acquisition in {delay:.1f}s...")
                 time.sleep(delay)
 
         raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts")
@@ -1105,13 +1131,13 @@ class RBACKafkaConsumer:
             return False
 
         except RuntimeError as e:
-            # Max retries exceeded - pause consumer and wait for manual restart
+            # Max retries exceeded - stop consumer to allow Kubernetes restart
             error_msg = (
                 f"Max operation retries exceeded for message "
                 f"(partition: {message_partition}, offset: {message_offset}): {e}. "
-                f"Consumer will PAUSE and wait for manual restart.\n"
+                f"Consumer will STOP to allow Kubernetes restart.\n"
                 f"Offset NOT committed - message will be retried on restart.\n"
-                f"To resolve: Fix the issue and restart the pod manually.\n"
+                f"To resolve: Fix the issue. Kubernetes will restart the pod automatically.\n"
                 f"Message content: {message_value}"
             )
             logger.error(error_msg)
@@ -1120,19 +1146,14 @@ class RBACKafkaConsumer:
             # Mark consumer as paused to prevent offset commit on shutdown
             self.is_paused_for_retry = True
 
-            # Pause indefinitely - keep pod alive, wait for manual restart
+            # Stop consumer and let Kubernetes handle restart
             logger.critical(
-                "CONSUMER PAUSED: Max retries exceeded. Manual intervention required. "
-                "Pod will remain running. Restart the pod to retry the message."
+                "CONSUMER STOPPING: Max retries exceeded. Manual intervention required. "
+                "Kubernetes will restart the pod. Offset NOT committed - message will be retried."
             )
 
-            # Enter infinite sleep to keep pod alive but not processing
-            while True:
-                time.sleep(60)
-                logger.warning(
-                    f"Consumer still paused waiting for restart "
-                    f"(partition: {message_partition}, offset: {message_offset})"
-                )
+            # Raise exception to stop consumer - Kubernetes will restart the pod
+            raise
 
         except Exception as e:
             # Error handler short-circuited retry or other unexpected error
@@ -1527,6 +1548,8 @@ class RBACKafkaConsumer:
             with self._lock_mutex:
                 self.lock_id = lock_id
                 self.lock_token = lock_token
+                # Reset failure flag on successful acquisition
+                self.lock_acquisition_failed = False
 
             logger.info(
                 f"Acquired lock token for partition {partition.partition}: {lock_token} (took {duration:.2f}s)"

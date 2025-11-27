@@ -1062,7 +1062,7 @@ class RetryAllErrorsTests(TestCase):
 
     @patch("core.kafka_consumer.logger")
     def test_process_message_with_retry_max_retries_exceeded(self, mock_logger):
-        """Test that errors are retried until max_retries is hit."""
+        """Test that errors are retried until max_retries is hit, then raises RuntimeError."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
@@ -1070,32 +1070,27 @@ class RetryAllErrorsTests(TestCase):
         }
 
         # Mock _process_debezium_message to always raise a JSON error
-        # Mock time.sleep to break out of infinite pause loop
-        with (
-            patch.object(
-                self.consumer,
-                "_process_debezium_message",
-                side_effect=json.JSONDecodeError("test", "doc", 0),
-            ),
-            patch("time.sleep") as mock_sleep,
+        with patch.object(
+            self.consumer,
+            "_process_debezium_message",
+            side_effect=json.JSONDecodeError("test", "doc", 0),
         ):
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+            # Verify the error message
+            self.assertIn("Max operation retries", str(ctx.exception))
 
         # Should have retried operation_max_retries times (2)
         self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
         # Should log max operation retries exceeded
         mock_logger.critical.assert_called()
-        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
+        self.assertIn("CONSUMER STOPPING", str(mock_logger.critical.call_args))
 
     @patch("core.kafka_consumer.logger")
     def test_process_message_with_retry_processing_failure_retried(self, mock_logger):
-        """Test that processing failures ARE retried with new policy."""
+        """Test that processing failures are retried, then raises RuntimeError when max retries exceeded."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
@@ -1103,24 +1098,20 @@ class RetryAllErrorsTests(TestCase):
         }
 
         # Mock _process_debezium_message to return False (processing failed)
-        # Mock time.sleep to break out of infinite pause loop
-        with (
-            patch.object(self.consumer, "_process_debezium_message", return_value=False),
-            patch("time.sleep") as mock_sleep,
-        ):
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+        with patch.object(self.consumer, "_process_debezium_message", return_value=False):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+            # Verify the error message
+            self.assertIn("Max operation retries", str(ctx.exception))
+            self.assertIn("Message processing failed", str(ctx.exception))
 
         # Should have retried operation_max_retries times (2)
         self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
         # Should log max operation retries exceeded
         mock_logger.critical.assert_called()
-        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
+        self.assertIn("CONSUMER STOPPING", str(mock_logger.critical.call_args))
 
 
 class HealthCheckTests(TestCase):
@@ -1244,26 +1235,21 @@ class RBACKafkaConsumerRetryTests(TestCase):
         }
 
         # Mock _process_debezium_message to raise JSON decode error
-        # Mock time.sleep to avoid actually sleeping in the pause loop
-        with (
-            patch.object(
-                consumer,
-                "_process_debezium_message",
-                side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
-            ),
-            patch("time.sleep") as mock_sleep,
+        with patch.object(
+            consumer,
+            "_process_debezium_message",
+            side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
         ):
-            # Set sleep to raise an exception to break out of infinite loop
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 consumer._process_message_with_retry(message_value, 123, 0, topic_partition)
+
+            # Verify the error message indicates max retries exceeded
+            self.assertIn("Max operation retries", str(ctx.exception))
+            self.assertIn("Invalid JSON", str(ctx.exception))
 
         # Should have waited (called wait max_retries times during retry)
         self.assertEqual(consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
 
     @patch("core.kafka_consumer.Path")
     def test_consumer_init_with_retry_config(self, mock_path):
@@ -1427,10 +1413,13 @@ class FencingTokenRebalanceTests(TestCase):
 
     @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
     def test_partition_assignment_acquires_lock(self, mock_acquire_lock):
-        """Test that partition assignment acquires lock token."""
+        """Test that partition assignment acquires lock token and resets failure flag."""
         from core.kafka_consumer import RebalanceListener
 
         mock_acquire_lock.return_value = "test-token-12345"
+
+        # Set failure flag to True to verify it gets reset
+        self.consumer.lock_acquisition_failed = True
 
         listener = RebalanceListener(self.consumer)
         listener.on_partitions_assigned([self.partition])
@@ -1441,6 +1430,9 @@ class FencingTokenRebalanceTests(TestCase):
         # Verify lock token was stored
         self.assertEqual(self.consumer.lock_id, "test-consumer-group/0")
         self.assertEqual(self.consumer.lock_token, "test-token-12345")
+
+        # Verify failure flag was reset
+        self.assertFalse(self.consumer.lock_acquisition_failed)
 
     @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
     def test_partition_assignment_lock_failure(self, mock_acquire_lock):
@@ -1460,6 +1452,64 @@ class FencingTokenRebalanceTests(TestCase):
 
         # Verify failure flag was set
         self.assertTrue(self.consumer.lock_acquisition_failed)
+
+    @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
+    def test_startup_lock_acquisition_resets_failure_flag(self, mock_acquire_lock):
+        """Test that startup lock acquisition sets lock fields and resets failure flag."""
+        from kafka import TopicPartition
+
+        # Arrange: simulate previous lock acquisition failure
+        mock_acquire_lock.return_value = "startup-token-12345"
+        self.consumer.lock_acquisition_failed = True
+
+        # Setup consumer assignment to return a partition
+        partition = TopicPartition("test-topic", 0)
+        self.consumer.consumer.assignment.return_value = {partition}
+
+        # Act: invoke the startup lock acquisition path
+        result = self.consumer._ensure_lock_token_on_assignment()
+
+        # Assert: lock fields are populated and failure flag is reset
+        self.assertTrue(result)
+        self.assertFalse(self.consumer.lock_acquisition_failed)
+        self.assertEqual(self.consumer.lock_id, "test-consumer-group/0")
+        self.assertEqual(self.consumer.lock_token, "startup-token-12345")
+        mock_acquire_lock.assert_called_once_with("test-consumer-group/0")
+
+    def test_message_processing_fails_fast_when_lock_acquisition_failed(self):
+        """Test that message processing fails fast when lock_acquisition_failed is set.
+
+        When lock_acquisition_failed is set, the message-processing loop should fail fast:
+        - it must raise RuntimeError immediately
+        - it must not process any messages
+        - it must not commit any offsets
+        """
+        from unittest.mock import MagicMock
+
+        # Arrange: Construct consumer in a "failed" state
+        self.consumer.lock_acquisition_failed = True
+
+        # Create a mock message
+        mock_message = MagicMock()
+        mock_message.partition = 0
+        mock_message.offset = 100
+
+        # Mock the consumer to return one message then stop
+        self.consumer.consumer.__iter__ = MagicMock(return_value=iter([mock_message]))
+
+        # Mock the offset manager commit method to track if it was called
+        self.consumer.offset_manager.commit = MagicMock(return_value=(True, 0))
+
+        # Act & Assert: The message loop should raise RuntimeError immediately
+        with self.assertRaises(RuntimeError) as ctx:
+            self.consumer._run_message_loop()
+
+        # Verify the error message
+        self.assertIn("Lock acquisition failed during rebalance", str(ctx.exception))
+        self.assertIn("Cannot process messages without fencing token", str(ctx.exception))
+
+        # Verify no offsets were committed (commit should not have been called)
+        self.consumer.offset_manager.commit.assert_not_called()
 
     def test_partition_revocation_clears_lock(self):
         """Test that partition revocation clears lock token."""
