@@ -792,7 +792,11 @@ class RBACKafkaConsumer:
         return relations_api_replication.acquire_lock(lock_id)
 
     def _acquire_lock_with_retry(
-        self, lock_id: str, max_retries: int = None, backoff_base: float = None, max_backoff: float = None
+        self,
+        lock_id: str,
+        max_retries: Optional[int] = None,
+        backoff_base: Optional[float] = None,
+        max_backoff: Optional[float] = None,
     ) -> str:
         """Acquire lock with retry logic.
 
