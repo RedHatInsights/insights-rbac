@@ -630,6 +630,8 @@ class RebalanceListener(ConsumerRebalanceListener):
                 with self.consumer_instance._lock_mutex:
                     self.consumer_instance.lock_id = lock_id
                     self.consumer_instance.lock_token = lock_token
+                    # Reset failure flag on successful acquisition
+                    self.consumer_instance.lock_acquisition_failed = False
 
                 logger.info(f"Acquired and stored lock token for partition {partition.partition}: {lock_token}")
 
@@ -1527,6 +1529,8 @@ class RBACKafkaConsumer:
             with self._lock_mutex:
                 self.lock_id = lock_id
                 self.lock_token = lock_token
+                # Reset failure flag on successful acquisition
+                self.lock_acquisition_failed = False
 
             logger.info(
                 f"Acquired lock token for partition {partition.partition}: {lock_token} (took {duration:.2f}s)"
