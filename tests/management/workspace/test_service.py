@@ -476,3 +476,35 @@ class WorkspaceHierarchyTests(WorkspaceServiceTestBase):
     def test_enforce_hierarchy_depth_is_within_range_and_peer_validation_is_off(self):
         """Test when hierarchy depth is within range and no peer restrictions"""
         self.assertEqual(self.service._enforce_hierarchy_depth(self.root_workspace.id, self.tenant), None)
+
+
+class WorkspaceServiceSkipReadYourWriteTests(TestCase):
+    """Tests for _should_skip_read_your_write method."""
+
+    def test_should_skip_read_your_write_none_client_id(self):
+        """Test that None client_id returns False."""
+        service = WorkspaceService()
+        self.assertFalse(service._should_skip_read_your_write(None))
+
+    def test_should_skip_read_your_write_empty_client_id(self):
+        """Test that empty string client_id returns False."""
+        service = WorkspaceService()
+        self.assertFalse(service._should_skip_read_your_write(""))
+
+    @override_settings(PSK_SERVICES_TO_SKIP_WORKSPACE_CREATE_READ_YOUR_WRITE=["inventory", "other_service"])
+    def test_should_skip_read_your_write_client_in_skip_list(self):
+        """Test that client_id in skip list returns True."""
+        service = WorkspaceService()
+        self.assertTrue(service._should_skip_read_your_write("inventory"))
+
+    @override_settings(PSK_SERVICES_TO_SKIP_WORKSPACE_CREATE_READ_YOUR_WRITE=["inventory", "other_service"])
+    def test_should_skip_read_your_write_client_not_in_skip_list(self):
+        """Test that client_id not in skip list returns False."""
+        service = WorkspaceService()
+        self.assertFalse(service._should_skip_read_your_write("catalog"))
+
+    @override_settings(PSK_SERVICES_TO_SKIP_WORKSPACE_CREATE_READ_YOUR_WRITE=[])
+    def test_should_skip_read_your_write_empty_skip_list(self):
+        """Test that empty skip list returns False for any client."""
+        service = WorkspaceService()
+        self.assertFalse(service._should_skip_read_your_write("inventory"))

@@ -585,6 +585,14 @@ READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
 READ_YOUR_WRITES_WORKSPACE_ENABLED = ENVIRONMENT.bool("READ_YOUR_WRITES_WORKSPACE_ENABLED", default=False)
 READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="READ_YOUR_WRITES_CHANNEL")
 READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=2)
+# Comma-separated list of PSK service client IDs that should skip read-your-write wait on workspace create
+PSK_SERVICES_TO_SKIP_WORKSPACE_CREATE_READ_YOUR_WRITE = [
+    s.strip()
+    for s in ENVIRONMENT.get_value("PSK_SERVICES_TO_SKIP_WORKSPACE_CREATE_READ_YOUR_WRITE", default="inventory").split(
+        ","
+    )
+    if s.strip()
+]
 
 # Workspace settings
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")
