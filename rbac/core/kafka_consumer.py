@@ -88,6 +88,24 @@ message_retry_duration = Histogram(
     ["retry_reason"],
 )
 
+rebalance_events_total = Counter(
+    "rbac_kafka_consumer_rebalance_events_total",
+    "Total number of rebalance events",
+    ["event_type"],  # partitions_assigned, partitions_revoked
+)
+
+lock_acquisition_total = Counter(
+    "rbac_kafka_consumer_lock_acquisition_total",
+    "Total number of lock acquisition attempts",
+    ["status", "reason"],  # status: success/failure, reason: rebalance/startup/error_type
+)
+
+lock_acquisition_duration = Histogram(
+    "rbac_kafka_consumer_lock_acquisition_duration_seconds",
+    "Time spent acquiring lock tokens",
+    ["status"],  # success, failure
+)
+
 
 @dataclass
 class RetryConfig:
@@ -574,6 +592,11 @@ class RebalanceListener(ConsumerRebalanceListener):
         Args:
             assigned: List of TopicPartition objects being assigned
         """
+        import time
+
+        # Track rebalance event
+        rebalance_events_total.labels(event_type="partitions_assigned").inc()
+
         logger.info(f"Partitions assigned: {assigned}")
 
         # Acquire lock token for assigned partitions
@@ -587,9 +610,21 @@ class RebalanceListener(ConsumerRebalanceListener):
             # Generate lock ID: {consumer_group_id}/{partition_number}
             lock_id = f"{consumer_group_id}/{partition.partition}"
 
+            logger.info(f"Attempting to acquire lock token for {lock_id}")
+
+            # Track lock acquisition timing
+            start_time = time.time()
+
             try:
                 # Acquire lock token from Relations API
                 lock_token = self.consumer_instance._acquire_lock_with_retry(lock_id)
+
+                # Record successful acquisition
+                duration = time.time() - start_time
+                lock_acquisition_duration.labels(status="success").observe(duration)
+                lock_acquisition_total.labels(status="success", reason="rebalance").inc()
+
+                logger.info(f"Successfully acquired lock token: {lock_token} (took {duration:.2f}s)")
 
                 # Store lock token in consumer instance (thread-safe)
                 with self.consumer_instance._lock_mutex:
@@ -599,13 +634,34 @@ class RebalanceListener(ConsumerRebalanceListener):
                 logger.info(f"Acquired and stored lock token for partition {partition.partition}: {lock_token}")
 
             except Exception as e:
-                logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
+                # Record failed acquisition
+                duration = time.time() - start_time
+                lock_acquisition_duration.labels(status="failure").observe(duration)
+
+                # Classify error type for metrics
+                error_type = type(e).__name__
+                lock_acquisition_total.labels(status="failure", reason=error_type).inc()
+
+                # Log with full stack trace for debugging
+                logger.error(f"Failed to acquire lock token for {lock_id}: {e} (took {duration:.2f}s)", exc_info=True)
+                logger.critical(
+                    f"CRITICAL: Cannot proceed without lock token for partition {partition.partition}. "
+                    f"Consumer must stop to prevent processing without fencing protection."
+                )
+
                 # Clear any partial state
                 with self.consumer_instance._lock_mutex:
                     self.consumer_instance.lock_token = None
                     self.consumer_instance.lock_id = None
-                # Re-raise to stop consumer - we cannot proceed without a valid lock token
-                raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
+
+                # Mark consumer as unhealthy to trigger pod restart
+                self.consumer_instance._update_health_status(False)
+
+                # DON'T re-raise - kafka-python may suppress the exception
+                # Instead, set a flag that will be checked before processing messages
+                self.consumer_instance.lock_acquisition_failed = True
+        else:
+            logger.warning("on_partitions_assigned called with empty partition list")
 
 
 class RBACKafkaConsumer:
@@ -642,6 +698,7 @@ class RBACKafkaConsumer:
         self.lock_id: Optional[str] = None
         self.lock_token: Optional[str] = None
         self._lock_mutex = threading.Lock()
+        self.lock_acquisition_failed: bool = False  # Track if lock acquisition failed during rebalance
 
     def _create_consumer(self) -> KafkaConsumer:
         """Create and configure Kafka consumer."""
@@ -760,6 +817,9 @@ class RBACKafkaConsumer:
         This is called by Kafka when partitions are being reassigned to other consumers.
         We commit our current offsets to ensure we don't lose progress.
         """
+        # Track rebalance event
+        rebalance_events_total.labels(event_type="partitions_revoked").inc()
+
         if not self.commit_config.commit_on_rebalance:
             logger.debug("Rebalance offset commit disabled by config")
             return
@@ -1452,15 +1512,36 @@ class RBACKafkaConsumer:
         lock_id = expected_lock_id
 
         logger.info(f"Acquiring lock token for assigned partition: {lock_id}")
+
+        # Track lock acquisition timing
+        start_time = time.time()
+
         try:
             lock_token = self._acquire_lock_with_retry(lock_id)
+
+            # Record successful acquisition
+            duration = time.time() - start_time
+            lock_acquisition_duration.labels(status="success").observe(duration)
+            lock_acquisition_total.labels(status="success", reason="startup").inc()
+
             with self._lock_mutex:
                 self.lock_id = lock_id
                 self.lock_token = lock_token
-            logger.info(f"Acquired lock token for partition {partition.partition}: {lock_token}")
+
+            logger.info(
+                f"Acquired lock token for partition {partition.partition}: {lock_token} (took {duration:.2f}s)"
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
+            # Record failed acquisition
+            duration = time.time() - start_time
+            lock_acquisition_duration.labels(status="failure").observe(duration)
+
+            # Classify error type for metrics
+            error_type = type(e).__name__
+            lock_acquisition_total.labels(status="failure", reason=error_type).inc()
+
+            logger.error(f"Failed to acquire lock token for {lock_id}: {e} (took {duration:.2f}s)")
             raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
 
     def _run_message_loop(self):
@@ -1468,6 +1549,15 @@ class RBACKafkaConsumer:
         last_committed_offsets = {}
 
         for message in self.consumer:
+            # Check if lock acquisition failed during rebalance
+            if self.lock_acquisition_failed:
+                error_msg = (
+                    "Lock acquisition failed during rebalance. Cannot process messages without fencing token. "
+                    "Stopping consumer to prevent data corruption."
+                )
+                logger.critical(error_msg)
+                raise RuntimeError(error_msg)
+
             # On first message, ensure we have a lock token
             # This handles cases where on_partitions_assigned doesn't fire
             if not last_committed_offsets:
