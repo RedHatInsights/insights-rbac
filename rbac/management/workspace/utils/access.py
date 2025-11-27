@@ -24,6 +24,7 @@ from management.permissions.workspace_inventory_access import (
     WorkspaceInventoryAccessChecker,
 )
 from management.principal.model import Principal
+from management.principal.proxy import PrincipalProxy
 from management.utils import get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
 
@@ -137,14 +138,32 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     Returns:
         bool: True if the user has permission, False otherwise
     """
-    # Derive user_id from principal or fall back to BOP (request.user.user_id)
+    # Try to get principal from request, fall back to IT service API call via PrincipalProxy
     principal = get_principal_from_request(request)
     if principal is not None:
         user_id = principal.user_id
-    elif user_id := getattr(request.user, "user_id", None):
-        logger.debug("Using user_id from BOP to construct principal_id")
+    elif username := getattr(request.user, "username", None):
+        # Fallback: query IT service via PrincipalProxy to get user_id
+        org_id = getattr(request.user, "org_id", None)
+        if not org_id:
+            logger.warning("No org_id available from request.user, denying access")
+            return False
+
+        proxy = PrincipalProxy()
+        resp = proxy.request_filtered_principals([username], org_id=org_id, options={"return_id": True})
+
+        if resp.get("status_code") != 200 or not resp.get("data"):
+            logger.warning("Failed to retrieve user_id from IT service for username: %s", username)
+            return False
+
+        user_id = resp["data"][0].get("user_id")
+        if not user_id:
+            logger.warning("IT service response missing user_id for username: %s", username)
+            return False
+
+        logger.debug("Retrieved user_id from IT service via PrincipalProxy")
     else:
-        logger.warning("No user_id available from principal or BOP, denying access")
+        logger.warning("No username available from request.user, denying access")
         return False
 
     # Format principal ID as required by Inventory API (e.g., "localhost/username")
