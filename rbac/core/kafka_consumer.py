@@ -783,12 +783,16 @@ class RBACKafkaConsumer:
         """
         return relations_api_replication.acquire_lock(lock_id)
 
-    def _acquire_lock_with_retry(self, lock_id: str, max_retries: int = 3) -> str:
+    def _acquire_lock_with_retry(
+        self, lock_id: str, max_retries: int = None, backoff_base: float = None, max_backoff: float = None
+    ) -> str:
         """Acquire lock with retry logic.
 
         Args:
             lock_id: Unique identifier for the lock
-            max_retries: Maximum number of retry attempts
+            max_retries: Maximum number of retry attempts (default: from env or 5)
+            backoff_base: Base for exponential backoff in seconds (default: 2)
+            max_backoff: Maximum backoff delay in seconds (default: 30)
 
         Returns:
             str: The acquired lock token
@@ -797,6 +801,14 @@ class RBACKafkaConsumer:
             RuntimeError: If max retries exceeded
             grpc.RpcError: If lock acquisition fails permanently
         """
+        # Use configurable defaults from environment or fallback to safe values
+        if max_retries is None:
+            max_retries = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_MAX_RETRIES", 5)
+        if backoff_base is None:
+            backoff_base = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_BACKOFF_BASE", 2.0)
+        if max_backoff is None:
+            max_backoff = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_MAX_BACKOFF", 30.0)
+
         for attempt in range(max_retries):
             try:
                 return self._acquire_lock(lock_id)
@@ -806,9 +818,9 @@ class RBACKafkaConsumer:
                     logger.error(f"Max retries ({max_retries}) exceeded for lock acquisition")
                     raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts") from e
 
-                # Exponential backoff
-                delay = 2**attempt
-                logger.info(f"Retrying lock acquisition in {delay}s...")
+                # Exponential backoff with max cap
+                delay = min(backoff_base**attempt, max_backoff)
+                logger.info(f"Retrying lock acquisition in {delay:.1f}s...")
                 time.sleep(delay)
 
         raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts")
