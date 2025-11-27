@@ -1244,26 +1244,21 @@ class RBACKafkaConsumerRetryTests(TestCase):
         }
 
         # Mock _process_debezium_message to raise JSON decode error
-        # Mock time.sleep to avoid actually sleeping in the pause loop
-        with (
-            patch.object(
-                consumer,
-                "_process_debezium_message",
-                side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
-            ),
-            patch("time.sleep") as mock_sleep,
+        with patch.object(
+            consumer,
+            "_process_debezium_message",
+            side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
         ):
-            # Set sleep to raise an exception to break out of infinite loop
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 consumer._process_message_with_retry(message_value, 123, 0, topic_partition)
+
+            # Verify the error message indicates max retries exceeded
+            self.assertIn("Max operation retries", str(ctx.exception))
+            self.assertIn("Invalid JSON", str(ctx.exception))
 
         # Should have waited (called wait max_retries times during retry)
         self.assertEqual(consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
 
     @patch("core.kafka_consumer.Path")
     def test_consumer_init_with_retry_config(self, mock_path):
