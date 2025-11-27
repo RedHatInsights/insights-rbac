@@ -605,7 +605,15 @@ class RebalanceListener(ConsumerRebalanceListener):
             partition = assigned[0]
 
             # Get consumer group ID from the consumer instance
-            consumer_group_id = self.consumer_instance.consumer.config.get("group_id")
+            try:
+                consumer_group_id = self.consumer_instance.consumer.config.get("group_id")
+                if not consumer_group_id:
+                    logger.error("Consumer group_id is not set in consumer config!")
+                    consumer_group_id = "unknown"
+            except AttributeError as e:
+                logger.error(f"Failed to get consumer group_id - consumer may not be initialized: {e}")
+                self.consumer_instance.lock_acquisition_failed = True
+                return
 
             # Generate lock ID: {consumer_group_id}/{partition_number}
             lock_id = f"{consumer_group_id}/{partition.partition}"
