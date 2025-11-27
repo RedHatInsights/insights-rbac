@@ -1467,6 +1467,64 @@ class FencingTokenRebalanceTests(TestCase):
         # Verify failure flag was set
         self.assertTrue(self.consumer.lock_acquisition_failed)
 
+    @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
+    def test_startup_lock_acquisition_resets_failure_flag(self, mock_acquire_lock):
+        """Test that startup lock acquisition sets lock fields and resets failure flag."""
+        from kafka import TopicPartition
+
+        # Arrange: simulate previous lock acquisition failure
+        mock_acquire_lock.return_value = "startup-token-12345"
+        self.consumer.lock_acquisition_failed = True
+
+        # Setup consumer assignment to return a partition
+        partition = TopicPartition("test-topic", 0)
+        self.consumer.consumer.assignment.return_value = {partition}
+
+        # Act: invoke the startup lock acquisition path
+        result = self.consumer._ensure_lock_token_on_assignment()
+
+        # Assert: lock fields are populated and failure flag is reset
+        self.assertTrue(result)
+        self.assertFalse(self.consumer.lock_acquisition_failed)
+        self.assertEqual(self.consumer.lock_id, "test-consumer-group/0")
+        self.assertEqual(self.consumer.lock_token, "startup-token-12345")
+        mock_acquire_lock.assert_called_once_with("test-consumer-group/0")
+
+    def test_message_processing_fails_fast_when_lock_acquisition_failed(self):
+        """Test that message processing fails fast when lock_acquisition_failed is set.
+
+        When lock_acquisition_failed is set, the message-processing loop should fail fast:
+        - it must raise RuntimeError immediately
+        - it must not process any messages
+        - it must not commit any offsets
+        """
+        from unittest.mock import MagicMock
+
+        # Arrange: Construct consumer in a "failed" state
+        self.consumer.lock_acquisition_failed = True
+
+        # Create a mock message
+        mock_message = MagicMock()
+        mock_message.partition = 0
+        mock_message.offset = 100
+
+        # Mock the consumer to return one message then stop
+        self.consumer.consumer.__iter__ = MagicMock(return_value=iter([mock_message]))
+
+        # Mock the offset manager commit method to track if it was called
+        self.consumer.offset_manager.commit = MagicMock(return_value=(True, 0))
+
+        # Act & Assert: The message loop should raise RuntimeError immediately
+        with self.assertRaises(RuntimeError) as ctx:
+            self.consumer._run_message_loop()
+
+        # Verify the error message
+        self.assertIn("Lock acquisition failed during rebalance", str(ctx.exception))
+        self.assertIn("Cannot process messages without fencing token", str(ctx.exception))
+
+        # Verify no offsets were committed (commit should not have been called)
+        self.consumer.offset_manager.commit.assert_not_called()
+
     def test_partition_revocation_clears_lock(self):
         """Test that partition revocation clears lock token."""
         # Set up lock state
