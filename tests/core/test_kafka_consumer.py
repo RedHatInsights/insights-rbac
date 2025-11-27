@@ -1062,7 +1062,7 @@ class RetryAllErrorsTests(TestCase):
 
     @patch("core.kafka_consumer.logger")
     def test_process_message_with_retry_max_retries_exceeded(self, mock_logger):
-        """Test that errors are retried until max_retries is hit."""
+        """Test that errors are retried until max_retries is hit, then raises RuntimeError."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
@@ -1070,32 +1070,27 @@ class RetryAllErrorsTests(TestCase):
         }
 
         # Mock _process_debezium_message to always raise a JSON error
-        # Mock time.sleep to break out of infinite pause loop
-        with (
-            patch.object(
-                self.consumer,
-                "_process_debezium_message",
-                side_effect=json.JSONDecodeError("test", "doc", 0),
-            ),
-            patch("time.sleep") as mock_sleep,
+        with patch.object(
+            self.consumer,
+            "_process_debezium_message",
+            side_effect=json.JSONDecodeError("test", "doc", 0),
         ):
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+            # Verify the error message
+            self.assertIn("Max operation retries", str(ctx.exception))
 
         # Should have retried operation_max_retries times (2)
         self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
         # Should log max operation retries exceeded
         mock_logger.critical.assert_called()
-        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
+        self.assertIn("CONSUMER STOPPING", str(mock_logger.critical.call_args))
 
     @patch("core.kafka_consumer.logger")
     def test_process_message_with_retry_processing_failure_retried(self, mock_logger):
-        """Test that processing failures ARE retried with new policy."""
+        """Test that processing failures are retried, then raises RuntimeError when max retries exceeded."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
@@ -1103,24 +1098,20 @@ class RetryAllErrorsTests(TestCase):
         }
 
         # Mock _process_debezium_message to return False (processing failed)
-        # Mock time.sleep to break out of infinite pause loop
-        with (
-            patch.object(self.consumer, "_process_debezium_message", return_value=False),
-            patch("time.sleep") as mock_sleep,
-        ):
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+        with patch.object(self.consumer, "_process_debezium_message", return_value=False):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+            # Verify the error message
+            self.assertIn("Max operation retries", str(ctx.exception))
+            self.assertIn("Message processing failed", str(ctx.exception))
 
         # Should have retried operation_max_retries times (2)
         self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
         # Should log max operation retries exceeded
         mock_logger.critical.assert_called()
-        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
+        self.assertIn("CONSUMER STOPPING", str(mock_logger.critical.call_args))
 
 
 class HealthCheckTests(TestCase):
