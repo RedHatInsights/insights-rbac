@@ -18,6 +18,7 @@
 import logging
 from uuid import UUID
 
+from django.core.exceptions import PermissionDenied
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
 from management.permissions.workspace_inventory_access import (
@@ -138,8 +139,22 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
         bool: True if the user has permission, False otherwise
     """
     principal = get_principal_from_request(request)
-    # Format principal ID as required by Inventory API (e.g., "localhost/username")
-    principal_id = Principal.user_id_to_principal_resource_id(principal.user_id)
+
+    # Handle case where principal is None
+    if principal is None:
+        logger.warning("get_principal_from_request returned None, attempting to get user_id from BOP")
+        # Try to get user_id from BOP (request.user.user_id)
+        user_id = getattr(request.user, "user_id", None)
+
+        if user_id:
+            logger.info(f"Using user_id from BOP: {user_id}")
+            principal_id = Principal.user_id_to_principal_resource_id(user_id)
+        else:
+            logger.error("No user_id available from BOP, denying access")
+            raise PermissionDenied("Unable to determine user identity for access check")
+    else:
+        # Format principal ID as required by Inventory API (e.g., "localhost/username")
+        principal_id = Principal.user_id_to_principal_resource_id(principal.user_id)
     # Create the Inventory API checker
     checker = WorkspaceInventoryAccessChecker()
 
