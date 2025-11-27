@@ -18,7 +18,6 @@
 import logging
 from uuid import UUID
 
-from django.core.exceptions import PermissionDenied
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
 from management.permissions.workspace_inventory_access import (
@@ -138,23 +137,19 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     Returns:
         bool: True if the user has permission, False otherwise
     """
+    # Derive user_id from principal or fall back to BOP (request.user.user_id)
     principal = get_principal_from_request(request)
-
-    # Handle case where principal is None
-    if principal is None:
-        logger.warning("get_principal_from_request returned None, attempting to get user_id from BOP")
-        # Try to get user_id from BOP (request.user.user_id)
-        user_id = getattr(request.user, "user_id", None)
-
-        if user_id:
-            logger.info(f"Using user_id from BOP: {user_id}")
-            principal_id = Principal.user_id_to_principal_resource_id(user_id)
-        else:
-            logger.error("No user_id available from BOP, denying access")
-            raise PermissionDenied("Unable to determine user identity for access check")
+    if principal is not None:
+        user_id = principal.user_id
+    elif user_id := getattr(request.user, "user_id", None):
+        logger.debug("Using user_id from BOP to construct principal_id")
     else:
-        # Format principal ID as required by Inventory API (e.g., "localhost/username")
-        principal_id = Principal.user_id_to_principal_resource_id(principal.user_id)
+        logger.warning("No user_id available from principal or BOP, denying access")
+        return False
+
+    # Format principal ID as required by Inventory API (e.g., "localhost/username")
+    principal_id = Principal.user_id_to_principal_resource_id(user_id)
+
     # Create the Inventory API checker
     checker = WorkspaceInventoryAccessChecker()
 
@@ -169,7 +164,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
         # Convert to set of UUIDs for proper filtering
         accessible_workspace_ids = set(accessible_workspace_ids)
 
-        if len(accessible_workspace_ids) > 0:
+        if accessible_workspace_ids:
             # Add ancestors only from the top-level workspace(s) in accessible workspaces (for ancestry needs)
             # Get workspace objects for accessible IDs
             accessible_workspaces = Workspace.objects.filter(id__in=accessible_workspace_ids, tenant=request.tenant)
@@ -195,7 +190,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
 
         # Store permission tuples for later filtering
         request.permission_tuples = [(None, ws_id) for ws_id in accessible_workspace_ids]
-        return len(accessible_workspace_ids) > 0
+        return bool(accessible_workspace_ids)
 
     # For specific workspace operations, check access for that workspace
     return checker.check_workspace_access(workspace_id=target_workspace, principal_id=principal_id, relation=relation)

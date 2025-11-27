@@ -1319,6 +1319,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
     def test_workspace_access_with_none_principal_fallback_to_bop(self, mock_get_principal, mock_flag, mock_channel):
         """Test workspace access when get_principal_from_request returns None but user_id exists in BOP."""
+        from unittest.mock import Mock
+
+        from management.principal.model import Principal
+        from management.workspace.utils.access import is_user_allowed_v2
+
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1332,94 +1337,55 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
         ):
-            # Create request context
-            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-            headers = request_context["request"].META
+            # Create a mock request with user_id set in BOP
+            test_user_id = "bop-test-user-456"
+            mock_request = Mock()
+            mock_request.user.user_id = test_user_id
+            mock_request.tenant = self.tenant
 
-            # Mock user_id in BOP (this would normally come from the identity header)
-            # We need to patch the request object to have user_id
-            url = reverse(
-                "v2_management:workspace-detail",
-                kwargs={"pk": self.standard_workspace.id},
-            )
-            client = APIClient()
+            # Call is_user_allowed_v2 directly
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
-            with patch("management.workspace.utils.access.logger") as mock_logger:
-                # Make a request - since get_principal_from_request returns None,
-                # it should fall back to request.user.user_id
-                response = client.get(url, format="json", **headers)
+            # Verify the function returns True (access allowed)
+            self.assertTrue(result)
 
-                # Verify that warning was logged
-                mock_logger.warning.assert_called_once_with(
-                    "get_principal_from_request returned None, attempting to get user_id from BOP"
-                )
+            # Verify the inventory stub was called with the expected principal_id
+            expected_principal_id = Principal.user_id_to_principal_resource_id(test_user_id)
+            mock_stub.Check.assert_called_once()
+            call_args = mock_stub.Check.call_args
+            # The principal should be derived from the BOP user_id
+            self.assertIn(expected_principal_id, str(call_args))
 
-                # Should succeed if user_id is available
-                # Note: The actual response depends on whether user_id is set in the request
-
-    @patch("management.inventory_client.create_client_channel_inventory")
-    @patch(
-        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
-        return_value=True,
-    )
     @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
-    def test_workspace_access_with_none_principal_and_no_bop_user_id(
-        self, mock_get_principal, mock_flag, mock_channel
-    ):
+    def test_workspace_access_with_none_principal_and_no_bop_user_id(self, mock_get_principal):
         """Test workspace access when get_principal_from_request returns None and no user_id in BOP."""
-        # Mock Inventory API
-        mock_stub = MagicMock()
-        mock_channel.return_value.__enter__.return_value = MagicMock()
+        from unittest.mock import Mock
 
-        with patch(
-            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
-            return_value=mock_stub,
-        ):
-            # Create request context
-            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
-            headers = request_context["request"].META
+        from management.workspace.utils.access import is_user_allowed_v2
 
-            url = reverse(
-                "v2_management:workspace-detail",
-                kwargs={"pk": self.standard_workspace.id},
-            )
-            client = APIClient()
+        # Create a mock request with no user_id
+        mock_request = Mock()
+        mock_request.user.user_id = None
+        mock_request.tenant = self.tenant
 
-            with patch("management.workspace.utils.access.logger") as mock_logger:
-                # Mock request.user to not have user_id attribute
-                with patch.object(APIClient, "get") as mock_get:
-                    # Create a mock request that will be used
-                    from unittest.mock import Mock
+        with patch("management.workspace.utils.access.logger") as mock_logger:
+            # Call is_user_allowed_v2 directly - should return False
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
-                    mock_request = Mock()
-                    mock_request.user.user_id = None
-                    mock_request.tenant = self.tenant
+            # Verify the function returns False (access denied)
+            self.assertFalse(result)
 
-                    # Call is_user_allowed_v2 directly to test the logic
-                    from management.workspace.utils.access import is_user_allowed_v2
-                    from django.core.exceptions import PermissionDenied
-
-                    # This should raise PermissionDenied
-                    with self.assertRaises(PermissionDenied) as context:
-                        is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
-
-                    # Verify error message
-                    self.assertEqual(str(context.exception), "Unable to determine user identity for access check")
-
-                    # Verify logging
-                    mock_logger.warning.assert_called_once_with(
-                        "get_principal_from_request returned None, attempting to get user_id from BOP"
-                    )
-                    mock_logger.error.assert_called_once_with("No user_id available from BOP, denying access")
+            # Verify warning was logged
+            mock_logger.warning.assert_called_once_with("No user_id available from principal or BOP, denying access")
 
     @patch("management.inventory_client.create_client_channel_inventory")
-    @patch(
-        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
-        return_value=True,
-    )
     @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
-    def test_workspace_access_with_none_principal_uses_bop_user_id(self, mock_get_principal, mock_flag, mock_channel):
-        """Test that workspace access successfully uses BOP user_id when principal is None."""
+    def test_workspace_access_with_none_principal_uses_bop_user_id_logs_debug(self, mock_get_principal, mock_channel):
+        """Test that workspace access logs debug message when using BOP user_id."""
+        from unittest.mock import Mock
+
+        from management.workspace.utils.access import is_user_allowed_v2
+
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1433,10 +1399,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
         ):
-            # Test is_user_allowed_v2 directly
-            from management.workspace.utils.access import is_user_allowed_v2
-            from unittest.mock import Mock
-
             mock_request = Mock()
             mock_request.user.user_id = "test-user-123"
             mock_request.tenant = self.tenant
@@ -1445,11 +1407,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
                 # Call the function
                 result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
-                # Verify logging
-                mock_logger.warning.assert_called_once_with(
-                    "get_principal_from_request returned None, attempting to get user_id from BOP"
-                )
-                mock_logger.info.assert_called_once_with("Using user_id from BOP: test-user-123")
+                # Verify debug logging (not info with user_id for security)
+                mock_logger.debug.assert_called_once_with("Using user_id from BOP to construct principal_id")
 
                 # Result depends on Inventory API response, which we mocked as ALLOWED_TRUE
                 self.assertTrue(result)
