@@ -1444,19 +1444,22 @@ class FencingTokenRebalanceTests(TestCase):
 
     @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
     def test_partition_assignment_lock_failure(self, mock_acquire_lock):
-        """Test that partition assignment failure clears lock state."""
+        """Test that partition assignment failure clears lock state and sets failure flag."""
         from core.kafka_consumer import RebalanceListener
 
         mock_acquire_lock.side_effect = RuntimeError("Lock acquisition failed")
 
         listener = RebalanceListener(self.consumer)
 
-        with self.assertRaises(RuntimeError):
-            listener.on_partitions_assigned([self.partition])
+        # Should NOT raise - instead sets a flag for later detection
+        listener.on_partitions_assigned([self.partition])
 
         # Verify lock state was cleared
         self.assertIsNone(self.consumer.lock_id)
         self.assertIsNone(self.consumer.lock_token)
+
+        # Verify failure flag was set
+        self.assertTrue(self.consumer.lock_acquisition_failed)
 
     def test_partition_revocation_clears_lock(self):
         """Test that partition revocation clears lock token."""
