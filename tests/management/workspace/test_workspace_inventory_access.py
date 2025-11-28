@@ -1310,3 +1310,223 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    def test_workspace_access_with_none_principal_fallback_to_it_service(
+        self, mock_get_principal, mock_proxy_class, mock_channel
+    ):
+        """Test workspace access when get_principal_from_request returns None, falls back to IT service."""
+        from unittest.mock import Mock
+
+        from management.principal.model import Principal
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Mock PrincipalProxy to return user_id from IT service
+        test_user_id = "it-service-user-456"
+        mock_proxy = MagicMock()
+        mock_proxy.request_filtered_principals.return_value = {
+            "status_code": 200,
+            "data": [{"user_id": test_user_id, "username": "testuser"}],
+        }
+        mock_proxy_class.return_value = mock_proxy
+
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Create mock response for allowed access
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create a mock request with username and org_id
+            mock_request = Mock()
+            mock_request.user.username = "testuser"
+            mock_request.user.org_id = "test-org-123"
+            mock_request.tenant = self.tenant
+
+            # Call is_user_allowed_v2 directly
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+            # Verify the function returns True (access allowed)
+            self.assertTrue(result)
+
+            # Verify PrincipalProxy was called with correct arguments
+            mock_proxy.request_filtered_principals.assert_called_once_with(
+                ["testuser"], org_id="test-org-123", options={"return_id": True}
+            )
+
+            # Verify the inventory stub was called with the expected principal_id
+            expected_principal_id = Principal.user_id_to_principal_resource_id(test_user_id)
+            mock_stub.Check.assert_called_once()
+            call_args = mock_stub.Check.call_args
+            self.assertIn(expected_principal_id, str(call_args))
+
+    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    def test_workspace_access_with_none_principal_it_service_failure(self, mock_get_principal, mock_proxy_class):
+        """Test workspace access when IT service fails to return user_id."""
+        from unittest.mock import Mock
+
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Mock PrincipalProxy to return error
+        mock_proxy = MagicMock()
+        mock_proxy.request_filtered_principals.return_value = {
+            "status_code": 500,
+            "errors": [{"detail": "Service unavailable"}],
+        }
+        mock_proxy_class.return_value = mock_proxy
+
+        # Create a mock request
+        mock_request = Mock()
+        mock_request.user.username = "testuser"
+        mock_request.user.org_id = "test-org-123"
+        mock_request.tenant = self.tenant
+
+        with patch("management.workspace.utils.access.logger") as mock_logger:
+            # Call is_user_allowed_v2 directly - should return False
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+            # Verify the function returns False (access denied)
+            self.assertFalse(result)
+
+            # Verify warning was logged
+            mock_logger.warning.assert_called_once_with(
+                "Failed to retrieve user_id from IT service for username: %s", "testuser"
+            )
+
+    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    def test_workspace_access_with_none_principal_it_service_empty_response(
+        self, mock_get_principal, mock_proxy_class
+    ):
+        """Test workspace access when IT service returns empty data."""
+        from unittest.mock import Mock
+
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Mock PrincipalProxy to return empty data
+        mock_proxy = MagicMock()
+        mock_proxy.request_filtered_principals.return_value = {
+            "status_code": 200,
+            "data": [],
+        }
+        mock_proxy_class.return_value = mock_proxy
+
+        # Create a mock request
+        mock_request = Mock()
+        mock_request.user.username = "testuser"
+        mock_request.user.org_id = "test-org-123"
+        mock_request.tenant = self.tenant
+
+        with patch("management.workspace.utils.access.logger") as mock_logger:
+            # Call is_user_allowed_v2 directly - should return False
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+            # Verify the function returns False (access denied)
+            self.assertFalse(result)
+
+            # Verify warning was logged
+            mock_logger.warning.assert_called_once_with(
+                "Failed to retrieve user_id from IT service for username: %s", "testuser"
+            )
+
+    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    def test_workspace_access_with_none_principal_and_no_username(self, mock_get_principal):
+        """Test workspace access when get_principal_from_request returns None and no username available."""
+        from unittest.mock import Mock
+
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Create a mock request with no username
+        mock_request = Mock()
+        mock_request.user.username = None
+        mock_request.tenant = self.tenant
+
+        with patch("management.workspace.utils.access.logger") as mock_logger:
+            # Call is_user_allowed_v2 directly - should return False
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+            # Verify the function returns False (access denied)
+            self.assertFalse(result)
+
+            # Verify warning was logged
+            mock_logger.warning.assert_called_once_with("No username available from request.user, denying access")
+
+    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    def test_workspace_access_with_none_principal_and_no_org_id(self, mock_get_principal):
+        """Test workspace access when get_principal_from_request returns None and no org_id available."""
+        from unittest.mock import Mock
+
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Create a mock request with username but no org_id
+        mock_request = Mock()
+        mock_request.user.username = "testuser"
+        mock_request.user.org_id = None
+        mock_request.tenant = self.tenant
+
+        with patch("management.workspace.utils.access.logger") as mock_logger:
+            # Call is_user_allowed_v2 directly - should return False
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+            # Verify the function returns False (access denied)
+            self.assertFalse(result)
+
+            # Verify warning was logged
+            mock_logger.warning.assert_called_once_with("No org_id available from request.user, denying access")
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    def test_workspace_access_with_none_principal_logs_debug_for_it_service(
+        self, mock_get_principal, mock_proxy_class, mock_channel
+    ):
+        """Test that workspace access logs debug message when user_id retrieved from IT service."""
+        from unittest.mock import Mock
+
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Mock PrincipalProxy to return user_id from IT service
+        test_user_id = "it-service-user-789"
+        mock_proxy = MagicMock()
+        mock_proxy.request_filtered_principals.return_value = {
+            "status_code": 200,
+            "data": [{"user_id": test_user_id, "username": "testuser"}],
+        }
+        mock_proxy_class.return_value = mock_proxy
+
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Create mock response for allowed access
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.Check.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            mock_request = Mock()
+            mock_request.user.username = "testuser"
+            mock_request.user.org_id = "test-org-123"
+            mock_request.tenant = self.tenant
+
+            with patch("management.workspace.utils.access.logger") as mock_logger:
+                # Call the function
+                result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+                # Verify debug logging for IT service lookup
+                mock_logger.debug.assert_called_once_with("Retrieved user_id from IT service via PrincipalProxy")
+
+                # Result depends on Inventory API response, which we mocked as ALLOWED_TRUE
+                self.assertTrue(result)
