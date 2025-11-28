@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "346a8d53e8da51ea96d30c845cb257c7a96f9e3f60ed1945d20b4b5f07e29249"
+            "sha256": "2a074a350c4e0cb0ca67f6833460f6fe9e571f75c571b82e24b2e47e9e692a2c"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -75,11 +75,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:154052dfaa7292212f01c8fab822c76cd10a15a7e164e4c45e4634eb40214b90",
-                "sha256:49a3e8f4c1a1759a687941fef8b36efd7bafcf63c1ef74aa75d6497eb4887c9c"
+                "sha256:0367622b811597d183bfcaab4a350f0d3ede712031ce792ef183cabdee80d3bf",
+                "sha256:3fef7fcda30c82c27202d232cfdbd6782cb27f20f8e7e21b20606483e66ee73a"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.41.2"
+            "version": "==1.41.5"
         },
         "cachetools": {
             "hashes": [
@@ -1332,12 +1332,12 @@
         },
         "sqlparse": {
             "hashes": [
-                "sha256:09f67787f56a0b16ecdbde1bfc7f5d9c3371ca683cfeaa8e6ff60b4807ec9272",
-                "sha256:cf2196ed3418f3ba5de6af7e82c694a9fbdbfecccdfc72e281548517081f16ca"
+                "sha256:4396a7d3cf1cd679c1be976cf3dc6e0a51d0111e87787e7a8d780e7d5a998f9e",
+                "sha256:99a9f0314977b76d776a0fcb8554de91b9bb8a18560631d6bc48721d07023dcb"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==0.5.3"
+            "version": "==0.5.4"
         },
         "stompest": {
             "hashes": [
@@ -1380,12 +1380,12 @@
         },
         "unleashclient": {
             "hashes": [
-                "sha256:54952e5d64c05835e44315efd17e8ba0e7815e1cc431ba510d6c1928c363b003",
-                "sha256:e0b80fffbda50427115707cf042611ad130b5ed3b01611301f06a9fc8981eea7"
+                "sha256:3d175962639fd5e7677287da6259b7aab3dfcd3831a5d786a7f4432219b92d66",
+                "sha256:bee095b1a09919656f2019ae09638a856d00299d9bd204a8101fdb0971fad224"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==6.4.0"
+            "version": "==6.4.1"
         },
         "urllib3": {
             "hashes": [
