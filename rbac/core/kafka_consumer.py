@@ -134,7 +134,7 @@ replication_event_latency = Histogram(
     "rbac_replication_event_latency_seconds",
     "End-to-end latency from event creation to successful processing in seconds",
     ["event_type"],
-    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, float("inf")),
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
 )
 
 
@@ -1351,12 +1351,14 @@ class RBACKafkaConsumer:
             if created_at is not None:
                 try:
                     latency_seconds = time.time() - float(created_at)
-                    # Use event_type if available, otherwise use "unknown"
-                    latency_event_type = event_type if event_type else "unknown"
+                    latency_event_type = event_type or "unknown"
                     replication_event_latency.labels(event_type=latency_event_type).observe(latency_seconds)
-                    logger.info(
-                        f"Replication event latency: {latency_seconds:.3f}s for event_type={latency_event_type}, "
-                        f"aggregateid={debezium_msg.aggregateid}"
+                    # Log per-event latency at DEBUG level to avoid excessive log volume at scale
+                    logger.debug(
+                        "Replication event latency: %.3fs for event_type=%s, aggregateid=%s",
+                        latency_seconds,
+                        latency_event_type,
+                        debezium_msg.aggregateid,
                     )
                 except (ValueError, TypeError) as e:
                     logger.warning(
