@@ -134,7 +134,9 @@ class AccessView(APIView):
         access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
             queryset = self.get_queryset(ordering)
-            access_policy = self.serializer_class(queryset, many=True, context={"for_access": True}).data
+            access_policy = self.serializer_class(
+                queryset, many=True, context={"request": request, "for_access": True}
+            ).data
             cache.save_policy(principal.uuid, sub_key, access_policy)
 
         page = self.paginate_queryset(access_policy)
