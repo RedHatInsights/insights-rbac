@@ -704,6 +704,67 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         response = self.client.delete(f"/_private/api/utils/role/?name={self.role.name}", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_delete_role_clears_relations(self, replicate):
+        """Test that deleting a system role clears its relations."""
+        replicator = InMemoryRelationReplicator(self._tuples)
+        replicate.side_effect = replicator.replicate
+        permissions = ["app1:hosts:read", "inventory:hosts:write"]
+        fixture = RbacFixture(V2TenantBootstrapService(replicator))
+        fixture.bootstrap_tenant(self.tenant)
+        role_system = fixture.new_system_role(name="test_system_role", permissions=permissions)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role_system, replicator=replicator)
+        dual_write_handler.replicate_new_system_role()
+
+        # Before removing the role, verify relations exist
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("app1_hosts_read"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("inventory_hosts_write"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+
+        # Delete the role
+        response = self.client.delete(f"/_private/api/utils/role/?name={role_system.name}", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # After removing the role, verify relations are cleared
+        self.assertEqual(
+            0,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("app1_hosts_read"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+        self.assertEqual(
+            0,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role_system.uuid)),
+                    relation("inventory_hosts_write"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())
     def test_delete_selective_permission_disallowed(self):
         """Test that we cannot delete selective permission when disallowed."""
@@ -2831,7 +2892,7 @@ class CleanInvalidWorkspaceResourceDefinitionsTests(BaseInternalViewsetTests):
         # Simulate worker running synchronously by calling it directly
         from internal.utils import clean_invalid_workspace_resource_definitions as cleanup_function
 
-        mock_worker.side_effect = lambda: cleanup_function()
+        mock_worker.side_effect = lambda dry_run=False: cleanup_function(dry_run=dry_run)
 
         # Call the cleanup API
         response = self.client.post(f"{self.url}", **self.request.META)

@@ -15,35 +15,55 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Defines the Audit Log Access Permissions class."""
-from management.models import Workspace
-from management.workspace.utils import is_user_allowed
+
+from feature_flags import FEATURE_FLAGS
+from management.workspace.utils import (
+    is_user_allowed_v1,
+    is_user_allowed_v2,
+    operation_from_request,
+    permission_from_request,
+    workspace_from_request,
+)
 from rest_framework import permissions
 
 
 class WorkspaceAccessPermission(permissions.BasePermission):
-    """Determines if a user is an Account Admin."""
+    """
+    Workspace access permission checker.
+
+    This is the single entry point for workspace access control, handling
+    the V1/V2 feature flag branching in one place.
+    """
 
     def has_permission(self, request, view):
-        """Check permission based on Account Admin property."""
+        """
+        Check if the user has permission to access the workspace.
+
+        Handles V1/V2 feature flag branching:
+        - V2: Uses Inventory API with fine-grained permissions (view, create, edit, move, delete)
+        - V1: Uses legacy role-based checks with read/write operations
+
+        Args:
+            request: The HTTP request object
+            view: The view being accessed
+
+        Returns:
+            bool: True if the user has permission, False otherwise
+        """
+        # Get the permission/operation and target workspace
+        perm = permission_from_request(request, view)
+        ws_id = workspace_from_request(request, view)
+
+        # Branch based on feature flag - this is the ONLY place this check should occur
+        if FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
+            # V2: Use Inventory API with fine-grained permissions
+            # V2 relies solely on accessible workspaces from Inventory API
+            return is_user_allowed_v2(request, perm, ws_id)
+
+        # V1: Use legacy role-based checks with read/write operations
+        # Admin users always have full access in V1 mode
         if request.user.admin:
             return True
 
-        # Determine the target workspace for permission checking
-        if request.method == "POST" and view.kwargs.get("pk") is None:
-            # Create operation: check permissions on the intended parent workspace
-            if parent_id := request.data.get("parent_id"):
-                workspace_id = parent_id
-            else:
-                # Fall back to Default Workspace when parent_id is not provided
-                workspace_id = str(Workspace.objects.default(tenant_id=request.tenant).id)
-        else:
-            # Update/delete/retrieve operations: use the workspace from URL
-            workspace_id = view.kwargs.get("pk")
-
-        # Determine required operation
-        if request.method in permissions.SAFE_METHODS:
-            required_operation = "read"
-        else:
-            required_operation = "write"
-
-        return is_user_allowed(request, required_operation, workspace_id)
+        op = operation_from_request(request)
+        return is_user_allowed_v1(request, op, ws_id)

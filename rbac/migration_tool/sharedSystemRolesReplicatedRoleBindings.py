@@ -20,6 +20,7 @@ import uuid
 from typing import Any, Iterable, Optional, Tuple, Union
 
 from django.conf import settings
+from feature_flags import FEATURE_FLAGS
 from management.models import BindingMapping, Workspace
 from management.permission.model import Permission
 from management.role.model import Role
@@ -142,11 +143,13 @@ def v1_role_to_v2_bindings(
                 if resource_id is None:
                     if resource_type != ("rbac", "workspace"):
                         raise ValueError(f"Resource ID is None for {resource_def}")
-                    if settings.REMOVE_NULL_VALUE:
+                    if FEATURE_FLAGS.is_remove_null_value_enabled:
                         ungrouped_ws = get_or_create_ungrouped_workspace(v1_role.tenant)
                         resource_id = str(ungrouped_ws.id)
                     else:
                         continue
+                elif resource_id == "":
+                    continue
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
             add_element(

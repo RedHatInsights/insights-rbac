@@ -86,6 +86,120 @@ class RoleSerializerTest(TestCase):
         # Update the role
         self.assertRaises(Permission.DoesNotExist, serializer.update, role, serializer.validated_data)
 
+    def test_create_role_with_invalid_group_id_integer_fails(self):
+        """Test that creating a role with integer values in group.id resource definition fails."""
+        tenant = Tenant.objects.get(tenant_name="public")
+        Permission.objects.create(permission="inventory:groups:read", tenant=tenant)
+
+        # Prepare role data with integer in group.id
+        role_data = {
+            "name": "Invalid Role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "in",
+                                "value": ["valid-uuid-string", 12345, 67890],  # Contains integers
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        # Serialize the input
+        serializer = self.prepare_serializer(role_data)
+
+        # Validation should fail
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("access", serializer.errors)
+
+    def test_create_role_with_invalid_group_id_equal_integer_fails(self):
+        """Test that creating a role with integer value in group.id with operation='equal' fails."""
+        tenant = Tenant.objects.get(tenant_name="public")
+        Permission.objects.create(permission="inventory:groups:read", tenant=tenant)
+
+        # Prepare role data with integer in group.id
+        role_data = {
+            "name": "Invalid Role Equal",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "equal",
+                                "value": 12345,  # Integer value
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        # Serialize the input
+        serializer = self.prepare_serializer(role_data)
+
+        # Validation should fail
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("access", serializer.errors)
+
+    def test_update_role_with_invalid_group_id_integer_fails(self):
+        """Test that updating a role with integer values in group.id resource definition fails."""
+        tenant = Tenant.objects.get(tenant_name="public")
+        Permission.objects.create(permission="inventory:groups:read", tenant=tenant)
+
+        # First create a valid role
+        valid_role_data = {
+            "name": "Valid Role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "in",
+                                "value": ["95473d62-56ea-4c0c-8945-4f3f6a620669"],  # Valid UUID
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+        serializer = self.prepare_serializer(valid_role_data)
+        role = serializer.create(serializer.validated_data)
+
+        # Now try to update with invalid data
+        invalid_role_data = {
+            "name": "Updated Role",
+            "access": [
+                {
+                    "permission": "inventory:groups:read",
+                    "resourceDefinitions": [
+                        {
+                            "attributeFilter": {
+                                "key": "group.id",
+                                "operation": "in",
+                                "value": [123, 456],  # Invalid: integers
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        # Serialize the update
+        update_serializer = self.prepare_serializer(invalid_role_data)
+
+        # Validation should fail
+        self.assertFalse(update_serializer.is_valid())
+        self.assertIn("access", update_serializer.errors)
+
 
 @override_settings(WORKSPACE_HIERARCHY_ENABLED=True)
 class ResourceDefinitionTest(TestCase):
@@ -112,6 +226,10 @@ class ResourceDefinitionTest(TestCase):
     def test_get_with_inventory_groups_filter_in_for_access(self):
         """Return the hierarchy locally for access."""
         permission_str = "inventory:groups:read"
+        # Create another valid workspace for testing
+        test_workspace = Workspace.objects.create(
+            name="Test Workspace", tenant=self.tenant, parent=self.standard_workspace
+        )
         role_data = {
             "name": "Inventory Group Role",
             "access": [
@@ -122,7 +240,7 @@ class ResourceDefinitionTest(TestCase):
                             "attributeFilter": {
                                 "key": "group.id",
                                 "operation": "in",
-                                "value": [str(self.default_workspace.id), "foo"],
+                                "value": [str(self.default_workspace.id), str(test_workspace.id)],
                             }
                         }
                     ],
@@ -150,7 +268,7 @@ class ResourceDefinitionTest(TestCase):
             str(self.standard_workspace.id),
             str(self.sub_workspace_a.id),
             str(self.sub_workspace_b.id),
-            "foo",
+            str(test_workspace.id),
         }
 
         self.assertEqual(actual, expected)
@@ -204,6 +322,10 @@ class ResourceDefinitionTest(TestCase):
     def test_get_with_inventory_groups_filter_in_for_roles(self):
         """Return the hierarchy locally for roles."""
         permission_str = "inventory:groups:read"
+        # Create another workspace for testing
+        test_workspace_2 = Workspace.objects.create(
+            name="Test Workspace 2", tenant=self.tenant, parent=self.root_workspace
+        )
         role_data = {
             "name": "Inventory Group Role",
             "access": [
@@ -214,7 +336,7 @@ class ResourceDefinitionTest(TestCase):
                             "attributeFilter": {
                                 "key": "group.id",
                                 "operation": "in",
-                                "value": [str(self.default_workspace.id), "foo"],
+                                "value": [str(self.default_workspace.id), str(test_workspace_2.id)],
                             }
                         }
                     ],
@@ -235,7 +357,7 @@ class ResourceDefinitionTest(TestCase):
         resource_definition_serializer = ResourceDefinitionSerializer(resource_definition)
         updated_operation = resource_definition_serializer.data.get("attributeFilter").get("operation")
         actual = set(resource_definition_serializer.data.get("attributeFilter").get("value"))
-        expected = {str(self.default_workspace.id), "foo"}
+        expected = {str(self.default_workspace.id), str(test_workspace_2.id)}
 
         self.assertEqual(actual, expected)
         self.assertEqual(updated_operation, "in")
@@ -282,6 +404,10 @@ class ResourceDefinitionTest(TestCase):
     def test_get_with_inventory_wildcard_filter_for_access(self):
         """Return the hierarchy locally for access with inventory:*:read permission."""
         permission_str = "inventory:*:read"
+        # Create another workspace for testing
+        test_workspace_3 = Workspace.objects.create(
+            name="Test Workspace 3", tenant=self.tenant, parent=self.standard_workspace
+        )
         role_data = {
             "name": "Inventory Wildcard Role",
             "access": [
@@ -292,7 +418,7 @@ class ResourceDefinitionTest(TestCase):
                             "attributeFilter": {
                                 "key": "group.id",
                                 "operation": "in",
-                                "value": [str(self.default_workspace.id), "foo"],
+                                "value": [str(self.default_workspace.id), str(test_workspace_3.id)],
                             }
                         }
                     ],
@@ -320,7 +446,7 @@ class ResourceDefinitionTest(TestCase):
             str(self.standard_workspace.id),
             str(self.sub_workspace_a.id),
             str(self.sub_workspace_b.id),
-            "foo",
+            str(test_workspace_3.id),
         }
 
         self.assertEqual(actual, expected)
@@ -473,7 +599,8 @@ class ResourceDefinitionTest(TestCase):
     def test_get_with_other_filter(self):
         """Return correct filter values."""
 
-        resource_value = str(random.randint(1, 1000))
+        # Use a valid workspace UUID for group.id
+        resource_value = str(self.standard_workspace.id)
         permission_str = "foo:bar:baz"
         role_data = {
             "name": "Inventory Group Role",
@@ -501,3 +628,108 @@ class ResourceDefinitionTest(TestCase):
         actual = set(resource_definition_serializer.data.get("attributeFilter").get("value"))
         expected = {resource_value}
         self.assertEqual(actual, expected)
+
+    def test_validate_group_id_rejects_integer_in_list(self):
+        """Test that group.id with operation='in' rejects integer values."""
+        serializer = ResourceDefinitionSerializer(
+            data={
+                "attributeFilter": {
+                    "key": "group.id",
+                    "operation": "in",
+                    "value": [str(self.default_workspace.id), 123, "invalid-string"],
+                }
+            }
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attributeFilter", serializer.errors)
+        self.assertIn("format", serializer.errors["attributeFilter"])
+        self.assertIn("invalid values", str(serializer.errors["attributeFilter"]["format"][0]))
+
+    def test_validate_group_id_rejects_integer_with_equal(self):
+        """Test that group.id with operation='equal' rejects integer values."""
+        serializer = ResourceDefinitionSerializer(
+            data={
+                "attributeFilter": {
+                    "key": "group.id",
+                    "operation": "equal",
+                    "value": 12345,
+                }
+            }
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attributeFilter", serializer.errors)
+        self.assertIn("format", serializer.errors["attributeFilter"])
+        # Integer values are rejected by the type check which happens before group.id validation
+        error_msg = str(serializer.errors["attributeFilter"]["format"][0])
+        self.assertTrue(
+            "String value" in error_msg or "must be a valid UUID" in error_msg,
+            f"Unexpected error message: {error_msg}",
+        )
+
+    def test_validate_group_id_accepts_valid_uuids(self):
+        """Test that group.id accepts valid UUIDs."""
+        serializer = ResourceDefinitionSerializer(
+            data={
+                "attributeFilter": {
+                    "key": "group.id",
+                    "operation": "in",
+                    "value": [str(self.default_workspace.id), str(self.standard_workspace.id)],
+                }
+            }
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_validate_group_id_accepts_none_in_list(self):
+        """Test that group.id accepts None (for ungrouped workspace) in list."""
+        serializer = ResourceDefinitionSerializer(
+            data={
+                "attributeFilter": {
+                    "key": "group.id",
+                    "operation": "in",
+                    "value": [None, str(self.default_workspace.id)],
+                }
+            }
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_validate_group_id_accepts_none_with_equal(self):
+        """Test that group.id accepts None (for ungrouped workspace) with operation='equal'."""
+        serializer = ResourceDefinitionSerializer(
+            data={
+                "attributeFilter": {
+                    "key": "group.id",
+                    "operation": "equal",
+                    "value": None,
+                }
+            }
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_validate_group_id_rejects_invalid_uuid_string(self):
+        """Test that group.id rejects invalid UUID strings."""
+        serializer = ResourceDefinitionSerializer(
+            data={
+                "attributeFilter": {
+                    "key": "group.id",
+                    "operation": "in",
+                    "value": ["not-a-valid-uuid", "also-invalid"],
+                }
+            }
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attributeFilter", serializer.errors)
+        self.assertIn("format", serializer.errors["attributeFilter"])
+        self.assertIn("invalid values", str(serializer.errors["attributeFilter"]["format"][0]))
+
+    def test_validate_non_group_id_allows_integers(self):
+        """Test that non-group.id keys can still have integer values (backwards compatibility)."""
+        serializer = ResourceDefinitionSerializer(
+            data={
+                "attributeFilter": {
+                    "key": "other.id",
+                    "operation": "equal",
+                    "value": "12345",
+                }
+            }
+        )
+        self.assertTrue(serializer.is_valid())

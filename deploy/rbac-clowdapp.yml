@@ -675,6 +675,8 @@ objects:
                 fieldPath: metadata.namespace
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
+          - name: CW_NULL_WORKAROUND
+            value: ${CW_NULL_WORKAROUND}
           - name: DJANGO_DEBUG
             value: ${DJANGO_DEBUG}
           - name: DJANGO_LOG_LEVEL
@@ -1196,6 +1198,8 @@ objects:
               value: ${RBAC_HBI_S3_AWS_BUCKET}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
+            - name: REMOVE_NULL_VALUE
+              value: ${REMOVE_NULL_VALUE}
           resources:
             limits:
               cpu: 300m
@@ -1676,7 +1680,7 @@ parameters:
   value: 'inventory'
 - description: The resource type used in workspace permissions
   name: WORKSPACE_RESOURCE_TYPE
-  value: 'groups,*'
+  value: 'groups,hosts,*'
 - description: The attribute filter key used in workspace permissions' resource definitions
   name: WORKSPACE_ATTRIBUTE_FILTER
   value: 'group.id'
