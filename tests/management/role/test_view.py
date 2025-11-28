@@ -76,6 +76,7 @@ def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id, org_id=None,
         "resource_context": {
             "org_id": org_id or "",
             "event_type": event_type,
+            "created_at": ANY,
         },
     }
     return event
@@ -1943,6 +1944,7 @@ class RoleViewsetTests(IdentityRequest):
             "resource_context": {
                 "org_id": str(self.tenant.org_id),
                 "event_type": "delete_custom_role",
+                "created_at": ANY,
             },
         }
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
@@ -2145,6 +2147,7 @@ class RoleViewsetTests(IdentityRequest):
             "resource_context": {
                 "org_id": str(self.tenant.org_id),
                 "event_type": "delete_custom_role",
+                "created_at": ANY,
             },
         }
         current_relations = relation_api_tuples_for_v1_role(role_uuid, bound_workspace_id=str(self.child_workspace.id))
