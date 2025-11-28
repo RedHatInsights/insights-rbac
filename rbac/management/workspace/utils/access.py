@@ -140,7 +140,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     """
     # Try to get principal from request, fall back to IT service API call via PrincipalProxy
     principal = get_principal_from_request(request)
-    if principal is not None:
+    if principal is not None and principal.user_id is not None:
         user_id = principal.user_id
     elif username := getattr(request.user, "username", None):
         # Fallback: query IT service via PrincipalProxy to get user_id
@@ -165,6 +165,24 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     else:
         logger.warning("No username available from request.user, denying access")
         return False
+
+    # Log warning if user_id is None after all lookup attempts
+    if user_id is None:
+        org_id = getattr(request.user, "org_id", None)
+        username = getattr(request.user, "username", None)
+        is_system = getattr(request.user, "system", False)
+        # Log a minimal, structured subset of context to avoid exposing PII
+        logger.warning(
+            "user_id is None after all lookup attempts",
+            extra={
+                "org_id": org_id,
+                "has_username": bool(username),
+                "principal_type": type(principal).__name__ if principal is not None else None,
+                "is_system": is_system,
+                "request_path": request.path,
+                "request_method": request.method,
+            },
+        )
 
     # Format principal ID as required by Inventory API (e.g., "localhost/username")
     principal_id = Principal.user_id_to_principal_resource_id(user_id)
