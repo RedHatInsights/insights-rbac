@@ -53,12 +53,8 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create the workspace object in the database."""
-        from api.common import RH_RBAC_CLIENT_ID
-
-        request = self.context["request"]
-        tenant = request.tenant
-        psk_client_id = request.META.get(RH_RBAC_CLIENT_ID)
-        return self._service.create(validated_data, tenant, psk_client_id=psk_client_id)
+        tenant = self.context["request"].tenant
+        return self._service.create(validated_data, tenant)
 
     def update(self, instance, validated_data):
         """Update the workspace object in the database."""
