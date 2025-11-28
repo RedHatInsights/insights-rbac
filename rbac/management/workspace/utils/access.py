@@ -138,10 +138,13 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     Returns:
         bool: True if the user has permission, False otherwise
     """
-    # Try to get principal from request, fall back to IT service API call via PrincipalProxy
+    # Try to get user_id from principal, request.user, or IT service API
     principal = get_principal_from_request(request)
     if principal is not None and principal.user_id is not None:
         user_id = principal.user_id
+    elif (user_id := getattr(request.user, "user_id", None)) is not None:
+        # user_id available from request identity header
+        pass
     elif username := getattr(request.user, "username", None):
         # Fallback: query IT service via PrincipalProxy to get user_id
         org_id = getattr(request.user, "org_id", None)
