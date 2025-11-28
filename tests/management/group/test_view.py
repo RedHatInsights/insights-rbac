@@ -100,6 +100,7 @@ def generate_replication_event_to_add_principals(group_uuid, principal_user_id, 
         "resource_context": {
             "org_id": org_id,
             "event_type": "add_principals_to_group",
+            "created_at": ANY,
         },
     }
 
@@ -111,6 +112,7 @@ def generate_replication_event_to_remove_principals(group_uuid, principal_uuid, 
         "resource_context": {
             "org_id": org_id,
             "event_type": "remove_principals_from_group",
+            "created_at": ANY,
         },
     }
 

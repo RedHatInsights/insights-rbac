@@ -17,6 +17,7 @@
 """Test OutboxReplicator."""
 
 import logging
+from unittest.mock import ANY
 from uuid import uuid4
 from django.test import TestCase, override_settings
 from google.protobuf import json_format
@@ -96,6 +97,7 @@ class OutboxReplicatorTest(TestCase):
                 "resource_context": {
                     "org_id": "",
                     "event_type": "add_principals_to_group",
+                    "created_at": ANY,
                 },
             },
         )
