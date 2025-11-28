@@ -17,6 +17,8 @@
 """Permission mapping utilities for workspace operations."""
 import logging
 
+from django.db import DatabaseError
+from management.models import Workspace
 from rest_framework import permissions
 from rest_framework.exceptions import MethodNotAllowed
 
@@ -85,15 +87,34 @@ def permission_from_request(request, view=None) -> str:
         new_pid = data.get("parent_id") or data.get("parent")
 
         if new_pid:
-            workspace = view.get_object()
-            # Extract current parent ID: try parent_id first, then parent.id
-            current_pid = getattr(workspace, "parent_id", None)
-            if current_pid is None:
-                parent = getattr(workspace, "parent", None)
-                current_pid = getattr(parent, "id", None) if parent else None
+            # Get workspace ID from view kwargs and query directly to avoid
+            # triggering select_for_update() from get_queryset() which would
+            # fail outside of a transaction (permission check runs before
+            # the view's @transaction.atomic decorator)
+            lookup = getattr(view, "lookup_url_kwarg", None) or "pk"
+            workspace_id = getattr(view, "kwargs", {}).get(lookup)
 
-            # If current parent exists and differs from new parent, this is a move
-            if current_pid and str(new_pid) != str(current_pid):
-                return "move"
+            # If workspace_id is missing from kwargs, we cannot determine if this is a move.
+            # This should not happen for properly configured detail routes (PUT/PATCH /{id}/),
+            # but if it does, we fall back to 'edit' permission which is the safe default
+            # (move permission is more restrictive than edit).
+            if not workspace_id:
+                logger.warning(
+                    "Cannot determine workspace_id from view kwargs for move detection; "
+                    "falling back to 'edit' permission"
+                )
+            else:
+                try:
+                    current_pid = Workspace.objects.filter(pk=workspace_id).values_list("parent_id", flat=True).first()
+                    # If current parent exists and differs from new parent, this is a move
+                    if current_pid and str(new_pid) != str(current_pid):
+                        return "move"
+                except DatabaseError:
+                    # Database error during lookup - fall back to edit permission
+                    logger.warning(
+                        "DatabaseError while checking workspace parent_id for move detection; "
+                        "falling back to 'edit' permission",
+                        exc_info=True,
+                    )
 
     return perm
