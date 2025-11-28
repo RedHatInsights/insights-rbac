@@ -17,6 +17,7 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
+import time
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Dict
@@ -138,6 +139,7 @@ class ReplicationEventResourceContext:
     resource_id: str | None
     org_id: str
     event_type: str
+    created_at: int  # Unix timestamp when event was created (whole seconds)
 
     def __init__(
         self,
@@ -145,18 +147,22 @@ class ReplicationEventResourceContext:
         event_type: str,
         resource_type: str | None = None,
         resource_id: str | None = None,
+        created_at: int | None = None,
     ):
         """Initialize ReplicationEventResourceContext."""
         self.resource_type = resource_type
         self.resource_id = resource_id
         self.org_id = org_id
         self.event_type = event_type
+        # Capture creation timestamp for latency tracking
+        self.created_at = created_at if created_at is not None else int(time.time())
 
     def to_json(self) -> Dict[str, object]:
         """Convert to JSON dictionary."""
         result: Dict[str, object] = {
             "org_id": self.org_id,
             "event_type": self.event_type,
+            "created_at": self.created_at,
         }
         # Only include resource_type if it's present
         if self.resource_type is not None:

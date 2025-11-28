@@ -106,6 +106,37 @@ lock_acquisition_duration = Histogram(
     ["status"],  # success, failure
 )
 
+# Replication event end-to-end latency metric
+# Measures time from event creation (in producer) to successful processing (in consumer)
+# Labels: event_type - the type of replication event (e.g., create_custom_role, assign_role)
+#
+# Example Prometheus queries:
+#
+# 1. Average replication latency over 5 minutes:
+#    rate(rbac_replication_event_latency_seconds_sum[5m]) / rate(rbac_replication_event_latency_seconds_count[5m])
+#
+# 2. 95th percentile latency:
+#    histogram_quantile(0.95, rate(rbac_replication_event_latency_seconds_bucket[5m]))
+#
+# 3. 99th percentile latency by event type:
+#    histogram_quantile(0.99, sum(rate(rbac_replication_event_latency_seconds_bucket[5m])) by (le, event_type))
+#
+# 4. Median (50th percentile) latency:
+#    histogram_quantile(0.50, rate(rbac_replication_event_latency_seconds_bucket[5m]))
+#
+# 5. Events processed per second by event type:
+#    sum(rate(rbac_replication_event_latency_seconds_count[1m])) by (event_type)
+#
+# 6. Alert: High replication latency (> 30 seconds):
+#    histogram_quantile(0.95, rate(rbac_replication_event_latency_seconds_bucket[5m])) > 30
+#
+replication_event_latency = Histogram(
+    "rbac_replication_event_latency_seconds",
+    "End-to-end latency from event creation to successful processing in seconds",
+    ["event_type"],
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
+)
+
 
 @dataclass
 class RetryConfig:
@@ -1204,12 +1235,14 @@ class RBACKafkaConsumer:
             org_id = None
             event_type = None
             resource_id = None
+            created_at = None
 
-            # Extract org_id, event_type, and resource_id from resource_context if present
+            # Extract org_id, event_type, resource_id, and created_at from resource_context if present
             if resource_context and isinstance(resource_context, dict):
                 org_id = resource_context.get("org_id")
                 event_type = resource_context.get("event_type")
                 resource_id = resource_context.get("resource_id")
+                created_at = resource_context.get("created_at")
             else:
                 logger.debug(
                     f"No resource_context found, skipping org_id and event_type extraction. "
@@ -1313,6 +1346,29 @@ class RBACKafkaConsumer:
                     logger.error(
                         f"Failed to send NOTIFY for workspace_id '{resource_id}' on channel '{notify_channel}': {e}"
                     )
+
+            # Calculate and emit replication latency metric
+            if created_at is not None:
+                try:
+                    latency_seconds = time.time() - float(created_at)
+                    latency_event_type = event_type or "unknown"
+                    replication_event_latency.labels(event_type=latency_event_type).observe(latency_seconds)
+                    # Log per-event latency at DEBUG level to avoid excessive log volume at scale
+                    logger.debug(
+                        "Replication event latency: %.3fs for event_type=%s, aggregateid=%s",
+                        latency_seconds,
+                        latency_event_type,
+                        debezium_msg.aggregateid,
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        f"Could not calculate replication latency: invalid created_at value '{created_at}': {e}"
+                    )
+            else:
+                logger.debug(
+                    f"No created_at timestamp in resource_context, skipping latency metric. "
+                    f"aggregateid: {debezium_msg.aggregateid}"
+                )
 
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True

@@ -21,7 +21,6 @@ import time
 import uuid
 from collections import deque
 from itertools import groupby
-from typing import Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -207,15 +206,8 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
 class WorkspaceService:
     """Workspace service."""
 
-    def create(self, validated_data: dict, request_tenant: Tenant, psk_client_id: Optional[str] = None) -> Workspace:
-        """Create workspace.
-
-        Args:
-            validated_data: The validated workspace data.
-            request_tenant: The tenant for the workspace.
-            psk_client_id: Optional PSK client ID from the request header (x-rh-rbac-client-id).
-                          Used to skip read-your-write wait for configured services.
-        """
+    def create(self, validated_data: dict, request_tenant: Tenant) -> Workspace:
+        """Create workspace."""
         with transaction.atomic():
             try:
                 parent_id = validated_data.get("parent_id")
@@ -240,14 +232,8 @@ class WorkspaceService:
                 dual_write_handler.replicate_new_workspace()
 
                 # After the outbox message is created & committed, LISTEN for a NOTIFY
-                # Skip read-your-write wait for PSK services configured in settings
-                skip_ryw = self._should_skip_read_your_write(psk_client_id)
 
-                if (
-                    FEATURE_FLAGS.is_read_your_writes_workspace_enabled()
-                    and settings.REPLICATION_TO_RELATION_ENABLED
-                    and not skip_ryw
-                ):
+                if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
                     transaction.on_commit(lambda: self._wait_for_notify_post_commit(workspace.id))
 
                 return workspace
@@ -392,29 +378,6 @@ class WorkspaceService:
         """Prevent moving workspace under own descendant."""
         if instance.descendants().filter(id=new_parent_id):
             raise serializers.ValidationError({"parent_id": "Cannot move workspace under one of its own descendants."})
-
-    @staticmethod
-    def _should_skip_read_your_write(psk_client_id: Optional[str]) -> bool:
-        """Check if read-your-write should be skipped for PSK-authenticated services.
-
-        Args:
-            psk_client_id: The PSK client ID from the request header (x-rh-rbac-client-id).
-
-        Returns:
-            True if the client_id is in the configured skip list.
-        """
-        if not psk_client_id:
-            return False
-
-        skip_services = settings.PSK_SERVICES_TO_SKIP_WORKSPACE_CREATE_READ_YOUR_WRITE
-        if psk_client_id in skip_services:
-            logger.info(
-                "[Service] RYW skipped for PSK service client_id='%s' (in skip list)",
-                psk_client_id,
-            )
-            return True
-
-        return False
 
     def _wait_for_notify_post_commit(self, workspace_id: uuid.UUID) -> None:
         """Wait for a NOTIFY on the configured channel for the given workspace id.
