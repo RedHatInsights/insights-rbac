@@ -4,6 +4,7 @@ import logging
 from typing import Optional, Tuple
 
 from kessel.relations.v1beta1 import common_pb2
+from migration_tool.in_memory_tuples import RelationTuple
 from protoc_gen_validate.validator import ValidationFailed, validate_all
 
 
@@ -34,10 +35,13 @@ def create_relationship(
     subject_relation: Optional[str] = None,
 ):
     """Create a relationship between a resource and a subject."""
-    return common_pb2.Relationship(
+    message = common_pb2.Relationship(
         resource=validate_and_create_obj_ref(resource_name, resource_id),
         relation=relation,
         subject=common_pb2.SubjectReference(
             subject=validate_and_create_obj_ref(subject_name, subject_id), relation=subject_relation
         ),
     )
+
+    RelationTuple.validate_message(message)
+    return message

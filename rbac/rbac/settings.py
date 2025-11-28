@@ -338,6 +338,8 @@ else:
     FEATURE_FLAGS_URL = ENVIRONMENT.get_value("FEATURE_FLAGS_URL", default="http://localhost:4242/api")
     APP_NAME = "rbac"
 
+CLOWDER_ENABLED = ENVIRONMENT.bool("CLOWDER_ENABLED", default=False)
+
 FEATURE_FLAGS_CACHE_DIR = ENVIRONMENT.get_value("FEATURE_FLAGS_CACHE_DIR", default="/tmp/")
 
 REDIS_SSL = REDIS_PASSWORD is not None
@@ -537,10 +539,9 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         hostname = DependencyEndpoints[KESSEL_RELATION_CLOWDER_APPLICATION_NAME]["api"].hostname
         RELATION_API_SERVER = f"{hostname}:9000"
     except KeyError as e:
-        import logging
-
-        logging.warning(
-            f"Dependency endpoint for '{KESSEL_RELATION_CLOWDER_APPLICATION_NAME}' not found: {e}. "
+        # Note: Can't use logging here as it runs before Django logging config is applied
+        print(
+            f"WARNING: Dependency endpoint for '{KESSEL_RELATION_CLOWDER_APPLICATION_NAME}' not found: {e}. "
             f"Falling back to default RELATION_API_SERVER value: {RELATION_API_SERVER}"
         )
 
@@ -559,11 +560,25 @@ INVENTORY_API_TOKEN_URL = ENVIRONMENT.get_value(
 )
 INVENTORY_API_LOCAL = ENVIRONMENT.bool("INVENTORY_API_LOCAL", default=True)
 INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
+KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME = "kessel-inventory-api"
+INVENTORY_API_PORT = 9000
+if CLOWDER_ENABLED:
+    try:
+        hostname = DependencyEndpoints[KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME]["api"].hostname
+        INVENTORY_API_SERVER = f"{hostname}:{INVENTORY_API_PORT}"
+    except KeyError as e:
+        # Note: Can't use logging here as it runs before Django logging config is applied
+        print(
+            f"WARNING: Dependency endpoint for '{KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME}' not found: {e}. "
+            f"Falling back to default INVENTORY_API_SERVER value: {INVENTORY_API_SERVER}"
+        )
+
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 
 # Versioned API settings
 V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
 V2_READ_ONLY_API_MODE = ENVIRONMENT.bool("V2_READ_ONLY_API_MODE", default=False)
+WORKSPACE_ACCESS_CHECK_V2_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_CHECK_V2_ENABLED", default=False)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
 V1_ROLE_PERMISSION_BLOCK_LIST = [
     permission.strip()
@@ -573,14 +588,14 @@ V1_ROLE_PERMISSION_BLOCK_LIST = [
 
 # Read-your-writes settings
 READ_YOUR_WRITES_WORKSPACE_ENABLED = ENVIRONMENT.bool("READ_YOUR_WRITES_WORKSPACE_ENABLED", default=False)
-READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="test")
+READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="READ_YOUR_WRITES_CHANNEL")
 READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=2)
 
 # Workspace settings
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")
 # Comma-separated list of resource types that should trigger workspace hierarchy
 WORKSPACE_RESOURCE_TYPE = [
-    t.strip() for t in ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups,*").split(",")
+    t.strip() for t in ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups,hosts,*").split(",")
 ]
 WORKSPACE_ATTRIBUTE_FILTER = ENVIRONMENT.get_value("WORKSPACE_ATTRIBUTE_FILTER", default="group.id")
 WORKSPACE_HIERARCHY_ENABLED = ENVIRONMENT.bool("WORKSPACE_HIERARCHY_ENABLED", False)

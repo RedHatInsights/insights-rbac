@@ -15,13 +15,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Classes to handle JWT token generation and management."""
+import base64
 import http.client
 import json
 import logging
 import time
 
 from django.conf import settings
-from joserfc import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +91,23 @@ class JWTManager:
     def is_token_expired(token):
         """Check if JWT token is expired based on its exp claim."""
         try:
-            # Decode without verification to check expiration
-            claims = jwt.decode(token, key=None)
+            # Decode JWT payload without verification (safe for reading claims only)
+            # JWT format: header.payload.signature
+            parts = token.split(".")
+            if len(parts) != 3:
+                logger.warning("Invalid JWT format: expected 3 parts separated by dots")
+                return True
+
+            # Decode the payload (second part) - base64url encoded
+            payload = parts[1]
+            # Add padding if needed (base64 requires length to be multiple of 4)
+            padding = len(payload) % 4
+            if padding:
+                payload += "=" * (4 - padding)
+
+            decoded_bytes = base64.urlsafe_b64decode(payload)
+            claims = json.loads(decoded_bytes)
+
             if claims and "exp" in claims:
                 # Add 60 second buffer to avoid edge cases
                 return time.time() > (claims["exp"] - 60)
@@ -110,7 +125,7 @@ class JWTManager:
 
             # Check if token exists and is not expired
             if token and not self.is_token_expired(token):
-                logger.info("Valid token retrieved from redis.")
+                logger.debug("Valid token retrieved from redis.")
                 return token
 
             # Token missing or expired, get new one

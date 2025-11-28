@@ -132,8 +132,20 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
     total_tuples = 0
 
     # Process each binding in a separate transaction with locking
-    for raw_binding in bindings_query.iterator():
+    for raw_binding in bindings_query.prefetch_related("role").iterator(chunk_size=2000):
         with transaction.atomic():
+            # Custom roles must be locked, since other code that updates them locks only the role (and not the binding).
+            if not raw_binding.role.system:
+                locked_role = Role.objects.select_for_update().filter(pk=raw_binding.role.pk).first()
+
+                if locked_role is None:
+                    logger.warning(
+                        f"Role vanished before its binding could be fixed: binding pk={raw_binding.pk!r}, "
+                        f"role pk={raw_binding.role.pk!r}"
+                    )
+
+                    continue
+
             # Lock the binding to prevent concurrent modifications
             binding = BindingMapping.objects.select_for_update().filter(pk=raw_binding.pk).first()
 
@@ -151,7 +163,7 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
             replicator = OutboxReplicator()
             replicator.replicate(
                 ReplicationEvent(
-                    event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
+                    event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
                     info={
                         "binding_id": binding.id,
                         "role_uuid": str(binding.role.uuid),
@@ -181,12 +193,15 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
     return results
 
 
-def clean_invalid_workspace_resource_definitions() -> dict:
+def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
     """
     Clean resource definitions with invalid workspace IDs and update bindings accordingly.
 
     This finds custom roles with resource definitions pointing to non-existent workspaces,
     removes invalid workspace IDs, and uses the dual write handler to update bindings.
+
+    Args:
+        dry_run (bool): If True, only report what would be changed without making changes.
 
     Returns:
         dict: Results with roles_checked, resource_definitions_fixed, and changes list.
@@ -198,6 +213,9 @@ def clean_invalid_workspace_resource_definitions() -> dict:
     roles_checked = 0
     resource_defs_fixed = 0
     changes = []
+
+    if dry_run:
+        logger.info("DRY RUN MODE - No changes will be made")
 
     # Get all custom roles with resource definitions
     custom_roles_with_rds = Role.objects.filter(system=False, access__resourceDefinitions__isnull=False).distinct()
@@ -215,6 +233,9 @@ def clean_invalid_workspace_resource_definitions() -> dict:
 
             roles_checked += 1
 
+            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
+            dual_write.prepare_for_update()
+
             for access in role.access.all():
                 permission = access.permission
 
@@ -227,6 +248,16 @@ def clean_invalid_workspace_resource_definitions() -> dict:
 
                     # Get workspace IDs from resource definition
                     workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
+
+                    # Check if the resource definition has None (for ungrouped workspace)
+                    operation = rd.attributeFilter.get("operation")
+                    original_value = rd.attributeFilter.get("value")
+                    has_none_value = False
+
+                    if operation == "in" and isinstance(original_value, list):
+                        has_none_value = None in original_value
+                    elif operation == "equal":
+                        has_none_value = original_value is None
 
                     if not workspace_ids:
                         continue
@@ -243,47 +274,86 @@ def clean_invalid_workspace_resource_definitions() -> dict:
 
                     if invalid_workspace_ids:
                         role_had_invalid_rds = True
+
+                        # Calculate what the new value would be
+                        operation_type = rd.attributeFilter.get("operation")
+                        new_value: str | list | None
+                        if operation_type == "equal":
+                            # For "equal" operation, value should be a single string, None, or empty string
+                            # Preserve None if it existed (for ungrouped workspace reference)
+                            if has_none_value and not valid_workspace_ids:
+                                new_value = None
+                            else:
+                                new_value = list(valid_workspace_ids)[0] if valid_workspace_ids else ""
+                        else:
+                            # For "in" operation, value should be a list
+                            # Preserve None value if it existed (for ungrouped workspace reference)
+                            new_value_list: list[str | None] = list(valid_workspace_ids) if valid_workspace_ids else []
+                            if has_none_value:
+                                new_value_list.append(None)
+                            new_value = new_value_list
+
                         change_info = {
                             "role_uuid": str(role.uuid),
                             "role_name": role.name,
                             "permission": permission.permission,
                             "resource_definition_id": rd.id,
+                            "operation": operation_type,
+                            "original_value": original_value,
+                            "new_value": new_value,
                             "invalid_workspaces": list(invalid_workspace_ids),
                             "valid_workspaces": list(valid_workspace_ids),
+                            "preserved_none": has_none_value,
                         }
 
-                        # Update resource definition to remove invalid workspace IDs
-                        # Create new dict to ensure Django detects the change (JSONField mutation issue)
-                        updated_filter = rd.attributeFilter.copy()
-
-                        # Preserve the value type based on operation
-                        if updated_filter.get("operation") == "equal":
-                            # For "equal" operation, value should be a single string or empty string
-                            updated_filter["value"] = list(valid_workspace_ids)[0] if valid_workspace_ids else ""
+                        if dry_run:
+                            logger.info(
+                                f"[DRY RUN] Would update role '{role.name}' (uuid={role.uuid}), "
+                                f"permission '{permission.permission}', RD #{rd.id}:\n"
+                                f"  Original value: {original_value}\n"
+                                f"  New value: {new_value}\n"
+                                f"  Invalid workspace IDs removed: {list(invalid_workspace_ids)}\n"
+                                f"  Valid workspace IDs kept: {list(valid_workspace_ids)}\n"
+                                f"  None preserved: {has_none_value}"
+                            )
+                            change_info["action"] = "would_update"
                         else:
-                            # For "in" operation, value should be a list
-                            updated_filter["value"] = list(valid_workspace_ids) if valid_workspace_ids else []
+                            # Update resource definition to remove invalid workspace IDs
+                            # Create new dict to ensure Django detects the change (JSONField mutation issue)
+                            updated_filter = rd.attributeFilter.copy()
+                            updated_filter["value"] = new_value
 
-                        rd.attributeFilter = updated_filter
-                        rd.save()
-                        resource_defs_fixed += 1
-                        change_info["action"] = "updated"
+                            rd.attributeFilter = updated_filter
+                            rd.save()
+                            resource_defs_fixed += 1
+                            change_info["action"] = "updated"
+
+                            logger.info(
+                                f"Updated role '{role.name}' (uuid={role.uuid}), "
+                                f"permission '{permission.permission}', RD #{rd.id}: "
+                                f"{original_value} -> {new_value}"
+                            )
 
                         changes.append(change_info)
 
             # If we fixed any resource definitions, trigger dual write to update bindings
-            if role_had_invalid_rds:
-                dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE)
-                dual_write.prepare_for_update()  # Capture current bindings
+            if role_had_invalid_rds and not dry_run:
                 dual_write.replicate_new_or_updated_role(role)  # Update bindings based on new RDs
 
     results = {
         "roles_checked": roles_checked,
         "resource_definitions_fixed": resource_defs_fixed,
         "changes": changes,
+        "dry_run": dry_run,
     }
 
-    logger.info(f"Cleaned invalid workspace RDs: {resource_defs_fixed} RDs fixed for {len(changes)} permissions")
+    if dry_run:
+        logger.info(
+            f"[DRY RUN] Would clean invalid workspace RDs: "
+            f"{len(changes)} RDs would be fixed across {roles_checked} roles"
+        )
+    else:
+        logger.info(f"Cleaned invalid workspace RDs: {resource_defs_fixed} RDs fixed for {len(changes)} permissions")
 
     return results
 
@@ -378,6 +448,8 @@ def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uu
 
 def is_str_valid_uuid(uuid_str: str) -> bool:
     """Check if a string can be converted to a valid UUID."""
+    if not isinstance(uuid_str, str):
+        return False
     if uuid_str is None or not uuid_str:
         return False
     try:

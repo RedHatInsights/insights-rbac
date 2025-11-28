@@ -28,7 +28,7 @@ from grpc_status import rpc_status
 from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.relations.v1beta1 import relation_tuples_pb2
 from kessel.relations.v1beta1 import relation_tuples_pb2_grpc
-from management.cache import JWTCache
+from management.cache import JWTCacheOptimized
 from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEvent,
@@ -38,8 +38,8 @@ from management.utils import create_client_channel_relation
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-# Initialize JWT manager for token handling
-jwt_cache = JWTCache()
+# Initialize JWT manager for token handling (using optimized cache for Kafka consumer)
+jwt_cache = JWTCacheOptimized()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
 
