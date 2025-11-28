@@ -638,6 +638,8 @@ objects:
             value: ${V2_APIS_ENABLED}
           - name: V2_READ_ONLY_API_MODE
             value: ${V2_READ_ONLY_API_MODE}
+          - name: V1_ROLE_PERMISSION_BLOCK_LIST
+            value: ${V1_ROLE_PERMISSION_BLOCK_LIST}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
           - name: ADD_UNGROUPED_HOSTS_ID
@@ -1652,6 +1654,9 @@ parameters:
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
+- name: V1_ROLE_PERMISSION_BLOCK_LIST
+  description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
+  value: ''
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
