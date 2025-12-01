@@ -42,8 +42,8 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class WorkspaceInventoryAccessChecker:
     """Check workspace access using Inventory API."""
 
-    # Limit for Inventory API StreamedListObjects requests.
-    INVENTORY_LIMIT = 10000
+    # Page size for Inventory API StreamedListObjects requests with continuation token pagination.
+    PAGE_SIZE = 1000
 
     def _log_and_return_allowed(
         self,
@@ -158,7 +158,7 @@ class WorkspaceInventoryAccessChecker:
         Lookup which workspaces are accessible to the principal using Inventory API StreamedListObjects.
 
         This uses the Inventory API v1beta2's StreamedListObjects method which efficiently streams all
-        accessible workspaces in a single call. It answers the question:
+        accessible workspaces using continuation token pagination. It answers the question:
         "Which workspaces does this principal have the specified relation to?"
 
         Args:
@@ -168,52 +168,67 @@ class WorkspaceInventoryAccessChecker:
         Returns:
             Set[str]: Set of workspace IDs that the principal has access to
         """
-        # Build StreamedListObjects request with default limit
-        request_data = streamed_list_objects_request_pb2.StreamedListObjectsRequest(
-            object_type=representation_type_pb2.RepresentationType(
-                resource_type="workspace",
-                reporter_type="rbac",
-            ),
-            relation=relation,
-            subject=make_subject_ref(principal_id),
-            pagination=request_pagination_pb2.RequestPagination(limit=self.INVENTORY_LIMIT),
-        )
 
         def rpc(stub):
             accessible_workspaces = set()
+            continuation_token = None
 
-            # Stream all accessible workspace objects
-            responses = stub.StreamedListObjects(request_data)
-
-            # Iterate through all accessible resources
-            for response in responses:
-                # Extract the workspace ID from the response protobuf object
-                if (
-                    hasattr(response, "object")
-                    and hasattr(response.object, "resource_id")
-                    and response.object.resource_id
-                ):
-                    workspace_id = response.object.resource_id
-                    accessible_workspaces.add(workspace_id)
-                else:
-                    logger.warning(
-                        f"Malformed workspace response from StreamedListObjects: "
-                        f"missing object.resource_id in response for principal={principal_id}"
-                    )
-
-            workspace_count = len(accessible_workspaces)
-
-            if workspace_count >= self.INVENTORY_LIMIT:
-                logger.warning(
-                    f"Inventory API returned {workspace_count} workspaces for principal={principal_id}, "
-                    f"which meets or exceeds the limit of {self.INVENTORY_LIMIT}. "
-                    "Some accessible workspaces may not be included in the result."
+            while True:
+                # Build pagination with continuation token if available
+                pagination = request_pagination_pb2.RequestPagination(
+                    limit=self.PAGE_SIZE,
+                    continuation_token=continuation_token if continuation_token else "",
                 )
-            else:
-                logger.info(
-                    f"Accessible workspaces for principal={principal_id}: "
-                    f"{workspace_count} found via StreamedListObjects"
+
+                # Build StreamedListObjects request
+                request_data = streamed_list_objects_request_pb2.StreamedListObjectsRequest(
+                    object_type=representation_type_pb2.RepresentationType(
+                        resource_type="workspace",
+                        reporter_type="rbac",
+                    ),
+                    relation=relation,
+                    subject=make_subject_ref(principal_id),
+                    pagination=pagination,
                 )
+
+                # Stream accessible workspace objects for this page
+                responses = stub.StreamedListObjects(request_data)
+
+                # Track the last continuation token from responses
+                last_token = None
+
+                # Iterate through all accessible resources in this page
+                for response in responses:
+                    # Extract the workspace ID from the response protobuf object
+                    if (
+                        hasattr(response, "object")
+                        and hasattr(response.object, "resource_id")
+                        and response.object.resource_id
+                    ):
+                        workspace_id = response.object.resource_id
+                        accessible_workspaces.add(workspace_id)
+                    else:
+                        logger.warning(
+                            f"Malformed workspace response from StreamedListObjects: "
+                            f"missing object.resource_id in response for principal={principal_id}"
+                        )
+
+                    # Track continuation token from pagination info
+                    if hasattr(response, "pagination") and response.pagination is not None:
+                        if response.pagination.continuation_token:
+                            last_token = response.pagination.continuation_token
+
+                # Break the loop if no more pages
+                if not last_token:
+                    break
+
+                # Update continuation token for next page
+                continuation_token = last_token
+
+            logger.info(
+                f"Accessible workspaces for principal={principal_id}: "
+                f"{len(accessible_workspaces)} found via StreamedListObjects"
+            )
 
             return accessible_workspaces
 
