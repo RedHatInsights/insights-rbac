@@ -155,17 +155,27 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         with patch.object(json_format, "MessageToDict", return_value=response_dict):
             return mock_response
 
-    def _create_mock_workspace_responses(self, workspace_ids):
+    def _create_mock_workspace_responses(self, workspace_ids, continuation_token=None):
         """
         Create mock response objects for StreamedListObjects.
 
         Args:
             workspace_ids: List of workspace IDs to create mock responses for
+            continuation_token: Optional continuation token for the last response
 
         Returns:
             List of mock response objects with proper structure
         """
-        return [MagicMock(object=MagicMock(resource_id=str(ws_id))) for ws_id in workspace_ids]
+        responses = []
+        for i, ws_id in enumerate(workspace_ids):
+            mock_response = MagicMock(object=MagicMock(resource_id=str(ws_id)))
+            # Only set continuation token on the last response if provided
+            if continuation_token and i == len(workspace_ids) - 1:
+                mock_response.pagination = MagicMock(continuation_token=continuation_token)
+            else:
+                mock_response.pagination = None
+            responses.append(mock_response)
+        return responses
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1557,3 +1567,81 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
                 # Result depends on Inventory API response, which we mocked as ALLOWED_TRUE
                 self.assertTrue(result)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_with_pagination_continuation_token(self, mock_flag, mock_channel):
+        """Test workspace list with pagination using continuation token to fetch more than PAGE_SIZE workspaces."""
+        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Create workspaces for two pages
+        # First page has PAGE_SIZE workspaces with continuation token
+        # Second page has remaining workspaces without continuation token
+        first_page_workspaces = [self.default_workspace.id, self.standard_workspace.id]
+        second_page_workspaces = [self.standard_sub_workspace.id]
+
+        # Mock responses for first page with continuation token
+        first_page_responses = self._create_mock_workspace_responses(
+            first_page_workspaces, continuation_token="next_page_token_123"
+        )
+
+        # Mock responses for second page without continuation token (last page)
+        second_page_responses = self._create_mock_workspace_responses(second_page_workspaces)
+
+        # Track call count to return different responses
+        call_count = [0]
+
+        def mock_streamed_list_objects(request):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return iter(first_page_responses)
+            else:
+                return iter(second_page_responses)
+
+        mock_stub.StreamedListObjects.side_effect = mock_streamed_list_objects
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:read",
+                platform_default=True,
+            )
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should return workspaces from both pages
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            # Verify StreamedListObjects was called twice (for two pages)
+            self.assertEqual(mock_stub.StreamedListObjects.call_count, 2)
+
+            # Verify the second call included the continuation token
+            second_call_args = mock_stub.StreamedListObjects.call_args_list[1]
+            request_arg = second_call_args[0][0]
+            self.assertEqual(request_arg.pagination.continuation_token, "next_page_token_123")
+
+    def test_workspace_inventory_access_checker_pagination_constants(self):
+        """Test that WorkspaceInventoryAccessChecker uses correct pagination constants."""
+        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+
+        checker = WorkspaceInventoryAccessChecker()
+        # Verify PAGE_SIZE is set to 1000 for pagination
+        self.assertEqual(checker.PAGE_SIZE, 1000)
