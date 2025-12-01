@@ -1345,10 +1345,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
         ):
-            # Create a mock request with username and org_id
+            # Create a mock request with username and org_id but no user_id (to trigger IT service fallback)
             mock_request = Mock()
             mock_request.user.username = "testuser"
             mock_request.user.org_id = "test-org-123"
+            mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
             mock_request.tenant = self.tenant
 
             # Call is_user_allowed_v2 directly
@@ -1384,10 +1385,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         }
         mock_proxy_class.return_value = mock_proxy
 
-        # Create a mock request
+        # Create a mock request with no user_id (to trigger IT service fallback)
         mock_request = Mock()
         mock_request.user.username = "testuser"
         mock_request.user.org_id = "test-org-123"
+        mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1420,10 +1422,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         }
         mock_proxy_class.return_value = mock_proxy
 
-        # Create a mock request
+        # Create a mock request with no user_id (to trigger IT service fallback)
         mock_request = Mock()
         mock_request.user.username = "testuser"
         mock_request.user.org_id = "test-org-123"
+        mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1445,9 +1448,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         from management.workspace.utils.access import is_user_allowed_v2
 
-        # Create a mock request with no username
+        # Create a mock request with no username and no user_id
         mock_request = Mock()
         mock_request.user.username = None
+        mock_request.user.user_id = None  # Explicitly set to None to trigger fallback
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1467,10 +1471,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         from management.workspace.utils.access import is_user_allowed_v2
 
-        # Create a mock request with username but no org_id
+        # Create a mock request with username but no org_id or user_id
         mock_request = Mock()
         mock_request.user.username = "testuser"
         mock_request.user.org_id = None
+        mock_request.user.user_id = None  # Explicitly set to None to trigger fallback
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1519,6 +1524,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_request = Mock()
             mock_request.user.username = "testuser"
             mock_request.user.org_id = "test-org-123"
+            mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
             mock_request.tenant = self.tenant
 
             with patch("management.workspace.utils.access.logger") as mock_logger:
