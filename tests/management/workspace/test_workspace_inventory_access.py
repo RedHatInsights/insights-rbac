@@ -1769,9 +1769,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_move_uses_create_permission_for_target_in_v2(
-        self, mock_flag, mock_channel, send_kafka_message
-    ):
+    def test_workspace_move_uses_create_permission_for_target_in_v2(self, mock_flag, mock_channel, send_kafka_message):
         """Test that workspace move operation uses 'create' permission for target workspace in V2 mode.
 
         When V2 access check is enabled, the _check_target_workspace_access method should
@@ -1790,24 +1788,20 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         def check_side_effect(request):
             # Capture both workspace ID and relation being checked
-            workspace_id = getattr(
-                getattr(request, "object", None), "resource_id", None
-            )
+            workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_calls.append((workspace_id, request.relation))
             mock_response = MagicMock()
             mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
             return mock_response
 
-        mock_stub.Check.side_effect = check_side_effect
+        mock_stub.CheckForUpdate.side_effect = check_side_effect
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
         ):
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup access for the user
@@ -1836,19 +1830,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Both source and target workspaces are checked with 'create' permission
             # Verify that 'create' permission was checked on source workspace
             self.assertTrue(
-                any(
-                    ws_id == source_workspace_id and rel == "create"
-                    for ws_id, rel in check_calls
-                ),
+                any(ws_id == source_workspace_id and rel == "create" for ws_id, rel in check_calls),
                 f"Expected 'create' permission check for source workspace {source_workspace_id}, got: {check_calls}",
             )
 
             # Verify that 'create' permission was checked on target workspace
             self.assertTrue(
-                any(
-                    ws_id == target_workspace_id and rel == "create"
-                    for ws_id, rel in check_calls
-                ),
+                any(ws_id == target_workspace_id and rel == "create" for ws_id, rel in check_calls),
                 f"Expected 'create' permission check for target workspace {target_workspace_id}, got: {check_calls}",
             )
 
@@ -1881,27 +1869,21 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         def check_side_effect(request):
             mock_response = MagicMock()
-            workspace_id = getattr(
-                getattr(request, "object", None), "resource_id", None
-            )
+            workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_key = (workspace_id, request.relation)
             mock_response.allowed = (
-                allowed_pb2.Allowed.ALLOWED_FALSE
-                if check_key in denied_checks
-                else allowed_pb2.Allowed.ALLOWED_TRUE
+                allowed_pb2.Allowed.ALLOWED_FALSE if check_key in denied_checks else allowed_pb2.Allowed.ALLOWED_TRUE
             )
             return mock_response
 
-        mock_stub.Check.side_effect = check_side_effect
+        mock_stub.CheckForUpdate.side_effect = check_side_effect
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
         ):
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup access for the user (source workspace)
