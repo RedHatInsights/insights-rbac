@@ -718,7 +718,6 @@ class RoleBindingModelTests(IdentityRequest):
         )
 
         migration_value = binding.as_migration_value()
-        print(migration_value)
 
         self.assertEqual(str(binding.uuid), migration_value.id)
         self.assertEqual(("rbac", "workspace"), migration_value.resource.resource_type)
