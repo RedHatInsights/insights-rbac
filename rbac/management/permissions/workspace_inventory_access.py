@@ -24,6 +24,7 @@ import grpc
 from kessel.inventory.v1beta2 import (
     allowed_pb2,
     representation_type_pb2,
+    request_pagination_pb2,
     streamed_list_objects_request_pb2,
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
@@ -40,6 +41,9 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 class WorkspaceInventoryAccessChecker:
     """Check workspace access using Inventory API."""
+
+    # Limit for Inventory API StreamedListObjects requests.
+    INVENTORY_LIMIT = 10000
 
     def _call_inventory(self, rpc_fn, default):
         """
@@ -125,7 +129,7 @@ class WorkspaceInventoryAccessChecker:
         Returns:
             Set[str]: Set of workspace IDs that the principal has access to
         """
-        # Build StreamedListObjects request
+        # Build StreamedListObjects request with default limit
         request_data = streamed_list_objects_request_pb2.StreamedListObjectsRequest(
             object_type=representation_type_pb2.RepresentationType(
                 resource_type="workspace",
@@ -133,6 +137,7 @@ class WorkspaceInventoryAccessChecker:
             ),
             relation=relation,
             subject=make_subject_ref(principal_id),
+            pagination=request_pagination_pb2.RequestPagination(limit=self.INVENTORY_LIMIT),
         )
 
         def rpc(stub):
@@ -157,10 +162,19 @@ class WorkspaceInventoryAccessChecker:
                         f"missing object.resource_id in response for principal={principal_id}"
                     )
 
-            logger.info(
-                f"Accessible workspaces for principal={principal_id}: "
-                f"{len(accessible_workspaces)} found via StreamedListObjects"
-            )
+            workspace_count = len(accessible_workspaces)
+
+            if workspace_count >= self.INVENTORY_LIMIT:
+                logger.warning(
+                    f"Inventory API returned {workspace_count} workspaces for principal={principal_id}, "
+                    f"which meets or exceeds the limit of {self.INVENTORY_LIMIT}. "
+                    "Some accessible workspaces may not be included in the result."
+                )
+            else:
+                logger.info(
+                    f"Accessible workspaces for principal={principal_id}: "
+                    f"{workspace_count} found via StreamedListObjects"
+                )
 
             return accessible_workspaces
 
