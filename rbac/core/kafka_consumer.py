@@ -45,7 +45,7 @@ from api.models import Tenant
 
 relations_api_replication = RelationsApiReplicator()
 
-logger = logging.getLogger("rbac.core.kafka_consumer")
+logger = logging.getLogger(__name__)
 
 # Metrics
 consumer_start_time = Gauge(
