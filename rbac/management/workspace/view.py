@@ -81,6 +81,13 @@ class WorkspaceViewSet(BaseV2ViewSet):
             return super().get_queryset().select_for_update()
         return super().get_queryset()
 
+    def get_object(self):
+        """Get the object, validating the UUID first."""
+        pk = self.kwargs.get("pk")
+        if pk is not None:
+            validate_uuid(pk, "workspace uuid validation")
+        return super().get_object()
+
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
     def _create_atomic(self, request, *args, **kwargs):
         """
