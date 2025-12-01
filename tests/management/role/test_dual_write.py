@@ -180,6 +180,13 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_new_or_updated_role(role)
         return role
 
+    def given_v1_role_removed(self, role: Role):
+        """Remove the given custom role."""
+        dual_write = self.dual_write_handler(role, ReplicationEventType.DELETE_CUSTOM_ROLE)
+        dual_write.prepare_for_update()
+        role.delete()
+        dual_write.replicate_deleted_role()
+
     def given_group(
         self, name: str, users: list[str] = [], service_accounts: list[str] = []
     ) -> Tuple[Group, list[Principal]]:
@@ -2077,11 +2084,27 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.assertCountEqual(role_bindings_by_uuid.keys(), binding_mappings_by_uuid.keys())
 
         for role in CustomRoleV2.objects.all():
+            self.assertIsNotNone(
+                role.v1_source, "All custom roles created through dual-write should have a v1_source."
+            )
             self._expect_role_tuples_consistent(role)
 
             self._expect_role_mappings_consistent(
                 role,
                 [m for m in binding_mappings_by_uuid.values() if m.mappings["role"]["id"] == str(role.uuid)],
+            )
+
+        for v2_role_uuid in {
+            *(t.resource_id for t in self.tuples.find_tuples(resource_type("rbac", "role"))),
+            *(t.subject_id for t in self.tuples.find_tuples(subject_type("rbac", "role"))),
+        }:
+            if Role.objects.filter(system=True, uuid=v2_role_uuid).exists():
+                # We are not interested in system roles here.
+                continue
+
+            v2_role = CustomRoleV2.objects.filter(uuid=v2_role_uuid).first()
+            self.assertIsNotNone(
+                v2_role, f"V2 Role with UUID {v2_role_uuid} exists in tuples but not in the database."
             )
 
         for binding_uuid, binding in role_bindings_by_uuid.items():
@@ -2212,7 +2235,37 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_delete_role(self):
         """Delete the role and its bindings when deleting a custom role."""
-        pass
+        role = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        v2_role_uuid = self.expect_1_v2_role_with_permissions(permissions=["app1:hosts:read", "inventory:hosts:write"])
+
+        role_binding_uuids = {
+            t.resource_id
+            for t in self.tuples.find_tuples(
+                all_of(
+                    resource_type("rbac", "role_binding"),
+                    relation("role"),
+                    subject("rbac", "role", v2_role_uuid),
+                )
+            )
+        }
+
+        # The specifics of these bindings are tested elsewhere; we just want to check that there's actually something
+        # to remove.
+        self.assertGreater(len(role_binding_uuids), 0)
+
+        self.given_v1_role_removed(role)
+
+        self.assertEqual(0, self.tuples.count_tuples(resource("rbac", "role", v2_role_uuid)))
+        self.assertEqual(0, self.tuples.count_tuples(subject("rbac", "role", v2_role_uuid)))
+
+        for role_binding_uuid in role_binding_uuids:
+            self.assertEqual(0, self.tuples.count_tuples(resource("rbac", "role_binding", role_binding_uuid)))
+            self.assertEqual(0, self.tuples.count_tuples(subject("rbac", "role_binding", role_binding_uuid)))
 
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
     def test_create_role_with_empty_access(self, replicate_mock):
