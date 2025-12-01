@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "8c058cb2ad4bb5ee6049d32ee382d1a067357d20879c01f32d0000ba8ff25598"
+            "sha256": "7f2f2a8f932f9bc9f2038cc4c9dff201713c0a140677e4077fab6667fb052ca2"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -91,12 +91,12 @@
         },
         "celery": {
             "hashes": [
-                "sha256:0b5761a07057acee94694464ca482416b959568904c9dfa41ce8413a7d65d525",
-                "sha256:6c972ae7968c2b5281227f01c3a3f984037d21c5129d07bf3550cc2afc6b10a5"
+                "sha256:33cf01477b175017fc8f22c5ee8a65157591043ba8ca78a443fe703aa910f581",
+                "sha256:641405206042d52ae460e4e9751a2e31b06cf80ab836fcf92e0b9311d7ea8113"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==5.5.3"
+            "markers": "python_version >= '3.9'",
+            "version": "==5.6.0"
         },
         "certifi": {
             "hashes": [
@@ -503,6 +503,14 @@
             "markers": "python_version >= '3.6'",
             "version": "==2.2.0"
         },
+        "exceptiongroup": {
+            "hashes": [
+                "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219",
+                "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598"
+            ],
+            "markers": "python_version >= '3.7'",
+            "version": "==1.3.1"
+        },
         "fcache": {
             "hashes": [
                 "sha256:79949f0aafe8cedc5c9064631b3c157941a288e59f9991dd158c23e8e60b5422",
@@ -760,11 +768,11 @@
         },
         "kombu": {
             "hashes": [
-                "sha256:886600168275ebeada93b888e831352fe578168342f0d1d5833d88ba0d847363",
-                "sha256:a12ed0557c238897d8e518f1d1fdf84bd1516c5e305af2dacd85c2015115feb8"
+                "sha256:90f1febb57ad4f53ca327a87598191b2520e0c793c75ea3b88d98e3b111282e4",
+                "sha256:b69e3f5527ec32fc5196028a36376501682973e9620d6175d1c3d4eaf7e95409"
             ],
-            "markers": "python_version >= '3.8'",
-            "version": "==5.5.4"
+            "markers": "python_version >= '3.9'",
+            "version": "==5.6.1"
         },
         "launchdarkly-eventsource": {
             "hashes": [
