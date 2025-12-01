@@ -18,7 +18,7 @@
 """Class to handle Dual Write API related operations."""
 import logging
 from abc import ABC
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from django.conf import settings
 from django.db.models import Model
@@ -232,7 +232,8 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             raise DualWriteException(e)
 
 
-def _by_pk(models: Iterable[Model]) -> dict:
+# Here, Any is the type of the model's pk attribute.
+def _by_pk[M: Model](models: Iterable[M]) -> dict[Any, M]:
     out = {m.pk: m for m in models}
 
     if None in out:
@@ -241,7 +242,8 @@ def _by_pk(models: Iterable[Model]) -> dict:
     return out
 
 
-def _update_by_pk(old_by_pk: dict, new: Iterable[Model]):
+# Here, Any is the type of the model's pk attribute.
+def _update_by_pk[M: Model](old_by_pk: dict[Any, M], new: Iterable[M]):
     old_by_pk = dict(old_by_pk)
 
     for model in new:
@@ -286,7 +288,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             self.current_role_relations: list[common_pb2.Relationship] = []
             self.role = role
             self.binding_mappings: dict[int, BindingMapping] = {}
-            self.role_bindings: dict[int, BindingMapping] = {}
+            self.role_bindings: dict[int, RoleBinding] = {}
             self.v2_roles: dict[int, CustomRoleV2] = {}
 
             binding_tenant = tenant if tenant is not None else role.tenant
