@@ -1422,7 +1422,8 @@ class FencingTokenRebalanceTests(TestCase):
         self.consumer.lock_acquisition_failed = True
 
         listener = RebalanceListener(self.consumer)
-        listener.on_partitions_assigned([self.partition])
+        # Note: Kafka library passes a set of TopicPartition objects, not a list
+        listener.on_partitions_assigned({self.partition})
 
         # Verify lock was acquired
         mock_acquire_lock.assert_called_once_with("test-consumer-group/0")
@@ -1444,7 +1445,8 @@ class FencingTokenRebalanceTests(TestCase):
         listener = RebalanceListener(self.consumer)
 
         # Should NOT raise - instead sets a flag for later detection
-        listener.on_partitions_assigned([self.partition])
+        # Note: Kafka library passes a set of TopicPartition objects, not a list
+        listener.on_partitions_assigned({self.partition})
 
         # Verify lock state was cleared
         self.assertIsNone(self.consumer.lock_id)
@@ -1452,6 +1454,31 @@ class FencingTokenRebalanceTests(TestCase):
 
         # Verify failure flag was set
         self.assertTrue(self.consumer.lock_acquisition_failed)
+
+    @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
+    def test_partition_assignment_handles_set_not_list(self, mock_acquire_lock):
+        """Test that on_partitions_assigned handles set of TopicPartition (not list).
+
+        Regression test: The Kafka library's ConsumerRebalanceListener.on_partitions_assigned()
+        callback receives a SET of TopicPartition objects, not a list. Previously the code
+        tried to access assigned[0] which failed with "'set' object is not subscriptable".
+        """
+        from core.kafka_consumer import RebalanceListener
+
+        mock_acquire_lock.return_value = "test-token-12345"
+
+        listener = RebalanceListener(self.consumer)
+
+        # Kafka library passes a SET, not a list - this must not raise TypeError
+        assigned_partitions = {self.partition}
+        self.assertIsInstance(assigned_partitions, set)
+
+        # This should not raise "'set' object is not subscriptable"
+        listener.on_partitions_assigned(assigned_partitions)
+
+        # Verify lock was acquired successfully
+        mock_acquire_lock.assert_called_once_with("test-consumer-group/0")
+        self.assertEqual(self.consumer.lock_token, "test-token-12345")
 
     @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
     def test_startup_lock_acquisition_resets_failure_flag(self, mock_acquire_lock):

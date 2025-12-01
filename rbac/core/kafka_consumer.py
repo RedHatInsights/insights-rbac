@@ -634,7 +634,8 @@ class RebalanceListener(ConsumerRebalanceListener):
         # Acquire lock token for assigned partitions
         if len(assigned) > 0:
             # Typically only one partition per consumer
-            partition = assigned[0]
+            # Note: assigned is a set, so we need to convert to list to access by index
+            partition = list(assigned)[0]
 
             # Get consumer group ID from the consumer instance
             try:
