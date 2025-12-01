@@ -337,7 +337,11 @@ class RelationApiDualWriteSubjectHandler:
         # If migration is not needed, then we should have the same number of BindingMappings and RoleBindings. (We
         # will implicitly check that the IDs match below by looking up every BindingMapping ID as a RoleBinding
         # UUID.)
-        assert len(mappings) == len(bindings_by_id)
+        if len(mappings) != len(bindings_by_id):
+            raise AssertionError(
+                f"BindingMappings and RoleBindings do not match: got {len(mappings)} BindingMappings and "
+                f"{len(bindings_by_id)} RoleBindings."
+            )
 
         for mapping in mappings:
             _update_binding_for_custom_role(
