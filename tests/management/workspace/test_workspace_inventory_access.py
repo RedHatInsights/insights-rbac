@@ -1762,3 +1762,169 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             finally:
                 # Restore original MAX_PAGES
                 checker.MAX_PAGES = original_max_pages
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_move_uses_create_permission_for_target_in_v2(
+        self, mock_flag, mock_channel, send_kafka_message
+    ):
+        """Test that workspace move operation uses 'create' permission for target workspace in V2 mode.
+
+        When V2 access check is enabled, the _check_target_workspace_access method should
+        check for 'create' permission on the target workspace (not 'write', which doesn't exist
+        in the SpiceDB schema for rbac/workspace).
+        """
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Track (workspace_id, relation) tuples for precise assertions
+        check_calls = []
+
+        source_workspace_id = str(self.standard_sub_workspace.id)
+        target_workspace_id = str(self.default_workspace.id)
+
+        def check_side_effect(request):
+            # Capture both workspace ID and relation being checked
+            workspace_id = getattr(
+                getattr(request, "object", None), "resource_id", None
+            )
+            check_calls.append((workspace_id, request.relation))
+            mock_response = MagicMock()
+            mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+            return mock_response
+
+        mock_stub.Check.side_effect = check_side_effect
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            # Setup access for the user
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=[
+                    str(self.standard_workspace.id),
+                    str(self.default_workspace.id),
+                ],
+            )
+
+            # Execute move: move standard_sub_workspace to default_workspace
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_sub_workspace.id},
+            )
+            client = APIClient()
+            data = {"parent_id": str(self.default_workspace.id)}
+            response = client.post(url, data, format="json", **headers)
+
+            # Should succeed
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            # For the /move POST endpoint, permission_from_request returns 'create' (POST -> create)
+            # Both source and target workspaces are checked with 'create' permission
+            # Verify that 'create' permission was checked on source workspace
+            self.assertTrue(
+                any(
+                    ws_id == source_workspace_id and rel == "create"
+                    for ws_id, rel in check_calls
+                ),
+                f"Expected 'create' permission check for source workspace {source_workspace_id}, got: {check_calls}",
+            )
+
+            # Verify that 'create' permission was checked on target workspace
+            self.assertTrue(
+                any(
+                    ws_id == target_workspace_id and rel == "create"
+                    for ws_id, rel in check_calls
+                ),
+                f"Expected 'create' permission check for target workspace {target_workspace_id}, got: {check_calls}",
+            )
+
+            # Verify no 'write' permission checks occurred (doesn't exist in SpiceDB schema)
+            self.assertFalse(
+                any(rel == "write" for _, rel in check_calls),
+                f"Should not check 'write' permission (doesn't exist in schema), got: {check_calls}",
+            )
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_move_denied_when_no_create_permission_on_target_v2(
+        self, mock_flag, mock_channel, send_kafka_message
+    ):
+        """Test that workspace move is denied when user lacks 'create' permission on target workspace in V2 mode."""
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Target workspace ID used to differentiate source vs target checks
+        target_workspace_id = str(self.default_workspace.id)
+
+        # Define permission responses: (workspace_id, relation) -> allowed status
+        # All checks are allowed EXCEPT 'create' on target workspace
+        denied_checks = {(target_workspace_id, "create")}
+
+        def check_side_effect(request):
+            mock_response = MagicMock()
+            workspace_id = getattr(
+                getattr(request, "object", None), "resource_id", None
+            )
+            check_key = (workspace_id, request.relation)
+            mock_response.allowed = (
+                allowed_pb2.Allowed.ALLOWED_FALSE
+                if check_key in denied_checks
+                else allowed_pb2.Allowed.ALLOWED_TRUE
+            )
+            return mock_response
+
+        mock_stub.Check.side_effect = check_side_effect
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(
+                self.customer_data, self.user_data, is_org_admin=False
+            )
+            headers = request_context["request"].META
+
+            # Setup access for the user (source workspace)
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            # Execute move: try to move standard_sub_workspace to default_workspace
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_sub_workspace.id},
+            )
+            client = APIClient()
+            data = {"parent_id": target_workspace_id}
+            response = client.post(url, data, format="json", **headers)
+
+            # Should be denied (403 Forbidden)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            # Import the constant to ensure we're testing the exact error message
+            from management.permissions.workspace_access import (
+                TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE,
+            )
+
+            self.assertEqual(response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
