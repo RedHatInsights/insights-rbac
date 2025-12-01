@@ -279,6 +279,7 @@ LOGGING = {
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "internal": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "rbac.consumer": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL, "propagate": False},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "feature_flags": {"handlers": DEBUG_LOG_HANDLERS, "level": "DEBUG"},
