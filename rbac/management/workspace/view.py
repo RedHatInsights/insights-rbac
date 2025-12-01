@@ -156,11 +156,11 @@ class WorkspaceViewSet(BaseV2ViewSet):
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
 
-        # Validate name parameter: reject empty strings and strings containing NUL characters
+        # Validate name parameter: treat empty strings as "return all", reject NUL characters
         if name is not None:
             if not name.strip():
-                raise serializers.ValidationError({"name": "The 'name' query parameter cannot be empty."})
-            if "\x00" in name:
+                name = None  # Treat empty name as unset, returning all results
+            elif "\x00" in name:
                 raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
 
         if type_field != all_types:

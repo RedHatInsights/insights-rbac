@@ -2590,26 +2590,24 @@ class WorkspaceTestsList(WorkspaceViewTests):
         assert payload.get("data")[0]["name"] == ws_name_1.upper()
 
     def test_workspace_list_filter_by_name_empty_string(self):
-        """Test that filtering by empty name string returns a validation error."""
+        """Test that filtering by empty name string returns all workspaces."""
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?name=", None, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
-        self.assertIn("name", str(response.data))
-        self.assertIn("cannot be empty", str(response.data))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Empty name filter should return all workspaces (same as no filter)
+        self.assertIn("data", response.data)
 
     def test_workspace_list_filter_by_name_whitespace_only(self):
-        """Test that filtering by whitespace-only name string returns a validation error."""
+        """Test that filtering by whitespace-only name string returns all workspaces."""
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?name=   ", None, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
-        self.assertIn("name", str(response.data))
-        self.assertIn("cannot be empty", str(response.data))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Whitespace-only name filter should return all workspaces (same as no filter)
+        self.assertIn("data", response.data)
 
     def test_workspace_list_filter_by_name_with_nul_character(self):
         """Test that filtering by name containing NUL character returns a validation error."""
