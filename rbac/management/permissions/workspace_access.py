@@ -27,9 +27,7 @@ from management.workspace.utils import (
 from rest_framework import permissions
 
 # Custom message for target workspace access denial
-TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = (
-    "You do not have access to the target workspace."
-)
+TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = "You do not have write access to the target workspace."
 
 # Permission/operation names for target workspace access checks
 # V2 uses fine-grained permissions from SpiceDB schema (create, view, edit, move, delete)
@@ -83,8 +81,11 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             return True
 
         # V1: Use legacy role-based checks with read/write operations
-        # Admin users always have full access in V1 mode
+        # Admin users have full access, but for move operations they still need
+        # the target workspace to exist within their tenant
         if request.user.admin:
+            if view.action == "move":
+                return self._check_target_workspace_exists_v1(request)
             return True
 
         op = operation_from_request(request)
@@ -118,9 +119,7 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             # Let validation handle missing/invalid parent_id
             return True
 
-        if not is_user_allowed_v2(
-            request, TARGET_WORKSPACE_PERMISSION_V2, target_workspace_id
-        ):
+        if not is_user_allowed_v2(request, TARGET_WORKSPACE_PERMISSION_V2, target_workspace_id):
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
             return False
 
@@ -143,9 +142,7 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         import uuid
 
         # Check both data (POST body) and query_params for parent_id
-        target_workspace_id = request.data.get("parent_id") or request.query_params.get(
-            "parent_id"
-        )
+        target_workspace_id = request.data.get("parent_id") or request.query_params.get("parent_id")
         if not target_workspace_id:
             return None
 
@@ -155,3 +152,29 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             return str(target_workspace_id)
         except (ValueError, AttributeError):
             return None
+
+    def _check_target_workspace_exists_v1(self, request) -> bool:
+        """
+        Check that target workspace exists for V1 admin users.
+
+        Admin users bypass permission checks but still need the target workspace
+        to exist within their tenant for move operations.
+
+        Args:
+            request: The HTTP request object
+
+        Returns:
+            bool: True if target workspace exists, False otherwise
+        """
+        from management.workspace.model import Workspace
+
+        target_workspace_id = self._get_valid_target_workspace_id(request)
+        if target_workspace_id is None:
+            # Let validation handle missing/invalid parent_id
+            return True
+
+        if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
+
+        return True
