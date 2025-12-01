@@ -681,6 +681,16 @@ objects:
             value: ${DJANGO_DEBUG}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
+          # Logging configuration for consumer
+          - name: RBAC_LOG_LEVEL
+            value: ${RBAC_LOG_LEVEL}
+          - name: DJANGO_LOG_FORMATTER
+            value: ${DJANGO_LOG_FORMATTER}
+          - name: DJANGO_LOG_HANDLERS
+            value: ${DJANGO_LOG_HANDLERS}
+          # Use separate CloudWatch log stream for consumer
+          - name: CW_STREAM_NAME_SUFFIX
+            value: "-rbac-kafka-consumer"
           - name: DJANGO_SECRET_KEY
             valueFrom:
               secretKeyRef:
@@ -689,6 +699,13 @@ objects:
                 optional: false
           - name: ENV_NAME
             value: ${ENV_NAME}
+          # Glitchtip/Sentry for error monitoring
+          - name: GLITCHTIP_DSN
+            valueFrom:
+              secretKeyRef:
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
+                optional: true
           - name: KAFKA_ENABLED
             value: ${KAFKA_ENABLED}
           - name: RBAC_KAFKA_CONSUMER_TOPIC
