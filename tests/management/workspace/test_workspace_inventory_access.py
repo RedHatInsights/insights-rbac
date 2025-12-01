@@ -93,17 +93,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             "description": "Standard Workspace - description",
             "parent_id": self.default_workspace.id,
         }
-        self.standard_workspace = self.service.create(
-            validated_data_standard_ws, self.tenant
-        )
+        self.standard_workspace = self.service.create(validated_data_standard_ws, self.tenant)
         validated_data_standard_sub_ws = {
             "name": "Standard Sub-workspace",
             "description": "Standard Workspace with another standard workspace parent.",
             "parent_id": self.standard_workspace.id,
         }
-        self.standard_sub_workspace = self.service.create(
-            validated_data_standard_sub_ws, self.tenant
-        )
+        self.standard_sub_workspace = self.service.create(validated_data_standard_sub_ws, self.tenant)
 
     def tearDown(self):
         """Tear down workspace tests."""
@@ -114,9 +110,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         """Generate a random string name."""
         return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
-    def _setup_access_for_principal(
-        self, username, permission, workspace_id=None, platform_default=False
-    ):
+    def _setup_access_for_principal(self, username, permission, workspace_id=None, platform_default=False):
         """Set up access for a principal with the given permission."""
         group = Group(
             name=self._get_random_name(),
@@ -130,12 +124,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             tenant=self.tenant,
         )
         public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
-        permission, _ = Permission.objects.get_or_create(
-            permission=permission, tenant=public_tenant
-        )
-        access = Access.objects.create(
-            permission=permission, role=role, tenant=self.tenant
-        )
+        permission, _ = Permission.objects.get_or_create(permission=permission, tenant=public_tenant)
+        access = Access.objects.create(permission=permission, role=role, tenant=self.tenant)
         if workspace_id:
             operation = "in" if isinstance(workspace_id, list) else "equal"
             ResourceDefinition.objects.create(
@@ -148,18 +138,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
                 tenant=self.tenant,
             )
 
-        policy = Policy.objects.create(
-            name=self._get_random_name(), group=group, tenant=self.tenant
-        )
+        policy = Policy.objects.create(name=self._get_random_name(), group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
         group.policies.add(policy)
         group.save()
         if not platform_default:
             # Set user_id to match the hard-coded value in IdentityRequest._build_identity
-            principal, _ = Principal.objects.get_or_create(
-                username=username, tenant=self.tenant, user_id="1111111"
-            )
+            principal, _ = Principal.objects.get_or_create(username=username, tenant=self.tenant, user_id="1111111")
             group.principals.add(principal)
 
     def _create_mock_inventory_check_response(self, allowed=True):
@@ -179,10 +165,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         Returns:
             List of mock response objects with proper structure
         """
-        return [
-            MagicMock(object=MagicMock(resource_id=str(ws_id)))
-            for ws_id in workspace_ids
-        ]
+        return [MagicMock(object=MagicMock(resource_id=str(ws_id))) for ws_id in workspace_ids]
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -212,9 +195,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup platform default access
@@ -237,9 +218,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_custom_group_without_attribute_filter(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_list_custom_group_without_attribute_filter(self, mock_flag, mock_channel):
         """Test workspace list with custom group having inventory view permission without attribute filter."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -264,9 +243,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup custom group with inventory view permission (no attribute filter)
@@ -289,9 +266,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_custom_group_with_attribute_filter_group_id(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_list_custom_group_with_attribute_filter_group_id(self, mock_flag, mock_channel):
         """Test workspace list with custom group having attribute filter for group.id (workspace hierarchy)."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -314,9 +289,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup custom group with attribute filter for specific workspace (group.id)
@@ -367,9 +340,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Create request context for org admin user
             url = reverse("v2_management:workspace-list")
             client = APIClient()
-            response = client.get(
-                url, format="json", **self.headers
-            )  # Use admin headers
+            response = client.get(url, format="json", **self.headers)  # Use admin headers
 
             # Admin should have access to all workspaces
             self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -405,9 +376,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Create an admin default custom group with full permissions
@@ -427,14 +396,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             )
 
             public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
-            permission, _ = Permission.objects.get_or_create(
-                permission="inventory:*:*", tenant=public_tenant
-            )
+            permission, _ = Permission.objects.get_or_create(permission="inventory:*:*", tenant=public_tenant)
             Access.objects.create(permission=permission, role=role, tenant=self.tenant)
 
-            policy = Policy.objects.create(
-                name="Admin Policy", group=group, tenant=self.tenant
-            )
+            policy = Policy.objects.create(name="Admin Policy", group=group, tenant=self.tenant)
             policy.roles.add(role)
             policy.save()
             group.policies.add(policy)
@@ -475,9 +440,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user without permissions
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             url = reverse(
@@ -495,9 +458,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_create_with_inventory_access_check(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_create_with_inventory_access_check(self, mock_flag, mock_channel):
         """Test workspace creation with Inventory API access check."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -513,9 +474,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup write access
@@ -560,9 +519,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             workspace_data = {
@@ -583,9 +540,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_create_without_parent_id_defaults_to_default_workspace(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_create_without_parent_id_defaults_to_default_workspace(self, mock_flag, mock_channel):
         """Test workspace creation without parent_id defaults to tenant's default workspace in V2 mode."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -601,9 +556,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup write access to default workspace
@@ -628,9 +581,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
             self.assertEqual(response.data["name"], "Workspace Without Parent")
             # Verify it was created under the default workspace
-            self.assertEqual(
-                str(response.data["parent_id"]), str(self.default_workspace.id)
-            )
+            self.assertEqual(str(response.data["parent_id"]), str(self.default_workspace.id))
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -653,9 +604,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup write access
@@ -685,9 +634,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_create_with_missing_required_fields(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_create_with_missing_required_fields(self, mock_flag, mock_channel):
         """Test workspace creation with missing required fields to ensure consistent validation."""
         # Mock Inventory API to return allowed
         mock_stub = MagicMock()
@@ -703,9 +650,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup write access
@@ -723,9 +668,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             url = reverse("v2_management:workspace-list")
             client = APIClient()
-            response = client.post(
-                url, invalid_workspace_data, format="json", **headers
-            )
+            response = client.post(url, invalid_workspace_data, format="json", **headers)
 
             # Should return 400 BAD REQUEST due to missing 'name' field
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -737,9 +680,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_with_non_existent_workspace_in_attribute_filter(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_list_with_non_existent_workspace_in_attribute_filter(self, mock_flag, mock_channel):
         """Test workspace list with attribute filter containing non-existent workspace ID returns default/ungrouped."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -758,9 +699,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup custom group with attribute filter for non-existent workspace
@@ -791,9 +730,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_with_mixed_valid_invalid_workspace_ids(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_list_with_mixed_valid_invalid_workspace_ids(self, mock_flag, mock_channel):
         """Test workspace list with attribute filter containing mix of valid and invalid workspace IDs."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -816,9 +753,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup custom group with attribute filter containing both valid and invalid workspace IDs
@@ -848,9 +783,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_update_with_inventory_access_check(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_update_with_inventory_access_check(self, mock_flag, mock_channel):
         """Test workspace update (PUT) with Inventory API access check."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -866,9 +799,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup edit access
@@ -915,9 +846,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             updated_data = {
@@ -956,9 +885,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup edit access
@@ -1006,9 +933,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup edit access
@@ -1052,9 +977,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             updated_data = {"description": "Patched description"}
@@ -1074,9 +997,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_delete_with_inventory_access_check(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_delete_with_inventory_access_check(self, mock_flag, mock_channel):
         """Test workspace deletion with Inventory API access check."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -1102,9 +1023,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             )
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup delete access
@@ -1114,9 +1033,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
                 workspace_id=str(temp_workspace.id),
             )
 
-            url = reverse(
-                "v2_management:workspace-detail", kwargs={"pk": temp_workspace.id}
-            )
+            url = reverse("v2_management:workspace-detail", kwargs={"pk": temp_workspace.id})
             client = APIClient()
             response = client.delete(url, format="json", **headers)
 
@@ -1144,9 +1061,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user without permissions
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             url = reverse(
@@ -1180,9 +1095,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Use a non-existent workspace ID
@@ -1225,9 +1138,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Do NOT setup any access - user has no permissions
@@ -1252,9 +1163,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_access_falls_back_to_v1_when_v2_disabled(self, mock_flag):
         """Test that workspace access falls back to V1 logic when V2 feature flag is disabled."""
         # Create request context for non-org admin user
-        request_context = self._create_request_context(
-            self.customer_data, self.user_data, is_org_admin=False
-        )
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
         headers = request_context["request"].META
 
         # Setup V1-style access - using platform default group
@@ -1270,9 +1179,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         # Should return workspaces using V1 logic (no Inventory API calls)
         # The exact status depends on V1 implementation, but it should not fail
-        self.assertIn(
-            response.status_code, [status.HTTP_200_OK, status.HTTP_403_FORBIDDEN]
-        )
+        self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_403_FORBIDDEN])
         # Verify that feature flag was checked and returned False
         mock_flag.assert_called()
 
@@ -1288,9 +1195,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Mock StreamedListObjects to return accessible workspaces for admin
-        mock_responses = self._create_mock_workspace_responses(
-            [self.default_workspace.id]
-        )
+        mock_responses = self._create_mock_workspace_responses([self.default_workspace.id])
         mock_stub.StreamedListObjects.return_value = iter(mock_responses)
 
         with patch(
@@ -1298,9 +1203,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             return_value=mock_stub,
         ):
             # Create request context for org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=True
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=True)
             headers = request_context["request"].META
 
             url = reverse("v2_management:workspace-list")
@@ -1319,9 +1222,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_includes_ancestors_of_accessible_workspaces(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_list_includes_ancestors_of_accessible_workspaces(self, mock_flag, mock_channel):
         """Test that workspace list includes ancestors of top-level accessible workspaces for ancestry needs."""
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -1330,9 +1231,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Mock StreamedListObjects to return only the standard sub-workspace
         # Since standard_sub_workspace is the only accessible workspace, it's the top-level one
         # The code should add all its ancestors (standard_workspace, default_workspace, root_workspace)
-        mock_responses = self._create_mock_workspace_responses(
-            [self.standard_sub_workspace.id]
-        )
+        mock_responses = self._create_mock_workspace_responses([self.standard_sub_workspace.id])
 
         mock_stub.StreamedListObjects.return_value = iter(mock_responses)
 
@@ -1342,9 +1241,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup access for the sub-workspace
@@ -1376,9 +1273,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_returns_default_and_ungrouped_when_no_access(
-        self, mock_flag, mock_channel
-    ):
+    def test_workspace_list_returns_default_and_ungrouped_when_no_access(self, mock_flag, mock_channel):
         """Test that workspace list returns at least default and ungrouped workspaces when user has no access."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
@@ -1393,9 +1288,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         ):
 
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup some access (but Inventory API returns empty, simulating no actual access)
@@ -1459,15 +1352,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_request = Mock()
             mock_request.user.username = "testuser"
             mock_request.user.org_id = "test-org-123"
-            mock_request.user.user_id = (
-                None  # Explicitly set to None to trigger IT service fallback
-            )
+            mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
             mock_request.tenant = self.tenant
 
             # Call is_user_allowed_v2 directly
-            result = is_user_allowed_v2(
-                mock_request, "view", str(self.standard_workspace.id)
-            )
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns True (access allowed)
             self.assertTrue(result)
@@ -1478,9 +1367,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             )
 
             # Verify the inventory stub was called with the expected principal_id
-            expected_principal_id = Principal.user_id_to_principal_resource_id(
-                test_user_id
-            )
+            expected_principal_id = Principal.user_id_to_principal_resource_id(test_user_id)
             mock_stub.Check.assert_called_once()
             call_args = mock_stub.Check.call_args
             self.assertIn(expected_principal_id, str(call_args))
@@ -1490,9 +1377,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "management.workspace.utils.access.get_principal_from_request",
         return_value=None,
     )
-    def test_workspace_access_with_none_principal_it_service_failure(
-        self, mock_get_principal, mock_proxy_class
-    ):
+    def test_workspace_access_with_none_principal_it_service_failure(self, mock_get_principal, mock_proxy_class):
         """Test workspace access when IT service fails to return user_id."""
         from unittest.mock import Mock
 
@@ -1510,16 +1395,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request = Mock()
         mock_request.user.username = "testuser"
         mock_request.user.org_id = "test-org-123"
-        mock_request.user.user_id = (
-            None  # Explicitly set to None to trigger IT service fallback
-        )
+        mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
-            result = is_user_allowed_v2(
-                mock_request, "view", str(self.standard_workspace.id)
-            )
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
@@ -1555,16 +1436,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request = Mock()
         mock_request.user.username = "testuser"
         mock_request.user.org_id = "test-org-123"
-        mock_request.user.user_id = (
-            None  # Explicitly set to None to trigger IT service fallback
-        )
+        mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
-            result = is_user_allowed_v2(
-                mock_request, "view", str(self.standard_workspace.id)
-            )
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
@@ -1579,9 +1456,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "management.workspace.utils.access.get_principal_from_request",
         return_value=None,
     )
-    def test_workspace_access_with_none_principal_and_no_username(
-        self, mock_get_principal
-    ):
+    def test_workspace_access_with_none_principal_and_no_username(self, mock_get_principal):
         """Test workspace access when get_principal_from_request returns None and no username available."""
         from unittest.mock import Mock
 
@@ -1595,25 +1470,19 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
-            result = is_user_allowed_v2(
-                mock_request, "view", str(self.standard_workspace.id)
-            )
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
             # Verify warning was logged
-            mock_logger.warning.assert_called_once_with(
-                "No username available from request.user, denying access"
-            )
+            mock_logger.warning.assert_called_once_with("No username available from request.user, denying access")
 
     @patch(
         "management.workspace.utils.access.get_principal_from_request",
         return_value=None,
     )
-    def test_workspace_access_with_none_principal_and_no_org_id(
-        self, mock_get_principal
-    ):
+    def test_workspace_access_with_none_principal_and_no_org_id(self, mock_get_principal):
         """Test workspace access when get_principal_from_request returns None and no org_id available."""
         from unittest.mock import Mock
 
@@ -1628,17 +1497,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
-            result = is_user_allowed_v2(
-                mock_request, "view", str(self.standard_workspace.id)
-            )
+            result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
             # Verify warning was logged
-            mock_logger.warning.assert_called_once_with(
-                "No org_id available from request.user, denying access"
-            )
+            mock_logger.warning.assert_called_once_with("No org_id available from request.user, denying access")
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch("management.workspace.utils.access.PrincipalProxy")
@@ -1679,21 +1544,15 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_request = Mock()
             mock_request.user.username = "testuser"
             mock_request.user.org_id = "test-org-123"
-            mock_request.user.user_id = (
-                None  # Explicitly set to None to trigger IT service fallback
-            )
+            mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
             mock_request.tenant = self.tenant
 
             with patch("management.workspace.utils.access.logger") as mock_logger:
                 # Call the function
-                result = is_user_allowed_v2(
-                    mock_request, "view", str(self.standard_workspace.id)
-                )
+                result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
                 # Verify debug logging for IT service lookup
-                mock_logger.debug.assert_called_once_with(
-                    "Retrieved user_id from IT service via PrincipalProxy"
-                )
+                mock_logger.debug.assert_called_once_with("Retrieved user_id from IT service via PrincipalProxy")
 
                 # Result depends on Inventory API response, which we mocked as ALLOWED_TRUE
                 self.assertTrue(result)
@@ -1704,9 +1563,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_move_uses_create_permission_for_target_in_v2(
-        self, mock_flag, mock_channel, send_kafka_message
-    ):
+    def test_workspace_move_uses_create_permission_for_target_in_v2(self, mock_flag, mock_channel, send_kafka_message):
         """Test that workspace move operation uses 'create' permission for target workspace in V2 mode.
 
         When V2 access check is enabled, the _check_target_workspace_access_v2 method should
@@ -1725,9 +1582,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         def check_side_effect(request):
             # Capture both workspace ID and relation being checked
-            workspace_id = getattr(
-                getattr(request, "object", None), "resource_id", None
-            )
+            workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_calls.append((workspace_id, request.relation))
             mock_response = MagicMock()
             mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
@@ -1740,9 +1595,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             return_value=mock_stub,
         ):
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup access for the user
@@ -1771,19 +1624,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Both source and target workspaces are checked with 'create' permission
             # Verify that 'create' permission was checked on source workspace
             self.assertTrue(
-                any(
-                    ws_id == source_workspace_id and rel == "create"
-                    for ws_id, rel in check_calls
-                ),
+                any(ws_id == source_workspace_id and rel == "create" for ws_id, rel in check_calls),
                 f"Expected 'create' permission check for source workspace {source_workspace_id}, got: {check_calls}",
             )
 
             # Verify that 'create' permission was checked on target workspace
             self.assertTrue(
-                any(
-                    ws_id == target_workspace_id and rel == "create"
-                    for ws_id, rel in check_calls
-                ),
+                any(ws_id == target_workspace_id and rel == "create" for ws_id, rel in check_calls),
                 f"Expected 'create' permission check for target workspace {target_workspace_id}, got: {check_calls}",
             )
 
@@ -1816,14 +1663,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         def check_side_effect(request):
             mock_response = MagicMock()
-            workspace_id = getattr(
-                getattr(request, "object", None), "resource_id", None
-            )
+            workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_key = (workspace_id, request.relation)
             mock_response.allowed = (
-                allowed_pb2.Allowed.ALLOWED_FALSE
-                if check_key in denied_checks
-                else allowed_pb2.Allowed.ALLOWED_TRUE
+                allowed_pb2.Allowed.ALLOWED_FALSE if check_key in denied_checks else allowed_pb2.Allowed.ALLOWED_TRUE
             )
             return mock_response
 
@@ -1834,9 +1677,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             return_value=mock_stub,
         ):
             # Create request context for non-org admin user
-            request_context = self._create_request_context(
-                self.customer_data, self.user_data, is_org_admin=False
-            )
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
             # Setup access for the user (source workspace)
@@ -1862,6 +1703,4 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
                 TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE,
             )
 
-            self.assertEqual(
-                response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
-            )
+            self.assertEqual(response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
