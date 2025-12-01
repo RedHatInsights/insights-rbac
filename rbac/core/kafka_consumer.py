@@ -44,7 +44,11 @@ from psycopg2 import sql
 from api.models import Tenant
 
 relations_api_replication = RelationsApiReplicator()
-logger = logging.getLogger("rbac.core.kafka_consumer")
+
+# Use a dedicated logger for the consumer with a distinguishable name
+# This allows filtering consumer logs in CloudWatch/Kibana using the logger name
+# Logger name format: rbac.consumer.<module> for easy filtering
+logger = logging.getLogger("rbac.consumer.kafka")
 
 # Metrics
 consumer_start_time = Gauge(

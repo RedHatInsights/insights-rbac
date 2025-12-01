@@ -1,16 +1,91 @@
 """Launch RBAC Kafka consumer command."""
 
 import logging
+import os
 import signal
 import sys
 
 import sentry_sdk
 from app_common_python import LoadedConfig
+from core.constants import CONSUMER_COMPONENT
 from core.kafka_consumer import RBACKafkaConsumer
+from django.conf import settings
 from django.core.management import BaseCommand
 from prometheus_client import start_http_server
+from sentry_sdk.integrations.logging import LoggingIntegration
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_sentry_integrations():
+    """Configure Sentry integrations for the consumer.
+
+    Returns:
+        list: List of Sentry integrations to use.
+    """
+    return [
+        LoggingIntegration(
+            level=logging.INFO,  # Capture info and above as breadcrumbs
+            event_level=logging.ERROR,  # Send errors as events
+        )
+    ]
+
+
+def _set_sentry_consumer_context():
+    """Set consumer-specific tags and context in Sentry.
+
+    This adds tags and context that will be attached to all Sentry events,
+    allowing filtering and grouping of consumer-specific errors in Glitchtip.
+    """
+    # Set consumer-specific tags that will be attached to all events
+    sentry_sdk.set_tag("component", CONSUMER_COMPONENT)
+    sentry_sdk.set_tag("service", "rbac")
+    sentry_sdk.set_tag("consumer_group", settings.RBAC_KAFKA_CONSUMER_GROUP_ID)
+
+    # Set context with additional consumer information
+    sentry_sdk.set_context(
+        "consumer",
+        {
+            "topic": settings.RBAC_KAFKA_CONSUMER_TOPIC,
+            "group_id": settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
+            "component": CONSUMER_COMPONENT,
+        },
+    )
+
+
+def initialize_consumer_sentry():
+    """Initialize Sentry/Glitchtip SDK for the consumer with consumer-specific tags.
+
+    This is separate from the main Django settings initialization to allow
+    consumer-specific configuration (tags, integrations).
+
+    Note: The return value indicates whether initialization was successful,
+    but the consumer will continue to run even if Sentry initialization fails.
+    Sentry is optional monitoring - not a hard requirement for consumer operation.
+    """
+    glitchtip_dsn = os.getenv("GLITCHTIP_DSN", "")
+    if not glitchtip_dsn:
+        logger.info(f"[{CONSUMER_COMPONENT}] GLITCHTIP_DSN not set, skipping Glitchtip initialization")
+        return
+
+    try:
+        # Initialize Sentry with consumer-specific configuration
+        sentry_sdk.init(
+            dsn=glitchtip_dsn,
+            integrations=_configure_sentry_integrations(),
+            environment=os.getenv("ENV_NAME", "unknown"),
+            release=os.getenv("GIT_COMMIT", "unknown"),
+        )
+
+        _set_sentry_consumer_context()
+
+        logger.info(
+            f"[{CONSUMER_COMPONENT}] Sentry SDK initialization using Glitchtip was successful! "
+            f"(component={CONSUMER_COMPONENT})"
+        )
+
+    except Exception:
+        logger.exception(f"[{CONSUMER_COMPONENT}] Failed to initialize Sentry/Glitchtip")
 
 
 class Command(BaseCommand):
@@ -33,6 +108,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """Launch the Kafka consumer."""
+        # Initialize Sentry/Glitchtip with consumer-specific configuration
+        initialize_consumer_sentry()
+
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
