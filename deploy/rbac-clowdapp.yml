@@ -688,6 +688,9 @@ objects:
             value: ${DJANGO_LOG_FORMATTER}
           - name: DJANGO_LOG_HANDLERS
             value: ${DJANGO_LOG_HANDLERS}
+          # Use separate CloudWatch log stream for consumer
+          - name: CW_STREAM_NAME_SUFFIX
+            value: "-rbac-kafka-consumer"
           - name: DJANGO_SECRET_KEY
             valueFrom:
               secretKeyRef:
