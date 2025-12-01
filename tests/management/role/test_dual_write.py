@@ -2111,6 +2111,101 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             self._expect_binding_tuples_consistent(binding)
             self._expect_binding_mapping_consistent(binding, binding_mappings_by_uuid[binding_uuid])
 
+    def test_simple_role(self):
+        """Test the simplest meaningful role: a single permission bound to the default resource."""
+        role = self.given_v1_role("r1", default=["inventory:hosts:read"])
+
+        group, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group, roles=[role])
+
+        v2_role_uuid = self.expect_1_v2_role_with_permissions(["inventory:hosts:read"])
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[v2_role_uuid], for_groups=[str(group.uuid)]
+        )
+
+    def _test_non_default_resources(self, workspaces: list[str], permissions: list[str]):
+        role = self.given_v1_role("r1", default=[], **dict.fromkeys(workspaces, permissions))
+
+        group, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group, roles=[role])
+
+        v2_role_uuid = self.expect_1_v2_role_with_permissions(permissions)
+
+        for workspace_id in workspaces:
+            self.expect_1_role_binding_to_workspace(
+                workspace_id, for_v2_roles=[v2_role_uuid], for_groups=[str(group.uuid)]
+            )
+
+        # The default workspace should have no role binding, since it has no permissions.
+        self.assertEqual(
+            0,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", self.default_workspace()),
+                    relation("binding"),
+                )
+            ),
+        )
+
+        self._expect_tuples_consistent()
+
+        self.given_v1_role_removed(role)
+        self.given_group_removed(group)
+        self._expect_tuples_consistent()
+
+    def test_non_default_resource_only(self):
+        """Test a role with access to a specific resource only."""
+        for workspaces in [["ws_1"], ["ws_1", "ws_2", "ws_3", "ws_4"]]:
+            for permissions in [
+                ["inventory:hosts:read"],
+                ["inventory:hosts:read", "inventory:hosts:write", "inventory:hosts:delete"],
+            ]:
+                with self.subTest(workspaces=workspaces, permissions=permissions):
+                    self._test_non_default_resources(workspaces=workspaces, permissions=permissions)
+
+    def test_many_different_permissions(self):
+        """Test creating a role with many different sets of permissions."""
+        role = self.given_v1_role(
+            "r1", default=["inventory:hosts:read"], ws_1=["inventory:hosts:write"], ws_2=["inventory:hosts:delete"]
+        )
+
+        group, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group, roles=[role])
+
+        for workspace, permissions in [
+            (self.default_workspace(), ["inventory:hosts:read"]),
+            ("ws_1", ["inventory:hosts:write"]),
+            ("ws_2", ["inventory:hosts:delete"]),
+        ]:
+            role = self.expect_1_v2_role_with_permissions(permissions)
+            self.expect_1_role_binding_to_workspace(workspace, for_v2_roles=[role], for_groups=[str(group.uuid)])
+
+    def test_partial_overlap(self):
+        """Test creating a role where some, but not all, workspaces share the same permissions."""
+        role = self.given_v1_role(
+            "r1",
+            default=["inventory:hosts:read"],
+            ws_1=["inventory:hosts:read"],
+            ws_2=["inventory:hosts:write"],
+            ws_3=["inventory:hosts:write"],
+        )
+
+        group, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group, roles=[role])
+
+        read_role = self.expect_1_v2_role_with_permissions(["inventory:hosts:read"])
+        write_role = self.expect_1_v2_role_with_permissions(["inventory:hosts:write"])
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[read_role], for_groups=[str(group.uuid)]
+        )
+
+        self.expect_1_role_binding_to_workspace("ws_1", for_v2_roles=[read_role], for_groups=[str(group.uuid)])
+
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[write_role], for_groups=[str(group.uuid)])
+        self.expect_1_role_binding_to_workspace("ws_3", for_v2_roles=[write_role], for_groups=[str(group.uuid)])
+
     def test_role_with_same_default_and_resource_permission_reuses_same_v2_role(self):
         """With same resource permissions (when one of those is the default workspace), reuse the same v2 role."""
         role = self.given_v1_role(
