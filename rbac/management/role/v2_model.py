@@ -16,7 +16,7 @@
 #
 
 """Model for role V2 management."""
-from typing import Optional
+from typing import Optional, Iterable
 
 import uuid_utils.compat as uuid
 from django.db import models
@@ -176,6 +176,11 @@ class RoleBinding(TenantAwareModel):
     def bound_groups(self) -> QuerySet:
         """Get a QuerySet for all groups bound to this RoleBinding."""
         return Group.objects.filter(role_binding_entries__in=self.group_entries.all())
+
+    def update_groups(self, groups: Iterable[Group]):
+        """Update the groups bound to this RoleBinding."""
+        self.group_entries.all().delete()
+        RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
         """

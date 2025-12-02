@@ -747,3 +747,23 @@ class RoleBindingModelTests(IdentityRequest):
         self.assertFalse(migration_value.role.is_system)
         self.assertCountEqual([str(group_uuid)], migration_value.groups)
         self.assertEqual({}, migration_value.users)
+
+    def test_update_groups(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding.update_groups([self.group1])
+        self.assertCountEqual([self.group1], binding.bound_groups())
+
+        binding.update_groups([self.group2])
+        self.assertCountEqual([self.group2], binding.bound_groups())
+
+        binding.update_groups([self.group1, self.group2])
+        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
+
+        binding.update_groups([])
+        self.assertCountEqual([], binding.bound_groups())

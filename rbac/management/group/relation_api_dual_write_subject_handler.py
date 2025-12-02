@@ -21,7 +21,7 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
-from management.models import BindingMapping, Group, Role, RoleBinding, RoleBindingGroup, Workspace
+from management.models import BindingMapping, Group, Role, RoleBinding, Workspace
 from management.permission.scope_service import Scope, bound_model_for_scope
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -64,8 +64,7 @@ def _update_binding_for_custom_role(
     if missing_groups:
         raise ValueError(f"Not all expected groups could be found. Missing UUIDs: {missing_groups}")
 
-    RoleBindingGroup.objects.filter(binding=role_binding).delete()
-    RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=role_binding, group=g) for g in new_groups])
+    role_binding.update_groups(new_groups)
 
 
 class RelationApiDualWriteSubjectHandler:
