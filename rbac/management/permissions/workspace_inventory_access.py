@@ -27,7 +27,7 @@ from kessel.inventory.v1beta2 import (
     request_pagination_pb2,
     streamed_list_objects_request_pb2,
 )
-from kessel.inventory.v1beta2.check_for_update_request_pb2 import CheckForUpdateRequest
+from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from management.inventory_client import (
     inventory_client,
     make_resource_ref,
@@ -44,53 +44,6 @@ class WorkspaceInventoryAccessChecker:
 
     # Limit for Inventory API StreamedListObjects requests.
     INVENTORY_LIMIT = 10000
-
-    def _log_and_return_allowed(
-        self,
-        allowed_value: int,
-        workspace_id: str,
-        principal_id: str,
-        relation: str,
-    ) -> bool:
-        """
-        Interpret the allowed status from an Inventory API response and log the result.
-
-        Args:
-            allowed_value: The allowed enum value from the protobuf response
-            workspace_id: UUID of the workspace being checked
-            principal_id: Principal identifier being checked
-            relation: The relation being checked
-
-        Returns:
-            bool: True if access is granted, False otherwise
-        """
-        if allowed_value == allowed_pb2.Allowed.ALLOWED_TRUE:
-            logger.debug(
-                "Access granted: principal=%s, workspace=%s, relation=%s",
-                principal_id,
-                workspace_id,
-                relation,
-            )
-            return True
-
-        if allowed_value == allowed_pb2.Allowed.ALLOWED_FALSE:
-            logger.debug(
-                "Access denied: principal=%s, workspace=%s, relation=%s",
-                principal_id,
-                workspace_id,
-                relation,
-            )
-            return False
-
-        # Handle unexpected allowed status values
-        logger.warning(
-            "Unexpected allowed status from Inventory API: %s, workspace=%s, principal=%s, relation=%s",
-            allowed_pb2.Allowed.Name(allowed_value),
-            workspace_id,
-            principal_id,
-            relation,
-        )
-        return False
 
     def _call_inventory(self, rpc_fn, default):
         """
@@ -123,10 +76,7 @@ class WorkspaceInventoryAccessChecker:
         relation: str,
     ) -> bool:
         """
-        Check if a principal has access to a specific workspace using Inventory API CheckForUpdate.
-
-        This method uses strongly consistent reads to ensure the most up-to-date permission
-        state is used for all workspace access checks.
+        Check if a principal has access to a specific workspace using Inventory API Check.
 
         Args:
             workspace_id: UUID of the workspace to check
@@ -136,20 +86,31 @@ class WorkspaceInventoryAccessChecker:
         Returns:
             bool: True if principal has access, False otherwise
         """
-        check_request = CheckForUpdateRequest(
+        check_request = CheckRequest(
             object=make_resource_ref("workspace", workspace_id),
             relation=relation,
             subject=make_subject_ref(principal_id),
         )
 
         def rpc(stub):
-            response = stub.CheckForUpdate(check_request)
-            return self._log_and_return_allowed(
-                response.allowed,
-                workspace_id,
-                principal_id,
-                relation,
-            )
+            response = stub.Check(check_request)
+
+            # Use protobuf enum for robust status checking
+            if response.allowed == allowed_pb2.Allowed.ALLOWED_TRUE:
+                logger.debug(
+                    f"Access granted: principal={principal_id}, workspace={workspace_id}, relation={relation}"
+                )
+                return True
+            elif response.allowed == allowed_pb2.Allowed.ALLOWED_FALSE:
+                logger.debug(f"Access denied: principal={principal_id}, workspace={workspace_id}, relation={relation}")
+                return False
+            else:
+                # Handle unexpected allowed status values
+                logger.warning(
+                    f"Unexpected allowed status from Inventory API: {response.allowed}, "
+                    f"workspace={workspace_id}, principal={principal_id}, relation={relation}"
+                )
+                return False
 
         return self._call_inventory(rpc, False)
 
