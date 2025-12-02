@@ -174,7 +174,7 @@ class RoleBinding(TenantAwareModel):
     resource_id = models.CharField(max_length=256, null=False)
 
     def bound_groups(self) -> QuerySet:
-        """Get a QuerySet for all gorups bound to this RoleBinding."""
+        """Get a QuerySet for all groups bound to this RoleBinding."""
         return Group.objects.filter(role_binding_entries__in=self.group_entries.all())
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
