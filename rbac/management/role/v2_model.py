@@ -46,7 +46,7 @@ class RoleV2(TenantAwareModel):
     )
     permissions = models.ManyToManyField(Permission, related_name="v2_roles")
     children = models.ManyToManyField("self", related_name="parents", symmetrical=False)
-    v1_source = models.ForeignKey(Role, null=True, blank=True, related_name="v2_roles", on_delete=models.SET_NULL)
+    v1_source = models.ForeignKey(Role, null=True, blank=True, related_name="v2_roles", on_delete=models.CASCADE)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
 
