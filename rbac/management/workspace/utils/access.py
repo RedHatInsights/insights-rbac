@@ -233,9 +233,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
         return bool(accessible_workspace_ids)
 
     # For specific workspace operations, check access for that workspace
-    return checker.check_workspace_access(
-        workspace_id=target_workspace, principal_id=principal_id, relation=relation
-    )
+    return checker.check_workspace_access(workspace_id=target_workspace, principal_id=principal_id, relation=relation)
 
 
 def get_access_permission_tuples(access, tenant, root_workspace_id, is_get_action):

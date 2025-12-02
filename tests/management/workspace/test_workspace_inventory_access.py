@@ -432,7 +432,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -466,7 +466,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -511,7 +511,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -548,7 +548,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -596,7 +596,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -642,7 +642,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -791,7 +791,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -825,6 +825,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data["name"], "Updated Workspace Name")
 
+            # Verify CheckForUpdate was called for strongly consistent access check
+            mock_stub.CheckForUpdate.assert_called_once()
+
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -838,7 +841,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -864,6 +867,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should be denied access
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+            # Verify CheckForUpdate was called for strongly consistent access check
+            mock_stub.CheckForUpdate.assert_called_once()
+
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -877,7 +883,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -925,7 +931,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -956,6 +962,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data["description"], "Patched description")
 
+            # Verify CheckForUpdate was called for strongly consistent access check
+            mock_stub.CheckForUpdate.assert_called_once()
+
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -969,7 +978,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -992,6 +1001,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should be denied access
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+            # Verify CheckForUpdate was called for strongly consistent access check
+            mock_stub.CheckForUpdate.assert_called_once()
+
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -1005,7 +1017,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1040,6 +1052,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should be able to delete workspace
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+            # Verify CheckForUpdate was called for strongly consistent access check
+            mock_stub.CheckForUpdate.assert_called_once()
+
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -1053,7 +1068,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1074,6 +1089,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should be denied
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+            # Verify CheckForUpdate was called for strongly consistent access check
+            mock_stub.CheckForUpdate.assert_called_once()
+
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -1087,7 +1105,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1117,6 +1135,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             # Should return 404 NOT FOUND
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+            # Verify CheckForUpdate was called for strongly consistent access check
+            mock_stub.CheckForUpdate.assert_called_once()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1339,7 +1360,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Create mock response for allowed access
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1365,8 +1386,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             # Verify the inventory stub was called with the expected principal_id
             expected_principal_id = Principal.user_id_to_principal_resource_id(test_user_id)
-            mock_stub.Check.assert_called_once()
-            call_args = mock_stub.Check.call_args
+            mock_stub.CheckForUpdate.assert_called_once()
+            call_args = mock_stub.CheckForUpdate.call_args
             self.assertIn(expected_principal_id, str(call_args))
 
     @patch("management.workspace.utils.access.PrincipalProxy")
@@ -1515,7 +1536,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Create mock response for allowed access
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
-        mock_stub.Check.return_value = mock_response
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
