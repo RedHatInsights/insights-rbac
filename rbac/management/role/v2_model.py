@@ -39,7 +39,7 @@ class RoleV2(TenantAwareModel):
         PLATFORM = "platform"
 
     uuid = models.UUIDField(default=uuid.uuid7, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=150, null=False, blank=False)
+    name = models.CharField(max_length=175, null=False, blank=False)
     description = models.TextField(null=True, blank=True)
     type = models.CharField(
         choices=Types.choices, max_length=20, null=False, blank=False, db_index=True, default=Types.CUSTOM
