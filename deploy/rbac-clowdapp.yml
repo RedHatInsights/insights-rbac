@@ -743,6 +743,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
         livenessProbe:
           exec:
             command: ["test", "-f", "/tmp/kubernetes-liveness"]
