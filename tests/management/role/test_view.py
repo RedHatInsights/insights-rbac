@@ -51,6 +51,7 @@ from migration_tool.in_memory_tuples import (
 
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
+from tests.v2_util import assert_v2_custom_roles_consistent
 from unittest.mock import ANY, patch, call, Mock
 
 URL = reverse("v1_management:role-list")
@@ -280,6 +281,9 @@ class RoleViewsetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down role viewset tests."""
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_custom_roles_consistent(test=self, tuples=None)
+
         Group.objects.all().delete()
         Principal.objects.all().delete()
         Role.objects.all().delete()
@@ -2589,6 +2593,9 @@ class RoleViewNonAdminTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down role viewset nonadmin tests."""
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_custom_roles_consistent(test=self, tuples=None)
+
         Group.objects.all().delete()
         Principal.objects.all().delete()
         Role.objects.all().delete()

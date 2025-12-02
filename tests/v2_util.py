@@ -1,3 +1,4 @@
+from typing import Optional
 from unittest import TestCase
 
 from management.models import BindingMapping, CustomRoleV2, Role, RoleBinding, RoleV2
@@ -128,7 +129,21 @@ def _assert_v2_names(test: TestCase, v1_role: Role):
     )
 
 
-def assert_v2_custom_roles_consistent(test: TestCase, tuples: InMemoryTuples):
+def _assert_no_phantom_roles(test: TestCase, tuples: InMemoryTuples):
+    """Check that there are no roles referenced in tuples that do not exist in the database."""
+    for v2_role_uuid in {
+        *(t.resource_id for t in tuples.find_tuples(resource_type("rbac", "role"))),
+        *(t.subject_id for t in tuples.find_tuples(subject_type("rbac", "role"))),
+    }:
+        if Role.objects.filter(system=True, uuid=v2_role_uuid).exists():
+            # We are not interested in system roles here.
+            continue
+
+        v2_role = CustomRoleV2.objects.filter(uuid=v2_role_uuid).first()
+        test.assertIsNotNone(v2_role, f"V2 Role with UUID {v2_role_uuid} exists in tuples but not in the database.")
+
+
+def assert_v2_custom_roles_consistent(test: TestCase, tuples: Optional[InMemoryTuples]):
     binding_mappings_by_uuid = {
         str(m.mappings["id"]): m for m in BindingMapping.objects.filter(role__system=False).prefetch_related("role")
     }
@@ -143,7 +158,6 @@ def assert_v2_custom_roles_consistent(test: TestCase, tuples: InMemoryTuples):
 
     for role in CustomRoleV2.objects.all():
         test.assertIsNotNone(role.v1_source, "All custom roles created through dual-write should have a v1_source.")
-        _assert_role_tuples_consistent(test, tuples, role)
 
         _assert_role_mappings_consistent(
             test,
@@ -151,17 +165,14 @@ def assert_v2_custom_roles_consistent(test: TestCase, tuples: InMemoryTuples):
             [m for m in binding_mappings_by_uuid.values() if m.mappings["role"]["id"] == str(role.uuid)],
         )
 
-    for v2_role_uuid in {
-        *(t.resource_id for t in tuples.find_tuples(resource_type("rbac", "role"))),
-        *(t.subject_id for t in tuples.find_tuples(subject_type("rbac", "role"))),
-    }:
-        if Role.objects.filter(system=True, uuid=v2_role_uuid).exists():
-            # We are not interested in system roles here.
-            continue
-
-        v2_role = CustomRoleV2.objects.filter(uuid=v2_role_uuid).first()
-        test.assertIsNotNone(v2_role, f"V2 Role with UUID {v2_role_uuid} exists in tuples but not in the database.")
+        if tuples is not None:
+            _assert_role_tuples_consistent(test, tuples, role)
 
     for binding_uuid, binding in role_bindings_by_uuid.items():
-        _assert_binding_tuples_consistent(test, tuples, binding)
         _assert_binding_mapping_consistent(test, binding, binding_mappings_by_uuid[binding_uuid])
+
+        if tuples is not None:
+            _assert_binding_tuples_consistent(test, tuples, binding)
+
+    if tuples is not None:
+        _assert_no_phantom_roles(test, tuples)
