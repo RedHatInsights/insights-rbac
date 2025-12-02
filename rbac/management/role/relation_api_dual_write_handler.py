@@ -351,10 +351,6 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         if not self.replication_enabled():
             return
 
-        BindingMapping.objects.filter(pk__in={bm.pk for bm in self.binding_mappings.values()}).delete()
-        RoleBinding.objects.filter(pk__in={rb.pk for rb in self.role_bindings.values()}).delete()
-        CustomRoleV2.objects.filter(pk__in={r.pk for r in self.v2_roles.values()}).delete()
-
         self.binding_mappings = {}
         self.role_bindings = {}
         self.v2_roles = {}
