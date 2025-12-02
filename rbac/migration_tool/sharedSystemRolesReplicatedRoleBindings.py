@@ -21,6 +21,7 @@ from typing import Any, Iterable, Optional, Tuple, Union
 
 import uuid_utils.compat as uuid
 from django.conf import settings
+from django.db.models import F
 from feature_flags import FEATURE_FLAGS
 from management.models import BindingMapping, Workspace
 from management.permission.model import Permission
@@ -205,7 +206,7 @@ def _target_role_uuid_for(
     return uuid.uuid7()
 
 
-def _v2_custom_role_from_v1(v1_role: Role, target_uuid: uuid.UUID):
+def _v2_custom_role_from_v1(v1_role: Role, disambiguator: int, target_uuid: uuid.UUID):
     # This guarantees that we do not accidentally move V2 roles between different V1 sources. If the UUID
     # already exists with a different V1 source, then this will attempt to create a new V2 role with an
     # existing UUID, which will fail due to the conflict.
@@ -217,7 +218,7 @@ def _v2_custom_role_from_v1(v1_role: Role, target_uuid: uuid.UUID):
         tenant=v1_role.tenant,
         v1_source=v1_role,
         defaults=dict(
-            name=str(target_uuid),
+            name=f"{v1_role.display_name} ({disambiguator})",
             description=v1_role.description,
         ),
     )
@@ -303,6 +304,9 @@ def permission_groupings_to_v2_role_bindings(
     latest_role_bindings: list[RoleBinding] = []
     latest_binding_mappings: list[BindingMapping] = []
 
+    # Randomize any existing role names to ensure that we don't end up with any conflicts.
+    CustomRoleV2.objects.filter(pk__in=[r.pk for r in existing_v2_roles]).update(name=F("uuid"))
+
     for resource, raw_expected_permissions in perm_groupings.items():
         expected_permissions = frozenset(raw_expected_permissions)
         existing_mapping = existing_mappings_by_resource.get(resource)
@@ -315,6 +319,7 @@ def permission_groupings_to_v2_role_bindings(
 
             new_role = _v2_custom_role_from_v1(
                 v1_role=v1_role,
+                disambiguator=len(latest_roles_by_permissions) + 1,
                 target_uuid=_target_role_uuid_for(
                     existing_binding=existing_binding_value,
                     latest_roles=latest_roles_by_permissions.values(),

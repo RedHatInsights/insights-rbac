@@ -2072,6 +2072,15 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         # Principals cannot currently be represented in RoleBindings (and shouldn't exist for custom groups anyway).
         self.assertEqual(0, len(mapping.mappings["users"]))
 
+    def _assert_v2_names(self, v1_role: Role):
+        v2_roles = list(CustomRoleV2.objects.filter(v1_source=v1_role))
+
+        self.assertCountEqual(
+            [r.name for r in v2_roles],
+            [f"{v1_role.display_name} ({i + 1})" for i in range(len(v2_roles))],
+            "Expected V2 role names to be based on V1 role's display name and numbered sequentially",
+        )
+
     def _expect_tuples_consistent(self):
         binding_mappings_by_uuid = {
             str(m.mappings["id"]): m
@@ -2082,6 +2091,9 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         # We should have the same UUIDs for both BindingMappings and RoleBindings.
         self.assertCountEqual(role_bindings_by_uuid.keys(), binding_mappings_by_uuid.keys())
+
+        for role in Role.objects.filter(system=False):
+            self._assert_v2_names(role)
 
         for role in CustomRoleV2.objects.all():
             self.assertIsNotNone(
