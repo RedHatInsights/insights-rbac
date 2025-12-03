@@ -119,8 +119,12 @@ def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_ser
             if config.force_create_relationships:
                 dual_write_handler.replicate_new_system_role()
                 logger.info("Replicated system role %s", name)
-                return role
-            logger.info("No change in system role %s", name)
+            else:
+                logger.info("No change in system role %s", name)
+            # Still seed V2 role even if V1 unchanged
+            _seed_v2_role_from_v1(
+                role, display_name, defaults["description"], public_tenant, platform_roles, resource_service
+            )
             return role
 
     if access_list:  # Allow external roles to have none access object
@@ -344,15 +348,11 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         if v1_role.platform_default:
             platform_role.children.add(v2_role)
             logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
-        else:
-            platform_role.children.discard(v2_role)
 
         admin_platform_role = platform_roles[(DefaultAccessType.ADMIN, scope)]
         if v1_role.admin_default:
             admin_platform_role.children.add(v2_role)
             logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
-        else:
-            admin_platform_role.children.discard(v2_role)
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
