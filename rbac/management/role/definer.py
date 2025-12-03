@@ -316,7 +316,10 @@ def _create_single_platform_role(access_type, scope, policy_service, public_tena
 
 
 def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles, resource_service):
-    """Create or update V2 role from V1 role during seeding."""
+    """Create or update V2 role from V1 role during seeding.
+
+    Raises exceptions on failure to ensure V1 and V2 roles stay in sync.
+    """
     try:
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
             uuid=v1_role.uuid,
@@ -329,38 +332,45 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         )
 
         if v2_created:
-            logger.info("Created V2 system role %s.", display_name)
+            logger.info(f"Created V2 system role {display_name}.")
         else:
-            logger.info("Updated V2 system role %s.", display_name)
+            logger.info(f"Updated V2 system role {display_name}.")
 
-        v2_role.permissions.clear()
-        v1_permissions = [access.permission for access in v1_role.access.all()]
-        if v1_permissions:
+        # Get current and expected permissions to compare
+        v1_permissions = set(access.permission for access in v1_role.access.all())
+        current_permissions = set(v2_role.permissions.all())
+
+        if v1_permissions != current_permissions:
             v2_role.permissions.set(v1_permissions)
-            logger.info("Added %d permissions to V2 role %s.", len(v1_permissions), display_name)
+            logger.info(f"Updated {len(v1_permissions)} permissions on V2 role {display_name}.")
 
         scope = resource_service.scope_for_role(v1_role)
 
-        # Clear parents first since scope may have changed since previous seeding
-        v2_role.parents.clear()
-
-        platform_role = platform_roles[(DefaultAccessType.USER, scope)]
+        # Determine expected parents based on platform_default and admin_default flags
+        expected_parents = set()
         if v1_role.platform_default:
-            platform_role.children.add(v2_role)
-            logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
-
-        admin_platform_role = platform_roles[(DefaultAccessType.ADMIN, scope)]
+            expected_parents.add(platform_roles[(DefaultAccessType.USER, scope)])
         if v1_role.admin_default:
-            admin_platform_role.children.add(v2_role)
-            logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
+            expected_parents.add(platform_roles[(DefaultAccessType.ADMIN, scope)])
+
+        # Only update parents if they differ from current state
+        current_parents = set(v2_role.parents.all())
+        if expected_parents != current_parents:
+            v2_role.parents.set(expected_parents)
+            parent_names = [p.name for p in expected_parents]
+            logger.info(f"Updated parents for V2 role {display_name}: {parent_names}")
+
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
-        return None
+        raise
 
 
 def _seed_platform_roles():
-    """Create the 6 platform roles (3 scopes × 2 access types)."""
+    """Create the 6 platform roles (3 scopes × 2 access types).
+
+    Raises RuntimeError if not all platform roles could be created.
+    """
     public_tenant = Tenant.objects.get(tenant_name="public")
     policy_service = GlobalPolicyIdService.shared()
 
@@ -373,29 +383,19 @@ def _seed_platform_roles():
                 platform_roles[(access_type, scope)] = platform_role
             except DefaultGroupNotAvailableError:
                 logger.warning(
-                    "Default groups do not exist yet. Creating them now for %s %s scope",
-                    access_type.value,
-                    scope.name.lower(),
+                    f"Default groups do not exist yet. Creating them now for "
+                    f"{access_type.value} {scope.name.lower()} scope",
                 )
                 # Create the default groups
                 seed_group()
 
-                # Retry creating the platform role now that default groups exist
-                try:
-                    # Refresh policy service since groups were just created
-                    policy_service = GlobalPolicyIdService.shared()
-                    platform_role = _create_single_platform_role(access_type, scope, policy_service, public_tenant)
-                    platform_roles[(access_type, scope)] = platform_role
-                except DefaultGroupNotAvailableError as e:
-                    logger.error(
-                        "Failed to create platform role for %s %s scope after creating default groups: %s",
-                        access_type.value,
-                        scope.name.lower(),
-                        e,
-                    )
-                    raise DefaultGroupNotAvailableError(
-                        f"Failed to create platform role for {access_type.value} {scope.name.lower()} scope "
-                        f"after creating default groups: {e}"
-                    )
+                # Refresh policy service since groups were just created
+                policy_service = GlobalPolicyIdService.shared()
+                platform_role = _create_single_platform_role(access_type, scope, policy_service, public_tenant)
+                platform_roles[(access_type, scope)] = platform_role
 
+    if len(platform_roles) != 6:
+        raise RuntimeError(f"Expected 6 platform roles, got {len(platform_roles)}")
+
+    logger.info(f"Successfully seeded {len(platform_roles)} platform roles.")
     return platform_roles
