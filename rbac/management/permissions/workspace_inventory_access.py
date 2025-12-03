@@ -44,6 +44,8 @@ class WorkspaceInventoryAccessChecker:
 
     # Page size for Inventory API StreamedListObjects requests with continuation token pagination.
     PAGE_SIZE = 1000
+    # Maximum number of pages to fetch to prevent infinite loops from buggy server responses.
+    MAX_PAGES = 10000
 
     def _log_and_return_allowed(
         self,
@@ -172,12 +174,15 @@ class WorkspaceInventoryAccessChecker:
         def rpc(stub):
             accessible_workspaces = set()
             continuation_token = None
+            page_count = 0
 
-            while True:
+            while page_count < self.MAX_PAGES:
+                page_count += 1
+
                 # Build pagination with continuation token if available
                 pagination = request_pagination_pb2.RequestPagination(
                     limit=self.PAGE_SIZE,
-                    continuation_token=continuation_token if continuation_token else "",
+                    continuation_token=continuation_token or "",
                 )
 
                 # Build StreamedListObjects request
@@ -214,16 +219,33 @@ class WorkspaceInventoryAccessChecker:
                         )
 
                     # Track continuation token from pagination info
-                    if hasattr(response, "pagination") and response.pagination is not None:
-                        if response.pagination.continuation_token:
-                            last_token = response.pagination.continuation_token
+                    if (
+                        hasattr(response, "pagination")
+                        and response.pagination is not None
+                        and response.pagination.continuation_token
+                    ):
+                        last_token = response.pagination.continuation_token
 
                 # Break the loop if no more pages
                 if not last_token:
                     break
 
+                # Guard against server returning the same token (would cause infinite loop)
+                if last_token == continuation_token:
+                    logger.warning(
+                        f"Inventory API returned duplicate continuation token for principal={principal_id}. "
+                        "Breaking pagination loop to avoid infinite loop."
+                    )
+                    break
+
                 # Update continuation token for next page
                 continuation_token = last_token
+
+            if page_count >= self.MAX_PAGES:
+                logger.warning(
+                    f"Reached maximum page limit ({self.MAX_PAGES}) while fetching workspaces "
+                    f"for principal={principal_id}. Some workspaces may not be included."
+                )
 
             logger.info(
                 f"Accessible workspaces for principal={principal_id}: "

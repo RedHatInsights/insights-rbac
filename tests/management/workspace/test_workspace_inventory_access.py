@@ -161,7 +161,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         Args:
             workspace_ids: List of workspace IDs to create mock responses for
-            continuation_token: Optional continuation token for the last response
+            continuation_token: Optional continuation token for the last response (use None for no token)
 
         Returns:
             List of mock response objects with proper structure
@@ -169,8 +169,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         responses = []
         for i, ws_id in enumerate(workspace_ids):
             mock_response = MagicMock(object=MagicMock(resource_id=str(ws_id)))
-            # Only set continuation token on the last response if provided
-            if continuation_token and i == len(workspace_ids) - 1:
+            # Only set continuation token on the last response if provided (explicit None check)
+            if continuation_token is not None and i == len(workspace_ids) - 1:
                 mock_response.pagination = MagicMock(continuation_token=continuation_token)
             else:
                 mock_response.pagination = None
@@ -1575,17 +1575,16 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_list_with_pagination_continuation_token(self, mock_flag, mock_channel):
         """Test workspace list with pagination using continuation token to fetch more than PAGE_SIZE workspaces."""
-        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
-
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Create workspaces for two pages
-        # First page has PAGE_SIZE workspaces with continuation token
+        # First page has workspaces with continuation token
         # Second page has remaining workspaces without continuation token
         first_page_workspaces = [self.default_workspace.id, self.standard_workspace.id]
         second_page_workspaces = [self.standard_sub_workspace.id]
+        all_expected_workspaces = first_page_workspaces + second_page_workspaces
 
         # Mock responses for first page with continuation token
         first_page_responses = self._create_mock_workspace_responses(
@@ -1595,17 +1594,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Mock responses for second page without continuation token (last page)
         second_page_responses = self._create_mock_workspace_responses(second_page_workspaces)
 
-        # Track call count to return different responses
-        call_count = [0]
-
-        def mock_streamed_list_objects(request):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return iter(first_page_responses)
-            else:
-                return iter(second_page_responses)
-
-        mock_stub.StreamedListObjects.side_effect = mock_streamed_list_objects
+        # Use side_effect list to return different responses on each call (no conditionals)
+        mock_stub.StreamedListObjects.side_effect = [
+            iter(first_page_responses),
+            iter(second_page_responses),
+        ]
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1638,6 +1631,25 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             request_arg = second_call_args[0][0]
             self.assertEqual(request_arg.pagination.continuation_token, "next_page_token_123")
 
+            # Verify workspaces from BOTH pages are returned in the response
+            returned_workspace_ids = {str(ws["id"]) for ws in response.data["data"]}
+            for expected_ws_id in all_expected_workspaces:
+                self.assertIn(
+                    str(expected_ws_id),
+                    returned_workspace_ids,
+                    f"Expected workspace {expected_ws_id} to be in response but it was missing. "
+                    f"This may indicate page-2 results were dropped.",
+                )
+
+            # Verify total count includes workspaces from both pages
+            # Note: Response may include additional workspaces (root, ungrouped) added by view logic
+            self.assertGreaterEqual(
+                len(returned_workspace_ids),
+                len(all_expected_workspaces),
+                f"Expected at least {len(all_expected_workspaces)} workspaces from pagination, "
+                f"but got {len(returned_workspace_ids)}",
+            )
+
     def test_workspace_inventory_access_checker_pagination_constants(self):
         """Test that WorkspaceInventoryAccessChecker uses correct pagination constants."""
         from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
@@ -1645,3 +1657,5 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         checker = WorkspaceInventoryAccessChecker()
         # Verify PAGE_SIZE is set to 1000 for pagination
         self.assertEqual(checker.PAGE_SIZE, 1000)
+        # Verify MAX_PAGES is set to prevent infinite loops
+        self.assertEqual(checker.MAX_PAGES, 10000)
