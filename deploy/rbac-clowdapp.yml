@@ -233,8 +233,6 @@ objects:
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_APPLICATION_NAME
@@ -526,8 +524,6 @@ objects:
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
           - name: WORKSPACE_APPLICATION_NAME
@@ -642,6 +638,8 @@ objects:
             value: ${V2_APIS_ENABLED}
           - name: V2_READ_ONLY_API_MODE
             value: ${V2_READ_ONLY_API_MODE}
+          - name: V1_ROLE_PERMISSION_BLOCK_LIST
+            value: ${V1_ROLE_PERMISSION_BLOCK_LIST}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
           - name: ADD_UNGROUPED_HOSTS_ID
@@ -677,10 +675,22 @@ objects:
                 fieldPath: metadata.namespace
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
+          - name: CW_NULL_WORKAROUND
+            value: ${CW_NULL_WORKAROUND}
           - name: DJANGO_DEBUG
             value: ${DJANGO_DEBUG}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
+          # Logging configuration for consumer
+          - name: RBAC_LOG_LEVEL
+            value: ${RBAC_LOG_LEVEL}
+          - name: DJANGO_LOG_FORMATTER
+            value: ${DJANGO_LOG_FORMATTER}
+          - name: DJANGO_LOG_HANDLERS
+            value: ${DJANGO_LOG_HANDLERS}
+          # Use separate CloudWatch log stream for consumer
+          - name: CW_STREAM_NAME_SUFFIX
+            value: "-rbac-kafka-consumer"
           - name: DJANGO_SECRET_KEY
             valueFrom:
               secretKeyRef:
@@ -689,6 +699,13 @@ objects:
                 optional: false
           - name: ENV_NAME
             value: ${ENV_NAME}
+          # Glitchtip/Sentry for error monitoring
+          - name: GLITCHTIP_DSN
+            valueFrom:
+              secretKeyRef:
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
+                optional: true
           - name: KAFKA_ENABLED
             value: ${KAFKA_ENABLED}
           - name: RBAC_KAFKA_CONSUMER_TOPIC
@@ -701,6 +718,19 @@ objects:
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          # Relations API variables
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
             value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
           - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
@@ -713,6 +743,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
         livenessProbe:
           exec:
             command: ["test", "-f", "/tmp/kubernetes-liveness"]
@@ -919,8 +951,6 @@ objects:
               value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
             - name: V2_MIGRATION_APP_EXCLUDE_LIST
               value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-            - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-              value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
             - name: WORKSPACE_APPLICATION_NAME
@@ -1142,8 +1172,6 @@ objects:
               value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
             - name: V2_MIGRATION_APP_EXCLUDE_LIST
               value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-            - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-              value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
             - name: WORKSPACE_APPLICATION_NAME
@@ -1189,6 +1217,8 @@ objects:
               value: ${RBAC_HBI_S3_AWS_BUCKET}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
+            - name: REMOVE_NULL_VALUE
+              value: ${REMOVE_NULL_VALUE}
           resources:
             limits:
               cpu: 300m
@@ -1434,9 +1464,6 @@ parameters:
 - description: Application exclude list for v2 migration (all permissions)
   name: V2_MIGRATION_APP_EXCLUDE_LIST
   value: approval
-- description: Resources (by namespace:name) exclude list for v2 migration (resource definitions only)
-  name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-  value: rbac:workspace
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'False'
@@ -1646,6 +1673,9 @@ parameters:
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
+- name: V1_ROLE_PERMISSION_BLOCK_LIST
+  description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
+  value: ''
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
@@ -1669,7 +1699,7 @@ parameters:
   value: 'inventory'
 - description: The resource type used in workspace permissions
   name: WORKSPACE_RESOURCE_TYPE
-  value: 'groups,*'
+  value: 'groups,hosts,*'
 - description: The attribute filter key used in workspace permissions' resource definitions
   name: WORKSPACE_ATTRIBUTE_FILTER
   value: 'group.id'

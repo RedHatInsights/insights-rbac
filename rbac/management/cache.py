@@ -260,15 +260,16 @@ class JWTCache(BasicCache):
 
     def set_cache(self, pipe, key, item):
         """Set cache to redis."""
-        pipe.hset(key=key, value=json.dumps(item), name="token")
+        pipe.set(name=key, value=item)
         pipe.expire(name=key, time=settings.IT_TOKEN_JKWS_CACHE_LIFETIME)
         pipe.execute()
 
-    def get_from_redis(self, args):
-        """Get object from redis based on args."""
-        obj = self.connection.hget(*(self.JWT_CACHE_KEY, args[1]))
+    def get_from_redis(self, key):
+        """Get object from redis based on key."""
+        obj = self.connection.get(name=key)
         if obj:
-            return json.loads(obj)
+            return obj.decode("utf-8") if isinstance(obj, bytes) else obj
+        return None
 
     def get_jwt_response(self):
         """Get the JWT token response from Redis."""
@@ -277,6 +278,27 @@ class JWTCache(BasicCache):
     def set_jwt_response(self, response):
         """Save the JWT token response in Redis."""
         super().save(self.JWT_CACHE_KEY, response, "JWT response")
+
+
+class JWTCacheOptimized(JWTCache):
+    """Optimized JWT cache for high-throughput consumers (Kafka).
+
+    This cache skips redundant health checks for performance in message processing scenarios.
+    Use this instead of JWTCache for consumers that process many messages per second.
+    """
+
+    def get_jwt_response(self):
+        """Get the JWT token response from Redis without health check overhead."""
+        if not self.use_caching:
+            return None
+
+        try:
+            return self.get_from_redis(self.JWT_CACHE_KEY)
+        except exceptions.RedisError:
+            logger.exception("Unable to fetch the JWT response from Redis")
+            # Disable caching temporarily on error
+            self.disable_caching()
+        return None
 
 
 class PrincipalCache(BasicCache):
@@ -323,7 +345,11 @@ class PrincipalCache(BasicCache):
         :param org_id: The tenant of the principal.
         :param principal: The principal object to cache.
         """
-        super().save(key=self.key_for(org_id, principal.username), item=principal, obj_name="principal")
+        super().save(
+            key=self.key_for(org_id, principal.username),
+            item=principal,
+            obj_name="principal",
+        )
 
     def delete_all_principals_for_tenant(self, org_id: str):
         """Purge all principals for a given tenant from the cache.

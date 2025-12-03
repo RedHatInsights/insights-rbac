@@ -52,7 +52,7 @@ SERVICE_ACCOUNT_KEY = "service-account"
 
 logger = logging.getLogger(__name__)
 
-# Configure OAuth credentials with direct token URL
+# Configure OAuth credentials with direct token URL for Inventory API
 inventory_auth_credentials = OAuth2ClientCredentials(
     client_id=settings.INVENTORY_API_CLIENT_ID,
     client_secret=settings.INVENTORY_API_CLIENT_SECRET,
@@ -64,15 +64,26 @@ call_credentials = oauth2_call_credentials(inventory_auth_credentials)
 
 @contextmanager
 def create_client_channel(addr):
-    """Create secure channel for grpc requests for relations api."""
-    secure_channel = grpc.insecure_channel(addr)
-    yield secure_channel
+    """Create secure channel for grpc requests for relations api.
+
+    Uses insecure channel in development/Clowder environments.
+    Uses TLS in production environments.
+    """
+    if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
+        # Flag for local dev or Clowder (avoids ssl error)
+        channel = grpc.insecure_channel(addr)
+        yield channel
+    else:
+        # Use TLS for secure channel in production
+        ssl_credentials = grpc.ssl_channel_credentials()
+        secure_channel = grpc.secure_channel(addr, ssl_credentials)
+        yield secure_channel
 
 
 @contextmanager
 def create_client_channel_inventory(addr):
     """Create secure channel for grpc requests for inventory api."""
-    if settings.DEVELOPMENT:  # Flag for local dev (avoids ssl error)
+    if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
         channel = grpc.insecure_channel(addr)
         yield channel
     else:
@@ -80,6 +91,25 @@ def create_client_channel_inventory(addr):
         ssl_credentials = grpc.ssl_channel_credentials()
         channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
         secure_channel = grpc.secure_channel(addr, channel_credentials)
+        yield secure_channel
+
+
+@contextmanager
+def create_client_channel_relation(addr):
+    """Create secure channel for grpc requests for relations api.
+
+    Uses insecure channel in development/Clowder environments.
+    Uses TLS in production environments.
+    Authentication is handled via JWT tokens passed in gRPC metadata.
+    """
+    if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
+        # Flag for local dev or Clowder (avoids ssl error)
+        channel = grpc.insecure_channel(addr)
+        yield channel
+    else:
+        # Use TLS for secure channel in production
+        ssl_credentials = grpc.ssl_channel_credentials()
+        secure_channel = grpc.secure_channel(addr, ssl_credentials)
         yield secure_channel
 
 
@@ -153,7 +183,8 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
             if user.org_id:
                 if user.org_id != request.META.get(RH_RBAC_ORG_ID, user.org_id):
                     logger.warning(
-                        "Token org_id does not match org_id header. Ignoring token for user_id %s", user.user_id
+                        "Token org_id does not match org_id header. Ignoring token for user_id %s",
+                        user.user_id,
                     )
                     return None
                 return user
@@ -231,7 +262,10 @@ def get_principal(
             client_id: uuid.UUID = ITService.extract_client_id_service_account_username(username)
 
             principal, _ = Principal.objects.get_or_create(
-                username=username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
+                username=username,
+                tenant=tenant,
+                type=SERVICE_ACCOUNT_KEY,
+                service_account_id=client_id,
             )
         else:
             # Avoid possible race condition if the user was created while checking BOP
@@ -450,7 +484,8 @@ def get_admin_from_proxy(username, request):
         raise serializers.ValidationError({key: _(message)})
 
     index = next(
-        (i for i, x in enumerate(bop_resp.get("data")) if x["username"].casefold() == username.casefold()), None
+        (i for i, x in enumerate(bop_resp.get("data")) if x["username"].casefold() == username.casefold()),
+        None,
     )
 
     if index is None:
@@ -506,3 +541,32 @@ def flatten_validation_error(e: ValidationError):
         return [("__all__", str(msg)) for msg in e.messages]
     else:
         return [("__all__", str(e))]
+
+
+def is_permission_blocked_for_v1(permission_str, request=None):
+    """
+    Check if permission should be blocked from v1 API endpoints.
+
+    This is used to hide permissions from v1 that are only meant for v2.
+
+    Args:
+        permission_str: The permission string to check (e.g., "rbac:role:read")
+        request: Optional request object to check if this is a v1 API call
+
+    Returns:
+        True if the permission should be blocked from v1, False otherwise
+    """
+    # Safety checks
+    if not permission_str:
+        return False
+
+    # Only apply to v1 requests - block from v1, show in v2
+    if not request or not hasattr(request, "path"):
+        return False
+
+    if not request.path.startswith(f"/{api_path_prefix()}v1/"):
+        return False
+
+    # Check against block list using exact string matching
+    block_list = getattr(settings, "V1_ROLE_PERMISSION_BLOCK_LIST", [])
+    return permission_str in block_list

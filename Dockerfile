@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1762180032 AS base
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1764578379 AS base
 
 USER root
 
@@ -30,7 +30,11 @@ LABEL summary="$SUMMARY" \
       com.redhat.component="python312-docker" \
       name="insights-rbac" \
       version="1" \
-      maintainer="Red Hat Insights"
+      maintainer="Red Hat Insights" \
+      distribution-scope="private" \
+      release="1" \
+      url="https://github.com/RedHatInsights/insights-rbac" \
+      vendor="Red Hat, Inc."
 
 
 # Very minimal set of packages

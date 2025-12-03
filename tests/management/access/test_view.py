@@ -1124,3 +1124,135 @@ class AccessViewTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data.get("meta").get("limit"), default_limit)
             self.assertEqual(response.data.get("meta").get("count"), expected_count)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="test_app")
+    @override_settings(V1_ROLE_PERMISSION_BLOCK_LIST=["test_app:resource:blocked_action"])
+    def test_get_access_filters_blocked_permissions_for_v1(self):
+        """Test that blocked permissions are filtered out in v1 access endpoint."""
+        # Create a role with both blocked and non-blocked permissions
+        blocked_permission = Permission.objects.create(
+            permission="test_app:resource:blocked_action", tenant=self.tenant
+        )
+        allowed_permission = Permission.objects.create(
+            permission="test_app:resource:allowed_action", tenant=self.tenant
+        )
+
+        role = Role.objects.create(name="test_role_with_blocked", tenant=self.tenant)
+        Access.objects.create(role=role, permission=blocked_permission, tenant=self.tenant)
+        Access.objects.create(role=role, permission=allowed_permission, tenant=self.tenant)
+
+        # Create policy linking role to group
+        policy = Policy.objects.create(name="test_policy_blocked", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.group = self.group
+        policy.save()
+
+        # Make request to v1 access endpoint
+        url = f"{reverse('v1_management:access')}?application=test_app"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        permissions = [item["permission"] for item in response.data.get("data", [])]
+
+        # Blocked permission should NOT be in the response
+        self.assertNotIn("test_app:resource:blocked_action", permissions)
+        # Allowed permission should be in the response
+        self.assertIn("test_app:resource:allowed_action", permissions)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="test_app")
+    @override_settings(V1_ROLE_PERMISSION_BLOCK_LIST=["test_app:resource:blocked1", "test_app:resource:blocked2"])
+    def test_get_access_filters_multiple_blocked_permissions(self):
+        """Test that multiple blocked permissions are all filtered out."""
+        # Create permissions
+        blocked1 = Permission.objects.create(permission="test_app:resource:blocked1", tenant=self.tenant)
+        blocked2 = Permission.objects.create(permission="test_app:resource:blocked2", tenant=self.tenant)
+        allowed = Permission.objects.create(permission="test_app:resource:allowed", tenant=self.tenant)
+
+        role = Role.objects.create(name="test_role_multi_blocked", tenant=self.tenant)
+        Access.objects.create(role=role, permission=blocked1, tenant=self.tenant)
+        Access.objects.create(role=role, permission=blocked2, tenant=self.tenant)
+        Access.objects.create(role=role, permission=allowed, tenant=self.tenant)
+
+        policy = Policy.objects.create(name="test_policy_multi_blocked", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.group = self.group
+        policy.save()
+
+        url = f"{reverse('v1_management:access')}?application=test_app"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        permissions = [item["permission"] for item in response.data.get("data", [])]
+
+        # Both blocked permissions should NOT be in the response
+        self.assertNotIn("test_app:resource:blocked1", permissions)
+        self.assertNotIn("test_app:resource:blocked2", permissions)
+        # Allowed permission should be in the response
+        self.assertIn("test_app:resource:allowed", permissions)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="test_app")
+    @override_settings(V1_ROLE_PERMISSION_BLOCK_LIST=[])
+    def test_get_access_returns_all_permissions_when_block_list_empty(self):
+        """Test that all permissions are returned when block list is empty."""
+        permission1 = Permission.objects.create(permission="test_app:resource:action1", tenant=self.tenant)
+        permission2 = Permission.objects.create(permission="test_app:resource:action2", tenant=self.tenant)
+
+        role = Role.objects.create(name="test_role_no_block", tenant=self.tenant)
+        Access.objects.create(role=role, permission=permission1, tenant=self.tenant)
+        Access.objects.create(role=role, permission=permission2, tenant=self.tenant)
+
+        policy = Policy.objects.create(name="test_policy_no_block", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.group = self.group
+        policy.save()
+
+        url = f"{reverse('v1_management:access')}?application=test_app"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        permissions = [item["permission"] for item in response.data.get("data", [])]
+
+        # All permissions should be in the response
+        self.assertIn("test_app:resource:action1", permissions)
+        self.assertIn("test_app:resource:action2", permissions)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="test_app")
+    @override_settings(V1_ROLE_PERMISSION_BLOCK_LIST=["test_app:resource:blocked_action"])
+    @patch("management.cache.AccessCache.get_policy", return_value=None)
+    @patch("management.cache.AccessCache.save_policy", return_value=None)
+    def test_get_access_blocked_permissions_not_cached(self, mock_save_policy, mock_get_policy):
+        """Test that blocked permissions are filtered before caching."""
+        blocked_permission = Permission.objects.create(
+            permission="test_app:resource:blocked_action", tenant=self.tenant
+        )
+        allowed_permission = Permission.objects.create(
+            permission="test_app:resource:allowed_action", tenant=self.tenant
+        )
+
+        role = Role.objects.create(name="test_role_cache_block", tenant=self.tenant)
+        Access.objects.create(role=role, permission=blocked_permission, tenant=self.tenant)
+        Access.objects.create(role=role, permission=allowed_permission, tenant=self.tenant)
+
+        policy = Policy.objects.create(name="test_policy_cache_block", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.group = self.group
+        policy.save()
+
+        url = f"{reverse('v1_management:access')}?application=test_app"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify save_policy was called and check what was cached
+        self.assertTrue(mock_save_policy.called)
+        cached_data = mock_save_policy.call_args[0][2]
+        cached_permissions = [item["permission"] for item in cached_data]
+
+        # Blocked permission should NOT be in the cached data
+        self.assertNotIn("test_app:resource:blocked_action", cached_permissions)
+        # Allowed permission should be in the cached data
+        self.assertIn("test_app:resource:allowed_action", cached_permissions)

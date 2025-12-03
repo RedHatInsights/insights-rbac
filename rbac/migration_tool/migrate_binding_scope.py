@@ -16,6 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
+from typing import Optional
 
 from django.conf import settings
 from django.db import transaction
@@ -119,19 +120,25 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
 
     # Part 1: Migrate custom role bindings
-    custom_roles = Role.objects.filter(binding_mappings__isnull=False, system=False).distinct().order_by("pk")
+    # Include custom roles with policies (assigned to groups), even if they have no bindings yet
+    # Roles without policies don't need bindings since bindings would have empty groups
+    custom_roles = Role.objects.filter(system=False, policies__isnull=False).distinct().order_by("pk")
 
     total_custom_roles = custom_roles.count()
-    logger.info(f"Found {total_custom_roles} custom roles with bindings to migrate")
+    logger.info(f"Found {total_custom_roles} custom roles with policies to migrate")
 
     custom_roles_checked = 0
     custom_roles_migrated = 0
 
-    for role in custom_roles.iterator():
+    for raw_role in custom_roles.iterator():
         custom_roles_checked += 1
 
         with transaction.atomic():
-            role = Role.objects.select_for_update().get(pk=role.pk)
+            role: Optional[Role] = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+
+            if role is None:
+                logger.warning(f"Role vanished before it could be migrated: pk={raw_role.pk!r}")
+                continue
 
             try:
                 migrated = migrate_custom_role_bindings(role, replicator)
@@ -163,11 +170,17 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     groups_checked = 0
     groups_migrated = 0
 
-    for group in groups_with_system_roles.iterator():
+    for raw_group in groups_with_system_roles.iterator():
         groups_checked += 1
 
         with transaction.atomic():
-            group = Group.objects.select_for_update().select_related("tenant").get(pk=group.pk)
+            group: Optional[Group] = (
+                Group.objects.select_for_update().select_related("tenant").filter(pk=raw_group.pk).first()
+            )
+
+            if group is None:
+                logger.warning(f"Group vanished before it could be migrated: pk={raw_group.pk!r}")
+                continue
 
             try:
                 migrated = migrate_system_role_bindings_for_group(group, replicator)

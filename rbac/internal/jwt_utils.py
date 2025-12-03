@@ -15,9 +15,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Classes to handle JWT token generation and management."""
+import base64
 import http.client
 import json
 import logging
+import time
 
 from django.conf import settings
 
@@ -85,26 +87,63 @@ class JWTManager:
         self.jwt_cache = jwt_cache
         self.jwt_provider = jwt_provider
 
+    @staticmethod
+    def is_token_expired(token):
+        """Check if JWT token is expired based on its exp claim."""
+        try:
+            # Decode JWT payload without verification (safe for reading claims only)
+            # JWT format: header.payload.signature
+            parts = token.split(".")
+            if len(parts) != 3:
+                logger.warning("Invalid JWT format: expected 3 parts separated by dots")
+                return True
+
+            # Decode the payload (second part) - base64url encoded
+            payload = parts[1]
+            # Add padding if needed (base64 requires length to be multiple of 4)
+            padding = len(payload) % 4
+            if padding:
+                payload += "=" * (4 - padding)
+
+            decoded_bytes = base64.urlsafe_b64decode(payload)
+            claims = json.loads(decoded_bytes)
+
+            if claims and "exp" in claims:
+                # Add 60 second buffer to avoid edge cases
+                return time.time() > (claims["exp"] - 60)
+            # If no exp claim, consider it expired to be safe
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to decode JWT token for expiration check: {e}")
+            return True
+
     def get_jwt_from_redis(self):
         """Retrieve jwt token from redis or generate from Redhat SSO if not exists in redis."""
         try:
             # Try retrieve token from redis
             token = self.jwt_cache.get_jwt_response()
 
-            # If token not is redis
-            if not token:
-                token = self.jwt_provider.get_jwt_token(
-                    settings.RELATIONS_API_CLIENT_ID, settings.RELATIONS_API_CLIENT_SECRET
-                )
-                # Token obtained store it in redis
-                if token:
-                    self.jwt_cache.set_jwt_response(token)
-                    logger.info("Token stored in redis.")
-                else:
-                    logger.error("Failed to store jwt token in redis.")
+            # Check if token exists and is not expired
+            if token and not self.is_token_expired(token):
+                logger.debug("Valid token retrieved from redis.")
+                return token
+
+            # Token missing or expired, get new one
+            if token:
+                logger.info("Cached token expired, requesting new token.")
             else:
-                # Token exists return it
-                logger.info("Token retrieved from redis.")
+                logger.info("No token in cache, requesting new token.")
+
+            token = self.jwt_provider.get_jwt_token(
+                settings.RELATIONS_API_CLIENT_ID, settings.RELATIONS_API_CLIENT_SECRET
+            )
+            # Token obtained store it in redis
+            if token:
+                self.jwt_cache.set_jwt_response(token)
+                logger.info("Token stored in redis.")
+            else:
+                logger.error("Failed to store jwt token in redis.")
+
             return token
 
         except Exception as e:

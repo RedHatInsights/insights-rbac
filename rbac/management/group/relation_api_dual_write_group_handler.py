@@ -140,13 +140,17 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             logger.info(f"[Dual Write] Skipping empty replication event. {self._expected_empty_relation_reason}")
             return
         try:
+            # Deduplicate relations_to_add to avoid duplicates when generate_relations
+            # is called multiple times with the same data
+            deduplicated_add = self._deduplicate_subject_relations(self.relations_to_add, handler_name="Group")
+
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={"group_uuid": str(self.group.uuid), "org_id": str(self.group.tenant.org_id)},
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.relations_to_remove,
-                    add=self.relations_to_add,
+                    add=deduplicated_add,
                 ),
             )
         except Exception as e:

@@ -76,6 +76,7 @@ def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id, org_id=None,
         "resource_context": {
             "org_id": org_id or "",
             "event_type": event_type,
+            "created_at": ANY,
         },
     }
     return event
@@ -439,57 +440,6 @@ class RoleViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
-
-    @override_settings(V2_MIGRATION_RESOURCE_EXCLUDE_LIST=["rbac:workspace"])
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-    def test_role_replication_exluded_resource(self, mock_method):
-        """Test that excluded resources do not replicate via dual write."""
-        # Set up
-        role_name = "test_update_role"
-        access_data = [
-            {
-                "permission": "app:*:*",
-                "resourceDefinitions": [
-                    {
-                        "attributeFilter": {
-                            "key": "group.id",
-                            "operation": "equal",
-                            "value": "valueA",
-                        }
-                    }
-                ],
-            },
-            {"permission": "app:*:read", "resourceDefinitions": []},
-        ]
-
-        response = self.create_role(role_name, in_access_data=access_data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        actual_call_arg = mock_method.call_args[0][0]
-        actual_sorted = normalize_and_sort(actual_call_arg)
-        to_add = actual_sorted["relations_to_add"]
-
-        self.assertEqual([], actual_sorted["relations_to_remove"])
-        self.assertEqual(
-            3,
-            len(to_add),
-            "too many relations (should not add relations for excluded resource)",
-        )
-
-        role_binding = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role_binding")["resource"][
-            "id"
-        ]
-        workspace = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "workspace")
-
-        self.assertEqual(
-            role_binding,
-            workspace["subject"]["subject"]["id"],
-            "expected binding to workspace (not to excluded resource)",
-        )
-
-        role = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role")
-
-        self.assertEqual(role["relation"], "app_all_read", "expected workspace permission")
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_create_role_with_display_success(self, mock_method):
@@ -1994,6 +1944,7 @@ class RoleViewsetTests(IdentityRequest):
             "resource_context": {
                 "org_id": str(self.tenant.org_id),
                 "event_type": "delete_custom_role",
+                "created_at": ANY,
             },
         }
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
@@ -2196,6 +2147,7 @@ class RoleViewsetTests(IdentityRequest):
             "resource_context": {
                 "org_id": str(self.tenant.org_id),
                 "event_type": "delete_custom_role",
+                "created_at": ANY,
             },
         }
         current_relations = relation_api_tuples_for_v1_role(role_uuid, bound_workspace_id=str(self.child_workspace.id))
@@ -2308,7 +2260,7 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.data["errors"][0]["source"], "resourceDefinitions.attributeFilter.format")
         self.assertEqual(
-            response.data["errors"][0]["detail"], "attributeFilter operation 'equal' expects a String value"
+            response.data["errors"][0]["detail"], "attributeFilter operation 'equal' expects a String value or None"
         )
 
     def test_create_role_with_invalid_in_operation(self):
@@ -3022,7 +2974,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
                             "attributeFilter": {
                                 "key": "group.id",
                                 "operation": "in",
-                                "value": [str(uuid4()), str(self.tenant1_workspace.id)],
+                                "value": [str(self.tenant1_workspace.id), str(self.default_workspace_t1.id)],
                             }
                         }
                     ],
@@ -3075,13 +3027,16 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         error_dict = context.exception.detail
         self.assertIn("role", error_dict)
-        self.assertEqual(
+        error_msg = str(error_dict["role"][0])
+        self.assertIn(
             "user from org 'tenant1_org_id' cannot add permission 'inventory:groups:read' to workspace outside their org",
-            str(error_dict["role"][0]),
+            error_msg,
         )
+        self.assertIn(f"Invalid workspace IDs: {self.tenant2_workspace.id}", error_msg)
 
     def test_workspace_validation_different_tenant_fails_in_operation(self):
         """Test that workspace validation fails when workspace belongs to different tenant using the in operation."""
+        random_uuid = str(uuid4())
         request_data = {
             "name": "test_role",
             "access": [
@@ -3092,7 +3047,11 @@ class RoleWorkspaceValidationTests(IdentityRequest):
                             "attributeFilter": {
                                 "key": "group.id",
                                 "operation": "in",
-                                "value": [str(self.tenant2_workspace.id), str(uuid4())],
+                                "value": [
+                                    str(self.tenant1_workspace.id),  # Valid
+                                    str(self.tenant2_workspace.id),  # Invalid (different tenant)
+                                    random_uuid,  # Invalid (random)
+                                ],
                             }
                         }
                     ],
@@ -3112,7 +3071,12 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         error_dict = context.exception.detail
         self.assertIn("role", error_dict)
-        self.assertIn("cannot add permission", str(error_dict["role"][0]))
+        error_msg = str(error_dict["role"][0])
+        self.assertIn("cannot add permission", error_msg)
+        self.assertIn(str(self.tenant2_workspace.id), error_msg)
+        self.assertIn(random_uuid, error_msg)
+        # Ensure valid workspace is NOT in the error message
+        self.assertNotIn(str(self.tenant1_workspace.id), error_msg)
 
     def test_workspace_validation_non_workspace_resource_skipped(self):
         """Test that non-workspace resources skip validation."""
