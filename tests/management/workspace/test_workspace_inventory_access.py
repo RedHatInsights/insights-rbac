@@ -1633,13 +1633,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             # Verify workspaces from BOTH pages are returned in the response
             returned_workspace_ids = {str(ws["id"]) for ws in response.data["data"]}
-            for expected_ws_id in all_expected_workspaces:
-                self.assertIn(
-                    str(expected_ws_id),
-                    returned_workspace_ids,
-                    f"Expected workspace {expected_ws_id} to be in response but it was missing. "
-                    f"This may indicate page-2 results were dropped.",
-                )
+            expected_ws_ids_str = {str(ws_id) for ws_id in all_expected_workspaces}
+            # Use set operations to verify all expected workspaces are present (no loop needed)
+            self.assertTrue(
+                expected_ws_ids_str.issubset(returned_workspace_ids),
+                f"Expected workspaces {expected_ws_ids_str} to be subset of returned {returned_workspace_ids}. "
+                f"Missing: {expected_ws_ids_str - returned_workspace_ids}. Page-2 results may have been dropped.",
+            )
 
             # Verify total count includes workspaces from both pages
             # Note: Response may include additional workspaces (root, ungrouped) added by view logic
@@ -1659,3 +1659,106 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         self.assertEqual(checker.PAGE_SIZE, 1000)
         # Verify MAX_PAGES is set to prevent infinite loops
         self.assertEqual(checker.MAX_PAGES, 10000)
+
+    @patch("management.permissions.workspace_inventory_access.logger")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    def test_lookup_accessible_workspaces_duplicate_continuation_token_guard(self, mock_channel, mock_logger):
+        """Guard rail: stop when the server returns the same continuation token that was sent."""
+        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # First page: returns workspace and continuation token "dup-token"
+        first_response = MagicMock()
+        first_response.object.resource_id = "ws-101"
+        first_response.pagination.continuation_token = "dup-token"
+
+        # Second page: server echoes back the same continuation token ("dup-token")
+        second_response = MagicMock()
+        second_response.object.resource_id = "ws-202"
+        second_response.pagination.continuation_token = "dup-token"
+
+        mock_stub.StreamedListObjects.side_effect = [
+            iter([first_response]),
+            iter([second_response]),
+            # If the guard fails, we'd keep going; the test asserts we stop at 2 calls
+        ]
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            checker = WorkspaceInventoryAccessChecker()
+            workspaces = checker.lookup_accessible_workspaces("user-1", "view")
+
+            # Assert: we got workspace IDs from both pages
+            self.assertEqual(workspaces, {"ws-101", "ws-202"})
+
+            # StreamedListObjects should only be called twice (guard stops at duplicate token)
+            self.assertEqual(mock_stub.StreamedListObjects.call_count, 2)
+
+            # Verify a warning was logged about the duplicate token
+            warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+            duplicate_token_warnings = [c for c in warning_calls if "duplicate continuation token" in c.lower()]
+            self.assertTrue(
+                duplicate_token_warnings,
+                f"Expected a warning about duplicate continuation token. Got warnings: {warning_calls}",
+            )
+
+    @patch("management.permissions.workspace_inventory_access.logger")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    def test_lookup_accessible_workspaces_max_pages_guard(self, mock_channel, mock_logger):
+        """Guard rail: stop pagination when MAX_PAGES is reached even if server keeps returning tokens."""
+        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Use a small MAX_PAGES for testing to avoid creating thousands of mock pages
+        test_max_pages = 5
+
+        def make_page_response(page_index):
+            """Create a mock response for a single page."""
+            response = MagicMock()
+            response.object.resource_id = f"ws-{page_index}"
+            response.pagination.continuation_token = f"token-{page_index}"
+            return response
+
+        # Create more pages than MAX_PAGES to ensure we'd loop forever without the guard
+        mock_stub.StreamedListObjects.side_effect = [iter([make_page_response(i)]) for i in range(test_max_pages + 5)]
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            checker = WorkspaceInventoryAccessChecker()
+            # Temporarily override MAX_PAGES for this test
+            original_max_pages = checker.MAX_PAGES
+            checker.MAX_PAGES = test_max_pages
+
+            try:
+                workspaces = checker.lookup_accessible_workspaces("user-2", "view")
+
+                # Assert: StreamedListObjects is not called more than MAX_PAGES times
+                self.assertEqual(
+                    mock_stub.StreamedListObjects.call_count,
+                    test_max_pages,
+                    "Pagination loop should stop at MAX_PAGES",
+                )
+
+                # We should get exactly MAX_PAGES workspaces
+                self.assertEqual(len(workspaces), test_max_pages)
+                expected_workspaces = {f"ws-{i}" for i in range(test_max_pages)}
+                self.assertEqual(workspaces, expected_workspaces)
+
+                # Verify a warning was logged about hitting MAX_PAGES limit
+                warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+                max_pages_warnings = [c for c in warning_calls if "maximum page limit" in c.lower()]
+                self.assertTrue(
+                    max_pages_warnings,
+                    f"Expected a warning about hitting MAX_PAGES limit. Got warnings: {warning_calls}",
+                )
+            finally:
+                # Restore original MAX_PAGES
+                checker.MAX_PAGES = original_max_pages

@@ -18,7 +18,7 @@
 """Workspace access checker using Inventory API."""
 
 import logging
-from typing import Set
+from typing import Optional, Set
 
 import grpc
 from kessel.inventory.v1beta2 import (
@@ -155,6 +155,42 @@ class WorkspaceInventoryAccessChecker:
 
         return self._call_inventory(rpc, False)
 
+    def _build_streamed_request(
+        self,
+        principal_id: str,
+        relation: str,
+        continuation_token: Optional[str],
+    ) -> streamed_list_objects_request_pb2.StreamedListObjectsRequest:
+        """Build a StreamedListObjects request with pagination."""
+        return streamed_list_objects_request_pb2.StreamedListObjectsRequest(
+            object_type=representation_type_pb2.RepresentationType(
+                resource_type="workspace",
+                reporter_type="rbac",
+            ),
+            relation=relation,
+            subject=make_subject_ref(principal_id),
+            pagination=request_pagination_pb2.RequestPagination(
+                limit=self.PAGE_SIZE,
+                continuation_token=continuation_token or "",
+            ),
+        )
+
+    def _extract_workspace_id(self, response) -> Optional[str]:
+        """Extract workspace ID from a StreamedListObjects response, or None if malformed."""
+        obj = getattr(response, "object", None)
+        if not obj:
+            return None
+        workspace_id = getattr(obj, "resource_id", None)
+        return workspace_id or None
+
+    def _extract_continuation_token(self, response) -> Optional[str]:
+        """Extract continuation token from a response's pagination info, or None if not present."""
+        pagination = getattr(response, "pagination", None)
+        if not pagination:
+            return None
+        token = getattr(pagination, "continuation_token", None)
+        return token or None
+
     def lookup_accessible_workspaces(self, principal_id: str, relation: str) -> Set[str]:
         """
         Lookup which workspaces are accessible to the principal using Inventory API StreamedListObjects.
@@ -179,38 +215,13 @@ class WorkspaceInventoryAccessChecker:
             while page_count < self.MAX_PAGES:
                 page_count += 1
 
-                # Build pagination with continuation token if available
-                pagination = request_pagination_pb2.RequestPagination(
-                    limit=self.PAGE_SIZE,
-                    continuation_token=continuation_token or "",
-                )
-
-                # Build StreamedListObjects request
-                request_data = streamed_list_objects_request_pb2.StreamedListObjectsRequest(
-                    object_type=representation_type_pb2.RepresentationType(
-                        resource_type="workspace",
-                        reporter_type="rbac",
-                    ),
-                    relation=relation,
-                    subject=make_subject_ref(principal_id),
-                    pagination=pagination,
-                )
-
-                # Stream accessible workspace objects for this page
+                request_data = self._build_streamed_request(principal_id, relation, continuation_token)
                 responses = stub.StreamedListObjects(request_data)
 
-                # Track the last continuation token from responses
                 last_token = None
-
-                # Iterate through all accessible resources in this page
                 for response in responses:
-                    # Extract the workspace ID from the response protobuf object
-                    if (
-                        hasattr(response, "object")
-                        and hasattr(response.object, "resource_id")
-                        and response.object.resource_id
-                    ):
-                        workspace_id = response.object.resource_id
+                    workspace_id = self._extract_workspace_id(response)
+                    if workspace_id:
                         accessible_workspaces.add(workspace_id)
                     else:
                         logger.warning(
@@ -218,19 +229,13 @@ class WorkspaceInventoryAccessChecker:
                             f"missing object.resource_id in response for principal={principal_id}"
                         )
 
-                    # Track continuation token from pagination info
-                    if (
-                        hasattr(response, "pagination")
-                        and response.pagination is not None
-                        and response.pagination.continuation_token
-                    ):
-                        last_token = response.pagination.continuation_token
+                    token = self._extract_continuation_token(response)
+                    if token:
+                        last_token = token
 
-                # Break the loop if no more pages
                 if not last_token:
                     break
 
-                # Guard against server returning the same token (would cause infinite loop)
                 if last_token == continuation_token:
                     logger.warning(
                         f"Inventory API returned duplicate continuation token for principal={principal_id}. "
@@ -238,7 +243,6 @@ class WorkspaceInventoryAccessChecker:
                     )
                     break
 
-                # Update continuation token for next page
                 continuation_token = last_token
 
             if page_count >= self.MAX_PAGES:
