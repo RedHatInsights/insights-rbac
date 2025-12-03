@@ -760,6 +760,7 @@ class RoleDefinerTests(IdentityRequest):
             "Expected overall number of tuples not to change.",
         )
 
+
 class V2RoleSeedingTests(IdentityRequest):
     """Test V2 role seeding functionality."""
 
@@ -1055,3 +1056,82 @@ class V2RoleSeedingTests(IdentityRequest):
             tenant_platform_role,
             parents,
             "TENANT platform role should be added after scope change",
+        )
+
+    def test_v2_role_seeded_for_unchanged_v1_role(self):
+        """Test that V2 role is seeded even when V1 role is unchanged."""
+        seed_group()
+        seed_roles()
+
+        # Get a V1 role and its V2 counterpart
+        v1_role = Role.objects.public_tenant_only().get(name="Notifications viewer")
+        v2_role = SeededRoleV2.objects.get(uuid=v1_role.uuid)
+
+        # Delete the V2 role to simulate V2 tables being newly added
+        v2_role.delete()
+        self.assertFalse(SeededRoleV2.objects.filter(uuid=v1_role.uuid).exists())
+
+        # Seed again - V1 role is unchanged but V2 should be recreated
+        seed_roles()
+
+        # V2 role should exist again
+        self.assertTrue(SeededRoleV2.objects.filter(uuid=v1_role.uuid).exists())
+        v2_role = SeededRoleV2.objects.get(uuid=v1_role.uuid)
+        self.assertEqual(v2_role.v1_source, v1_role)
+
+    def test_non_default_role_has_no_parent(self):
+        """Test that a role that's neither platform_default nor admin_default has no parents."""
+        seed_group()
+        seed_roles()
+
+        # Find a role that's neither platform_default nor admin_default
+        non_default_role = (
+            Role.objects.public_tenant_only().filter(platform_default=False, admin_default=False).first()
+        )
+
+        self.assertIsNotNone(non_default_role, "Should have at least one non-default role")
+
+        # Get its V2 counterpart
+        v2_role = SeededRoleV2.objects.get(uuid=non_default_role.uuid)
+
+        # Should have no parents
+        self.assertEqual(
+            v2_role.parents.count(),
+            0,
+            "Non-default role should have no parents",
+        )
+
+    def test_v2_role_permissions_updated_when_v1_changes(self):
+        """Test that V2 role permissions are updated when V1 role permissions change."""
+        seed_group()
+        seed_roles()
+
+        # Get a V1 role and its V2 counterpart
+        v1_role = Role.objects.public_tenant_only().get(name="Notifications viewer")
+        v2_role = SeededRoleV2.objects.get(uuid=v1_role.uuid)
+
+        # Record initial permissions
+        initial_v2_permissions = set(v2_role.permissions.all())
+        self.assertGreater(len(initial_v2_permissions), 0, "Should have initial permissions")
+
+        # Add a new permission to V1 role
+        new_permission, _ = Permission.objects.get_or_create(
+            permission="test:resource:action",
+            tenant=self.public_tenant,
+        )
+        Access.objects.create(permission=new_permission, role=v1_role, tenant=self.public_tenant)
+
+        # Bump version to trigger update
+        v1_role.version += 1
+        v1_role.save()
+
+        # Seed again
+        seed_roles()
+
+        # V2 role should have the new permission
+        v2_role.refresh_from_db()
+        v2_permissions = set(v2_role.permissions.all())
+
+        # V2 should now match V1's permissions (which were reset during seeding)
+        v1_permissions = set(access.permission for access in v1_role.access.all())
+        self.assertEqual(v2_permissions, v1_permissions)
