@@ -18,7 +18,7 @@
 """Workspace access checker using Inventory API."""
 
 import logging
-from typing import Set
+from typing import Optional, Set
 
 import grpc
 from kessel.inventory.v1beta2 import (
@@ -42,8 +42,10 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class WorkspaceInventoryAccessChecker:
     """Check workspace access using Inventory API."""
 
-    # Limit for Inventory API StreamedListObjects requests.
-    INVENTORY_LIMIT = 10000
+    # Page size for Inventory API StreamedListObjects requests with continuation token pagination.
+    PAGE_SIZE = 1000
+    # Maximum number of pages to fetch to prevent infinite loops from buggy server responses.
+    MAX_PAGES = 10000
 
     def _log_and_return_allowed(
         self,
@@ -153,12 +155,48 @@ class WorkspaceInventoryAccessChecker:
 
         return self._call_inventory(rpc, False)
 
+    def _build_streamed_request(
+        self,
+        principal_id: str,
+        relation: str,
+        continuation_token: Optional[str],
+    ) -> streamed_list_objects_request_pb2.StreamedListObjectsRequest:
+        """Build a StreamedListObjects request with pagination."""
+        return streamed_list_objects_request_pb2.StreamedListObjectsRequest(
+            object_type=representation_type_pb2.RepresentationType(
+                resource_type="workspace",
+                reporter_type="rbac",
+            ),
+            relation=relation,
+            subject=make_subject_ref(principal_id),
+            pagination=request_pagination_pb2.RequestPagination(
+                limit=self.PAGE_SIZE,
+                continuation_token=continuation_token or "",
+            ),
+        )
+
+    def _extract_workspace_id(self, response) -> Optional[str]:
+        """Extract workspace ID from a StreamedListObjects response, or None if malformed."""
+        obj = getattr(response, "object", None)
+        if not obj:
+            return None
+        workspace_id = getattr(obj, "resource_id", None)
+        return workspace_id or None
+
+    def _extract_continuation_token(self, response) -> Optional[str]:
+        """Extract continuation token from a response's pagination info, or None if not present."""
+        pagination = getattr(response, "pagination", None)
+        if not pagination:
+            return None
+        token = getattr(pagination, "continuation_token", None)
+        return token or None
+
     def lookup_accessible_workspaces(self, principal_id: str, relation: str) -> Set[str]:
         """
         Lookup which workspaces are accessible to the principal using Inventory API StreamedListObjects.
 
         This uses the Inventory API v1beta2's StreamedListObjects method which efficiently streams all
-        accessible workspaces in a single call. It answers the question:
+        accessible workspaces using continuation token pagination. It answers the question:
         "Which workspaces does this principal have the specified relation to?"
 
         Args:
@@ -168,52 +206,55 @@ class WorkspaceInventoryAccessChecker:
         Returns:
             Set[str]: Set of workspace IDs that the principal has access to
         """
-        # Build StreamedListObjects request with default limit
-        request_data = streamed_list_objects_request_pb2.StreamedListObjectsRequest(
-            object_type=representation_type_pb2.RepresentationType(
-                resource_type="workspace",
-                reporter_type="rbac",
-            ),
-            relation=relation,
-            subject=make_subject_ref(principal_id),
-            pagination=request_pagination_pb2.RequestPagination(limit=self.INVENTORY_LIMIT),
-        )
 
         def rpc(stub):
             accessible_workspaces = set()
+            continuation_token = None
+            page_count = 0
 
-            # Stream all accessible workspace objects
-            responses = stub.StreamedListObjects(request_data)
+            while page_count < self.MAX_PAGES:
+                page_count += 1
 
-            # Iterate through all accessible resources
-            for response in responses:
-                # Extract the workspace ID from the response protobuf object
-                if (
-                    hasattr(response, "object")
-                    and hasattr(response.object, "resource_id")
-                    and response.object.resource_id
-                ):
-                    workspace_id = response.object.resource_id
-                    accessible_workspaces.add(workspace_id)
-                else:
+                request_data = self._build_streamed_request(principal_id, relation, continuation_token)
+                responses = stub.StreamedListObjects(request_data)
+
+                last_token = None
+                for response in responses:
+                    workspace_id = self._extract_workspace_id(response)
+                    if workspace_id:
+                        accessible_workspaces.add(workspace_id)
+                    else:
+                        logger.warning(
+                            f"Malformed workspace response from StreamedListObjects: "
+                            f"missing object.resource_id in response for principal={principal_id}"
+                        )
+
+                    token = self._extract_continuation_token(response)
+                    if token:
+                        last_token = token
+
+                if not last_token:
+                    break
+
+                if last_token == continuation_token:
                     logger.warning(
-                        f"Malformed workspace response from StreamedListObjects: "
-                        f"missing object.resource_id in response for principal={principal_id}"
+                        f"Inventory API returned duplicate continuation token for principal={principal_id}. "
+                        "Breaking pagination loop to avoid infinite loop."
                     )
+                    break
 
-            workspace_count = len(accessible_workspaces)
+                continuation_token = last_token
 
-            if workspace_count >= self.INVENTORY_LIMIT:
+            if page_count >= self.MAX_PAGES:
                 logger.warning(
-                    f"Inventory API returned {workspace_count} workspaces for principal={principal_id}, "
-                    f"which meets or exceeds the limit of {self.INVENTORY_LIMIT}. "
-                    "Some accessible workspaces may not be included in the result."
+                    f"Reached maximum page limit ({self.MAX_PAGES}) while fetching workspaces "
+                    f"for principal={principal_id}. Some workspaces may not be included."
                 )
-            else:
-                logger.info(
-                    f"Accessible workspaces for principal={principal_id}: "
-                    f"{workspace_count} found via StreamedListObjects"
-                )
+
+            logger.info(
+                f"Accessible workspaces for principal={principal_id}: "
+                f"{len(accessible_workspaces)} found via StreamedListObjects"
+            )
 
             return accessible_workspaces
 

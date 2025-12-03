@@ -155,17 +155,27 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         with patch.object(json_format, "MessageToDict", return_value=response_dict):
             return mock_response
 
-    def _create_mock_workspace_responses(self, workspace_ids):
+    def _create_mock_workspace_responses(self, workspace_ids, continuation_token=None):
         """
         Create mock response objects for StreamedListObjects.
 
         Args:
             workspace_ids: List of workspace IDs to create mock responses for
+            continuation_token: Optional continuation token for the last response (use None for no token)
 
         Returns:
             List of mock response objects with proper structure
         """
-        return [MagicMock(object=MagicMock(resource_id=str(ws_id))) for ws_id in workspace_ids]
+        responses = []
+        for i, ws_id in enumerate(workspace_ids):
+            mock_response = MagicMock(object=MagicMock(resource_id=str(ws_id)))
+            # Only set continuation token on the last response if provided (explicit None check)
+            if continuation_token is not None and i == len(workspace_ids) - 1:
+                mock_response.pagination = MagicMock(continuation_token=continuation_token)
+            else:
+                mock_response.pagination = None
+            responses.append(mock_response)
+        return responses
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1557,3 +1567,198 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
                 # Result depends on Inventory API response, which we mocked as ALLOWED_TRUE
                 self.assertTrue(result)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_with_pagination_continuation_token(self, mock_flag, mock_channel):
+        """Test workspace list with pagination using continuation token to fetch more than PAGE_SIZE workspaces."""
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Create workspaces for two pages
+        # First page has workspaces with continuation token
+        # Second page has remaining workspaces without continuation token
+        first_page_workspaces = [self.default_workspace.id, self.standard_workspace.id]
+        second_page_workspaces = [self.standard_sub_workspace.id]
+        all_expected_workspaces = first_page_workspaces + second_page_workspaces
+
+        # Mock responses for first page with continuation token
+        first_page_responses = self._create_mock_workspace_responses(
+            first_page_workspaces, continuation_token="next_page_token_123"
+        )
+
+        # Mock responses for second page without continuation token (last page)
+        second_page_responses = self._create_mock_workspace_responses(second_page_workspaces)
+
+        # Use side_effect list to return different responses on each call (no conditionals)
+        mock_stub.StreamedListObjects.side_effect = [
+            iter(first_page_responses),
+            iter(second_page_responses),
+        ]
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:read",
+                platform_default=True,
+            )
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should return workspaces from both pages
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            # Verify StreamedListObjects was called twice (for two pages)
+            self.assertEqual(mock_stub.StreamedListObjects.call_count, 2)
+
+            # Verify the second call included the continuation token
+            second_call_args = mock_stub.StreamedListObjects.call_args_list[1]
+            request_arg = second_call_args[0][0]
+            self.assertEqual(request_arg.pagination.continuation_token, "next_page_token_123")
+
+            # Verify workspaces from BOTH pages are returned in the response
+            returned_workspace_ids = {str(ws["id"]) for ws in response.data["data"]}
+            expected_ws_ids_str = {str(ws_id) for ws_id in all_expected_workspaces}
+            # Use set operations to verify all expected workspaces are present (no loop needed)
+            self.assertTrue(
+                expected_ws_ids_str.issubset(returned_workspace_ids),
+                f"Expected workspaces {expected_ws_ids_str} to be subset of returned {returned_workspace_ids}. "
+                f"Missing: {expected_ws_ids_str - returned_workspace_ids}. Page-2 results may have been dropped.",
+            )
+
+            # Verify total count includes workspaces from both pages
+            # Note: Response may include additional workspaces (root, ungrouped) added by view logic
+            self.assertGreaterEqual(
+                len(returned_workspace_ids),
+                len(all_expected_workspaces),
+                f"Expected at least {len(all_expected_workspaces)} workspaces from pagination, "
+                f"but got {len(returned_workspace_ids)}",
+            )
+
+    def test_workspace_inventory_access_checker_pagination_constants(self):
+        """Test that WorkspaceInventoryAccessChecker uses correct pagination constants."""
+        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+
+        checker = WorkspaceInventoryAccessChecker()
+        # Verify PAGE_SIZE is set to 1000 for pagination
+        self.assertEqual(checker.PAGE_SIZE, 1000)
+        # Verify MAX_PAGES is set to prevent infinite loops
+        self.assertEqual(checker.MAX_PAGES, 10000)
+
+    @patch("management.permissions.workspace_inventory_access.logger")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    def test_lookup_accessible_workspaces_duplicate_continuation_token_guard(self, mock_channel, mock_logger):
+        """Guard rail: stop when the server returns the same continuation token that was sent."""
+        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # First page: returns workspace and continuation token "dup-token"
+        first_response = MagicMock()
+        first_response.object.resource_id = "ws-101"
+        first_response.pagination.continuation_token = "dup-token"
+
+        # Second page: server echoes back the same continuation token ("dup-token")
+        second_response = MagicMock()
+        second_response.object.resource_id = "ws-202"
+        second_response.pagination.continuation_token = "dup-token"
+
+        mock_stub.StreamedListObjects.side_effect = [
+            iter([first_response]),
+            iter([second_response]),
+            # If the guard fails, we'd keep going; the test asserts we stop at 2 calls
+        ]
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            checker = WorkspaceInventoryAccessChecker()
+            workspaces = checker.lookup_accessible_workspaces("user-1", "view")
+
+            # Assert: we got workspace IDs from both pages
+            self.assertEqual(workspaces, {"ws-101", "ws-202"})
+
+            # StreamedListObjects should only be called twice (guard stops at duplicate token)
+            self.assertEqual(mock_stub.StreamedListObjects.call_count, 2)
+
+            # Verify a warning was logged about the duplicate token
+            warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+            duplicate_token_warnings = [c for c in warning_calls if "duplicate continuation token" in c.lower()]
+            self.assertTrue(
+                duplicate_token_warnings,
+                f"Expected a warning about duplicate continuation token. Got warnings: {warning_calls}",
+            )
+
+    @patch("management.permissions.workspace_inventory_access.logger")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    def test_lookup_accessible_workspaces_max_pages_guard(self, mock_channel, mock_logger):
+        """Guard rail: stop pagination when MAX_PAGES is reached even if server keeps returning tokens."""
+        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Use a small MAX_PAGES for testing to avoid creating thousands of mock pages
+        test_max_pages = 5
+
+        def make_page_response(page_index):
+            """Create a mock response for a single page."""
+            response = MagicMock()
+            response.object.resource_id = f"ws-{page_index}"
+            response.pagination.continuation_token = f"token-{page_index}"
+            return response
+
+        # Create more pages than MAX_PAGES to ensure we'd loop forever without the guard
+        mock_stub.StreamedListObjects.side_effect = [iter([make_page_response(i)]) for i in range(test_max_pages + 5)]
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            checker = WorkspaceInventoryAccessChecker()
+            # Temporarily override MAX_PAGES for this test
+            original_max_pages = checker.MAX_PAGES
+            checker.MAX_PAGES = test_max_pages
+
+            try:
+                workspaces = checker.lookup_accessible_workspaces("user-2", "view")
+
+                # Assert: StreamedListObjects is not called more than MAX_PAGES times
+                self.assertEqual(
+                    mock_stub.StreamedListObjects.call_count,
+                    test_max_pages,
+                    "Pagination loop should stop at MAX_PAGES",
+                )
+
+                # We should get exactly MAX_PAGES workspaces
+                self.assertEqual(len(workspaces), test_max_pages)
+                expected_workspaces = {f"ws-{i}" for i in range(test_max_pages)}
+                self.assertEqual(workspaces, expected_workspaces)
+
+                # Verify a warning was logged about hitting MAX_PAGES limit
+                warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+                max_pages_warnings = [c for c in warning_calls if "maximum page limit" in c.lower()]
+                self.assertTrue(
+                    max_pages_warnings,
+                    f"Expected a warning about hitting MAX_PAGES limit. Got warnings: {warning_calls}",
+                )
+            finally:
+                # Restore original MAX_PAGES
+                checker.MAX_PAGES = original_max_pages
