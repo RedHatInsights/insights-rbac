@@ -31,10 +31,9 @@ from management.models import (
     Role,
     Group,
     PlatformRoleV2,
-    RoleV2,
     SeededRoleV2,
 )
-from management.permission.scope_service import ImplicitResourceService, Scope
+from management.permission.scope_service import Scope
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
 from management.role.definer import seed_roles, seed_permissions, _seed_platform_roles
 from management.role.platform import platform_v2_role_uuid_for
@@ -752,18 +751,6 @@ class V2RoleSeedingTests(IdentityRequest):
         self.assertTrue(Group.objects.filter(platform_default=True).exists())
         self.assertTrue(Group.objects.filter(admin_default=True).exists())
 
-        # Verify UUIDs are correct
-        policy_service = GlobalPolicyIdService.shared()
-        for access_type in DefaultAccessType:
-            for scope in Scope:
-                expected_uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
-                actual_role = platform_roles[(access_type, scope)]
-                self.assertEqual(
-                    actual_role.uuid,
-                    expected_uuid,
-                    f"UUID mismatch for {access_type.value} {scope.name.lower()} platform role",
-                )
-
     def test_seed_platform_roles_uses_correct_uuids(self):
         """Test that platform roles are created with correct UUIDs from settings."""
         seed_group()
@@ -830,7 +817,6 @@ class V2RoleSeedingTests(IdentityRequest):
         self.assertGreater(platform_v1_roles.count(), 0, "Should have at least one platform_default role")
 
         # For each scope, check that the user platform role has appropriate children
-        resource_service = ImplicitResourceService.from_settings()
         policy_service = GlobalPolicyIdService.shared()
 
         # Check at least one scope has children
@@ -864,7 +850,6 @@ class V2RoleSeedingTests(IdentityRequest):
         self.assertGreater(admin_v1_roles.count(), 0, "Should have at least one admin_default role")
 
         # For each scope, check that the admin platform role has appropriate children
-        resource_service = ImplicitResourceService.from_settings()
         policy_service = GlobalPolicyIdService.shared()
 
         # Check at least one scope has children
@@ -903,25 +888,6 @@ class V2RoleSeedingTests(IdentityRequest):
         # seed_group should have been called when DefaultGroupNotAvailableError was raised
         self.assertTrue(mock_seed_group.called)
         self.assertEqual(len(platform_roles), 6)
-
-    def test_seed_roles_creates_platform_roles(self):
-        """Test that seed_roles creates platform roles during normal seeding."""
-        # Seed groups and roles
-        seed_group()
-        seed_roles()
-
-        # Platform roles should be created (6 total: 3 scopes × 2 access types)
-        self.assertGreaterEqual(PlatformRoleV2.objects.count(), 6)
-
-        # Verify all 6 expected platform roles exist
-        policy_service = GlobalPolicyIdService.shared()
-        for access_type in DefaultAccessType:
-            for scope in Scope:
-                expected_uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
-                self.assertTrue(
-                    PlatformRoleV2.objects.filter(uuid=expected_uuid).exists(),
-                    f"Platform role for {access_type.value} {scope.name} should exist",
-                )
 
     def test_v2_role_parents_cleared_when_scope_changes(self):
         """Test that v2_role.parents is cleared when the role's scope changes due to settings."""

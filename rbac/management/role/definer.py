@@ -82,7 +82,7 @@ class _SeedRolesConfig:
             raise ValueError("force_create_relationships and force_update_relationships cannot both be True")
 
 
-def _make_role(data, config: _SeedRolesConfig, platform_roles=None):
+def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     name = data.pop("name")
@@ -141,17 +141,17 @@ def _make_role(data, config: _SeedRolesConfig, platform_roles=None):
     elif updated:
         dual_write_handler.replicate_update_system_role()
 
-    _seed_v2_role_from_v1(role, display_name, defaults["description"], public_tenant, platform_roles)
+    _seed_v2_role_from_v1(role, display_name, defaults["description"], public_tenant, platform_roles, resource_service)
 
     return role
 
 
-def _update_or_create_roles(roles, config: _SeedRolesConfig, platform_roles=None):
+def _update_or_create_roles(roles, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Update or create roles from list."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(role_json, config, platform_roles)
+            role = _make_role(role_json, config, platform_roles, resource_service)
             current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
@@ -168,6 +168,7 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
     ]
     current_role_ids = set()
     platform_roles = _seed_platform_roles()
+    resource_service = ImplicitResourceService.from_settings()
     with transaction.atomic():
         for role_file_name in role_files:
             role_file_path = os.path.join(roles_directory, role_file_name)
@@ -181,6 +182,7 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
                         force_update_relationships=force_update_relationships,
                     ),
                     platform_roles,
+                    resource_service,
                 )
                 current_role_ids.update(file_role_ids)
 
@@ -309,7 +311,7 @@ def _create_single_platform_role(access_type, scope, policy_service, public_tena
     return platform_role
 
 
-def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles):
+def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles, resource_service):
     """Create or update V2 role from V1 role during seeding."""
     try:
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
@@ -333,7 +335,6 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
             v2_role.permissions.set(v1_permissions)
             logger.info("Added %d permissions to V2 role %s.", len(v1_permissions), display_name)
 
-        resource_service = ImplicitResourceService.from_settings()
         scope = resource_service.scope_for_role(v1_role)
 
         # Clear parents first since scope may have changed since previous seeding
