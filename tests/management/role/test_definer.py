@@ -887,23 +887,6 @@ class V2RoleSeedingTests(IdentityRequest):
 
         self.assertTrue(found_child, "At least one admin platform role should have children")
 
-    def test_seed_platform_roles_handles_missing_groups_gracefully(self):
-        """Test that seeding handles missing default groups gracefully by creating them."""
-        Group.objects.filter(platform_default=True).delete()
-        Group.objects.filter(admin_default=True).delete()
-        GlobalPolicyIdService.clear_shared()
-
-        # This should not raise an exception
-        try:
-            platform_roles = _seed_platform_roles()
-            self.assertEqual(len(platform_roles), 6)
-        except DefaultGroupNotAvailableError:
-            self.fail("_seed_platform_roles should automatically create default groups")
-
-        # Verify groups were created
-        self.assertTrue(Group.objects.filter(platform_default=True).exists())
-        self.assertTrue(Group.objects.filter(admin_default=True).exists())
-
     @patch("management.role.definer.seed_group")
     def test_seed_platform_roles_calls_seed_group_when_needed(self, mock_seed_group):
         """Test that _seed_platform_roles calls seed_group when default groups are missing."""
@@ -939,3 +922,94 @@ class V2RoleSeedingTests(IdentityRequest):
                     PlatformRoleV2.objects.filter(uuid=expected_uuid).exists(),
                     f"Platform role for {access_type.value} {scope.name} should exist",
                 )
+
+    def test_v2_role_parents_cleared_when_scope_changes(self):
+        """Test that v2_role.parents is cleared when the role's scope changes due to settings."""
+        seed_group()
+
+        # First seeding with role in DEFAULT scope (no ROOT_SCOPE_PERMISSIONS or TENANT_SCOPE_PERMISSIONS)
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            seed_roles()
+
+        policy_service = GlobalPolicyIdService.shared()
+
+        # Get a platform_default role that we can track
+        notifications_role = Role.objects.public_tenant_only().get(name="Notifications viewer")
+        v2_role = SeededRoleV2.objects.get(uuid=notifications_role.uuid)
+
+        # Verify initial state: v2_role should have DEFAULT scope platform role as parent
+        default_platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service)
+        default_platform_role = PlatformRoleV2.objects.get(uuid=default_platform_role_uuid)
+
+        self.assertIn(
+            default_platform_role,
+            list(v2_role.parents.all()),
+            "v2_role should have DEFAULT platform role as parent initially",
+        )
+
+        # Now change scope by adding a permission to ROOT_SCOPE_PERMISSIONS
+        # "notifications:*:*" will match any notifications permission
+        with self.settings(ROOT_SCOPE_PERMISSIONS="notifications:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            seed_roles()
+
+        # Refresh from database
+        v2_role.refresh_from_db()
+
+        # Get the ROOT scope platform role
+        root_platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.ROOT, policy_service)
+        root_platform_role = PlatformRoleV2.objects.get(uuid=root_platform_role_uuid)
+
+        # Verify: old parent (DEFAULT) should be removed, new parent (ROOT) should be present
+        parents = list(v2_role.parents.all())
+        self.assertNotIn(
+            default_platform_role,
+            parents,
+            "DEFAULT platform role should be removed from parents after scope change",
+        )
+        self.assertIn(
+            root_platform_role,
+            parents,
+            "ROOT platform role should be added as parent after scope change",
+        )
+
+    def test_v2_role_parents_cleared_when_scope_changes_to_tenant(self):
+        """Test that v2_role.parents is cleared when scope changes from DEFAULT to TENANT."""
+        seed_group()
+
+        # First seeding with role in DEFAULT scope
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            seed_roles()
+
+        policy_service = GlobalPolicyIdService.shared()
+
+        # Get a platform_default role
+        notifications_role = Role.objects.public_tenant_only().get(name="Notifications viewer")
+        v2_role = SeededRoleV2.objects.get(uuid=notifications_role.uuid)
+
+        # Verify initial state: DEFAULT scope
+        default_platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service)
+        default_platform_role = PlatformRoleV2.objects.get(uuid=default_platform_role_uuid)
+
+        self.assertIn(default_platform_role, list(v2_role.parents.all()))
+
+        # Change to TENANT scope
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="notifications:*:*"):
+            seed_roles()
+
+        v2_role.refresh_from_db()
+
+        # Get the TENANT scope platform role
+        tenant_platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.TENANT, policy_service)
+        tenant_platform_role = PlatformRoleV2.objects.get(uuid=tenant_platform_role_uuid)
+
+        parents = list(v2_role.parents.all())
+        self.assertNotIn(
+            default_platform_role,
+            parents,
+            "DEFAULT platform role should be removed after scope change to TENANT",
+        )
+        self.assertIn(
+            tenant_platform_role,
+            parents,
+            "TENANT platform role should be added after scope change",
+        )

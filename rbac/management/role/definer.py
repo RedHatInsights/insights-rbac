@@ -336,6 +336,9 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         resource_service = ImplicitResourceService.from_settings()
         scope = resource_service.scope_for_role(v1_role)
 
+        # Clear parents first since scope may have changed since previous seeding
+        v2_role.parents.clear()
+
         platform_role = platform_roles[(DefaultAccessType.USER, scope)]
         if v1_role.platform_default:
             platform_role.children.add(v2_role)
@@ -379,21 +382,19 @@ def _seed_platform_roles():
                 # Retry creating the platform role now that default groups exist
                 try:
                     # Refresh policy service since groups were just created
-                    refreshed_policy_service = GlobalPolicyIdService.shared()
-                    platform_role = _create_single_platform_role(
-                        access_type, scope, refreshed_policy_service, public_tenant
-                    )
+                    policy_service = GlobalPolicyIdService.shared()
+                    platform_role = _create_single_platform_role(access_type, scope, policy_service, public_tenant)
                     platform_roles[(access_type, scope)] = platform_role
                 except DefaultGroupNotAvailableError as e:
                     logger.error(
                         "Failed to create platform role for %s %s scope after creating default groups: %s",
                         access_type.value,
                         scope.name.lower(),
-                        str(e),
+                        e,
                     )
                     raise DefaultGroupNotAvailableError(
                         f"Failed to create platform role for {access_type.value} {scope.name.lower()} scope "
-                        f"after creating default groups: {str(e)}"
+                        f"after creating default groups: {e}"
                     )
 
     return platform_roles
