@@ -7504,7 +7504,8 @@ class GroupReplicationTests(IdentityRequest):
         dual_write_handler.replicate_new_or_updated_role(role)
 
         # Emulate the role having been created before V2 models were added.
-        CustomRoleV2.objects.filter(v1_source=role).delete()
+        deleted_count, _ = CustomRoleV2.objects.filter(v1_source=role).delete()
+        self.assertGreater(deleted_count, 0)
 
         group = Group(name="test group", tenant=self.tenant)
         group.save()

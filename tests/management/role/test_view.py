@@ -1725,6 +1725,7 @@ class RoleViewsetTests(IdentityRequest):
         )
 
     @override_settings(
+        REPLICATION_TO_RELATION_ENABLED=True,
         ROLE_CREATE_ALLOW_LIST="compliance,inventory",
         ROOT_SCOPE_PERMISSIONS="inventory:*:*",
         TENANT_SCOPE_PERMISSIONS="",
@@ -1743,17 +1744,16 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [{"permission": "compliance:policy:read", "resourceDefinitions": []}]
         new_access_data = [{"permission": "inventory:groups:read", "resourceDefinitions": []}]
 
-        with self.settings(REPLICATION_TO_RELATION_ENABLED=False):
-            response = self.create_role(role_name, in_access_data=access_data)
+        response = self.create_role(role_name, in_access_data=access_data)
 
         v1_uuid = response.data["uuid"]
         v1_role = Role.objects.get(uuid=v1_uuid)
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        # Ensure that the role was actually not migrated.
-        self.assertEqual(0, CustomRoleV2.objects.count())
-        self.assertEqual(0, BindingMapping.objects.filter(role=v1_role).count())
+        # Emulate the role having been created before the V2 models were added.
+        deleted_count, _ = CustomRoleV2.objects.filter(v1_source=v1_role).delete()
+        self.assertGreater(deleted_count, 0)
 
         # Update the role with new access data.
         test_data = dict(response.data)
@@ -1761,8 +1761,7 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("v1_management:role-detail", kwargs={"uuid": v1_uuid})
         client = APIClient()
 
-        with self.settings(REPLICATION_TO_RELATION_ENABLED=True):
-            response = client.put(url, test_data, format="json", **self.headers)
+        response = client.put(url, test_data, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
