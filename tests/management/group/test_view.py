@@ -49,6 +49,9 @@ from management.models import (
     Workspace,
 )
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.v2_model import CustomRoleV2
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
@@ -63,6 +66,7 @@ from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.management.role.test_view import find_in_list, relation_api_tuple
+from tests.v2_util import assert_v2_custom_roles_consistent
 
 
 def generate_group_member_relation_entry(group_uuid, principal_user_id):
@@ -7482,3 +7486,36 @@ class GroupReplicationTests(IdentityRequest):
         )
 
         self.assertEqual(len(sr1_bindings), 0)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_migrate_role_on_assign(self, replicate):
+        tuples = InMemoryTuples()
+        replicate.side_effect = InMemoryRelationReplicator(tuples).replicate
+
+        # Note that we must include at least one permission here in order for the role to be migrated on assignment.
+        # We only migrate the role when required for consistency (i.e. when at least one role binding exists).
+        role = self.fixture.new_custom_role(
+            name="test_role",
+            resource_access=self.fixture.workspace_access(default=["inventory:hosts:read"]),
+            tenant=self.tenant,
+        )
+
+        dual_write_handler = RelationApiDualWriteHandler(role=role, event_type=ReplicationEventType.CREATE_CUSTOM_ROLE)
+        dual_write_handler.replicate_new_or_updated_role(role)
+
+        # Emulate the role having been created before V2 models were added.
+        CustomRoleV2.objects.filter(v1_source=role).delete()
+
+        group = Group(name="test group", tenant=self.tenant)
+        group.save()
+
+        client = APIClient()
+        url = reverse("v1_management:group-roles", kwargs={"uuid": str(group.uuid)})
+        response = client.post(url, data={"roles": [str(role.uuid)]}, format="json", **self.headers)
+
+        # Check that the role was actually added.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertCountEqual([role], group.roles())
+
+        self.assertEqual(1, CustomRoleV2.objects.filter(v1_source=role).count())
+        assert_v2_custom_roles_consistent(test=self, tuples=tuples)
