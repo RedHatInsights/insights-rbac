@@ -31,7 +31,9 @@ from management.models import BindingMapping, Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
+from migration_tool.utils import create_relationship
 
 from api.models import User
 
@@ -102,6 +104,223 @@ def delete_bindings(bindings):
             bindings.delete()
         info["relations"] = [stringify_spicedb_relationship(relation) for relation in relations_to_remove]
     return info
+
+
+def read_tuples_from_kessel(resource_type: str, resource_id: str, relation: str, subject_type: str, subject_id: str):
+    """
+    Read tuples from Kessel Relations API.
+
+    This is a convenience wrapper around RelationsApiReplicator.read_tuples()
+    that uses the default "rbac" namespace.
+
+    Args:
+        resource_type: Type of the resource (e.g., "tenant", "workspace", "role_binding", "role")
+        resource_id: ID of the resource
+        relation: Relation to filter by (empty string for all relations)
+        subject_type: Type of the subject to filter by
+        subject_id: ID of the subject to filter by (empty string for all)
+
+    Returns:
+        list[dict]: List of tuple dictionaries from Kessel
+    """
+    replicator = RelationsApiReplicator()
+    return replicator.read_tuples(
+        resource_type=resource_type,
+        resource_id=resource_id,
+        relation=relation,
+        subject_type=subject_type,
+        subject_id=subject_id,
+    )
+
+
+def cleanup_tenant_orphaned_relationships(
+    tenant,
+    root_workspace,
+    default_workspace,
+    tenant_mapping,
+    read_tuples_fn,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Clean up orphaned role binding relationships for a tenant.
+
+    This function:
+    1. Queries Kessel for all role_bindings scoped to tenant/root/default workspace
+    2. Excludes TenantMapping default access binding UUIDs
+    3. Replicates DELETE for:
+       - binding→role relationships
+       - binding→group (subject) relationships
+       - workspace/tenant→binding relationships (scope bindings)
+    4. For custom V2 roles (not in system role UUIDs), also deletes role→permission tuples
+
+    Args:
+        tenant: The Tenant object to clean relationships for
+        root_workspace: The root workspace for the tenant
+        default_workspace: The default workspace for the tenant
+        tenant_mapping: The TenantMapping for the tenant
+        read_tuples_fn: Function to read tuples from Kessel, signature:
+                        (resource_type: str, resource_id: str, relation: str,
+                         subject_type: str = "", subject_id: str = "") -> list[dict]
+        dry_run: If True, only report what would be deleted without making changes
+
+    Returns:
+        dict: Results including bindings found, relations to remove, etc.
+    """
+    # Get system role UUIDs (same for V1 and V2)
+    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True))
+
+    # Collect TenantMapping role_binding UUIDs to exclude (default access bindings)
+    excluded_binding_uuids = {
+        str(tenant_mapping.default_role_binding_uuid),
+        str(tenant_mapping.default_admin_role_binding_uuid),
+        str(tenant_mapping.root_scope_default_role_binding_uuid),
+        str(tenant_mapping.root_scope_default_admin_role_binding_uuid),
+        str(tenant_mapping.tenant_scope_default_role_binding_uuid),
+        str(tenant_mapping.tenant_scope_default_admin_role_binding_uuid),
+    }
+
+    # Define scope resources to query
+    scope_resources = [
+        ("tenant", tenant.tenant_resource_id()),
+        ("workspace", str(root_workspace.id)),
+        ("workspace", str(default_workspace.id)),
+    ]
+
+    # Query Kessel for all role_bindings attached to scope resources
+    # Track binding_id -> list of (resource_type, resource_id) for scope relationships
+    bindings_to_clean = set()
+    binding_scope_relations = {}  # binding_id -> [(resource_type, resource_id), ...]
+
+    for resource_type, resource_id in scope_resources:
+        # Query: resource → binding → role_binding:*
+        binding_tuples = read_tuples_fn(resource_type, resource_id, "binding", "role_binding", "")
+        for t in binding_tuples:
+            binding_id = t.get("subject", {}).get("subject", {}).get("id")
+            if binding_id:
+                bindings_to_clean.add(binding_id)
+                # Track the scope relationship for this binding
+                if binding_id not in binding_scope_relations:
+                    binding_scope_relations[binding_id] = []
+                binding_scope_relations[binding_id].append((resource_type, resource_id))
+
+    # Exclude TenantMapping default access bindings
+    bindings_to_clean -= excluded_binding_uuids
+    # Also remove excluded bindings from scope relations tracking
+    for excluded_id in excluded_binding_uuids:
+        binding_scope_relations.pop(excluded_id, None)
+
+    logger.info(
+        f"Found {len(bindings_to_clean)} bindings to clean for tenant {tenant.org_id} "
+        f"(excluded {len(excluded_binding_uuids)} default access bindings)"
+    )
+
+    # Build relations to remove
+    relations_to_remove = []
+    custom_v2_roles_to_clean = set()
+
+    for binding_id in bindings_to_clean:
+        # Query: role_binding:<id> → role → role:*
+        role_tuples = read_tuples_fn("role_binding", binding_id, "role", "role", "")
+        for t in role_tuples:
+            role_id = t.get("subject", {}).get("subject", {}).get("id")
+            if role_id:
+                # Create relationship for deletion
+                relations_to_remove.append(
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        binding_id,
+                        ("rbac", "role"),
+                        role_id,
+                        "role",
+                    )
+                )
+                # If this is a custom V2 role (not a system role), mark for permission cleanup
+                if role_id not in system_role_uuids:
+                    custom_v2_roles_to_clean.add(role_id)
+
+        # Query: role_binding:<id> → subject → group:*#member
+        group_tuples = read_tuples_fn("role_binding", binding_id, "subject", "group", "")
+        for t in group_tuples:
+            group_id = t.get("subject", {}).get("subject", {}).get("id")
+            subject_relation = t.get("subject", {}).get("relation")
+            if group_id:
+                relations_to_remove.append(
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        binding_id,
+                        ("rbac", "group"),
+                        group_id,
+                        "subject",
+                        subject_relation=subject_relation,
+                    )
+                )
+
+        # Remove the scope binding relationships: workspace/tenant → binding → role_binding
+        # These orphaned relationships exist when BindingMapping was deleted via cascade
+        scope_relations = binding_scope_relations.get(binding_id, [])
+        for resource_type, resource_id in scope_relations:
+            relations_to_remove.append(
+                create_relationship(
+                    ("rbac", resource_type),
+                    resource_id,
+                    ("rbac", "role_binding"),
+                    binding_id,
+                    "binding",
+                )
+            )
+
+    # For custom V2 roles, also delete role → permission → principal:* tuples
+    for role_id in custom_v2_roles_to_clean:
+        # Query: role:<id> → * → principal:*
+        # We need to get all permission relations on this role
+        permission_tuples = read_tuples_fn("role", role_id, "", "principal", "*")
+        for t in permission_tuples:
+            relation = t.get("relation")
+            if relation:
+                relations_to_remove.append(
+                    create_relationship(
+                        ("rbac", "role"),
+                        role_id,
+                        ("rbac", "principal"),
+                        "*",
+                        relation,
+                    )
+                )
+
+    logger.info(
+        f"Prepared {len(relations_to_remove)} relations to remove for tenant {tenant.org_id} "
+        f"({len(custom_v2_roles_to_clean)} custom V2 roles to clean)"
+    )
+
+    result = {
+        "org_id": tenant.org_id,
+        "dry_run": dry_run,
+        "bindings_found": len(bindings_to_clean),
+        "bindings_cleaned": list(bindings_to_clean),
+        "excluded_bindings": list(excluded_binding_uuids),
+        "custom_v2_roles_cleaned": list(custom_v2_roles_to_clean),
+        "relations_to_remove_count": len(relations_to_remove),
+    }
+
+    if not dry_run and relations_to_remove:
+        replicator = OutboxReplicator()
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.CLEANUP_ORPHAN_BINDINGS,
+                info={
+                    "org_id": tenant.org_id,
+                    "bindings_cleaned": list(bindings_to_clean),
+                    "custom_v2_roles_cleaned": list(custom_v2_roles_to_clean),
+                },
+                partition_key=PartitionKey.byEnvironment(),
+                remove=relations_to_remove,
+            )
+        )
+        result["relations_removed"] = [stringify_spicedb_relationship(rel) for rel in relations_to_remove]
+    elif dry_run:
+        result["relations_to_remove"] = [stringify_spicedb_relationship(rel) for rel in relations_to_remove]
+
+    return result
 
 
 def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) -> dict:

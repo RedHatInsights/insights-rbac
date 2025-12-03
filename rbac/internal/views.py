@@ -37,9 +37,11 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
+    cleanup_tenant_orphaned_relationships,
     delete_bindings,
     get_or_create_ungrouped_workspace,
     load_request_body,
+    read_tuples_from_kessel,
     validate_inventory_input,
     validate_relations_input,
 )
@@ -91,6 +93,7 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import (
     create_client_channel,
@@ -102,6 +105,7 @@ from management.workspace.model import Workspace
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
+from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
@@ -2316,3 +2320,94 @@ def fix_missing_binding_base_tuples(request):
         },
         status=202,
     )
+
+
+@require_http_methods(["POST"])
+def cleanup_tenant_orphan_bindings(request, org_id):
+    """
+    Clean up orphaned role binding relationships for a tenant and remigrate bindings.
+
+    POST /_private/api/utils/cleanup_tenant_orphan_bindings/<org_id>/
+
+    This endpoint:
+    1. Queries Kessel for all role_bindings scoped to tenant/root/default workspace
+    2. Excludes TenantMapping default access binding UUIDs
+    3. Replicates DELETE for binding→role, binding→group, and workspace/tenant→binding relationships
+    4. For custom V2 roles (not system roles), also deletes role→permission→principal:* tuples
+    5. Runs migrate_all_role_bindings() for the tenant to recreate correct relationships
+
+    Query params:
+        dry_run=true: Only report what would be deleted, don't make changes or run migration
+
+    Returns:
+        JSON response with cleanup results and migration status
+    """
+    if not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=403)
+
+    dry_run = request.GET.get("dry_run", "false").lower() == "true"
+
+    logger.info(f"Cleaning orphaned relationships for tenant {org_id} (dry_run={dry_run})")
+
+    # Get tenant
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+
+    # Get TenantMapping
+    try:
+        tenant_mapping = tenant.tenant_mapping
+    except TenantMapping.DoesNotExist:
+        return JsonResponse(
+            {"detail": f"No TenantMapping found for tenant {org_id}. Tenant may not be bootstrapped."},
+            status=404,
+        )
+
+    # Get root and default workspaces
+    try:
+        root_workspace = Workspace.objects.root(tenant=tenant)
+        default_workspace = Workspace.objects.default(tenant=tenant)
+    except Workspace.DoesNotExist as e:
+        return JsonResponse(
+            {"detail": f"Missing root or default workspace for tenant {org_id}: {str(e)}"},
+            status=404,
+        )
+
+    try:
+        # Clean orphaned relationships
+        cleanup_result = cleanup_tenant_orphaned_relationships(
+            tenant=tenant,
+            root_workspace=root_workspace,
+            default_workspace=default_workspace,
+            tenant_mapping=tenant_mapping,
+            read_tuples_fn=read_tuples_from_kessel,
+            dry_run=dry_run,
+        )
+
+        # Run migration if not dry_run
+        migration_result = None
+        if not dry_run:
+            logger.info(f"Running migrate_all_role_bindings for tenant {org_id}")
+            checked, migrated = migrate_all_role_bindings(tenant=tenant)
+            migration_result = {
+                "items_checked": checked,
+                "items_migrated": migrated,
+            }
+
+        response = {
+            "cleanup": cleanup_result,
+            "migration": migration_result,
+        }
+
+        return JsonResponse(response, status=200)
+
+    except RpcError as e:
+        logger.error(f"gRPC error during cleanup for tenant {org_id}: {str(e)}")
+        return JsonResponse(
+            {"detail": "gRPC error occurred during cleanup", "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during cleanup for tenant {org_id}: {str(e)}", exc_info=True)
+        return JsonResponse(
+            {"detail": "Unexpected error during cleanup", "error": str(e)},
+            status=500,
+        )
