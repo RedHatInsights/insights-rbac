@@ -366,7 +366,15 @@ def get_role_binding_groups_queryset(resource_id, resource_type, tenant):
         Prefetch("role_binding_entries", queryset=rolebinding_group_queryset, to_attr="filtered_bindings")
     )
 
-    # Annotate with latest modified timestamp from roles
-    queryset = queryset.annotate(latest_modified=Max("role_binding_entries__binding__role__modified"))
+    # Annotate with latest modified timestamp from roles, constrained to the requested resource
+    queryset = queryset.annotate(
+        latest_modified=Max(
+            "role_binding_entries__binding__role__modified",
+            filter=Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ),
+        )
+    )
 
     return queryset
