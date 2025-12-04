@@ -76,9 +76,14 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.definer import delete_permission
 from management.role.model import Access
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    SeedingRelationApiDualWriteHandler,
+)
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    clean_invalid_workspace_resource_definitions_in_worker,
+    fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
     run_migrations_in_worker,
@@ -96,6 +101,7 @@ from management.utils import (
 from management.workspace.model import Workspace
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
+from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
@@ -805,6 +811,8 @@ def role_removal(request):
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
+                dual_write_handler = SeedingRelationApiDualWriteHandler(role_obj)
+                dual_write_handler.replicate_deleted_system_role()
                 role_obj.delete()
                 return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
@@ -1976,24 +1984,41 @@ def check_role(request, role_uuid):
     """POST to check a role has correct V2 relations and bindings are correct on Inventory API."""
     try:
         role = get_object_or_404(Role, uuid=role_uuid)
-        bindings = role.binding_mappings.all()
-        relations_dual_write_handler = RelationApiDualWriteHandler(
-            role=role, event_type=ReplicationEventType.UPDATE_SYSTEM_ROLE, tenant=role.tenant
-        )
 
-        if bindings:
+        # We will act as if we are about to replicate the role, resulting in the expected tuples ending up here.
+        tuples = InMemoryTuples()
+
+        if role.system:
             with transaction.atomic():
-                relations_dual_write_handler.prepare_for_update()
-                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+                relations_dual_write_handler = SeedingRelationApiDualWriteHandler(
+                    role=role,
+                    replicator=InMemoryRelationReplicator(tuples),
+                )
+
+                relations_dual_write_handler.replicate_new_system_role()
+
+                # Ensure that we don't accidentally update any models.
+                transaction.set_rollback(True)
         else:
+            # We have to lock the role before passing it to RelationApiDualWriteHandler.
             with transaction.atomic():
-                relations_dual_write_handler._generate_relations_and_mappings_for_role()
+                role = get_object_or_404(Role.objects.select_for_update(), pk=role.pk)
 
-        role_relations = relations_dual_write_handler.role_relations
+                relations_dual_write_handler = RelationApiDualWriteHandler(
+                    role=role,
+                    event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+                    tenant=role.tenant,
+                    replicator=InMemoryRelationReplicator(tuples),
+                )
 
-        serialized_relations = [json_format.MessageToDict(rel) for rel in role_relations]
+                relations_dual_write_handler.replicate_new_or_updated_role(role)
 
+                # Ensure that we don't accidentally update any models.
+                transaction.set_rollback(True)
+
+        serialized_relations = [json_format.MessageToDict(rel.as_message()) for rel in tuples]
         role_correct = RoleRelationChecker.check_role(serialized_relations, role.uuid)
+
         return JsonResponse(
             {
                 "V2_role_checks": {
@@ -2214,5 +2239,80 @@ def migrate_binding_scope(request):
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},
+        status=202,
+    )
+
+
+@require_http_methods(["POST"])
+def clean_invalid_workspace_resource_definitions(request):
+    """Clean resource definitions with invalid workspace IDs and delete corresponding bindings.
+
+    POST /_private/api/utils/clean_invalid_workspace_resource_definitions/?dry_run=true
+
+    This endpoint:
+    1. Finds custom roles with resource definitions pointing to non-existent workspaces
+    2. Removes invalid workspace IDs from resource definitions
+    3. Deletes bindings to non-existent workspaces
+    4. Runs in background worker
+
+    Query Parameters:
+        dry_run (bool): If "true", only report what would be changed without making changes.
+
+    Returns 202 Accepted with a message that the worker is running.
+    """
+    # Check for dry_run parameter
+    dry_run = request.GET.get("dry_run", "false").lower() == "true"
+
+    if dry_run:
+        logger.info("Cleaning invalid workspace resource definitions (DRY RUN)")
+    else:
+        logger.info("Cleaning invalid workspace resource definitions")
+
+    # Trigger the background worker
+    clean_invalid_workspace_resource_definitions_in_worker.delay(dry_run=dry_run)
+
+    if dry_run:
+        message = (
+            "Clean invalid workspace resource definitions is running in a background worker "
+            "(DRY RUN - no changes will be made)."
+        )
+    else:
+        message = "Clean invalid workspace resource definitions is running in a background worker."
+
+    return JsonResponse({"message": message, "dry_run": dry_run}, status=202)
+
+
+@require_http_methods(["POST"])
+def fix_missing_binding_base_tuples(request):
+    """Fix missing t_role and t_binding tuples for bindings created before replication was enabled.
+
+    POST /_private/api/utils/fix_missing_binding_base_tuples/?binding_ids=1,2,3
+
+    Query params:
+        binding_ids (optional): Comma-separated list of binding IDs to fix. If not provided, fixes ALL.
+
+    Triggers a background worker to replicate all tuples for the specified bindings.
+    Kessel/SpiceDB handles duplicate tuples gracefully.
+
+    Returns 202 Accepted with a message that the worker is running.
+    """
+    binding_ids_param = request.GET.get("binding_ids", "")
+
+    logger.info("Fixing missing binding base tuples")
+
+    # Parse binding IDs if provided
+    binding_ids = None
+    if binding_ids_param:
+        binding_ids = [int(id.strip()) for id in binding_ids_param.split(",")]
+        logger.info(f"Will fix {len(binding_ids)} specific bindings: {binding_ids}")
+
+    # Trigger the background worker
+    fix_missing_binding_base_tuples_in_worker.delay(binding_ids=binding_ids)
+
+    return JsonResponse(
+        {
+            "message": "Fix missing binding base tuples is running in a background worker.",
+            "binding_ids": binding_ids if binding_ids else "all",
+        },
         status=202,
     )

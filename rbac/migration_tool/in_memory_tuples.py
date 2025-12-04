@@ -1,17 +1,16 @@
 """This module contains the in-memory representation of a tuple store."""
 
+import dataclasses
 import re
 from collections import defaultdict
-from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar, Union
+from typing import Callable, ClassVar, Hashable, Iterable, List, Optional, Set, Tuple, TypeVar, Union
 
-from kessel.relations.v1beta1.common_pb2 import Relationship
+from kessel.relations.v1beta1.common_pb2 import ObjectReference, ObjectType, Relationship, SubjectReference
 from management.relation_replicator.relation_replicator import RelationReplicator
 
 
-_OBJECT_ID_REGEX = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"
-
-
-class RelationTuple(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class RelationTuple:
     """Simple representation of a relation tuple."""
 
     resource_type_namespace: str
@@ -21,7 +20,132 @@ class RelationTuple(NamedTuple):
     subject_type_namespace: str
     subject_type_name: str
     subject_id: str
-    subject_relation: str
+    subject_relation: Optional[str]
+
+    # From, e.g.:
+    # https://github.com/project-kessel/inventory-api/blob/201189922078084f9bca47dc8ed3d298fed65921/api/kessel/inventory/v1beta2/resource_reference.proto#L14
+    _type_regex: ClassVar[re.Pattern] = re.compile(r"^[A-Za-z0-9_]+$")
+    _id_regex: ClassVar[re.Pattern] = re.compile(r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$")
+
+    def _relation_type_error(self, msg: str) -> TypeError:
+        return TypeError(msg + f"\nFull relationship: {self!r}")
+
+    def _relation_value_error(self, msg: str) -> ValueError:
+        return ValueError(msg + f"\nFull relationship: {self!r}")
+
+    def _validate_required(self, attr: str):
+        value = getattr(self, attr)
+
+        if value is None:
+            raise self._relation_type_error(f"{attr} is required, but was None.")
+
+        if not isinstance(value, str):
+            raise self._relation_type_error(f"{attr} must be a string.")
+
+        if value == "":
+            raise self._relation_value_error(
+                f"{attr} cannot be empty. (You may have initialized a message with None.)"
+            )
+
+    def _validate_optional(self, attr: str):
+        value = getattr(self, attr)
+
+        if value is None:
+            return
+
+        if not isinstance(value, str):
+            raise self._relation_type_error(f"{attr} must be a string or None.")
+
+        if value == "":
+            raise self._relation_value_error(f"{attr} cannot be empty (for an absent value, use None).")
+
+    def _validate_type_name(self, attr: str):
+        value = getattr(self, attr)
+
+        if not re.fullmatch(self._type_regex, value):
+            raise self._relation_value_error(
+                f"Expected {attr} to be composed of alphanumeric characters and underscores, but got: {value!r}"
+            )
+
+    def _validate_object_id(self, attr: str, allow_asterisk: bool):
+        value = getattr(self, attr)
+
+        if not allow_asterisk and value == "*":
+            raise self._relation_value_error(f"Expected {attr} not to be an asterisk.")
+
+        if not re.fullmatch(self._id_regex, value):
+            raise self._relation_value_error(
+                f"Expected {attr} to be composed of alphanumeric characters, underscores, hyphens, pipes, "
+                f"equals signs, plus signs, and forward slashes, "
+                + (", or to be exactly '*', " if allow_asterisk else "")
+                + f"but got: {value!r}"
+            )
+
+    def __post_init__(self):
+        """Check that this RelationTuple is valid."""
+        self._validate_required("resource_type_namespace")
+        self._validate_required("resource_type_name")
+        self._validate_required("resource_id")
+        self._validate_required("relation")
+        self._validate_required("subject_type_namespace")
+        self._validate_required("subject_type_name")
+        self._validate_required("subject_id")
+
+        self._validate_optional("subject_relation")
+
+        self._validate_type_name("resource_type_name")
+        self._validate_type_name("subject_type_name")
+
+        self._validate_object_id("resource_id", allow_asterisk=False)
+        self._validate_object_id("subject_id", allow_asterisk=True)
+
+    @classmethod
+    def from_message(cls, relationship: Relationship):
+        """Create a RelationTuple from a Relationship message."""
+
+        def as_optional(value: str) -> Optional[str]:
+            return value if value != "" else None
+
+        return RelationTuple(
+            resource_type_namespace=relationship.resource.type.namespace,
+            resource_type_name=relationship.resource.type.name,
+            resource_id=relationship.resource.id,
+            relation=relationship.relation,
+            subject_type_namespace=relationship.subject.subject.type.namespace,
+            subject_type_name=relationship.subject.subject.type.name,
+            subject_id=relationship.subject.subject.id,
+            subject_relation=as_optional(relationship.subject.relation),
+        )
+
+    def as_message(self) -> Relationship:
+        """Get a Kessel Relationship message corresponding to the values in this RelationTuple."""
+        return Relationship(
+            resource=ObjectReference(
+                type=ObjectType(
+                    namespace=self.resource_type_namespace,
+                    name=self.resource_type_name,
+                ),
+                id=self.resource_id,
+            ),
+            relation=self.relation,
+            subject=SubjectReference(
+                subject=ObjectReference(
+                    type=ObjectType(
+                        namespace=self.subject_type_namespace,
+                        name=self.subject_type_name,
+                    ),
+                    id=self.subject_id,
+                ),
+                relation=self.subject_relation,
+            ),
+        )
+
+    @classmethod
+    def validate_message(cls, message: Relationship):
+        """Check that the provided Relationship represents a valid tuple."""
+        # Constructing the RelationTuple will raise an exception if the message is invalid.
+        parsed = RelationTuple.from_message(message)
+        assert parsed.as_message() == message
 
     def stringify(self):
         """Display all attributes in one line."""
@@ -303,42 +427,38 @@ class InMemoryTuples(TupleSet):
         self._tuples: Set[RelationTuple] = set(tuples) if tuples is not None else set()
         super().__init__(self, self._tuples)
 
-    def _relationship_key(self, relationship: Relationship):
-        return RelationTuple(
-            resource_type_namespace=relationship.resource.type.namespace,
-            resource_type_name=relationship.resource.type.name,
-            resource_id=relationship.resource.id,
-            relation=relationship.relation,
-            subject_type_namespace=relationship.subject.subject.type.namespace,
-            subject_type_name=relationship.subject.subject.type.name,
-            subject_id=relationship.subject.subject.id,
-            subject_relation=relationship.subject.relation,
-        )
-
     def add(self, tuple: Relationship):
         """Add a tuple to the store."""
-        key = self._relationship_key(tuple)
-
-        invalid_resource_id = not re.match(_OBJECT_ID_REGEX, key.resource_id)
-        invalid_subject_id = not re.match(_OBJECT_ID_REGEX, key.subject_id)
-
-        if invalid_resource_id or invalid_subject_id:
-            invalid_fields = []
-            if invalid_resource_id:
-                invalid_fields.append(f"resource_id: {key.resource_id}")
-            if invalid_subject_id:
-                invalid_fields.append(f"subject_id: {key.subject_id}")
-            raise ValueError(f"Invalid format for: {', '.join(invalid_fields)}.")
-
-        self._tuples.add(key)
+        self._tuples.add(RelationTuple.from_message(tuple))
 
     def remove(self, tuple: Relationship):
         """Remove a tuple from the store."""
-        key = self._relationship_key(tuple)
-        self._tuples.discard(key)
+        self._tuples.discard(RelationTuple.from_message(tuple))
 
     def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
-        """Add / remove tuples."""
+        """
+        Add / remove tuples, checking for duplicates within this batch.
+
+        Raises ValueError if duplicate relationships are found within the add list,
+        as this indicates a bug in tuple generation logic.
+        """
+        # Check for duplicates within tuples_to_add (indicates bug in tuple generation)
+        seen_in_batch = set()
+        for tuple in add:
+            key = RelationTuple.from_message(tuple)
+            tuple_str = (
+                f"{key.resource_type_name}:{key.resource_id}#{key.relation}"
+                f"@{key.subject_type_name}:{key.subject_id}"
+            )
+
+            if key in seen_in_batch:
+                raise ValueError(
+                    f"Duplicate relationship detected in single replication event: {tuple_str}. "
+                    "This indicates a bug in tuple generation logic that should be fixed."
+                )
+            seen_in_batch.add(key)
+
+        # Now add all tuples (duplicates with existing tuples are OK - Kessel handles this)
         for tuple in remove:
             self.remove(tuple)
         for tuple in add:
@@ -441,7 +561,7 @@ def relation(relation: str) -> RelationPredicate:
     return TuplePredicate(predicate, f'relation("{relation}")')
 
 
-def subject_type(namespace: str, name: str, relation: str = "") -> RelationPredicate:
+def subject_type(namespace: str, name: str, relation: Optional[str] = None) -> RelationPredicate:
     """Return a predicate that is true if the subject type matches the given namespace and name."""
 
     def predicate(rel: RelationTuple) -> bool:
@@ -463,7 +583,7 @@ def subject_id(id: str) -> RelationPredicate:
     return TuplePredicate(predicate, f'subject_id("{id}")')
 
 
-def subject(namespace: str, name: str, id: object, relation: str = "") -> RelationPredicate:
+def subject(namespace: str, name: str, id: object, relation: Optional[str] = None) -> RelationPredicate:
     """Return a predicate that is true if the subject matches the given namespace and name."""
     return all_of(subject_type(namespace, name, relation), subject_id(str(id)))
 

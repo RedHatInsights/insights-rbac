@@ -811,7 +811,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
                         subject_type_namespace="rbac",
                         subject_type_name="principal",
                         subject_id=f"redhat/{self.principal_user_id}",
-                        subject_relation="",
+                        subject_relation=None,
                     )
                 ],
             )
