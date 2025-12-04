@@ -42,6 +42,16 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)
 READ_YOUR_WRITES_CHANNEL = settings.READ_YOUR_WRITES_CHANNEL
 
+
+def _generate_ryw_histogram_buckets(timeout_seconds: int) -> tuple:
+    """Generate histogram buckets based on the configured timeout.
+
+    Creates buckets at 1%, 2.5%, 5%, 10%, 25%, 50%, 75%, and 100% of the timeout.
+    """
+    percentages = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
+    return tuple(round(timeout_seconds * p, 2) for p in percentages)
+
+
 # Prometheus metrics for read-your-writes consistency monitoring
 ryw_wait_total = Counter(
     "ryw_wait_total",
@@ -51,8 +61,22 @@ ryw_wait_total = Counter(
 ryw_wait_duration_seconds = Histogram(
     "ryw_wait_duration_seconds",
     "Duration of read-your-writes consistency checks in seconds",
-    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0],
+    ["result"],
+    buckets=_generate_ryw_histogram_buckets(settings.READ_YOUR_WRITES_TIMEOUT_SECONDS),
 )
+
+
+def _record_ryw_metrics(duration: float, result: str) -> None:
+    """Record RYW metrics for both counter and histogram.
+
+    Args:
+        duration: The duration of the RYW wait in seconds.
+        result: The outcome of the wait ('success' or 'timeout').
+    """
+    ryw_wait_duration_seconds.labels(result=result).observe(duration)
+    ryw_wait_total.labels(result=result).inc()
+
+
 LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 UNLISTEN_SQL = sql.SQL("UNLISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 
@@ -461,8 +485,7 @@ class WorkspaceService:
                                 payload,
                                 duration,
                             )
-                            ryw_wait_duration_seconds.observe(duration)
-                            ryw_wait_total.labels(result="success").inc()
+                            _record_ryw_metrics(duration, "success")
                             return
 
             duration = time.monotonic() - started
@@ -472,8 +495,7 @@ class WorkspaceService:
                 str(workspace_id),
                 timeout_seconds,
             )
-            ryw_wait_duration_seconds.observe(duration)
-            ryw_wait_total.labels(result="timeout").inc()
+            _record_ryw_metrics(duration, "timeout")
             raise TimeoutError(
                 f"Read-your-writes consistency check timed out after {timeout_seconds}s for workspace {workspace_id}"
             )
