@@ -27,9 +27,7 @@ from management.workspace.utils import (
 from rest_framework import permissions
 
 # Custom message for target workspace access denial
-TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = (
-    "You do not have write access to the target workspace."
-)
+TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = "You do not have write access to the target workspace."
 
 
 class WorkspaceAccessPermission(permissions.BasePermission):
@@ -191,9 +189,7 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             # Let validation handle missing/invalid parent_id
             return True
 
-        if not Workspace.objects.filter(
-            id=target_workspace_id, tenant=request.tenant
-        ).exists():
+        if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
             return False
 
