@@ -45,6 +45,8 @@ Please use `make <target>` where <target> is one of:
   start-db                 start the psql db in detached state
   stop-compose             stop all containers
   unittest                 run unittests
+  unittest-fast            run unittests without coverage (faster)
+  unittest-profile         run unittests and show slowest tests
   user                     create a Django super user
 
 --- Commands using Docker Compose ---
@@ -168,6 +170,12 @@ stop-compose:
 
 unittest:
 	$(PYTHON) $(PYDIR)/manage.py test $(PYDIR) -v 2
+
+unittest-fast:
+	tox -e py312-fast
+
+unittest-profile:
+	tox -e py312-profile
 
 user:
 	$(PYTHON) $(PYDIR)/manage.py createsuperuser
