@@ -112,7 +112,7 @@ def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_ser
             Role.objects.public_tenant_only().filter(name=name).update(
                 **defaults, display_name=display_name, modified=timezone.now()
             )
-            role.refresh_from_db() 
+            role.refresh_from_db()
             logger.info("Updated system role %s.", name)
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
