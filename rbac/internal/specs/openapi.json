@@ -1284,6 +1284,75 @@
         }
       }
     },
+    "/api/utils/cleanup_tenant_orphan_bindings/{org_id}/": {
+      "post": {
+        "tags": [
+          "V2",
+          "Tenant",
+          "Utils"
+        ],
+        "summary": "Clean up orphaned role binding relationships for a tenant",
+        "description": "Triggers a background worker task to clean up orphaned role binding relationships for a tenant. The task uses DFS to discover workspaces from Kessel, identifies orphaned/stale relationships, cleans them, and runs migrate_all_role_bindings() to recreate correct state.",
+        "operationId": "CleanupTenantOrphanBindings",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization ID for the tenant to clean up",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "description": "If true, only report counts without making changes or running migration",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Cleanup task queued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Status message"
+                    },
+                    "org_id": {
+                      "type": "string",
+                      "description": "Organization ID"
+                    },
+                    "dry_run": {
+                      "type": "boolean",
+                      "description": "Whether this is a dry run"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant, TenantMapping, or Workspace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/bootstrap_tenant/": {
       "post": {
         "tags": [

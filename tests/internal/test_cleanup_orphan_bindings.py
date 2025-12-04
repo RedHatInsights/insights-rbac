@@ -45,6 +45,36 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         super().setUp()
         # DualWriteTestCase creates self.tuples, self.fixture, and self.tenant
 
+        # Set up workspace parent relationships for BFS discovery
+        self._setup_workspace_hierarchy()
+
+    def _setup_workspace_hierarchy(self):
+        """Set up workspace -> parent -> tenant/workspace relationships for BFS discovery."""
+        root_workspace = Workspace.objects.root(tenant=self.tenant)
+        default_workspace = Workspace.objects.default(tenant=self.tenant)
+
+        # root workspace -> parent -> tenant
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                str(root_workspace.id),
+                ("rbac", "tenant"),
+                self.tenant.tenant_resource_id(),
+                "parent",
+            )
+        )
+
+        # default workspace -> parent -> root workspace
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                str(default_workspace.id),
+                ("rbac", "workspace"),
+                str(root_workspace.id),
+                "parent",
+            )
+        )
+
     def _create_kessel_read_tuples_mock(self):
         """Create a mock function that reads tuples from our InMemoryTuples store."""
 
@@ -72,6 +102,13 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
 
                 result.append(
                     {
+                        "resource": {
+                            "type": {
+                                "namespace": t.resource_type_namespace,
+                                "name": t.resource_type_name,
+                            },
+                            "id": t.resource_id,
+                        },
                         "relation": t.relation,
                         "subject": {
                             "subject": {
@@ -172,7 +209,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Verify cleanup found bindings
-        self.assertGreater(result["bindings_found"], 0, "Should find bindings to clean")
+        self.assertGreater(result["bindings_cleaned_count"], 0, "Should find bindings to clean")
 
         # Step 5: Verify orphaned group tuples are removed
         orphaned_group_tuples_after = self.tuples.find_tuples(
@@ -281,8 +318,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             dry_run=False,
         )
 
-        # Verify cleanup found the orphaned custom V2 role
-        self.assertIn(v2_role_id, result["custom_v2_roles_cleaned"], "Should clean custom V2 role")
+        # Verify cleanup found custom V2 roles to clean
+        self.assertGreater(result["custom_v2_roles_cleaned_count"], 0, "Should find custom V2 roles to clean")
 
         # Step 5: Verify orphaned tuples are removed
         # Role binding to role tuple should be gone
@@ -383,8 +420,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Verify cleanup found bindings
-        self.assertGreater(result["bindings_found"], 0, "Should find bindings to clean")
-        self.assertIn(binding_id, result["bindings_cleaned"], "Should clean the orphaned binding")
+        self.assertGreater(result["bindings_cleaned_count"], 0, "Should find bindings to clean")
 
         # Step 4: Verify orphaned scope binding tuples are removed
         scope_tuples_after = self.tuples.find_tuples(
@@ -402,19 +438,214 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         REPLICATION_TO_RELATION_ENABLED=True,
     )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_cleanup_excludes_default_access_bindings(self, mock_replicate):
+    def test_cleanup_orphaned_workspace_and_stale_parent(self, mock_replicate):
         """
-        Test that cleanup excludes the TenantMapping default access bindings.
+        Test cleanup of orphaned workspace and stale parent relationships.
 
-        The 6 default access bindings (user/admin for tenant/root/default scope)
-        should never be cleaned up.
+        Scenario - complex hierarchy:
+        - Original: default-ws -> ws1 -> ws2 -> ws3
+        - ws2 gets deleted from DB, ws3 is re-parented to ws1
+        - Current state:
+          - DB:     default-ws -> ws1 -> ws3 (ws2 doesn't exist)
+          - Kessel: default-ws -> ws1 -> ws2 -> ws3 (ws2 still exists)
+        - After cleanup:
+          - ws2 is orphaned (not in DB) -> ws2's parent tuple removed
+          - ws3 has stale parent (Kessel says ws2, DB says ws1) -> ws3's stale parent tuple removed
+          - Any bindings on ws2 should be cleaned
         """
         # Redirect replicator to in-memory tuples
         mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
 
-        # Get TenantMapping default binding UUIDs
+        default_workspace = Workspace.objects.default(tenant=self.tenant)
+        default_ws_id = str(default_workspace.id)
+
+        # Create workspace hierarchy in DB: default-ws -> ws1 -> ws3 (ws2 is missing)
+        ws1 = Workspace.objects.create(
+            name="Workspace 1",
+            tenant=self.tenant,
+            parent=default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        ws1_id = str(ws1.id)
+
+        # ws2 will be the "deleted" workspace - we'll only have it in Kessel
+        ws2_id = str(uuid.uuid4())
+
+        # ws3 is re-parented to ws1 in DB, but still points to ws2 in Kessel
+        ws3 = Workspace.objects.create(
+            name="Workspace 3",
+            tenant=self.tenant,
+            parent=ws1,  # DB parent is ws1
+            type=Workspace.Types.STANDARD,
+        )
+        ws3_id = str(ws3.id)
+
+        # Setup Kessel tuples to represent the old hierarchy (before ws2 was deleted)
+        # default-ws -> parent -> workspace (for DFS from root)
+        # This is already setup by _setup_workspace_hierarchy
+
+        # ws1 -> parent -> default-ws
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                ws1_id,
+                ("rbac", "workspace"),
+                default_ws_id,
+                "parent",
+            )
+        )
+
+        # ws2 -> parent -> ws1 (ws2 is orphaned - not in DB)
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                ws2_id,
+                ("rbac", "workspace"),
+                ws1_id,
+                "parent",
+            )
+        )
+
+        # ws3 -> parent -> ws2 (STALE - DB says ws3's parent is ws1, not ws2)
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                ws3_id,
+                ("rbac", "workspace"),
+                ws2_id,
+                "parent",
+            )
+        )
+
+        # Add a binding to ws2 (will be orphaned when ws2 is orphaned)
+        orphan_binding_id = str(uuid.uuid4())
+        orphan_role_id = str(uuid.uuid4())
+
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                ws2_id,
+                ("rbac", "role_binding"),
+                orphan_binding_id,
+                "binding",
+            )
+        )
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "role_binding"),
+                orphan_binding_id,
+                ("rbac", "role"),
+                orphan_role_id,
+                "role",
+            )
+        )
+
+        # Verify initial state
+        # ws2 -> parent -> ws1 exists
+        ws2_parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", ws2_id),
+                relation("parent"),
+            )
+        )
+        self.assertGreater(len(ws2_parent_before), 0, "ws2 should have parent tuple")
+
+        # ws3 -> parent -> ws2 exists (stale)
+        ws3_parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", ws3_id),
+                relation("parent"),
+                subject("rbac", "workspace", ws2_id),
+            )
+        )
+        self.assertGreater(len(ws3_parent_before), 0, "ws3 should have stale parent tuple to ws2")
+
+        # ws2 binding exists
+        ws2_binding_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", ws2_id),
+                relation("binding"),
+            )
+        )
+        self.assertGreater(len(ws2_binding_before), 0, "ws2 should have binding tuple")
+
+        # Run cleanup
+        from internal.utils import cleanup_tenant_orphaned_relationships
+
+        result = cleanup_tenant_orphaned_relationships(
+            tenant=self.tenant,
+            root_workspace=Workspace.objects.root(tenant=self.tenant),
+            default_workspace=default_workspace,
+            tenant_mapping=self.tenant.tenant_mapping,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            dry_run=False,
+        )
+
+        # Verify ws2 is identified as orphaned (now checking count)
+        self.assertGreater(result["orphaned_workspaces_cleaned_count"], 0, "Should have orphaned workspaces")
+
+        # Verify ws3 is identified as having stale parent (now checking count)
+        self.assertGreater(result["stale_parent_workspaces_cleaned_count"], 0, "Should have stale parent workspaces")
+
+        # Verify bindings are cleaned (now checking count)
+        self.assertGreater(result["bindings_cleaned_count"], 0, "Should have bindings cleaned")
+
+        # Verify ws2's parent tuple (ws2 -> parent -> ws1) is removed
+        ws2_parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", ws2_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(ws2_parent_after), 0, "ws2's parent tuple should be removed")
+
+        # Verify ws3's stale parent tuple (ws3 -> parent -> ws2) is removed
+        ws3_stale_parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", ws3_id),
+                relation("parent"),
+                subject("rbac", "workspace", ws2_id),
+            )
+        )
+        self.assertEqual(len(ws3_stale_parent_after), 0, "ws3's stale parent tuple to ws2 should be removed")
+
+        # Verify ws2's binding tuple is removed
+        ws2_binding_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", ws2_id),
+                relation("binding"),
+            )
+        )
+        self.assertEqual(len(ws2_binding_after), 0, "ws2's binding tuple should be removed")
+
+        # Verify binding's role tuple is removed
+        binding_role_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", orphan_binding_id),
+                relation("role"),
+            )
+        )
+        self.assertEqual(len(binding_role_after), 0, "Orphaned binding's role tuple should be removed")
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_cleanup_skips_builtin_bindings_without_custom_default_group(self, mock_replicate):
+        """
+        Test that cleanup skips built-in bindings when tenant has no custom default group.
+
+        The 6 built-in bindings (user/admin for tenant/root/default scope) should be
+        skipped entirely when the tenant doesn't have a custom default group.
+        """
+        # Redirect replicator to in-memory tuples
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        # Get TenantMapping built-in binding UUIDs
         tenant_mapping = self.tenant.tenant_mapping
-        default_binding_uuids = {
+        builtin_binding_uuids = {
             str(tenant_mapping.default_role_binding_uuid),
             str(tenant_mapping.default_admin_role_binding_uuid),
             str(tenant_mapping.root_scope_default_role_binding_uuid),
@@ -440,13 +671,13 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             dry_run=True,
         )
 
-        # Verify excluded bindings match TenantMapping UUIDs
-        excluded = set(result["excluded_bindings"])
-        self.assertEqual(excluded, default_binding_uuids, "Should exclude all default access bindings")
+        # Verify no custom default group
+        self.assertFalse(result["has_custom_default_group"])
 
-        # Verify none of the cleaned bindings are default access bindings
-        cleaned = set(result["bindings_cleaned"])
-        self.assertEqual(len(cleaned & default_binding_uuids), 0, "Should not clean any default access bindings")
+        # Verify no built-in scope bindings were cleaned (count should be 0 since no custom default group)
+        self.assertEqual(
+            result["builtin_bindings_scope_cleaned_count"], 0, "No built-in scope bindings should be cleaned"
+        )
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
@@ -474,16 +705,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         group, _ = self.given_group("Test Group", ["user1"])
         self.given_roles_assigned_to_group(group, [system_role])
 
-        # Verify permission tuples exist for the system role
-        permission_tuples_before = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role", system_role_uuid),
-                subject("rbac", "principal", "*"),
-            )
-        )
-        # Note: System role permissions may not have tuples in all test setups
-        # The key test is that they're NOT in custom_v2_roles_cleaned
-
         # Run cleanup
         from internal.utils import cleanup_tenant_orphaned_relationships
 
@@ -496,11 +717,12 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             dry_run=True,
         )
 
-        # Verify system role UUID is NOT in custom_v2_roles_cleaned
-        self.assertNotIn(
-            system_role_uuid,
-            result["custom_v2_roles_cleaned"],
-            "System role should NOT be in custom_v2_roles_cleaned",
+        # Verify system role is NOT counted as custom V2 role
+        # System roles should be filtered out because they're in system_role_uuids
+        self.assertEqual(
+            result["custom_v2_roles_cleaned_count"],
+            0,
+            "System role should NOT be counted as custom V2 role to clean",
         )
 
     @override_settings(
@@ -677,6 +899,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         tuple_count_after = len(self.tuples)
         self.assertEqual(tuple_count_before, tuple_count_after, "Dry run should not modify tuples")
 
-        # Should have relations_to_remove in result (not relations_removed)
-        self.assertIn("relations_to_remove", result)
-        self.assertNotIn("relations_removed", result)
+        # Should have relations_to_remove_count in result
+        self.assertIn("relations_to_remove_count", result)
+        self.assertGreater(result["relations_to_remove_count"], 0, "Should have relations to remove")
