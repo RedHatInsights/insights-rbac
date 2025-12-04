@@ -171,6 +171,7 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
     current_role_ids = set()
+
     platform_roles = _seed_platform_roles()
     resource_service = ImplicitResourceService.from_settings()
     with transaction.atomic():
@@ -316,10 +317,7 @@ def _create_single_platform_role(access_type, scope, policy_service, public_tena
 
 
 def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles, resource_service):
-    """Create or update V2 role from V1 role during seeding.
-
-    Logs errors but does not raise exceptions, so V1 role seeding can continue even if V2 seeding fails.
-    """
+    """Create or update V2 role from V1 role during seeding."""
     try:
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
             uuid=v1_role.uuid,
@@ -330,36 +328,32 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
                 "v1_source": v1_role,
             },
         )
-
         if v2_created:
-            logger.info(f"Created V2 system role {display_name}.")
+            logger.info("Created V2 system role %s.", display_name)
         else:
-            logger.info(f"Updated V2 system role {display_name}.")
-
-        # Get current and expected permissions to compare
-        v1_permissions = set(access.permission for access in v1_role.access.all())
-        current_permissions = set(v2_role.permissions.all())
-
-        if v1_permissions != current_permissions:
+            logger.info("Updated V2 system role %s.", display_name)
+        v2_role.permissions.clear()
+        v1_permissions = [access.permission for access in v1_role.access.all()]
+        if v1_permissions:
             v2_role.permissions.set(v1_permissions)
-            logger.info(f"Updated {len(v1_permissions)} permissions on V2 role {display_name}.")
-
+            logger.info("Added %d permissions to V2 role %s.", len(v1_permissions), display_name)
         scope = resource_service.scope_for_role(v1_role)
 
-        # Determine expected parents based on platform_default and admin_default flags
-        expected_parents = set()
+        # Clear parents first since scope may have changed since previous seeding
+        v2_role.parents.clear()
+        platform_role = platform_roles[(DefaultAccessType.USER, scope)]
         if v1_role.platform_default:
-            expected_parents.add(platform_roles[(DefaultAccessType.USER, scope)])
+            platform_role.children.add(v2_role)
+            logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
+        else:
+            platform_role.children.discard(v2_role)
+
+        admin_platform_role = platform_roles[(DefaultAccessType.ADMIN, scope)]
         if v1_role.admin_default:
-            expected_parents.add(platform_roles[(DefaultAccessType.ADMIN, scope)])
-
-        # Only update parents if they differ from current state
-        current_parents = set(v2_role.parents.all())
-        if expected_parents != current_parents:
-            v2_role.parents.set(expected_parents)
-            parent_names = [p.name for p in expected_parents]
-            logger.info(f"Updated parents for V2 role {display_name}: {parent_names}")
-
+            admin_platform_role.children.add(v2_role)
+            logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
+        else:
+            admin_platform_role.children.discard(v2_role)
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
@@ -389,7 +383,6 @@ def _seed_platform_roles():
                 # Create the default groups
                 seed_group()
 
-                # Refresh policy service since groups were just created
                 policy_service = GlobalPolicyIdService.shared()
                 platform_role = _create_single_platform_role(access_type, scope, policy_service, public_tenant)
                 platform_roles[(access_type, scope)] = platform_role
