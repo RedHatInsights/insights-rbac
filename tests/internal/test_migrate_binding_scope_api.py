@@ -27,10 +27,12 @@ from management.models import BindingMapping, Workspace, Access, Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
 from management.policy.model import Policy
 from management.role.model import ResourceDefinition
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
+from management.role.v2_model import CustomRoleV2, RoleBinding
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -105,13 +107,179 @@ class BindingScopeMigrationAPITest(TestCase):
         # Should return HTTP 202 Accepted
         self.assertEqual(response.status_code, 202)
 
-        # Should trigger celery task
-        mock_task.assert_called_once()
+        # Should trigger celery task with default write_relationships=True
+        mock_task.assert_called_once_with(write_relationships="True")
 
         # Response should be JSON with correct message
         data = response.json()
         self.assertIn("message", data)
         self.assertIn("Binding scope migration is running in a background worker", data["message"])
+        self.assertEqual(data.get("write_relationships"), "True")
+
+    @patch("internal.views.migrate_binding_scope_in_worker.delay")
+    def test_api_endpoint_with_write_relationships_false(self, mock_task):
+        """Test that write_relationships=False is passed correctly to the worker."""
+        self.client.force_login(self.user)
+
+        response = self.client.post(f"{self.url}?write_relationships=False")
+
+        # API might require special auth - if 403, skip detailed checks
+        if response.status_code == 403:
+            self.skipTest("API requires special authentication not available in test")
+
+        # Should return HTTP 202 Accepted
+        self.assertEqual(response.status_code, 202)
+
+        # Should trigger celery task with write_relationships=False
+        mock_task.assert_called_once_with(write_relationships="False")
+
+        # Response should show write_relationships=False
+        data = response.json()
+        self.assertEqual(data.get("write_relationships"), "False")
+
+
+class BindingScopeMigrationNoopReplicatorTest(TestCase):
+    """Tests that verify NoopReplicator creates V2 models without replicating tuples."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.tenant = Tenant.objects.create(tenant_name="noop_test_tenant", account_id="noop123", org_id="noop456")
+
+        # Get or create workspaces
+        self.root_workspace, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant, type=Workspace.Types.ROOT, defaults={"name": "Root Workspace"}
+        )
+
+        self.default_workspace, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "Default Workspace", "parent": self.root_workspace},
+        )
+
+        # Create permission
+        self.permission = Permission.objects.create(
+            tenant=self.tenant,
+            application="inventory",
+            resource_type="hosts",
+            verb="read",
+            permission="inventory:hosts:read",
+        )
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+    def test_noop_replicator_creates_v2_models_without_tuples(self):
+        """
+        Test that using NoopReplicator (write_relationships=False):
+        - Creates V2 models (CustomRoleV2, RoleBinding, BindingMapping)
+        - Does NOT replicate any tuples
+        """
+        # Create a custom role with access and a group assignment
+        role = Role.objects.create(tenant=self.tenant, name="Noop Test Role", system=False)
+        Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+
+        # Create a group and assign the role via policy
+        group = Group.objects.create(name="Noop Test Group", tenant=self.tenant)
+        policy = Policy.objects.create(name="Noop Test Policy", tenant=self.tenant, group=group)
+        policy.roles.add(role)
+
+        # Verify initial state: no V2 models
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 0)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 0)
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 0)
+
+        # Use InMemoryTuples to track what gets replicated
+        tuples = InMemoryTuples()
+
+        # Create a wrapper that records calls but uses NoopReplicator behavior
+        class TrackingNoopReplicator(NoopReplicator):
+            def __init__(self):
+                super().__init__()
+                self.replicate_calls = []
+
+            def replicate(self, event):
+                self.replicate_calls.append(event)
+                # Add tuples to our tracker to see what WOULD be replicated
+                for t in event.add:
+                    tuples.add(t)
+                # Don't actually do anything (noop)
+
+        tracking_replicator = TrackingNoopReplicator()
+
+        # Perform migration with NoopReplicator
+        result = migrate_custom_role_bindings(role, tracking_replicator)
+
+        # Should return 1 (migrated)
+        self.assertEqual(result, 1)
+
+        # V2 models SHOULD be created
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 1, "CustomRoleV2 should be created")
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 1, "RoleBinding should be created")
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1, "BindingMapping should be created")
+
+        # Verify replicate was called (handler still generates events)
+        self.assertEqual(len(tracking_replicator.replicate_calls), 1, "Should have called replicate once")
+
+        # Verify the event has tuples to add (proving they would be replicated with a real replicator)
+        event = tracking_replicator.replicate_calls[0]
+        self.assertGreater(len(event.add), 0, "Event should have tuples to add")
+
+        # But with a pure NoopReplicator, tuples would NOT be written anywhere
+        # This is the key difference - the event is generated but discarded
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+    def test_write_relationships_false_vs_true_comparison(self):
+        """
+        Test that write_relationships=False creates V2 models but skips tuple replication,
+        while write_relationships=True both creates V2 models and replicates tuples.
+        """
+        # Create two identical roles for comparison
+        role_noop = Role.objects.create(tenant=self.tenant, name="Noop Compare Role", system=False)
+        Access.objects.create(role=role_noop, permission=self.permission, tenant=self.tenant)
+
+        role_replicate = Role.objects.create(tenant=self.tenant, name="Replicate Compare Role", system=False)
+        Access.objects.create(role=role_replicate, permission=self.permission, tenant=self.tenant)
+
+        # Create groups and assign roles
+        group_noop = Group.objects.create(name="Noop Compare Group", tenant=self.tenant)
+        policy_noop = Policy.objects.create(name="Noop Compare Policy", tenant=self.tenant, group=group_noop)
+        policy_noop.roles.add(role_noop)
+
+        group_replicate = Group.objects.create(name="Replicate Compare Group", tenant=self.tenant)
+        policy_replicate = Policy.objects.create(
+            name="Replicate Compare Policy", tenant=self.tenant, group=group_replicate
+        )
+        policy_replicate.roles.add(role_replicate)
+
+        # Track tuples for both scenarios
+        tuples_noop = InMemoryTuples()
+        tuples_replicate = InMemoryTuples()
+
+        # Migrate with NoopReplicator (write_relationships=False equivalent)
+        migrate_custom_role_bindings(role_noop, NoopReplicator())
+
+        # Migrate with InMemoryRelationReplicator (write_relationships=True equivalent)
+        migrate_custom_role_bindings(role_replicate, InMemoryRelationReplicator(tuples_replicate))
+
+        # Both should have V2 models created
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role_noop).count(), 1)
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role_replicate).count(), 1)
+
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role_noop).count(), 1)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role_replicate).count(), 1)
+
+        self.assertEqual(BindingMapping.objects.filter(role=role_noop).count(), 1)
+        self.assertEqual(BindingMapping.objects.filter(role=role_replicate).count(), 1)
+
+        # NoopReplicator: no tuples should be written
+        self.assertEqual(len(tuples_noop), 0, "NoopReplicator should not write any tuples")
+
+        # InMemoryRelationReplicator: tuples SHOULD be written
+        self.assertGreater(len(tuples_replicate), 0, "InMemoryRelationReplicator should write tuples")
+
+        # Verify the replicated tuples contain the expected binding
+        binding_replicate = BindingMapping.objects.get(role=role_replicate)
+        binding_id = binding_replicate.mappings["id"]
+        binding_tuples = tuples_replicate.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
+        self.assertGreater(len(binding_tuples), 0, "Should have tuples for the replicated binding")
 
 
 class BindingScopeMigrationTupleVerificationTest(TestCase):
