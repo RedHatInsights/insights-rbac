@@ -2342,9 +2342,6 @@ def cleanup_tenant_orphan_bindings(request, org_id):
     Returns:
         JSON response with cleanup results and migration status
     """
-    if not destructive_ok("api"):
-        return HttpResponse("Destructive operations disallowed.", status=403)
-
     dry_run = request.GET.get("dry_run", "false").lower() == "true"
 
     logger.info(f"Cleaning orphaned relationships for tenant {org_id} (dry_run={dry_run})")
