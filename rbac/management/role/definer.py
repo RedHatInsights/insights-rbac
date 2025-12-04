@@ -112,6 +112,7 @@ def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_ser
             Role.objects.public_tenant_only().filter(name=name).update(
                 **defaults, display_name=display_name, modified=timezone.now()
             )
+            role.refresh_from_db() 
             logger.info("Updated system role %s.", name)
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
@@ -345,15 +346,12 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         if v1_role.platform_default:
             platform_role.children.add(v2_role)
             logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
-        else:
-            platform_role.children.discard(v2_role)
 
         admin_platform_role = platform_roles[(DefaultAccessType.ADMIN, scope)]
         if v1_role.admin_default:
             admin_platform_role.children.add(v2_role)
             logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
-        else:
-            admin_platform_role.children.discard(v2_role)
+
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
