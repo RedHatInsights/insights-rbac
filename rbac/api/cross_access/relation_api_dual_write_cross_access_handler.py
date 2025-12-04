@@ -75,6 +75,10 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         if not self.replication_enabled():
             return
         try:
+            # Deduplicate relations_to_add to avoid duplicate subject tuples when
+            # multiple CARs share the same role/binding
+            deduplicated_add = self._deduplicate_subject_relations(self.relations_to_add, handler_name="CAR")
+
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
@@ -86,7 +90,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
                     },
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.relations_to_remove,
-                    add=self.relations_to_add,
+                    add=deduplicated_add,
                 ),
             )
         except Exception as e:

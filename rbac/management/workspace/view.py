@@ -107,6 +107,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Create a Workspace."""
         try:
             return self._create_atomic(request, *args, **kwargs)
+        except TimeoutError as e:
+            logger.exception("TimeoutError in workspace creation operation")
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         except OperationalError as e:
             # Django wraps psycopg2 errors in OperationalError
             if hasattr(e, "__cause__"):
@@ -149,6 +155,13 @@ class WorkspaceViewSet(BaseV2ViewSet):
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
+
+        # Validate name parameter: treat empty strings as "return all", reject NUL characters
+        if name is not None:
+            if not name.strip():
+                name = None  # Treat empty name as unset, returning all results
+            elif "\x00" in name:
+                raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
 
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)

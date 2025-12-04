@@ -82,6 +82,7 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
@@ -810,6 +811,8 @@ def role_removal(request):
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
+                dual_write_handler = SeedingRelationApiDualWriteHandler(role_obj)
+                dual_write_handler.replicate_deleted_system_role()
                 role_obj.delete()
                 return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
@@ -2238,6 +2241,45 @@ def migrate_binding_scope(request):
         {"message": "Binding scope migration is running in a background worker."},
         status=202,
     )
+
+
+@require_http_methods(["POST"])
+def clean_invalid_workspace_resource_definitions(request):
+    """Clean resource definitions with invalid workspace IDs and delete corresponding bindings.
+
+    POST /_private/api/utils/clean_invalid_workspace_resource_definitions/?dry_run=true
+
+    This endpoint:
+    1. Finds custom roles with resource definitions pointing to non-existent workspaces
+    2. Removes invalid workspace IDs from resource definitions
+    3. Deletes bindings to non-existent workspaces
+    4. Runs in background worker
+
+    Query Parameters:
+        dry_run (bool): If "true", only report what would be changed without making changes.
+
+    Returns 202 Accepted with a message that the worker is running.
+    """
+    # Check for dry_run parameter
+    dry_run = request.GET.get("dry_run", "false").lower() == "true"
+
+    if dry_run:
+        logger.info("Cleaning invalid workspace resource definitions (DRY RUN)")
+    else:
+        logger.info("Cleaning invalid workspace resource definitions")
+
+    # Trigger the background worker
+    clean_invalid_workspace_resource_definitions_in_worker.delay(dry_run=dry_run)
+
+    if dry_run:
+        message = (
+            "Clean invalid workspace resource definitions is running in a background worker "
+            "(DRY RUN - no changes will be made)."
+        )
+    else:
+        message = "Clean invalid workspace resource definitions is running in a background worker."
+
+    return JsonResponse({"message": message, "dry_run": dry_run}, status=202)
 
 
 @require_http_methods(["POST"])

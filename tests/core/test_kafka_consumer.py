@@ -662,6 +662,10 @@ class RBACKafkaConsumerTests(TestCase):
 
         consumer = RBACKafkaConsumer()
 
+        # Set up lock token for fencing
+        consumer.lock_id = "test-group/0"
+        consumer.lock_token = "test-lock-token"
+
         debezium_msg = DebeziumMessage(
             aggregatetype="relations",
             aggregateid="test-id-123",
@@ -690,6 +694,21 @@ class RBACKafkaConsumerTests(TestCase):
         mock_tenant_get.assert_called_once_with(org_id="12345")
         mock_write.assert_called_once()
         mock_delete.assert_called_once()
+
+        # Verify fencing check was passed to write and delete operations
+        write_call_kwargs = mock_write.call_args.kwargs
+        self.assertIn("fencing_check", write_call_kwargs)
+        write_fencing_check = write_call_kwargs["fencing_check"]
+        self.assertIsNotNone(write_fencing_check)
+        self.assertEqual(write_fencing_check.lock_id, "test-group/0")
+        self.assertEqual(write_fencing_check.lock_token, "test-lock-token")
+
+        delete_call_kwargs = mock_delete.call_args.kwargs
+        self.assertIn("fencing_check", delete_call_kwargs)
+        delete_fencing_check = delete_call_kwargs["fencing_check"]
+        self.assertIsNotNone(delete_fencing_check)
+        self.assertEqual(delete_fencing_check.lock_id, "test-group/0")
+        self.assertEqual(delete_fencing_check.lock_token, "test-lock-token")
 
     def test_process_relations_message_invalid_payload(self):
         """Test relations message processing with invalid payload raises ValidationError."""
@@ -1043,7 +1062,7 @@ class RetryAllErrorsTests(TestCase):
 
     @patch("core.kafka_consumer.logger")
     def test_process_message_with_retry_max_retries_exceeded(self, mock_logger):
-        """Test that errors are retried until max_retries is hit."""
+        """Test that errors are retried until max_retries is hit, then raises RuntimeError."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
@@ -1051,32 +1070,27 @@ class RetryAllErrorsTests(TestCase):
         }
 
         # Mock _process_debezium_message to always raise a JSON error
-        # Mock time.sleep to break out of infinite pause loop
-        with (
-            patch.object(
-                self.consumer,
-                "_process_debezium_message",
-                side_effect=json.JSONDecodeError("test", "doc", 0),
-            ),
-            patch("time.sleep") as mock_sleep,
+        with patch.object(
+            self.consumer,
+            "_process_debezium_message",
+            side_effect=json.JSONDecodeError("test", "doc", 0),
         ):
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+            # Verify the error message
+            self.assertIn("Max operation retries", str(ctx.exception))
 
         # Should have retried operation_max_retries times (2)
         self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
         # Should log max operation retries exceeded
         mock_logger.critical.assert_called()
-        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
+        self.assertIn("CONSUMER STOPPING", str(mock_logger.critical.call_args))
 
     @patch("core.kafka_consumer.logger")
     def test_process_message_with_retry_processing_failure_retried(self, mock_logger):
-        """Test that processing failures ARE retried with new policy."""
+        """Test that processing failures are retried, then raises RuntimeError when max retries exceeded."""
         # Use proper Debezium message format
         message_value = {
             "schema": {"type": "string"},
@@ -1084,24 +1098,20 @@ class RetryAllErrorsTests(TestCase):
         }
 
         # Mock _process_debezium_message to return False (processing failed)
-        # Mock time.sleep to break out of infinite pause loop
-        with (
-            patch.object(self.consumer, "_process_debezium_message", return_value=False),
-            patch("time.sleep") as mock_sleep,
-        ):
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+        with patch.object(self.consumer, "_process_debezium_message", return_value=False):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 self.consumer._process_message_with_retry(message_value, 1234, 0, self.topic_partition)
+
+            # Verify the error message
+            self.assertIn("Max operation retries", str(ctx.exception))
+            self.assertIn("Message processing failed", str(ctx.exception))
 
         # Should have retried operation_max_retries times (2)
         self.assertEqual(self.consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
         # Should log max operation retries exceeded
         mock_logger.critical.assert_called()
-        self.assertIn("CONSUMER PAUSED", str(mock_logger.critical.call_args))
+        self.assertIn("CONSUMER STOPPING", str(mock_logger.critical.call_args))
 
 
 class HealthCheckTests(TestCase):
@@ -1225,26 +1235,21 @@ class RBACKafkaConsumerRetryTests(TestCase):
         }
 
         # Mock _process_debezium_message to raise JSON decode error
-        # Mock time.sleep to avoid actually sleeping in the pause loop
-        with (
-            patch.object(
-                consumer,
-                "_process_debezium_message",
-                side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
-            ),
-            patch("time.sleep") as mock_sleep,
+        with patch.object(
+            consumer,
+            "_process_debezium_message",
+            side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
         ):
-            # Set sleep to raise an exception to break out of infinite loop
-            mock_sleep.side_effect = KeyboardInterrupt("Test interrupt")
-
-            # Should enter pause loop after max retries, then get interrupted
-            with self.assertRaises(KeyboardInterrupt):
+            # Should raise RuntimeError after max retries are exceeded
+            with self.assertRaises(RuntimeError) as ctx:
                 consumer._process_message_with_retry(message_value, 123, 0, topic_partition)
+
+            # Verify the error message indicates max retries exceeded
+            self.assertIn("Max operation retries", str(ctx.exception))
+            self.assertIn("Invalid JSON", str(ctx.exception))
 
         # Should have waited (called wait max_retries times during retry)
         self.assertEqual(consumer._stop_health_check.wait.call_count, 2)
-        # Should have called sleep at least once (entered pause loop)
-        self.assertGreater(mock_sleep.call_count, 0)
 
     @patch("core.kafka_consumer.Path")
     def test_consumer_init_with_retry_config(self, mock_path):
@@ -1408,13 +1413,17 @@ class FencingTokenRebalanceTests(TestCase):
 
     @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
     def test_partition_assignment_acquires_lock(self, mock_acquire_lock):
-        """Test that partition assignment acquires lock token."""
+        """Test that partition assignment acquires lock token and resets failure flag."""
         from core.kafka_consumer import RebalanceListener
 
         mock_acquire_lock.return_value = "test-token-12345"
 
+        # Set failure flag to True to verify it gets reset
+        self.consumer.lock_acquisition_failed = True
+
         listener = RebalanceListener(self.consumer)
-        listener.on_partitions_assigned([self.partition])
+        # Note: Kafka library passes a set of TopicPartition objects, not a list
+        listener.on_partitions_assigned({self.partition})
 
         # Verify lock was acquired
         mock_acquire_lock.assert_called_once_with("test-consumer-group/0")
@@ -1423,21 +1432,111 @@ class FencingTokenRebalanceTests(TestCase):
         self.assertEqual(self.consumer.lock_id, "test-consumer-group/0")
         self.assertEqual(self.consumer.lock_token, "test-token-12345")
 
+        # Verify failure flag was reset
+        self.assertFalse(self.consumer.lock_acquisition_failed)
+
     @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
     def test_partition_assignment_lock_failure(self, mock_acquire_lock):
-        """Test that partition assignment failure clears lock state."""
+        """Test that partition assignment failure clears lock state and sets failure flag."""
         from core.kafka_consumer import RebalanceListener
 
         mock_acquire_lock.side_effect = RuntimeError("Lock acquisition failed")
 
         listener = RebalanceListener(self.consumer)
 
-        with self.assertRaises(RuntimeError):
-            listener.on_partitions_assigned([self.partition])
+        # Should NOT raise - instead sets a flag for later detection
+        # Note: Kafka library passes a set of TopicPartition objects, not a list
+        listener.on_partitions_assigned({self.partition})
 
         # Verify lock state was cleared
         self.assertIsNone(self.consumer.lock_id)
         self.assertIsNone(self.consumer.lock_token)
+
+        # Verify failure flag was set
+        self.assertTrue(self.consumer.lock_acquisition_failed)
+
+    @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
+    def test_partition_assignment_handles_set_not_list(self, mock_acquire_lock):
+        """Test that on_partitions_assigned handles set of TopicPartition (not list).
+
+        Regression test: The Kafka library's ConsumerRebalanceListener.on_partitions_assigned()
+        callback receives a SET of TopicPartition objects, not a list. Previously the code
+        tried to access assigned[0] which failed with "'set' object is not subscriptable".
+        """
+        from core.kafka_consumer import RebalanceListener
+
+        mock_acquire_lock.return_value = "test-token-12345"
+
+        listener = RebalanceListener(self.consumer)
+
+        # Kafka library passes a SET, not a list - this must not raise TypeError
+        assigned_partitions = {self.partition}
+        self.assertIsInstance(assigned_partitions, set)
+
+        # This should not raise "'set' object is not subscriptable"
+        listener.on_partitions_assigned(assigned_partitions)
+
+        # Verify lock was acquired successfully
+        mock_acquire_lock.assert_called_once_with("test-consumer-group/0")
+        self.assertEqual(self.consumer.lock_token, "test-token-12345")
+
+    @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
+    def test_startup_lock_acquisition_resets_failure_flag(self, mock_acquire_lock):
+        """Test that startup lock acquisition sets lock fields and resets failure flag."""
+        from kafka import TopicPartition
+
+        # Arrange: simulate previous lock acquisition failure
+        mock_acquire_lock.return_value = "startup-token-12345"
+        self.consumer.lock_acquisition_failed = True
+
+        # Setup consumer assignment to return a partition
+        partition = TopicPartition("test-topic", 0)
+        self.consumer.consumer.assignment.return_value = {partition}
+
+        # Act: invoke the startup lock acquisition path
+        result = self.consumer._ensure_lock_token_on_assignment()
+
+        # Assert: lock fields are populated and failure flag is reset
+        self.assertTrue(result)
+        self.assertFalse(self.consumer.lock_acquisition_failed)
+        self.assertEqual(self.consumer.lock_id, "test-consumer-group/0")
+        self.assertEqual(self.consumer.lock_token, "startup-token-12345")
+        mock_acquire_lock.assert_called_once_with("test-consumer-group/0")
+
+    def test_message_processing_fails_fast_when_lock_acquisition_failed(self):
+        """Test that message processing fails fast when lock_acquisition_failed is set.
+
+        When lock_acquisition_failed is set, the message-processing loop should fail fast:
+        - it must raise RuntimeError immediately
+        - it must not process any messages
+        - it must not commit any offsets
+        """
+        from unittest.mock import MagicMock
+
+        # Arrange: Construct consumer in a "failed" state
+        self.consumer.lock_acquisition_failed = True
+
+        # Create a mock message
+        mock_message = MagicMock()
+        mock_message.partition = 0
+        mock_message.offset = 100
+
+        # Mock the consumer to return one message then stop
+        self.consumer.consumer.__iter__ = MagicMock(return_value=iter([mock_message]))
+
+        # Mock the offset manager commit method to track if it was called
+        self.consumer.offset_manager.commit = MagicMock(return_value=(True, 0))
+
+        # Act & Assert: The message loop should raise RuntimeError immediately
+        with self.assertRaises(RuntimeError) as ctx:
+            self.consumer._run_message_loop()
+
+        # Verify the error message
+        self.assertIn("Lock acquisition failed during rebalance", str(ctx.exception))
+        self.assertIn("Cannot process messages without fencing token", str(ctx.exception))
+
+        # Verify no offsets were committed (commit should not have been called)
+        self.consumer.offset_manager.commit.assert_not_called()
 
     def test_partition_revocation_clears_lock(self):
         """Test that partition revocation clears lock token."""
@@ -1523,21 +1622,12 @@ class FencingTokenProcessingTests(TestCase):
     @patch("core.kafka_consumer.relations_api_replication.write_relationships")
     @patch("core.kafka_consumer.relations_api_replication.delete_relationships")
     def test_no_fencing_check_when_no_lock_token(self, mock_delete, mock_write):
-        """Test that no fencing check is included when lock token is not available."""
+        """Test that processing fails when lock token is not available."""
         from core.kafka_consumer import DebeziumMessage
 
         # Clear lock token
         self.consumer.lock_id = None
         self.consumer.lock_token = None
-
-        # Mock responses
-        mock_write_response = Mock()
-        mock_write_response.consistency_token.token = "consistency-token-123"
-        mock_write.return_value = mock_write_response
-
-        mock_delete_response = Mock()
-        mock_delete_response.consistency_token.token = None
-        mock_delete.return_value = mock_delete_response
 
         # Process message
         debezium_msg = DebeziumMessage(
@@ -1547,129 +1637,20 @@ class FencingTokenProcessingTests(TestCase):
             payload=self.payload,
         )
 
-        result = self.consumer._process_relations_message(debezium_msg)
-
-        self.assertTrue(result)
-
-        # Verify no fencing check was passed
-        write_call_kwargs = mock_write.call_args.kwargs
-        fencing_check = write_call_kwargs.get("fencing_check")
-        self.assertIsNone(fencing_check)
-
-
-class PartitionAssignmentBlockingTests(TestCase):
-    """Tests for partition assignment loop blocking protection."""
-
-    @override_settings(
-        KAFKA_ENABLED=True,
-        RBAC_KAFKA_CONSUMER_TOPIC="test-topic",
-        KAFKA_AUTH=None,
-        KAFKA_SERVERS=["localhost:9092"],
-    )
-    @patch("core.kafka_consumer.KafkaConsumer")
-    def test_kafka_error_during_topic_partition_check(self, mock_kafka_consumer):
-        """Test that KafkaError during topic partition check is handled properly."""
-        # Mock consumer creation
-        mock_consumer_instance = Mock()
-        mock_kafka_consumer.return_value = mock_consumer_instance
-
-        # Mock partitions_for_topic to raise KafkaError
-        mock_consumer_instance.partitions_for_topic.side_effect = KafkaError("Broker unreachable")
-        mock_consumer_instance.subscribe = Mock()
-
-        consumer = RBACKafkaConsumer()
-        consumer.consumer = mock_consumer_instance
-
-        # Should raise RuntimeError wrapping the KafkaError
+        # Verify that processing raises RuntimeError when no lock token is available
         with self.assertRaises(RuntimeError) as ctx:
-            consumer._wait_for_partition_assignment()
+            self.consumer._process_relations_message(debezium_msg)
 
-        self.assertIn("Kafka is unavailable or unreachable", str(ctx.exception))
-        self.assertIn("test-topic", str(ctx.exception))
+        # Verify error message
+        self.assertIn("Lock token not available", str(ctx.exception))
 
-    @override_settings(
-        KAFKA_ENABLED=True,
-        RBAC_KAFKA_CONSUMER_TOPIC="test-topic",
-        KAFKA_AUTH=None,
-        KAFKA_SERVERS=["localhost:9092"],
-    )
-    @patch("core.kafka_consumer.KafkaConsumer")
-    def test_kafka_error_during_poll_operation(self, mock_kafka_consumer):
-        """Test that KafkaError during poll operation stops the loop immediately."""
-        # Mock consumer creation
-        mock_consumer_instance = Mock()
-        mock_kafka_consumer.return_value = mock_consumer_instance
+        # Verify that write/delete were never called without a lock token
+        mock_write.assert_not_called()
+        mock_delete.assert_not_called()
 
-        # Mock partitions_for_topic to succeed
-        mock_consumer_instance.partitions_for_topic.return_value = {0}
-        mock_consumer_instance.subscribe = Mock()
 
-        # Mock poll to raise KafkaError on first attempt
-        mock_consumer_instance.poll.side_effect = KafkaError("Connection lost")
-        mock_consumer_instance.assignment.return_value = set()  # No assignment yet
-
-        consumer = RBACKafkaConsumer()
-        consumer.consumer = mock_consumer_instance
-
-        # Should raise RuntimeError after first poll attempt
-        with self.assertRaises(RuntimeError) as ctx:
-            consumer._wait_for_partition_assignment()
-
-        self.assertIn("Kafka became unavailable during partition assignment", str(ctx.exception))
-        self.assertIn("after 1 attempts", str(ctx.exception))
-
-        # Verify poll was only called once (failed fast)
-        self.assertEqual(mock_consumer_instance.poll.call_count, 1)
-
-    @override_settings(
-        KAFKA_ENABLED=True,
-        RBAC_KAFKA_CONSUMER_TOPIC="test-topic",
-        KAFKA_AUTH=None,
-        KAFKA_SERVERS=["localhost:9092"],
-    )
-    @patch("core.kafka_consumer.KafkaConsumer")
-    def test_consumer_becomes_none_during_loop(self, mock_kafka_consumer):
-        """Test that consumer becoming None during loop is handled properly."""
-        # Mock consumer creation
-        mock_consumer_instance = Mock()
-        mock_kafka_consumer.return_value = mock_consumer_instance
-
-        # Mock partitions_for_topic to succeed
-        mock_consumer_instance.partitions_for_topic.return_value = {0}
-        mock_consumer_instance.subscribe = Mock()
-
-        consumer = RBACKafkaConsumer()
-        consumer.consumer = mock_consumer_instance
-
-        # Track iteration count
-        iteration_count = [0]
-
-        def poll_side_effect(*args, **kwargs):
-            iteration_count[0] += 1
-            if iteration_count[0] == 1:
-                # First poll succeeds
-                return {}
-            # Should not reach here if consumer check works
-            raise AssertionError("Poll should not be called after consumer is None")
-
-        # Mock assignment to set consumer to None after first iteration
-        def assignment_side_effect():
-            if iteration_count[0] == 1:
-                # After first poll, set consumer to None before next iteration
-                consumer.consumer = None
-            return set()  # No assignment
-
-        mock_consumer_instance.poll.side_effect = poll_side_effect
-        mock_consumer_instance.assignment.side_effect = assignment_side_effect
-
-        # Should raise RuntimeError when consumer becomes None on second iteration
-        with self.assertRaises(RuntimeError) as ctx:
-            consumer._wait_for_partition_assignment()
-
-        self.assertIn("Consumer became None during partition assignment loop", str(ctx.exception))
-
-        # Verify poll was only called once (before consumer became None)
-        self.assertEqual(iteration_count[0], 1)
+class EnsureLockTokenOnAssignmentTests(TestCase):
+    """Tests for _ensure_lock_token_on_assignment fallback behavior."""
 
     @override_settings(
         KAFKA_ENABLED=True,
@@ -1679,22 +1660,17 @@ class PartitionAssignmentBlockingTests(TestCase):
     )
     @patch("core.kafka_consumer.KafkaConsumer")
     @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
-    def test_successful_partition_assignment_after_kafka_available(self, mock_acquire_lock, mock_kafka_consumer):
-        """Test successful partition assignment when Kafka is available."""
+    def test_ensure_lock_token_acquires_on_first_message(self, mock_acquire_lock, mock_kafka_consumer):
+        """Test that _ensure_lock_token_on_assignment acquires lock on first message."""
         from kafka import TopicPartition
 
         # Mock consumer creation
         mock_consumer_instance = Mock()
         mock_kafka_consumer.return_value = mock_consumer_instance
-
-        # Mock partitions_for_topic to succeed
-        mock_consumer_instance.partitions_for_topic.return_value = {0}
-        mock_consumer_instance.subscribe = Mock()
         mock_consumer_instance.config = {"group_id": "test-group"}
 
-        # Mock poll to return no messages but assignment succeeds
+        # Simulate partition assignment without callback firing
         test_partition = TopicPartition("test-topic", 0)
-        mock_consumer_instance.poll.return_value = {}
         mock_consumer_instance.assignment.return_value = {test_partition}
 
         # Mock lock acquisition
@@ -1703,15 +1679,18 @@ class PartitionAssignmentBlockingTests(TestCase):
         consumer = RBACKafkaConsumer()
         consumer.consumer = mock_consumer_instance
 
-        # Should succeed without raising
-        consumer._wait_for_partition_assignment()
+        # Ensure no lock token initially
+        self.assertIsNone(consumer.lock_token)
+        self.assertIsNone(consumer.lock_id)
 
-        # Verify poll was called
-        mock_consumer_instance.poll.assert_called()
+        # Call _ensure_lock_token_on_assignment
+        result = consumer._ensure_lock_token_on_assignment()
 
         # Verify lock was acquired
+        self.assertTrue(result)
         mock_acquire_lock.assert_called_once_with("test-group/0")
         self.assertEqual(consumer.lock_token, "test-token-12345")
+        self.assertEqual(consumer.lock_id, "test-group/0")
 
     @override_settings(
         KAFKA_ENABLED=True,
@@ -1720,40 +1699,111 @@ class PartitionAssignmentBlockingTests(TestCase):
         KAFKA_SERVERS=["localhost:9092"],
     )
     @patch("core.kafka_consumer.KafkaConsumer")
-    def test_kafka_error_on_third_poll_attempt(self, mock_kafka_consumer):
-        """Test that KafkaError on third poll attempt is caught immediately."""
+    @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
+    def test_ensure_lock_token_failure_raises_runtime_error(self, mock_acquire_lock, mock_kafka_consumer):
+        """Test that _acquire_lock_with_retry failure raises RuntimeError."""
+        from kafka import TopicPartition
+
         # Mock consumer creation
         mock_consumer_instance = Mock()
         mock_kafka_consumer.return_value = mock_consumer_instance
+        mock_consumer_instance.config = {"group_id": "test-group"}
 
-        # Mock partitions_for_topic to succeed
-        mock_consumer_instance.partitions_for_topic.return_value = {0}
-        mock_consumer_instance.subscribe = Mock()
+        # Simulate partition assignment
+        test_partition = TopicPartition("test-topic", 0)
+        mock_consumer_instance.assignment.return_value = {test_partition}
 
-        # Mock poll to succeed twice, then raise KafkaError
-        poll_count = [0]
-
-        def poll_side_effect(*args, **kwargs):
-            poll_count[0] += 1
-            if poll_count[0] < 3:
-                return {}  # No messages, no assignment
-            raise KafkaError("Network partition")
-
-        mock_consumer_instance.poll.side_effect = poll_side_effect
-        mock_consumer_instance.assignment.return_value = set()  # No assignment
+        # Mock lock acquisition failure
+        mock_acquire_lock.side_effect = Exception("Lock service unavailable")
 
         consumer = RBACKafkaConsumer()
         consumer.consumer = mock_consumer_instance
 
-        # Should raise RuntimeError after third poll
+        # Call _ensure_lock_token_on_assignment and expect RuntimeError
         with self.assertRaises(RuntimeError) as ctx:
-            consumer._wait_for_partition_assignment()
+            consumer._ensure_lock_token_on_assignment()
 
-        self.assertIn("Kafka became unavailable during partition assignment", str(ctx.exception))
-        self.assertIn("after 3 attempts", str(ctx.exception))
+        # Verify error message
+        self.assertIn("Failed to acquire lock token for partition 0", str(ctx.exception))
 
-        # Verify poll was called 3 times
-        self.assertEqual(mock_consumer_instance.poll.call_count, 3)
+        # Verify lock token was not set
+        self.assertIsNone(consumer.lock_token)
+        self.assertIsNone(consumer.lock_id)
+
+    @override_settings(
+        KAFKA_ENABLED=True,
+        RBAC_KAFKA_CONSUMER_TOPIC="test-topic",
+        KAFKA_AUTH=None,
+        KAFKA_SERVERS=["localhost:9092"],
+    )
+    @patch("core.kafka_consumer.KafkaConsumer")
+    def test_ensure_lock_token_validates_existing_token(self, mock_kafka_consumer):
+        """Test that existing token is validated against current assignment."""
+        from kafka import TopicPartition
+
+        # Mock consumer creation
+        mock_consumer_instance = Mock()
+        mock_kafka_consumer.return_value = mock_consumer_instance
+        mock_consumer_instance.config = {"group_id": "test-group"}
+
+        # Simulate partition assignment
+        test_partition = TopicPartition("test-topic", 0)
+        mock_consumer_instance.assignment.return_value = {test_partition}
+
+        consumer = RBACKafkaConsumer()
+        consumer.consumer = mock_consumer_instance
+
+        # Set existing token for correct partition
+        consumer.lock_id = "test-group/0"
+        consumer.lock_token = "existing-token"
+
+        # Call _ensure_lock_token_on_assignment
+        result = consumer._ensure_lock_token_on_assignment()
+
+        # Verify existing token was validated and kept
+        self.assertTrue(result)
+        self.assertEqual(consumer.lock_token, "existing-token")
+        self.assertEqual(consumer.lock_id, "test-group/0")
+
+    @override_settings(
+        KAFKA_ENABLED=True,
+        RBAC_KAFKA_CONSUMER_TOPIC="test-topic",
+        KAFKA_AUTH=None,
+        KAFKA_SERVERS=["localhost:9092"],
+    )
+    @patch("core.kafka_consumer.KafkaConsumer")
+    @patch("core.kafka_consumer.RBACKafkaConsumer._acquire_lock_with_retry")
+    def test_ensure_lock_token_clears_stale_token(self, mock_acquire_lock, mock_kafka_consumer):
+        """Test that stale token for wrong partition is cleared and reacquired."""
+        from kafka import TopicPartition
+
+        # Mock consumer creation
+        mock_consumer_instance = Mock()
+        mock_kafka_consumer.return_value = mock_consumer_instance
+        mock_consumer_instance.config = {"group_id": "test-group"}
+
+        # Simulate partition assignment to partition 1
+        test_partition = TopicPartition("test-topic", 1)
+        mock_consumer_instance.assignment.return_value = {test_partition}
+
+        # Mock lock acquisition
+        mock_acquire_lock.return_value = "new-token-67890"
+
+        consumer = RBACKafkaConsumer()
+        consumer.consumer = mock_consumer_instance
+
+        # Set stale token for partition 0 (but now assigned to partition 1)
+        consumer.lock_id = "test-group/0"
+        consumer.lock_token = "stale-token"
+
+        # Call _ensure_lock_token_on_assignment
+        result = consumer._ensure_lock_token_on_assignment()
+
+        # Verify stale token was cleared and new token acquired
+        self.assertTrue(result)
+        mock_acquire_lock.assert_called_once_with("test-group/1")
+        self.assertEqual(consumer.lock_token, "new-token-67890")
+        self.assertEqual(consumer.lock_id, "test-group/1")
 
 
 class FencingTokenErrorHandlingTests(TestCase):

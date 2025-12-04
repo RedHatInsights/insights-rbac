@@ -25,8 +25,10 @@ import grpc
 from django.conf import settings
 from google.rpc import error_details_pb2
 from grpc_status import rpc_status
+from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.relations.v1beta1 import relation_tuples_pb2
 from kessel.relations.v1beta1 import relation_tuples_pb2_grpc
+from management.cache import JWTCacheOptimized
 from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEvent,
@@ -35,6 +37,11 @@ from management.utils import create_client_channel_relation
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+# Initialize JWT manager for token handling (using optimized cache for Kafka consumer)
+jwt_cache = JWTCacheOptimized()
+jwt_provider = JWTProvider()
+jwt_manager = JWTManager(jwt_provider, jwt_cache)
 
 
 def execute_grpc_call(operation_name, grpc_callable, fencing_check=None, log_context=None):
@@ -95,6 +102,10 @@ class RelationsApiReplicator(RelationReplicator):
         Raises:
             grpc.RpcError: If the lock acquisition fails
         """
+        # Get JWT token for authentication
+        token = jwt_manager.get_jwt_from_redis()
+        metadata = [("authorization", f"Bearer {token}")] if token else []
+
         with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
 
@@ -102,7 +113,7 @@ class RelationsApiReplicator(RelationReplicator):
 
             response = execute_grpc_call(
                 operation_name=f"acquire lock token for {lock_id}",
-                grpc_callable=lambda: stub.AcquireLock(request),
+                grpc_callable=lambda: stub.AcquireLock(request, metadata=metadata),
                 fencing_check=None,
                 log_context={"lock_id": lock_id},
             )
@@ -123,6 +134,10 @@ class RelationsApiReplicator(RelationReplicator):
         Raises:
             grpc.RpcError: If the API call fails (including FAILED_PRECONDITION for invalid fencing token)
         """
+        # Get JWT token for authentication
+        token = jwt_manager.get_jwt_from_redis()
+        metadata = [("authorization", f"Bearer {token}")] if token else []
+
         with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
 
@@ -139,7 +154,7 @@ class RelationsApiReplicator(RelationReplicator):
 
             return execute_grpc_call(
                 operation_name="write relationships to the relation API server",
-                grpc_callable=lambda: stub.CreateTuples(request),
+                grpc_callable=lambda: stub.CreateTuples(request, metadata=metadata),
                 fencing_check=fencing_check,
                 log_context={"relationships": relationships},
             )
@@ -168,6 +183,10 @@ class RelationsApiReplicator(RelationReplicator):
                 (object,),
                 {"consistency_token": type("obj", (object,), {"token": None})()},
             )()
+
+        # Get JWT token for authentication
+        token = jwt_manager.get_jwt_from_redis()
+        metadata = [("authorization", f"Bearer {token}")] if token else []
 
         with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
@@ -201,7 +220,7 @@ class RelationsApiReplicator(RelationReplicator):
 
                 response = execute_grpc_call(
                     operation_name="delete relationship from the relation API server",
-                    grpc_callable=lambda req=request: stub.DeleteTuples(req),
+                    grpc_callable=lambda req=request: stub.DeleteTuples(req, metadata=metadata),
                     fencing_check=fencing_check,
                     log_context={"relationship": relationship},
                 )

@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 
 import grpc
 from django.conf import settings
+from django.db import connection
 from google.protobuf import json_format
 from kafka import KafkaConsumer, TopicPartition
 from kafka.consumer.subscription_state import ConsumerRebalanceListener
@@ -37,14 +38,27 @@ from kessel.relations.v1beta1 import common_pb2
 from management.relation_replicator.relations_api_replicator import (
     RelationsApiReplicator,
 )
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
+from psycopg2 import sql
 
 from api.models import Tenant
 
 relations_api_replication = RelationsApiReplicator()
+
 logger = logging.getLogger("rbac.core.kafka_consumer")
 
 # Metrics
+consumer_start_time = Gauge(
+    "rbac_kafka_consumer_start_time_seconds",
+    "Unix timestamp when the consumer started",
+)
+
+consumer_info = Gauge(
+    "rbac_kafka_consumer_info",
+    "Consumer running state: 1=running, 0=stopped",
+    ["topic", "group_id"],
+)
+
 messages_processed_total = Counter(
     "rbac_kafka_consumer_messages_processed_total",
     "Total number of messages processed",
@@ -73,6 +87,55 @@ message_retry_duration = Histogram(
     "rbac_kafka_consumer_message_retry_duration_seconds",
     "Time spent retrying message processing",
     ["retry_reason"],
+)
+
+rebalance_events_total = Counter(
+    "rbac_kafka_consumer_rebalance_events_total",
+    "Total number of rebalance events",
+    ["event_type"],  # partitions_assigned, partitions_revoked
+)
+
+lock_acquisition_total = Counter(
+    "rbac_kafka_consumer_lock_acquisition_total",
+    "Total number of lock acquisition attempts",
+    ["status", "reason"],  # status: success/failure, reason: rebalance/startup/error_type
+)
+
+lock_acquisition_duration = Histogram(
+    "rbac_kafka_consumer_lock_acquisition_duration_seconds",
+    "Time spent acquiring lock tokens",
+    ["status"],  # success, failure
+)
+
+# Replication event end-to-end latency metric
+# Measures time from event creation (in producer) to successful processing (in consumer)
+# Labels: event_type - the type of replication event (e.g., create_custom_role, assign_role)
+#
+# Example Prometheus queries:
+#
+# 1. Average replication latency over 5 minutes:
+#    rate(rbac_replication_event_latency_seconds_sum[5m]) / rate(rbac_replication_event_latency_seconds_count[5m])
+#
+# 2. 95th percentile latency:
+#    histogram_quantile(0.95, rate(rbac_replication_event_latency_seconds_bucket[5m]))
+#
+# 3. 99th percentile latency by event type:
+#    histogram_quantile(0.99, sum(rate(rbac_replication_event_latency_seconds_bucket[5m])) by (le, event_type))
+#
+# 4. Median (50th percentile) latency:
+#    histogram_quantile(0.50, rate(rbac_replication_event_latency_seconds_bucket[5m]))
+#
+# 5. Events processed per second by event type:
+#    sum(rate(rbac_replication_event_latency_seconds_count[1m])) by (event_type)
+#
+# 6. Alert: High replication latency (> 30 seconds):
+#    histogram_quantile(0.95, rate(rbac_replication_event_latency_seconds_bucket[5m])) > 30
+#
+replication_event_latency = Histogram(
+    "rbac_replication_event_latency_seconds",
+    "End-to-end latency from event creation to successful processing in seconds",
+    ["event_type"],
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
 )
 
 
@@ -561,38 +624,87 @@ class RebalanceListener(ConsumerRebalanceListener):
         Args:
             assigned: List of TopicPartition objects being assigned
         """
+        import time
+
+        # Track rebalance event
+        rebalance_events_total.labels(event_type="partitions_assigned").inc()
+
         logger.info(f"Partitions assigned: {assigned}")
 
         # Acquire lock token for assigned partitions
         if len(assigned) > 0:
             # Typically only one partition per consumer
-            partition = assigned[0]
+            # Note: assigned is a set, so we need to convert to list to access by index
+            partition = list(assigned)[0]
 
             # Get consumer group ID from the consumer instance
-            consumer_group_id = self.consumer_instance.consumer.config.get("group_id")
+            try:
+                consumer_group_id = self.consumer_instance.consumer.config.get("group_id")
+                if not consumer_group_id:
+                    logger.error("Consumer group_id is not set in consumer config!")
+                    consumer_group_id = "unknown"
+            except AttributeError as e:
+                logger.error(f"Failed to get consumer group_id - consumer may not be initialized: {e}")
+                self.consumer_instance.lock_acquisition_failed = True
+                return
 
             # Generate lock ID: {consumer_group_id}/{partition_number}
             lock_id = f"{consumer_group_id}/{partition.partition}"
+
+            logger.info(f"Attempting to acquire lock token for {lock_id}")
+
+            # Track lock acquisition timing
+            start_time = time.time()
 
             try:
                 # Acquire lock token from Relations API
                 lock_token = self.consumer_instance._acquire_lock_with_retry(lock_id)
 
+                # Record successful acquisition
+                duration = time.time() - start_time
+                lock_acquisition_duration.labels(status="success").observe(duration)
+                lock_acquisition_total.labels(status="success", reason="rebalance").inc()
+
+                logger.info(f"Successfully acquired lock token: {lock_token} (took {duration:.2f}s)")
+
                 # Store lock token in consumer instance (thread-safe)
                 with self.consumer_instance._lock_mutex:
                     self.consumer_instance.lock_id = lock_id
                     self.consumer_instance.lock_token = lock_token
+                    # Reset failure flag on successful acquisition
+                    self.consumer_instance.lock_acquisition_failed = False
 
                 logger.info(f"Acquired and stored lock token for partition {partition.partition}: {lock_token}")
 
             except Exception as e:
-                logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
+                # Record failed acquisition
+                duration = time.time() - start_time
+                lock_acquisition_duration.labels(status="failure").observe(duration)
+
+                # Classify error type for metrics
+                error_type = type(e).__name__
+                lock_acquisition_total.labels(status="failure", reason=error_type).inc()
+
+                # Log with full stack trace for debugging
+                logger.error(f"Failed to acquire lock token for {lock_id}: {e} (took {duration:.2f}s)", exc_info=True)
+                logger.critical(
+                    f"CRITICAL: Cannot proceed without lock token for partition {partition.partition}. "
+                    f"Consumer must stop to prevent processing without fencing protection."
+                )
+
                 # Clear any partial state
                 with self.consumer_instance._lock_mutex:
                     self.consumer_instance.lock_token = None
                     self.consumer_instance.lock_id = None
-                # Re-raise to stop consumer - we cannot proceed without a valid lock token
-                raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
+
+                # Mark consumer as unhealthy to trigger pod restart
+                self.consumer_instance._update_health_status(False)
+
+                # DON'T re-raise - kafka-python may suppress the exception
+                # Instead, set a flag that will be checked before processing messages
+                self.consumer_instance.lock_acquisition_failed = True
+        else:
+            logger.warning("on_partitions_assigned called with empty partition list")
 
 
 class RBACKafkaConsumer:
@@ -629,6 +741,7 @@ class RBACKafkaConsumer:
         self.lock_id: Optional[str] = None
         self.lock_token: Optional[str] = None
         self._lock_mutex = threading.Lock()
+        self.lock_acquisition_failed: bool = False  # Track if lock acquisition failed during rebalance
 
     def _create_consumer(self) -> KafkaConsumer:
         """Create and configure Kafka consumer."""
@@ -711,12 +824,20 @@ class RBACKafkaConsumer:
         """
         return relations_api_replication.acquire_lock(lock_id)
 
-    def _acquire_lock_with_retry(self, lock_id: str, max_retries: int = 3) -> str:
+    def _acquire_lock_with_retry(
+        self,
+        lock_id: str,
+        max_retries: Optional[int] = None,
+        backoff_base: Optional[float] = None,
+        max_backoff: Optional[float] = None,
+    ) -> str:
         """Acquire lock with retry logic.
 
         Args:
             lock_id: Unique identifier for the lock
-            max_retries: Maximum number of retry attempts
+            max_retries: Maximum number of retry attempts (default: from env or 5)
+            backoff_base: Base for exponential backoff in seconds (default: 2)
+            max_backoff: Maximum backoff delay in seconds (default: 30)
 
         Returns:
             str: The acquired lock token
@@ -725,6 +846,14 @@ class RBACKafkaConsumer:
             RuntimeError: If max retries exceeded
             grpc.RpcError: If lock acquisition fails permanently
         """
+        # Use configurable defaults from environment or fallback to safe values
+        if max_retries is None:
+            max_retries = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_MAX_RETRIES", 5)
+        if backoff_base is None:
+            backoff_base = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_BACKOFF_BASE", 2.0)
+        if max_backoff is None:
+            max_backoff = getattr(settings, "RBAC_KAFKA_LOCK_ACQUISITION_MAX_BACKOFF", 30.0)
+
         for attempt in range(max_retries):
             try:
                 return self._acquire_lock(lock_id)
@@ -734,9 +863,9 @@ class RBACKafkaConsumer:
                     logger.error(f"Max retries ({max_retries}) exceeded for lock acquisition")
                     raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts") from e
 
-                # Exponential backoff
-                delay = 2**attempt
-                logger.info(f"Retrying lock acquisition in {delay}s...")
+                # Exponential backoff with max cap
+                delay = min(backoff_base**attempt, max_backoff)
+                logger.info(f"Retrying lock acquisition in {delay:.1f}s...")
                 time.sleep(delay)
 
         raise RuntimeError(f"Failed to acquire lock after {max_retries} attempts")
@@ -747,6 +876,9 @@ class RBACKafkaConsumer:
         This is called by Kafka when partitions are being reassigned to other consumers.
         We commit our current offsets to ensure we don't lose progress.
         """
+        # Track rebalance event
+        rebalance_events_total.labels(event_type="partitions_revoked").inc()
+
         if not self.commit_config.commit_on_rebalance:
             logger.debug("Rebalance offset commit disabled by config")
             return
@@ -1032,13 +1164,13 @@ class RBACKafkaConsumer:
             return False
 
         except RuntimeError as e:
-            # Max retries exceeded - pause consumer and wait for manual restart
+            # Max retries exceeded - stop consumer to allow Kubernetes restart
             error_msg = (
                 f"Max operation retries exceeded for message "
                 f"(partition: {message_partition}, offset: {message_offset}): {e}. "
-                f"Consumer will PAUSE and wait for manual restart.\n"
+                f"Consumer will STOP to allow Kubernetes restart.\n"
                 f"Offset NOT committed - message will be retried on restart.\n"
-                f"To resolve: Fix the issue and restart the pod manually.\n"
+                f"To resolve: Fix the issue. Kubernetes will restart the pod automatically.\n"
                 f"Message content: {message_value}"
             )
             logger.error(error_msg)
@@ -1047,19 +1179,14 @@ class RBACKafkaConsumer:
             # Mark consumer as paused to prevent offset commit on shutdown
             self.is_paused_for_retry = True
 
-            # Pause indefinitely - keep pod alive, wait for manual restart
+            # Stop consumer and let Kubernetes handle restart
             logger.critical(
-                "CONSUMER PAUSED: Max retries exceeded. Manual intervention required. "
-                "Pod will remain running. Restart the pod to retry the message."
+                "CONSUMER STOPPING: Max retries exceeded. Manual intervention required. "
+                "Kubernetes will restart the pod. Offset NOT committed - message will be retried."
             )
 
-            # Enter infinite sleep to keep pod alive but not processing
-            while True:
-                time.sleep(60)
-                logger.warning(
-                    f"Consumer still paused waiting for restart "
-                    f"(partition: {message_partition}, offset: {message_offset})"
-                )
+            # Raise exception to stop consumer - Kubernetes will restart the pod
+            raise
 
         except Exception as e:
             # Error handler short-circuited retry or other unexpected error
@@ -1109,11 +1236,15 @@ class RBACKafkaConsumer:
             resource_context = debezium_msg.payload.get("resource_context")
             org_id = None
             event_type = None
+            resource_id = None
+            created_at = None
 
-            # Extract org_id and event_type from resource_context if present
+            # Extract org_id, event_type, resource_id, and created_at from resource_context if present
             if resource_context and isinstance(resource_context, dict):
                 org_id = resource_context.get("org_id")
                 event_type = resource_context.get("event_type")
+                resource_id = resource_context.get("resource_id")
+                created_at = resource_context.get("created_at")
             else:
                 logger.debug(
                     f"No resource_context found, skipping org_id and event_type extraction. "
@@ -1141,7 +1272,10 @@ class RBACKafkaConsumer:
                 relation_pb = json_format.ParseDict(relation_dict, common_pb2.Relationship())
                 relations_to_remove_pb.append(relation_pb)
 
-            # Build fencing check if lock token is available (thread-safe read)
+            # Build fencing check with lock token (thread-safe read)
+            # Note: Lock token should be available because _run_message_loop calls
+            # _ensure_lock_token_on_assignment before processing the first message.
+            # However, if that acquisition failed or token was cleared, we fail fast here.
             fencing_check = None
             with self._lock_mutex:
                 if self.lock_id and self.lock_token:
@@ -1155,10 +1289,14 @@ class RBACKafkaConsumer:
                         f"Using fencing check - lock_id: {self.lock_id}, " f"lock_token: {self.lock_token[:8]}..."
                     )
                 else:
-                    logger.warning(
-                        "No lock token available - processing without fencing check. "
-                        "This may allow stale updates during rebalancing."
+                    # Lock token not available - fail fast to prevent writes without fencing
+                    error_msg = (
+                        "Lock token not available during message processing. "
+                        "This indicates partition assignment failed or token was cleared. "
+                        "Cannot process message without fencing token."
                     )
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
 
             # Do tuple deletes for relationships with fencing check
             replication_delete_response = relations_api_replication.delete_relationships(
@@ -1190,6 +1328,50 @@ class RBACKafkaConsumer:
                     f"org_id: {org_id}, "
                     f"aggregateid: {debezium_msg.aggregateid}"
                 )
+
+            # Send NOTIFY for workspace creation events (Read-Your-Writes support)
+            if event_type == "create_workspace" and resource_id:
+                try:
+                    notify_channel = settings.READ_YOUR_WRITES_CHANNEL
+                    notify_sql = sql.SQL("NOTIFY {}, %s").format(sql.Identifier(notify_channel))
+                    with connection.cursor() as cursor:
+                        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+                        # Safe: Using psycopg2.sql.SQL with sql.Identifier for channel name
+                        # and parameterized query (%s) for resource_id
+                        cursor.execute(notify_sql, [resource_id])
+                    logger.info(
+                        f"Sent NOTIFY on channel '{notify_channel}' for workspace_id '{resource_id}' "
+                        f"after successful replication"
+                    )
+                except Exception as e:
+                    # Log error but don't fail the processing - NOTIFY is best-effort
+                    logger.error(
+                        f"Failed to send NOTIFY for workspace_id '{resource_id}' on channel '{notify_channel}': {e}"
+                    )
+
+            # Calculate and emit replication latency metric
+            if created_at is not None:
+                try:
+                    latency_seconds = time.time() - float(created_at)
+                    latency_event_type = event_type or "unknown"
+                    replication_event_latency.labels(event_type=latency_event_type).observe(latency_seconds)
+                    # Log per-event latency at DEBUG level to avoid excessive log volume at scale
+                    logger.debug(
+                        "Replication event latency: %.3fs for event_type=%s, aggregateid=%s",
+                        latency_seconds,
+                        latency_event_type,
+                        debezium_msg.aggregateid,
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        f"Could not calculate replication latency: invalid created_at value '{created_at}': {e}"
+                    )
+            else:
+                logger.debug(
+                    f"No created_at timestamp in resource_context, skipping latency metric. "
+                    f"aggregateid: {debezium_msg.aggregateid}"
+                )
+
             messages_processed_total.labels(message_type="relations", status="success").inc()
             return True
 
@@ -1220,154 +1402,6 @@ class RBACKafkaConsumer:
             messages_processed_total.labels(message_type="relations", status="error").inc()
             # Re-raise to trigger retry logic
             raise
-
-    def _wait_for_partition_assignment(self, max_attempts=30, timeout_ms=2000):
-        """Wait for initial partition assignment and acquire lock token.
-
-        The subscribe() call is asynchronous, so we need to poll to trigger
-        the initial partition assignment. This may take several seconds in
-        production environments with multiple consumers and rebalancing.
-
-        Note: It's normal for this to take time even when there are no messages
-        in the topic. The consumer group coordinator needs to assign partitions,
-        which happens asynchronously.
-
-        Args:
-            max_attempts: Maximum number of poll attempts (default: 30)
-            timeout_ms: Timeout for each poll attempt (default: 2000ms)
-
-        Raises:
-            RuntimeError: If no partitions assigned after max attempts or lock acquisition fails
-            KafkaError: If Kafka becomes unavailable during polling
-        """
-        # First verify the topic exists and has partitions
-        try:
-            topic_partitions = self.consumer.partitions_for_topic(self.topic)
-            if topic_partitions is None or len(topic_partitions) == 0:
-                raise RuntimeError(
-                    f"Topic '{self.topic}' does not exist or has no partitions. "
-                    f"Check your Kafka configuration and topic setup."
-                )
-            logger.info(f"Topic '{self.topic}' exists with {len(topic_partitions)} partition(s): {topic_partitions}")
-        except KafkaError as e:
-            logger.error(f"Kafka error while checking topic partitions: {e}")
-            raise RuntimeError(
-                f"Kafka is unavailable or unreachable while checking topic '{self.topic}'. "
-                f"Check Kafka broker connectivity and cluster health."
-            ) from e
-        except Exception as e:
-            logger.error(f"Failed to check topic partitions: {e}")
-            raise RuntimeError(
-                f"Cannot verify topic '{self.topic}' exists. Check Kafka connectivity and topic configuration."
-            ) from e
-
-        logger.info("Waiting for consumer group coordinator to assign partitions...")
-        logger.info(
-            f"Will poll up to {max_attempts} times with {timeout_ms}ms timeout "
-            f"(total wait: up to {max_attempts * timeout_ms / 1000}s)"
-        )
-        logger.info("Note: This may take time even with no messages - partition assignment is asynchronous")
-
-        for attempt in range(max_attempts):
-            # Check if consumer is still valid before polling
-            if self.consumer is None:
-                raise RuntimeError("Consumer became None during partition assignment loop")
-
-            try:
-                # Poll with timeout to trigger partition assignment
-                # We discard any messages returned - they'll be re-consumed in the main loop
-                messages = self.consumer.poll(timeout_ms=timeout_ms, max_records=1)
-                assigned = self.consumer.assignment()
-
-                if assigned:
-                    logger.info(f"Initial partitions assigned after {attempt + 1} attempts: {assigned}")
-
-                    # IMPORTANT: If we consumed any messages during polling, we must seek back
-                    # to the committed offset to ensure we re-process them in the main loop
-                    if messages:
-                        msg_count = sum(len(msgs) for msgs in messages.values())
-                        logger.warning(
-                            f"Consumed {msg_count} message(s) during initialization poll. "
-                            f"Seeking back to committed offsets to re-process them."
-                        )
-
-                        # Seek back to committed offset for each partition
-                        for tp in assigned:
-                            committed = self.consumer.committed(tp)
-                            if committed is not None:
-                                logger.info(f"Seeking {tp} to committed offset {committed}")
-                                self.consumer.seek(tp, committed)
-                            else:
-                                # No committed offset - seek to beginning (auto_offset_reset=earliest)
-                                logger.info(f"No committed offset for {tp}, seeking to beginning")
-                                self.consumer.seek_to_beginning(tp)
-
-                    self._acquire_initial_lock_token(assigned)
-                    return  # Success
-
-                # Log every 5 attempts to avoid spam
-                if (attempt + 1) % 5 == 0:
-                    logger.info(
-                        f"Still waiting for partition assignment... "
-                        f"(attempt {attempt + 1}/{max_attempts}, "
-                        f"elapsed: ~{(attempt + 1) * timeout_ms / 1000:.1f}s)"
-                    )
-                else:
-                    logger.debug(f"No partitions assigned yet, attempt {attempt + 1}/{max_attempts}")
-
-            except KafkaError as e:
-                logger.error(
-                    f"Kafka error during partition assignment polling (attempt {attempt + 1}/{max_attempts}): {e}. "
-                    f"Kafka broker may be unavailable or unreachable."
-                )
-                # Re-raise KafkaError to stop consumer - don't retry indefinitely when Kafka is down
-                raise RuntimeError(
-                    f"Kafka became unavailable during partition assignment after {attempt + 1} attempts. "
-                    f"Error: {e}. Check Kafka broker connectivity and cluster health."
-                ) from e
-
-        # Failed to get partition assignment after max attempts
-        total_wait = max_attempts * timeout_ms / 1000
-        raise RuntimeError(
-            f"No partitions assigned after {max_attempts} poll attempts ({total_wait}s). "
-            f"Topic exists but consumer group coordinator did not assign partitions. "
-            f"This may indicate:\n"
-            f"  - Consumer group rebalancing issues\n"
-            f"  - Kafka broker connectivity problems\n"
-            f"  - Consumer group coordinator unavailable\n"
-            f"  - Max consumers already assigned to all partitions\n"
-            f"Check Kafka broker logs and consumer group status."
-        )
-
-    def _acquire_initial_lock_token(self, assigned_partitions):
-        """Acquire lock token for initially assigned partition(s).
-
-        Args:
-            assigned_partitions: Set of TopicPartition objects
-
-        Raises:
-            RuntimeError: If lock acquisition fails
-        """
-        if len(assigned_partitions) == 0:
-            return
-
-        # Typically only one partition per consumer
-        partition = list(assigned_partitions)[0]
-        consumer_group_id = self.consumer.config.get("group_id")
-        lock_id = f"{consumer_group_id}/{partition.partition}"
-
-        try:
-            lock_token = self._acquire_lock_with_retry(lock_id)
-            with self._lock_mutex:
-                self.lock_id = lock_id
-                self.lock_token = lock_token
-            logger.info(f"Acquired lock token for initial partition {partition.partition}: {lock_token}")
-        except Exception as e:
-            logger.error(f"Failed to acquire lock token for {lock_id}: {e}")
-            with self._lock_mutex:
-                self.lock_token = None
-                self.lock_id = None
-            raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
 
     def _initialize_consumer_setup(self):
         """Initialize consumer, subscribe to topic, and prepare for consumption.
@@ -1515,11 +1549,114 @@ class RBACKafkaConsumer:
             )
             return False  # Break loop
 
+    def _ensure_lock_token_on_assignment(self):
+        """Ensure lock token is acquired when partitions are assigned.
+
+        This handles the case where on_partitions_assigned callback might not fire
+        on consumer restart if partition assignment hasn't changed.
+        """
+        assigned = self.consumer.assignment()
+        if not assigned:
+            return False
+
+        # Get the expected lock_id for the currently assigned partition
+        # Note: We assume single partition per consumer - assert this invariant
+        if len(assigned) > 1:
+            logger.warning(
+                f"Consumer has multiple partitions assigned: {assigned}. "
+                f"RBAC consumer is designed for single partition per consumer. "
+                f"Using first partition only."
+            )
+
+        partition = list(assigned)[0]
+        consumer_group_id = self.consumer.config.get("group_id")
+        expected_lock_id = f"{consumer_group_id}/{partition.partition}"
+
+        # Check if we already have a lock token for the correct partition
+        with self._lock_mutex:
+            if self.lock_token and self.lock_id == expected_lock_id:
+                # Token exists and matches current assignment
+                logger.debug(f"Lock token already valid for {self.lock_id}")
+                return True
+            elif self.lock_token:
+                # Token exists but for wrong partition - clear stale token
+                logger.warning(
+                    f"Stale lock token detected. Current: {self.lock_id}, "
+                    f"Expected: {expected_lock_id}. Clearing and reacquiring."
+                )
+                self.lock_token = None
+                self.lock_id = None
+
+        # Acquire lock token for assigned partition
+        lock_id = expected_lock_id
+
+        logger.info(f"Acquiring lock token for assigned partition: {lock_id}")
+
+        # Track lock acquisition timing
+        start_time = time.time()
+
+        try:
+            lock_token = self._acquire_lock_with_retry(lock_id)
+
+            # Record successful acquisition
+            duration = time.time() - start_time
+            lock_acquisition_duration.labels(status="success").observe(duration)
+            lock_acquisition_total.labels(status="success", reason="startup").inc()
+
+            with self._lock_mutex:
+                self.lock_id = lock_id
+                self.lock_token = lock_token
+                # Reset failure flag on successful acquisition
+                self.lock_acquisition_failed = False
+
+            logger.info(
+                f"Acquired lock token for partition {partition.partition}: {lock_token} (took {duration:.2f}s)"
+            )
+            return True
+        except Exception as e:
+            # Record failed acquisition
+            duration = time.time() - start_time
+            lock_acquisition_duration.labels(status="failure").observe(duration)
+
+            # Classify error type for metrics
+            error_type = type(e).__name__
+            lock_acquisition_total.labels(status="failure", reason=error_type).inc()
+
+            logger.error(f"Failed to acquire lock token for {lock_id}: {e} (took {duration:.2f}s)")
+            raise RuntimeError(f"Failed to acquire lock token for partition {partition.partition}") from e
+
     def _run_message_loop(self):
         """Run the main message consumption loop."""
         last_committed_offsets = {}
 
         for message in self.consumer:
+            # Check if lock acquisition failed during rebalance
+            if self.lock_acquisition_failed:
+                error_msg = (
+                    "Lock acquisition failed during rebalance. Cannot process messages without fencing token. "
+                    "Stopping consumer to prevent data corruption."
+                )
+                logger.critical(error_msg)
+                raise RuntimeError(error_msg)
+
+            # On first message, ensure we have a lock token
+            # This handles cases where on_partitions_assigned doesn't fire
+            if not last_committed_offsets:
+                token_acquired = self._ensure_lock_token_on_assignment()
+                if not token_acquired:
+                    # Partitions not assigned yet - this should not happen since we have a message
+                    # This is a fatal error - we cannot process without partition assignment
+                    error_msg = (
+                        f"Received message but no partitions assigned. "
+                        f"Message partition: {message.partition}, offset: {message.offset}. "
+                        f"This indicates a Kafka consumer state issue. "
+                        f"Cannot proceed without partition assignment - stopping consumer."
+                    )
+                    logger.error(error_msg)
+                    # Raise error to stop consumer - at-least-once delivery will be preserved
+                    # because offset was not committed. Message will be retried on restart.
+                    raise RuntimeError(error_msg)
+
             try:
                 topic_partition = TopicPartition(message.topic, message.partition)
 
@@ -1562,13 +1699,25 @@ class RBACKafkaConsumer:
         Use Kubernetes/orchestration layer to restart the consumer pod on failure.
         """
         try:
+            # Record consumer start time
+            consumer_start_time.set_to_current_time()
+            logger.info("Consumer start time recorded in metrics")
+
             # Initialize consumer and subscribe to topic
             self._initialize_consumer_setup()
 
-            # Wait for partition assignment and acquire lock token
-            self._wait_for_partition_assignment()
+            # Record consumer info after successful initialization
+            consumer_info.labels(
+                topic=self.topic,
+                group_id=settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
+            ).set(1)
+            logger.info(
+                f"Consumer info metric set: topic={self.topic}, group_id={settings.RBAC_KAFKA_CONSUMER_GROUP_ID}"
+            )
 
             # Start main message processing loop
+            # Note: Partition assignment and lock token acquisition happen automatically
+            # via the on_partitions_assigned callback during the first poll
             self._run_message_loop()
 
         except KafkaError as e:
@@ -1610,6 +1759,14 @@ class RBACKafkaConsumer:
         self._shutdown_in_progress = True
         self.is_consuming = False
         self._stop_health_check_thread()
+
+        # Update consumer status metric
+        if hasattr(self, "topic"):
+            consumer_info.labels(
+                topic=self.topic,
+                group_id=settings.RBAC_KAFKA_CONSUMER_GROUP_ID,
+            ).set(0)
+            logger.info("Consumer status metric updated to stopped")
 
         # Commit any remaining offsets on stop ONLY if not paused for retry
         if self.commit_config.commit_on_shutdown and self.offset_manager:

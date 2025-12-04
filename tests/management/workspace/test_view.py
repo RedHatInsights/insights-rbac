@@ -203,6 +203,26 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.tuples = InMemoryTuples()
         self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
 
+        # Patch get_queryset to not use select_for_update during tests
+        # SERIALIZABLE isolation level already provides necessary locking
+        from unittest.mock import patch
+        from management.workspace.view import WorkspaceViewSet
+
+        original_get_queryset = WorkspaceViewSet.get_queryset
+
+        def get_queryset_without_lock(self):
+            # Return queryset without select_for_update to avoid transaction requirement during permission checks
+            from management.base_viewsets import BaseV2ViewSet
+
+            return BaseV2ViewSet.get_queryset(self)
+
+        self.patcher = patch.object(WorkspaceViewSet, "get_queryset", get_queryset_without_lock)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        super().tearDown()
+
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
@@ -2568,6 +2588,38 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertType(payload, "standard")
         assert payload.get("data")[0]["name"] == ws_name_1.upper()
+
+    def test_workspace_list_filter_by_name_empty_string(self):
+        """Test that filtering by empty name string returns all workspaces."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?name=", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Empty name filter should return all workspaces (same as no filter)
+        self.assertIn("data", response.data)
+
+    def test_workspace_list_filter_by_name_whitespace_only(self):
+        """Test that filtering by whitespace-only name string returns all workspaces."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?name=   ", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Whitespace-only name filter should return all workspaces (same as no filter)
+        self.assertIn("data", response.data)
+
+    def test_workspace_list_filter_by_name_with_nul_character(self):
+        """Test that filtering by name containing NUL character returns a validation error."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # Simulate a NUL character in the name parameter
+        response = client.get(f"{url}?name=test\x00name", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+        self.assertIn("name", str(response.data))
+        self.assertIn("invalid characters", str(response.data))
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_workspace_list_authorization_platform_default(self, send_kafka_message):
