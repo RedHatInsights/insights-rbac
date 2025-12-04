@@ -318,7 +318,7 @@ def _create_single_platform_role(access_type, scope, policy_service, public_tena
 def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles, resource_service):
     """Create or update V2 role from V1 role during seeding.
 
-    Raises exceptions on failure to ensure V1 and V2 roles stay in sync.
+    Logs errors but does not raise exceptions, so V1 role seeding can continue even if V2 seeding fails.
     """
     try:
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
@@ -363,7 +363,7 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         return v2_role
     except Exception as e:
         logger.error(f"Failed to seed V2 role for {display_name}: {e}")
-        raise
+        return None
 
 
 def _seed_platform_roles():
