@@ -32,6 +32,7 @@ from management.models import ResourceDefinition, Role, Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
+from prometheus_client import Counter, Histogram
 from psycopg2 import sql
 from rest_framework import serializers
 
@@ -40,6 +41,18 @@ from api.models import Tenant
 # Module-level constants for performance optimization
 logger = logging.getLogger(__name__)
 READ_YOUR_WRITES_CHANNEL = settings.READ_YOUR_WRITES_CHANNEL
+
+# Prometheus metrics for read-your-writes consistency monitoring
+ryw_wait_total = Counter(
+    "ryw_wait_total",
+    "Total number of read-your-writes consistency checks",
+    ["result"],
+)
+ryw_wait_duration_seconds = Histogram(
+    "ryw_wait_duration_seconds",
+    "Duration of read-your-writes consistency checks in seconds",
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0],
+)
 LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 UNLISTEN_SQL = sql.SQL("UNLISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 
@@ -441,20 +454,26 @@ class WorkspaceService:
                         n = q.popleft()
                         payload = (getattr(n, "payload", "") or "").strip()
                         if n.channel == READ_YOUR_WRITES_CHANNEL and payload == workspace_id_str:
+                            duration = time.monotonic() - started
                             logger.info(
                                 "[Service] RYW received NOTIFY channel='%s' workspace_id='%s' after %.3fs",
                                 n.channel,
                                 payload,
-                                time.monotonic() - started,
+                                duration,
                             )
+                            ryw_wait_duration_seconds.observe(duration)
+                            ryw_wait_total.labels(result="success").inc()
                             return
 
+            duration = time.monotonic() - started
             logger.error(
                 "[Service] RYW timed out waiting for NOTIFY channel='%s' workspace_id='%s' after %ss",
                 READ_YOUR_WRITES_CHANNEL,
                 str(workspace_id),
                 timeout_seconds,
             )
+            ryw_wait_duration_seconds.observe(duration)
+            ryw_wait_total.labels(result="timeout").inc()
             raise TimeoutError(
                 f"Read-your-writes consistency check timed out after {timeout_seconds}s for workspace {workspace_id}"
             )
