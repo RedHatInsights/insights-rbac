@@ -33,7 +33,6 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
 
     def get_last_modified(self, obj):
         """Extract last modified timestamp."""
-        # If obj is a dict (for testing), return modified or latest_modified
         if isinstance(obj, dict):
             return obj.get("modified") or obj.get("latest_modified")
         return getattr(obj, "latest_modified", None)
