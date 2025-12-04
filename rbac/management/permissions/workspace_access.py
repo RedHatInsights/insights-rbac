@@ -27,13 +27,9 @@ from management.workspace.utils import (
 from rest_framework import permissions
 
 # Custom message for target workspace access denial
-TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = "You do not have write access to the target workspace."
-
-# Permission/operation names for target workspace access checks
-# V2 uses fine-grained permissions from SpiceDB schema (create, view, edit, move, delete)
-# V1 uses legacy read/write operations
-TARGET_WORKSPACE_PERMISSION_V2 = "create"  # V2: 'create' permission on target for move
-TARGET_WORKSPACE_OPERATION_V1 = "write"  # V1: 'write' operation on target for move
+TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = (
+    "You do not have write access to the target workspace."
+)
 
 
 class WorkspaceAccessPermission(permissions.BasePermission):
@@ -76,7 +72,7 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
             # For move operations, also check target workspace access
             if view.action == "move":
-                return self._check_target_workspace_access(request, v2=True)
+                return self._check_move_target_access_v2(request)
 
             return True
 
@@ -85,7 +81,7 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # the target workspace to exist within their tenant
         if request.user.admin:
             if view.action == "move":
-                return self._check_target_workspace_exists_v1(request)
+                return self._check_move_target_exists_v1(request)
             return True
 
         op = operation_from_request(request)
@@ -94,44 +90,17 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         # For move operations, also check target workspace access (V1 non-admin only)
         if view.action == "move":
-            target_workspace_id = self._get_valid_target_workspace_id(request)
-            if target_workspace_id and not is_user_allowed_v1(
-                request, TARGET_WORKSPACE_OPERATION_V1, target_workspace_id
-            ):
-                self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
-                return False
+            return self._check_move_target_access_v1(request)
 
         return True
 
-    def _check_target_workspace_access(self, request, *, v2: bool) -> bool:
+    def _get_target_workspace_id(self, request) -> str | None:
         """
-        Check target workspace access for move operations in V2 mode.
+        Get and validate the target workspace ID from request body.
 
-        Args:
-            request: The HTTP request object
-            v2: Must be True (V2 mode only, V1 is handled inline in has_permission)
-
-        Returns:
-            bool: True if the user has 'create' permission on target workspace
-        """
-        target_workspace_id = self._get_valid_target_workspace_id(request)
-        if target_workspace_id is None:
-            # Let validation handle missing/invalid parent_id
-            return True
-
-        if not is_user_allowed_v2(request, TARGET_WORKSPACE_PERMISSION_V2, target_workspace_id):
-            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
-            return False
-
-        return True
-
-    def _get_valid_target_workspace_id(self, request) -> str | None:
-        """
-        Get and validate the target workspace ID from request.
-
-        Checks both request.data and request.query_params for parent_id to ensure
-        target workspace access is always enforced regardless of how the client
-        sends the parameter.
+        Aligns with the view's source of truth: only reads from request.data (POST body).
+        The view's _parent_id_query_param_validation uses request.data.get("parent_id"),
+        so we must use the same source to ensure consistent security enforcement.
 
         Args:
             request: The HTTP request object
@@ -141,8 +110,8 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         """
         import uuid
 
-        # Check both data (POST body) and query_params for parent_id
-        target_workspace_id = request.data.get("parent_id") or request.query_params.get("parent_id")
+        # Only check request.data (POST body) - aligns with view's source of truth
+        target_workspace_id = request.data.get("parent_id")
         if not target_workspace_id:
             return None
 
@@ -153,7 +122,56 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         except (ValueError, AttributeError):
             return None
 
-    def _check_target_workspace_exists_v1(self, request) -> bool:
+    def _check_move_target_access_v2(self, request) -> bool:
+        """
+        Check target workspace access for move operations in V2 mode.
+
+        In V2, we use the Inventory API to check if the user has 'create' permission
+        on the target workspace (from SpiceDB schema: create, view, edit, move, delete).
+
+        Args:
+            request: The HTTP request object
+
+        Returns:
+            bool: True if the user has 'create' permission on target workspace
+        """
+        target_workspace_id = self._get_target_workspace_id(request)
+        if target_workspace_id is None:
+            # Let validation handle missing/invalid parent_id
+            return True
+
+        # V2: Check 'create' permission on target workspace via Inventory API
+        if not is_user_allowed_v2(request, "create", target_workspace_id):
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
+
+        return True
+
+    def _check_move_target_access_v1(self, request) -> bool:
+        """
+        Check target workspace access for move operations in V1 mode (non-admin users).
+
+        In V1, we use legacy role-based checks with 'write' operation.
+
+        Args:
+            request: The HTTP request object
+
+        Returns:
+            bool: True if the user has 'write' access on target workspace
+        """
+        target_workspace_id = self._get_target_workspace_id(request)
+        if target_workspace_id is None:
+            # Let validation handle missing/invalid parent_id
+            return True
+
+        # V1: Check 'write' operation on target workspace
+        if not is_user_allowed_v1(request, "write", target_workspace_id):
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
+
+        return True
+
+    def _check_move_target_exists_v1(self, request) -> bool:
         """
         Check that target workspace exists for V1 admin users.
 
@@ -168,12 +186,14 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         """
         from management.workspace.model import Workspace
 
-        target_workspace_id = self._get_valid_target_workspace_id(request)
+        target_workspace_id = self._get_target_workspace_id(request)
         if target_workspace_id is None:
             # Let validation handle missing/invalid parent_id
             return True
 
-        if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
+        if not Workspace.objects.filter(
+            id=target_workspace_id, tenant=request.tenant
+        ).exists():
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
             return False
 
