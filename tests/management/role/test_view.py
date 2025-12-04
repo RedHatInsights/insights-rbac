@@ -17,6 +17,7 @@
 """Test the role viewset."""
 
 import json
+from typing import Optional
 from uuid import uuid4
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
@@ -39,6 +40,7 @@ from management.models import (
     Workspace,
     BindingMapping,
 )
+from management.role.v2_model import CustomRoleV2, RoleBinding
 from migration_tool.in_memory_tuples import (
     all_of,
     InMemoryRelationReplicator,
@@ -51,6 +53,7 @@ from migration_tool.in_memory_tuples import (
 
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
+from tests.v2_util import assert_v2_custom_roles_consistent
 from unittest.mock import ANY, patch, call, Mock
 
 URL = reverse("v1_management:role-list")
@@ -280,6 +283,9 @@ class RoleViewsetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down role viewset tests."""
+        with self.subTest(msg="V2 consistency"):
+            self._assert_v2_consistent()
+
         Group.objects.all().delete()
         Principal.objects.all().delete()
         Role.objects.all().delete()
@@ -301,6 +307,9 @@ class RoleViewsetTests(IdentityRequest):
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+    def _assert_v2_consistent(self, tuples: Optional[InMemoryTuples] = None):
+        assert_v2_custom_roles_consistent(test=self, tuples=tuples)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -1716,6 +1725,52 @@ class RoleViewsetTests(IdentityRequest):
         )
 
     @override_settings(
+        REPLICATION_TO_RELATION_ENABLED=True,
+        ROLE_CREATE_ALLOW_LIST="compliance,inventory",
+        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
+        TENANT_SCOPE_PERMISSIONS="",
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_update_role_unmigrated(self, replicate):
+        """Test that updating a role created without any V2 models creates the appropriate V2 models."""
+        tuples = InMemoryTuples()
+        replicate.side_effect = InMemoryRelationReplicator(tuples).replicate
+
+        # Set up
+        Permission.objects.create(permission="compliance:policy:read", tenant=self.public_tenant)
+        Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)
+
+        role_name = "test_update_role"
+        access_data = [{"permission": "compliance:policy:read", "resourceDefinitions": []}]
+        new_access_data = [{"permission": "inventory:groups:read", "resourceDefinitions": []}]
+
+        response = self.create_role(role_name, in_access_data=access_data)
+
+        v1_uuid = response.data["uuid"]
+        v1_role = Role.objects.get(uuid=v1_uuid)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Emulate the role having been created before the V2 models were added.
+        deleted_count, _ = CustomRoleV2.objects.filter(v1_source=v1_role).delete()
+        self.assertGreater(deleted_count, 0)
+
+        # Update the role with new access data.
+        test_data = dict(response.data)
+        test_data["access"] = new_access_data
+        url = reverse("v1_management:role-detail", kwargs={"uuid": v1_uuid})
+        client = APIClient()
+
+        response = client.put(url, test_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # The role should now have been migrated.
+        v2_role = CustomRoleV2.objects.get(v1_source=v1_role)
+        self.assertEqual("inventory:groups:read", v2_role.permissions.get().permission)
+        self._assert_v2_consistent(tuples)
+
+    @override_settings(
         ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True, REMOVE_NULL_VALUE=True
     )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -2589,6 +2644,9 @@ class RoleViewNonAdminTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down role viewset nonadmin tests."""
+        with self.subTest(msg="V2 consistency"):
+            self._assert_v2_consistent()
+
         Group.objects.all().delete()
         Principal.objects.all().delete()
         Role.objects.all().delete()
@@ -2602,6 +2660,9 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+    def _assert_v2_consistent(self):
+        assert_v2_custom_roles_consistent(test=self, tuples=None)
 
     @staticmethod
     def _create_group_with_user_access_admin_role(tenant):

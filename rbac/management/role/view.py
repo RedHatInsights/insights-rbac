@@ -146,8 +146,9 @@ class RoleViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access and action."""
-        # NOTE: partial_update intentionally omitted because it does not update access or policy.
-        if self.action not in ["update", "destroy"]:
+        # Although partial_update does not update access or policy, we do need to keep the V2 roles associated with the
+        # V1 role in sync, and that means we have to lock the role.
+        if self.action not in ["update", "partial_update", "destroy"]:
             return get_role_queryset(self.request)
         else:
             # Update queryset differs from normal role queryset in a few ways:
@@ -501,16 +502,13 @@ class RoleViewSet(
 
         Assumes concurrent updates are prevented (e.g. with atomic block and locks).
         """
-        if self.action != "partial_update":
-            dual_write_handler = RelationApiDualWriteHandler(
-                serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE
-            )
-            dual_write_handler.prepare_for_update()
+        dual_write_handler = RelationApiDualWriteHandler(serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE)
+        dual_write_handler.prepare_for_update()
 
         role = serializer.save()
+        dual_write_handler.replicate_new_or_updated_role(role)
 
         if self.action != "partial_update":
-            dual_write_handler.replicate_new_or_updated_role(role)
             role_obj_change_notification_handler(role, "updated", self.request.user)
 
         auditlog = AuditLog()
