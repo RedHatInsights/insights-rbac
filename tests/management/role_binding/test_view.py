@@ -36,12 +36,24 @@ class RoleBindingViewSetTest(IdentityRequest):
         super().setUp()
         self.client = APIClient()
 
-        # Create workspace
+        # Create workspace hierarchy (root -> default -> standard)
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             description="Test workspace description",
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
         )
 
         # Create permission and role
@@ -97,7 +109,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         Group.objects.filter(tenant=self.tenant).delete()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
-        Workspace.objects.filter(tenant=self.tenant).delete()
+        # Delete workspaces in correct order (children first)
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         super().tearDown()
 
     def _get_by_subject_url(self):
