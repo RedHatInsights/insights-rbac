@@ -28,15 +28,46 @@ from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
 from management.models import BindingMapping, Role, Workspace
-from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
+from management.relation_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
-from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 
 from api.models import User
 
 
 logger = logging.getLogger(__name__)
+
+
+def get_replicator(write_relationships: str) -> RelationReplicator:
+    """
+    Get the appropriate replicator based on write_relationships setting.
+
+    Args:
+        write_relationships: How to handle replication.
+            - "True" or "outbox": Create OutboxReplicator (replicate to outbox)
+            - "logging": Create LoggingReplicator (log what would be replicated)
+            - "False" or other: Create NoopReplicator (no replication)
+
+    Returns:
+        RelationReplicator instance
+    """
+    option = write_relationships.lower()
+
+    if option == "true" or option == "outbox":
+        return OutboxReplicator()
+
+    if option == "logging":
+        return LoggingReplicator()
+
+    # "false" or any other value
+    return NoopReplicator()
 
 
 def build_internal_user(request, json_rh_auth):
