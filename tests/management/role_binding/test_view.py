@@ -15,24 +15,29 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the RoleBindingViewSet."""
+from importlib import reload
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from django.test.utils import override_settings
-from django.urls import reverse
+from django.urls import clear_url_caches, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
+from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
+@override_settings(V2_APIS_ENABLED=True)
 class RoleBindingViewSetTest(IdentityRequest):
     """Test the RoleBindingViewSet."""
 
     def setUp(self):
         """Set up test data."""
+        reload(urls)
+        clear_url_caches()
         super().setUp()
         self.client = APIClient()
 
@@ -68,10 +73,20 @@ class RoleBindingViewSetTest(IdentityRequest):
         )
         self.role.permissions.add(self.permission)
 
-        # Create groups with role bindings
+        # Create multiple roles and bindings to test pagination
         self.groups = []
         self.bindings = []
+        self.roles = [self.role]
+
         for i in range(15):
+            # Create a unique role for each binding
+            role = RoleV2.objects.create(
+                name=f"test_role_{i}",
+                tenant=self.tenant,
+            )
+            role.permissions.add(self.permission)
+            self.roles.append(role)
+
             group = Group.objects.create(
                 name=f"test_group_{i}",
                 description=f"Test group {i} description",
@@ -87,7 +102,7 @@ class RoleBindingViewSetTest(IdentityRequest):
             group.principals.add(principal)
 
             binding = RoleBinding.objects.create(
-                role=self.role,
+                role=role,
                 resource_type="workspace",
                 resource_id=str(self.workspace.id),
                 tenant=self.tenant,
