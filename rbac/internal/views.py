@@ -40,6 +40,8 @@ from internal.utils import (
     delete_bindings,
     get_or_create_ungrouped_workspace,
     load_request_body,
+    read_tuples_from_kessel,
+    rebuild_tenant_workspace_relations as rebuild_workspace_relations_util,
     validate_inventory_input,
     validate_relations_input,
 )
@@ -2377,3 +2379,65 @@ def cleanup_tenant_orphan_bindings(request, org_id):
         },
         status=202,
     )
+
+
+@require_http_methods(["POST"])
+def rebuild_tenant_workspace_relations(request, org_id):
+    """
+    Rebuild workspace parent relations for a tenant in Kessel.
+
+    POST /_private/api/utils/rebuild_tenant_workspace_relations/<org_id>/
+
+    This endpoint should be run BEFORE cleanup_tenant_orphan_bindings if you suspect
+    workspace parent relations are missing in Kessel. It traverses DB workspaces
+    and ensures their parent relations exist in Kessel.
+
+    Query params:
+        dry_run=true: Only report what would be added, don't make changes
+
+    Returns:
+        JSON response with results of the rebuild operation
+    """
+    dry_run = request.GET.get("dry_run", "false").lower() == "true"
+
+    # Validate tenant exists
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+
+    # Validate workspaces exist
+    try:
+        Workspace.objects.root(tenant=tenant)
+        Workspace.objects.default(tenant=tenant)
+    except Workspace.DoesNotExist as e:
+        return JsonResponse(
+            {"detail": f"Missing root or default workspace for tenant {org_id}: {str(e)}"},
+            status=404,
+        )
+
+    logger.info(f"Rebuilding workspace relations for tenant {org_id} (dry_run={dry_run})")
+
+    # Create a read_tuples function that wraps the internal read_tuples_from_kessel
+    def read_tuples_fn(resource_type, resource_id, relation, subject_type="", subject_id=""):
+        return read_tuples_from_kessel(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            relation=relation,
+            subject_type=subject_type,
+            subject_id=subject_id,
+        )
+
+    replicator = OutboxReplicator()
+
+    try:
+        result = rebuild_workspace_relations_util(
+            tenant=tenant,
+            read_tuples_fn=read_tuples_fn,
+            replicator=replicator,
+            dry_run=dry_run,
+        )
+        return JsonResponse(result, status=200)
+    except Exception as e:
+        logger.exception(f"Error rebuilding workspace relations for tenant {org_id}")
+        return JsonResponse(
+            {"detail": f"Error rebuilding workspace relations: {str(e)}"},
+            status=500,
+        )

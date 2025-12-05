@@ -1353,6 +1353,97 @@
         }
       }
     },
+    "/api/utils/rebuild_tenant_workspace_relations/{org_id}/": {
+      "post": {
+        "tags": [
+          "V2",
+          "Tenant",
+          "Utils"
+        ],
+        "summary": "Rebuild workspace parent relations for a tenant in Kessel",
+        "description": "Traverses DB workspaces for a tenant and ensures their parent relations exist in Kessel. This should be run BEFORE cleanup_tenant_orphan_bindings if workspace parent relations are suspected to be missing. The hierarchy is: tenant -> root workspace -> default workspace -> other workspaces.",
+        "operationId": "RebuildTenantWorkspaceRelations",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization ID for the tenant to rebuild relations for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "description": "If true, only report what would be added without making changes",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rebuild completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org_id": {
+                      "type": "string",
+                      "description": "Organization ID"
+                    },
+                    "dry_run": {
+                      "type": "boolean",
+                      "description": "Whether this was a dry run"
+                    },
+                    "workspaces_checked": {
+                      "type": "integer",
+                      "description": "Number of workspaces checked in the DB"
+                    },
+                    "workspaces_missing_parent": {
+                      "type": "integer",
+                      "description": "Number of workspaces with missing parent relation in Kessel"
+                    },
+                    "relations_to_add": {
+                      "type": "integer",
+                      "description": "Number of parent relations to add"
+                    },
+                    "relations_added": {
+                      "type": "integer",
+                      "description": "Number of parent relations actually added (0 if dry_run)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant or Workspace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during rebuild operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/bootstrap_tenant/": {
       "post": {
         "tags": [
