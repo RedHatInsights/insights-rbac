@@ -32,8 +32,10 @@ from migration_tool.in_memory_tuples import (
     subject,
     resource_type,
 )
+from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.utils import create_relationship
 from api.models import Tenant
+from internal.utils import cleanup_tenant_orphaned_relationships, rebuild_tenant_workspace_relations
 from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
 
 
@@ -197,8 +199,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertGreater(len(orphaned_group_tuples), 0, "Should have orphaned group tuples")
 
         # Step 4: Run cleanup using the utility function
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -307,8 +307,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertGreater(len(orphaned_role_tuples), 0, "Should have orphaned role tuples")
 
         # Step 4: Run cleanup
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -408,8 +406,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertGreater(len(orphaned_scope_tuples), 0, "Should have orphaned scope tuples")
 
         # Step 3: Run cleanup
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -481,7 +477,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         ws3_id = str(ws3.id)
 
         # Setup Kessel tuples to represent the old hierarchy (before ws2 was deleted)
-        # default-ws -> parent -> workspace (for DFS from root)
+        # default-ws -> parent -> workspace (for BFS from root)
         # This is already setup by _setup_workspace_hierarchy
 
         # ws1 -> parent -> default-ws
@@ -570,8 +566,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertGreater(len(ws2_binding_before), 0, "ws2 should have binding tuple")
 
         # Run cleanup
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -660,8 +654,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.given_roles_assigned_to_group(group, [role])
 
         # Run cleanup in dry_run mode
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -706,8 +698,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.given_roles_assigned_to_group(group, [system_role])
 
         # Run cleanup
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -816,8 +806,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertEqual(len(orphan_check), 1, "Orphan tuple should exist")
 
         # Step 3: Run cleanup
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         cleanup_result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -828,8 +816,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Step 4: Run migration
-        from migration_tool.migrate_binding_scope import migrate_all_role_bindings
-
         checked, migrated = migrate_all_role_bindings(
             replicator=InMemoryRelationReplicator(self.tuples),
             tenant=self.tenant,
@@ -881,8 +867,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         tuple_count_before = len(self.tuples)
 
         # Run cleanup in dry_run mode
-        from internal.utils import cleanup_tenant_orphaned_relationships
-
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
             root_workspace=Workspace.objects.root(tenant=self.tenant),
@@ -902,3 +886,510 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Should have relations_to_remove_count in result
         self.assertIn("relations_to_remove_count", result)
         self.assertGreater(result["relations_to_remove_count"], 0, "Should have relations to remove")
+
+
+class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
+    """Tests for the rebuild_tenant_workspace_relations endpoint."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        # DualWriteTestCase creates self.tuples, self.fixture, and self.tenant
+        # But we do NOT set up workspace hierarchy - we want to test rebuilding it
+
+    def _create_kessel_read_tuples_mock(self):
+        """Create a mock function that reads tuples from our InMemoryTuples store."""
+
+        def read_tuples_fn(resource_type_name, resource_id, relation_name, subject_type_name, subject_id):
+            """Mock function to read tuples from InMemoryTuples."""
+            # Build a filter based on the provided parameters
+            filters = [resource_type("rbac", resource_type_name)]
+
+            if resource_id:
+                filters.append(resource("rbac", resource_type_name, resource_id))
+
+            if relation_name:
+                filters.append(relation(relation_name))
+
+            tuples = self.tuples.find_tuples(all_of(*filters))
+
+            # Convert to dict format matching Kessel response
+            result = []
+            for t in tuples:
+                # Filter by subject type and id if provided
+                if subject_type_name and t.subject_type_name != subject_type_name:
+                    continue
+                if subject_id and t.subject_id != subject_id:
+                    continue
+
+                result.append(
+                    {
+                        "resource": {
+                            "type": {
+                                "namespace": t.resource_type_namespace,
+                                "name": t.resource_type_name,
+                            },
+                            "id": t.resource_id,
+                        },
+                        "relation": t.relation,
+                        "subject": {
+                            "subject": {
+                                "type": {
+                                    "namespace": t.subject_type_namespace,
+                                    "name": t.subject_type_name,
+                                },
+                                "id": t.subject_id,
+                            },
+                            "relation": t.subject_relation,
+                        },
+                    }
+                )
+            return result
+
+        return read_tuples_fn
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_rebuild_creates_missing_workspace_parent_relations(self, mock_replicate):
+        """
+        Test that rebuild_tenant_workspace_relations creates missing parent relations.
+
+        Scenario:
+        1. Workspaces exist in DB but have no parent tuples in Kessel (in-memory)
+        2. Run rebuild_tenant_workspace_relations
+        3. Verify parent tuples are created for all workspaces
+        """
+        # Redirect replicator to in-memory tuples
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        root_workspace = Workspace.objects.root(tenant=self.tenant)
+        default_workspace = Workspace.objects.default(tenant=self.tenant)
+        root_ws_id = str(root_workspace.id)
+        default_ws_id = str(default_workspace.id)
+        tenant_resource_id = self.tenant.tenant_resource_id()
+
+        # Verify NO parent tuples exist initially for root workspace
+        root_parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", root_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(root_parent_before), 0, "Root workspace should have no parent tuple initially")
+
+        # Verify NO parent tuples exist initially for default workspace
+        default_parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(default_parent_before), 0, "Default workspace should have no parent tuple initially")
+
+        # Run rebuild
+        result = rebuild_tenant_workspace_relations(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            replicator=InMemoryRelationReplicator(self.tuples),
+            dry_run=False,
+        )
+
+        # Verify result
+        self.assertEqual(result["org_id"], self.tenant.org_id)
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["workspaces_checked"], 2)  # root + default
+        self.assertEqual(result["workspaces_missing_parent"], 2)
+        self.assertEqual(result["relations_to_add"], 2)
+        self.assertEqual(result["relations_added"], 2)
+
+        # Verify root workspace now has parent tuple -> tenant
+        root_parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", root_ws_id),
+                relation("parent"),
+                subject("rbac", "tenant", tenant_resource_id),
+            )
+        )
+        self.assertEqual(len(root_parent_after), 1, "Root workspace should have parent tuple to tenant")
+
+        # Verify default workspace now has parent tuple -> root workspace
+        default_parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("parent"),
+                subject("rbac", "workspace", root_ws_id),
+            )
+        )
+        self.assertEqual(len(default_parent_after), 1, "Default workspace should have parent tuple to root workspace")
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_rebuild_detects_orphaned_workspaces_with_bindings(self, mock_replicate):
+        """
+        Test that rebuild identifies workspaces that have bindings but no parent.
+
+        Scenario:
+        1. Workspace exists in DB with no parent tuple in Kessel
+        2. Workspace has binding tuples in Kessel (orphaned state)
+        3. Run rebuild
+        4. Verify workspace is identified as orphaned
+        5. Verify parent relation is created
+        """
+        # Redirect replicator to in-memory tuples
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        default_workspace = Workspace.objects.default(tenant=self.tenant)
+        default_ws_id = str(default_workspace.id)
+
+        # Simulate orphaned state: add binding tuples but no parent tuple
+        orphan_binding_id = str(uuid.uuid4())
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                default_ws_id,
+                ("rbac", "role_binding"),
+                orphan_binding_id,
+                "binding",
+            )
+        )
+
+        # Verify binding exists but no parent
+        binding_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("binding"),
+            )
+        )
+        self.assertEqual(len(binding_before), 1, "Should have binding tuple")
+
+        parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(parent_before), 0, "Should have no parent tuple")
+
+        # Run rebuild
+        result = rebuild_tenant_workspace_relations(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            replicator=InMemoryRelationReplicator(self.tuples),
+            dry_run=False,
+        )
+
+        # Verify workspace with missing parent was detected
+        self.assertGreater(result["workspaces_missing_parent"], 0, "Should detect workspaces with missing parent")
+
+        # Verify parent relation was created
+        parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(parent_after), 1, "Should have parent tuple after rebuild")
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_rebuild_dry_run_does_not_create_tuples(self, mock_replicate):
+        """
+        Test that dry_run=True only reports what would be added without making changes.
+        """
+        # Redirect replicator to in-memory tuples
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        root_workspace = Workspace.objects.root(tenant=self.tenant)
+        root_ws_id = str(root_workspace.id)
+
+        # Verify no parent tuples exist initially
+        parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", root_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(parent_before), 0, "Should have no parent tuple initially")
+
+        # Record tuple count before
+        tuple_count_before = len(self.tuples)
+
+        # Run rebuild in dry_run mode
+        result = rebuild_tenant_workspace_relations(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            replicator=InMemoryRelationReplicator(self.tuples),
+            dry_run=True,
+        )
+
+        # Verify dry_run flag in result
+        self.assertTrue(result["dry_run"])
+        self.assertGreater(result["relations_to_add"], 0, "Should have relations to add")
+        self.assertEqual(result["relations_added"], 0, "Should not have added relations in dry run")
+
+        # Verify tuple count unchanged
+        tuple_count_after = len(self.tuples)
+        self.assertEqual(tuple_count_before, tuple_count_after, "Dry run should not modify tuples")
+
+        # Verify parent tuples still don't exist
+        parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", root_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(parent_after), 0, "Should still have no parent tuple after dry run")
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_rebuild_skips_existing_parent_relations(self, mock_replicate):
+        """
+        Test that rebuild does not recreate parent relations that already exist.
+        """
+        # Redirect replicator to in-memory tuples
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        root_workspace = Workspace.objects.root(tenant=self.tenant)
+        default_workspace = Workspace.objects.default(tenant=self.tenant)
+        root_ws_id = str(root_workspace.id)
+        default_ws_id = str(default_workspace.id)
+        tenant_resource_id = self.tenant.tenant_resource_id()
+
+        # Pre-create parent relation for root workspace only
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                root_ws_id,
+                ("rbac", "tenant"),
+                tenant_resource_id,
+                "parent",
+            )
+        )
+
+        # Verify root has parent, default doesn't
+        root_parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", root_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(root_parent_before), 1, "Root workspace should have parent tuple")
+
+        default_parent_before = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(default_parent_before), 0, "Default workspace should have no parent tuple")
+
+        # Run rebuild
+        result = rebuild_tenant_workspace_relations(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            replicator=InMemoryRelationReplicator(self.tuples),
+            dry_run=False,
+        )
+
+        # Verify only 1 workspace was missing parent (default)
+        self.assertEqual(result["workspaces_checked"], 2)
+        self.assertEqual(result["workspaces_missing_parent"], 1)
+        self.assertEqual(result["relations_to_add"], 1)
+        self.assertEqual(result["relations_added"], 1)
+
+        # Verify root still has exactly 1 parent tuple (not duplicated)
+        root_parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", root_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(root_parent_after), 1, "Root workspace should still have exactly 1 parent tuple")
+
+        # Verify default now has parent tuple
+        default_parent_after = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(default_parent_after), 1, "Default workspace should now have parent tuple")
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_rebuild_then_cleanup_finds_all_workspaces(self, mock_replicate):
+        """
+        Integration test: rebuild workspace relations, then cleanup can discover all workspaces.
+
+        This tests the recommended flow with 4 layers of workspaces:
+        - Layer 1: Root workspace (parent = tenant)
+        - Layer 2: Default workspace (parent = root)
+        - Layer 3: Child workspace (parent = default)
+        - Layer 4: Grandchild workspace (parent = child)
+
+        Steps:
+        1. Run rebuild to fix missing parent relations
+        2. Run cleanup which uses DFS to discover workspaces
+        3. DFS should now find all workspaces because parent relations exist
+        """
+        # Redirect replicator to in-memory tuples
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        root_workspace = Workspace.objects.root(tenant=self.tenant)
+        default_workspace = Workspace.objects.default(tenant=self.tenant)
+        root_ws_id = str(root_workspace.id)
+        default_ws_id = str(default_workspace.id)
+
+        # Layer 3: Create child workspace (parent = default)
+        child_workspace = Workspace.objects.create(
+            name="Child Workspace",
+            tenant=self.tenant,
+            parent=default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        child_ws_id = str(child_workspace.id)
+
+        # Layer 4: Create grandchild workspace (parent = child)
+        grandchild_workspace = Workspace.objects.create(
+            name="Grandchild Workspace",
+            tenant=self.tenant,
+            parent=child_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        grandchild_ws_id = str(grandchild_workspace.id)
+
+        # Simulate orphaned state: add bindings to workspaces but no parent relations anywhere
+        # Add binding to child workspace
+        orphan_binding_1 = str(uuid.uuid4())
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                child_ws_id,
+                ("rbac", "role_binding"),
+                orphan_binding_1,
+                "binding",
+            )
+        )
+
+        # Add binding to grandchild workspace (deepest level)
+        orphan_binding_2 = str(uuid.uuid4())
+        self.tuples.add(
+            create_relationship(
+                ("rbac", "workspace"),
+                grandchild_ws_id,
+                ("rbac", "role_binding"),
+                orphan_binding_2,
+                "binding",
+            )
+        )
+
+        # Verify no parent relations exist initially
+        all_parent_tuples = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "workspace"),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(all_parent_tuples), 0, "Should have no parent tuples initially")
+
+        # Step 1: Run rebuild
+        rebuild_result = rebuild_tenant_workspace_relations(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            replicator=InMemoryRelationReplicator(self.tuples),
+            dry_run=False,
+        )
+
+        # Verify all 4 workspaces have parent relations now
+        # Layer 1: root -> parent -> tenant
+        # Layer 2: default -> parent -> root
+        # Layer 3: child -> parent -> default
+        # Layer 4: grandchild -> parent -> child
+        self.assertEqual(rebuild_result["workspaces_checked"], 4)  # root + default + child + grandchild
+        self.assertEqual(rebuild_result["relations_to_add"], 4)
+        self.assertEqual(rebuild_result["relations_added"], 4)
+
+        # Verify parent tuples were created
+        all_parent_after = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "workspace"),
+                relation("parent"),
+            )
+        )
+        self.assertEqual(len(all_parent_after), 4, "Should have 4 parent tuples after rebuild")
+
+        # Verify each layer's parent relation
+        # Layer 1: root -> parent -> tenant
+        root_parent = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", root_ws_id),
+                relation("parent"),
+                subject("rbac", "tenant", self.tenant.tenant_resource_id()),
+            )
+        )
+        self.assertEqual(len(root_parent), 1, "Root should have parent = tenant")
+
+        # Layer 2: default -> parent -> root
+        default_parent = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", default_ws_id),
+                relation("parent"),
+                subject("rbac", "workspace", root_ws_id),
+            )
+        )
+        self.assertEqual(len(default_parent), 1, "Default should have parent = root")
+
+        # Layer 3: child -> parent -> default
+        child_parent = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", child_ws_id),
+                relation("parent"),
+                subject("rbac", "workspace", default_ws_id),
+            )
+        )
+        self.assertEqual(len(child_parent), 1, "Child should have parent = default")
+
+        # Layer 4: grandchild -> parent -> child
+        grandchild_parent = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "workspace", grandchild_ws_id),
+                relation("parent"),
+                subject("rbac", "workspace", child_ws_id),
+            )
+        )
+        self.assertEqual(len(grandchild_parent), 1, "Grandchild should have parent = child")
+
+        # Step 2: Run cleanup - DFS should now discover all workspaces
+        cleanup_result = cleanup_tenant_orphaned_relationships(
+            tenant=self.tenant,
+            root_workspace=root_workspace,
+            default_workspace=default_workspace,
+            tenant_mapping=self.tenant.tenant_mapping,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            dry_run=True,
+        )
+
+        # Verify DFS discovered all 4 workspaces (traverses all 4 layers)
+        self.assertEqual(
+            cleanup_result["workspaces_discovered_count"], 4, "DFS should discover all 4 workspaces after rebuild"
+        )

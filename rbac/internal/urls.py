@@ -114,6 +114,7 @@ urlpatterns = [
         "api/utils/clean_invalid_workspace_resource_definitions/", views.clean_invalid_workspace_resource_definitions
     ),
     path("api/utils/cleanup_tenant_orphan_bindings/<str:org_id>/", views.cleanup_tenant_orphan_bindings),
+    path("api/utils/rebuild_tenant_workspace_relations/<str:org_id>/", views.rebuild_tenant_workspace_relations),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
