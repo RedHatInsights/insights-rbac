@@ -20,10 +20,11 @@ import dataclasses
 import json
 import logging
 import os
+import time
 
 from core.utils import destructive_ok
 from django.conf import settings
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.utils import timezone
 from management.group.definer import seed_group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
@@ -85,7 +86,7 @@ class _SeedRolesConfig:
 def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
-    name = data.pop("name")
+    name = data.get("name")  # Use .get() instead of .pop() to avoid mutating input
     display_name = data.get("display_name", name)
     access_list = data.get("access")
     defaults = dict(
@@ -130,8 +131,10 @@ def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_ser
 
     if access_list:  # Allow external roles to have none access object
         for access_item in access_list:
-            resource_def_list = access_item.pop("resourceDefinitions", [])
-            permission, _ = Permission.objects.get_or_create(**access_item, tenant=public_tenant)
+            resource_def_list = access_item.get("resourceDefinitions", [])
+            # Extract only the fields needed for Permission, excluding resourceDefinitions
+            permission_fields = {k: v for k, v in access_item.items() if k != "resourceDefinitions"}
+            permission, _ = Permission.objects.get_or_create(**permission_fields, tenant=public_tenant)
 
             access_obj = Access.objects.create(permission=permission, role=role, tenant=public_tenant)
             for resource_def_item in resource_def_list:
@@ -154,17 +157,40 @@ def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_ser
 def _update_or_create_roles(roles, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Update or create roles from list."""
     current_role_ids = set()
+    max_retries = 3
     for role_json in roles:
-        try:
-            role = _make_role(role_json, config, platform_roles, resource_service)
-            current_role_ids.add(role.id)
-        except Exception as e:
-            logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
+        role_name = role_json.get("name")
+        for attempt in range(max_retries):
+            try:
+                with transaction.atomic():
+                    role = _make_role(role_json, config, platform_roles, resource_service)
+                    current_role_ids.add(role.id)
+                break  # Success, exit retry loop
+            except OperationalError as e:
+                # Check for deadlock or lock-related errors
+                if "deadlock" in str(e).lower() and attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 0.5  # Exponential backoff: 0.5s, 1s, 1.5s
+                    logger.warning(
+                        f"Deadlock detected for role {role_name}, retrying in {wait_time}s "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Failed to update or create system role: {role_name} with error: {e}")
+                    break
+            except Exception as e:
+                logger.error(f"Failed to update or create system role: {role_name} with error: {e}")
+                break
     return current_role_ids
 
 
 def seed_roles(force_create_relationships=False, force_update_relationships=False):
-    """Update or create system defined roles."""
+    """Update or create system defined roles.
+
+    Note: To prevent concurrent seeding across multiple workers, configure your deployment
+    to set ROLE_SEEDING_ENABLED=true only on one designated worker/pod.
+    """
+    logger.info("*** Role seeding started. ***")
     roles_directory = os.path.join(settings.BASE_DIR, "management", "role", "definitions")
     role_files = [
         f
@@ -175,26 +201,27 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
 
     platform_roles = _seed_platform_roles()
     resource_service = ImplicitResourceService.from_settings()
-    with transaction.atomic():
-        for role_file_name in role_files:
-            role_file_path = os.path.join(roles_directory, role_file_name)
-            with open(role_file_path) as json_file:
-                data = json.load(json_file)
-                role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(
-                    role_list,
-                    _SeedRolesConfig(
-                        force_create_relationships=force_create_relationships,
-                        force_update_relationships=force_update_relationships,
-                    ),
-                    platform_roles,
-                    resource_service,
-                )
-                current_role_ids.update(file_role_ids)
+    for role_file_name in role_files:
+        role_file_path = os.path.join(roles_directory, role_file_name)
+        with open(role_file_path) as json_file:
+            data = json.load(json_file)
+            role_list = data.get("roles")
+            file_role_ids = _update_or_create_roles(
+                role_list,
+                _SeedRolesConfig(
+                    force_create_relationships=force_create_relationships,
+                    force_update_relationships=force_update_relationships,
+                ),
+                platform_roles,
+                resource_service,
+            )
+            current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
     roles_to_delete = Role.objects.public_tenant_only().exclude(id__in=current_role_ids)
-    logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
+    logger.info(
+        f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}"
+    )
     if destructive_ok("seeding"):
         logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
         # Actually remove roles no longer in config
@@ -203,6 +230,7 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
                 dual_write_handler = SeedingRelationApiDualWriteHandler(role)
                 dual_write_handler.replicate_deleted_system_role()
             roles_to_delete.delete()
+    logger.info("*** Role seeding completed. ***")
 
 
 def seed_permissions():
