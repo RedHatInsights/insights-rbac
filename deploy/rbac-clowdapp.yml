@@ -540,6 +540,8 @@ objects:
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           - name: WORKSPACE_ORG_CREATION_LIMIT
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+            value: ${READ_YOUR_WRITES_TIMEOUT_SECONDS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
@@ -1721,6 +1723,9 @@ parameters:
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
   description: When true, prevents the ability to create peer workspaces against the default workspace
   value: 'False'
+- name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+  description: Timeout in seconds for read-your-writes consistency check after workspace creation
+  value: '10'
 - name: SCOPES
   description: The Scope for token generation
   value: 'openid'
