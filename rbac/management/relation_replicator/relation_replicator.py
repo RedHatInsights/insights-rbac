@@ -75,6 +75,7 @@ class ReplicationEventType(str, Enum):
     UPDATE_WORKSPACE = "update_workspace"
     DELETE_WORKSPACE = "delete_workspace"
     MOVE_WORKSPACE = "move_workspace"
+    CLEANUP_ORPHAN_BINDINGS = "cleanup_orphan_bindings"
 
 
 class ReplicationEvent:

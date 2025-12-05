@@ -91,6 +91,7 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import (
     create_client_channel,
@@ -2313,6 +2314,66 @@ def fix_missing_binding_base_tuples(request):
         {
             "message": "Fix missing binding base tuples is running in a background worker.",
             "binding_ids": binding_ids if binding_ids else "all",
+        },
+        status=202,
+    )
+
+
+@require_http_methods(["POST"])
+def cleanup_tenant_orphan_bindings(request, org_id):
+    """
+    Clean up orphaned role binding relationships for a tenant and remigrate bindings.
+
+    POST /_private/api/utils/cleanup_tenant_orphan_bindings/<org_id>/
+
+    This endpoint triggers a background worker task that:
+    1. Uses DFS to discover all workspaces from Kessel
+    2. Identifies orphaned/stale workspace relationships
+    3. Cleans orphaned binding relationships
+    4. Runs migrate_all_role_bindings() to recreate correct relationships
+
+    Query params:
+        dry_run=true: Only report what would be deleted, don't make changes or run migration
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    from management.tasks import cleanup_tenant_orphan_bindings_in_worker
+
+    dry_run = request.GET.get("dry_run", "false").lower() == "true"
+
+    # Validate tenant exists before queuing
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+
+    # Validate TenantMapping exists
+    try:
+        tenant.tenant_mapping
+    except TenantMapping.DoesNotExist:
+        return JsonResponse(
+            {"detail": f"No TenantMapping found for tenant {org_id}. Tenant may not be bootstrapped."},
+            status=404,
+        )
+
+    # Validate workspaces exist
+    try:
+        Workspace.objects.root(tenant=tenant)
+        Workspace.objects.default(tenant=tenant)
+    except Workspace.DoesNotExist as e:
+        return JsonResponse(
+            {"detail": f"Missing root or default workspace for tenant {org_id}: {str(e)}"},
+            status=404,
+        )
+
+    logger.info(f"Queuing cleanup task for tenant {org_id} (dry_run={dry_run})")
+
+    # Queue the task
+    cleanup_tenant_orphan_bindings_in_worker.delay(org_id=org_id, dry_run=dry_run)
+
+    return JsonResponse(
+        {
+            "message": f"Cleanup task for tenant {org_id} is running in a background worker.",
+            "org_id": org_id,
+            "dry_run": dry_run,
         },
         status=202,
     )
