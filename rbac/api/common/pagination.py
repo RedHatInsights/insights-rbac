@@ -20,7 +20,7 @@ import logging
 import re
 from urllib.parse import urlparse
 
-from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.utils.urls import replace_query_param
 
@@ -115,3 +115,59 @@ class V2ResultsSetPagination(StandardResultsSetPagination):
             self.default_limit = queryset.count()
 
         return super().paginate_queryset(queryset, request, view)
+
+
+class V2CursorPagination(CursorPagination):
+    """Cursor-based pagination for V2 Role binding API.
+
+    Uses cursor-based pagination which provides consistent ordering
+    and better performance for large datasets.
+    """
+
+    page_size = 10
+    page_size_query_param = "limit"
+    max_page_size = 1000
+    ordering = "-modified"
+    cursor_query_param = "cursor"
+
+    @staticmethod
+    def link_rewrite(request, link):
+        """Rewrite the link based on the path header to only provide partial url."""
+        if link is None:
+            return None
+        url = link
+        if PATH_INFO in request.META:
+            url_components = urlparse(link)
+            path_and_query = url_components.path + (f"?{url_components.query}" if url_components.query else "")
+            if bool(re.search("/v[0-9]/", path_and_query)):
+                url = path_and_query
+            else:
+                logger.warning(f"Unable to rewrite link as no version was not found in {path_and_query}.")
+        return url
+
+    def get_next_link(self):
+        """Create next link with partial url rewrite."""
+        next_link = super().get_next_link()
+        if next_link is None:
+            return next_link
+        return V2CursorPagination.link_rewrite(self.request, next_link)
+
+    def get_previous_link(self):
+        """Create previous link with partial url rewrite."""
+        previous_link = super().get_previous_link()
+        if previous_link is None:
+            return previous_link
+        return V2CursorPagination.link_rewrite(self.request, previous_link)
+
+    def get_paginated_response(self, data):
+        """Override pagination output to match V2 API spec."""
+        return Response(
+            {
+                "meta": {"limit": self.get_page_size(self.request)},
+                "links": {
+                    "next": self.get_next_link(),
+                    "previous": self.get_previous_link(),
+                },
+                "data": data,
+            }
+        )

@@ -23,8 +23,8 @@ from management.querysets import get_role_binding_groups_queryset
 from management.workspace.model import Workspace
 from rest_framework import serializers
 from rest_framework.decorators import action
-from rest_framework.response import Response
 
+from api.common.pagination import V2CursorPagination
 from .serializer import RoleBindingByGroupSerializer
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
 
     serializer_class = RoleBindingByGroupSerializer
     permission_classes = (WorkspaceAccessPermission,)
+    pagination_class = V2CursorPagination
 
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
@@ -68,8 +69,9 @@ class RoleBindingViewSet(BaseV2ViewSet):
             "resource_name": self._get_resource_name(resource_id, resource_type, request.tenant),
         }
 
-        serializer = self.get_serializer(queryset, many=True, context=context)
-        return Response(serializer.data)
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True, context=context)
+        return self.get_paginated_response(serializer.data)
 
     def _get_resource_name(self, resource_id, resource_type, tenant):
         """Get the name of the resource."""
