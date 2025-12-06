@@ -93,7 +93,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
 
             tuples = self.tuples.find_tuples(all_of(*filters))
 
-            # Convert to dict format matching Kessel response
+            # Convert to dict format matching Kessel gRPC response
+            # Format: {"tuple": {"resource": {...}, "relation": "...", "subject": {...}}, ...}
             result = []
             for t in tuples:
                 # Filter by subject type and id if provided
@@ -104,23 +105,25 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
 
                 result.append(
                     {
-                        "resource": {
-                            "type": {
-                                "namespace": t.resource_type_namespace,
-                                "name": t.resource_type_name,
-                            },
-                            "id": t.resource_id,
-                        },
-                        "relation": t.relation,
-                        "subject": {
-                            "subject": {
+                        "tuple": {
+                            "resource": {
                                 "type": {
-                                    "namespace": t.subject_type_namespace,
-                                    "name": t.subject_type_name,
+                                    "namespace": t.resource_type_namespace,
+                                    "name": t.resource_type_name,
                                 },
-                                "id": t.subject_id,
+                                "id": t.resource_id,
                             },
-                            "relation": t.subject_relation,
+                            "relation": t.relation,
+                            "subject": {
+                                "subject": {
+                                    "type": {
+                                        "namespace": t.subject_type_namespace,
+                                        "name": t.subject_type_name,
+                                    },
+                                    "id": t.subject_id,
+                                },
+                                "relation": t.subject_relation,
+                            },
                         },
                     }
                 )
@@ -913,7 +916,8 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
 
             tuples = self.tuples.find_tuples(all_of(*filters))
 
-            # Convert to dict format matching Kessel response
+            # Convert to dict format matching Kessel gRPC response
+            # Format: {"tuple": {"resource": {...}, "relation": "...", "subject": {...}}, ...}
             result = []
             for t in tuples:
                 # Filter by subject type and id if provided
@@ -924,23 +928,25 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
 
                 result.append(
                     {
-                        "resource": {
-                            "type": {
-                                "namespace": t.resource_type_namespace,
-                                "name": t.resource_type_name,
-                            },
-                            "id": t.resource_id,
-                        },
-                        "relation": t.relation,
-                        "subject": {
-                            "subject": {
+                        "tuple": {
+                            "resource": {
                                 "type": {
-                                    "namespace": t.subject_type_namespace,
-                                    "name": t.subject_type_name,
+                                    "namespace": t.resource_type_namespace,
+                                    "name": t.resource_type_name,
                                 },
-                                "id": t.subject_id,
+                                "id": t.resource_id,
                             },
-                            "relation": t.subject_relation,
+                            "relation": t.relation,
+                            "subject": {
+                                "subject": {
+                                    "type": {
+                                        "namespace": t.subject_type_namespace,
+                                        "name": t.subject_type_name,
+                                    },
+                                    "id": t.subject_id,
+                                },
+                                "relation": t.subject_relation,
+                            },
                         },
                     }
                 )

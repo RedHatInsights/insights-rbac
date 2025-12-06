@@ -382,8 +382,8 @@ def _discover_workspaces_dfs(tenant_resource_id: str, read_tuples_fn) -> dict:
     root_tuples = read_tuples_fn("workspace", "", "parent", "tenant", tenant_resource_id)
     for t in root_tuples:
         # The workspace ID is in the resource part of the tuple response
-        # Response format: {"resource": {"type": {...}, "id": "..."}, "relation": "...", "subject": {...}}
-        ws_id = t.get("resource", {}).get("id")
+        # Response format: {"tuple": {"resource": {"type": {...}, "id": "..."}, ...}, ...}
+        ws_id = t.get("tuple", {}).get("resource", {}).get("id")
         if ws_id and ws_id not in workspace_parents:
             workspace_parents[ws_id] = ("tenant", tenant_resource_id)
             stack.append(ws_id)
@@ -394,7 +394,7 @@ def _discover_workspaces_dfs(tenant_resource_id: str, read_tuples_fn) -> dict:
         # Find workspaces where parent is this workspace
         child_tuples = read_tuples_fn("workspace", "", "parent", "workspace", parent_ws_id)
         for t in child_tuples:
-            ws_id = t.get("resource", {}).get("id")
+            ws_id = t.get("tuple", {}).get("resource", {}).get("id")
             if ws_id and ws_id not in workspace_parents:
                 workspace_parents[ws_id] = ("workspace", parent_ws_id)
                 stack.append(ws_id)
@@ -441,7 +441,8 @@ def _process_resource_bindings(
 
     binding_tuples = read_tuples_fn(resource_type, resource_id, "binding", "role_binding", "")
     for t in binding_tuples:
-        binding_id = t.get("subject", {}).get("subject", {}).get("id")
+        # Response format: {"tuple": {..., "subject": {"subject": {"id": "..."}}}, ...}
+        binding_id = t.get("tuple", {}).get("subject", {}).get("subject", {}).get("id")
         if not binding_id:
             continue
 
@@ -502,7 +503,8 @@ def _collect_binding_relations_to_remove(
     # Query: role_binding:<id> → role → role:*
     role_tuples = read_tuples_fn("role_binding", binding_id, "role", "role", "")
     for t in role_tuples:
-        role_id = t.get("subject", {}).get("subject", {}).get("id")
+        # Response format: {"tuple": {..., "subject": {"subject": {"id": "..."}}}, ...}
+        role_id = t.get("tuple", {}).get("subject", {}).get("subject", {}).get("id")
         if role_id:
             relations_to_remove.append(
                 create_relationship(
@@ -522,8 +524,9 @@ def _collect_binding_relations_to_remove(
     # Query: role_binding:<id> → subject → group:*#member
     group_tuples = read_tuples_fn("role_binding", binding_id, "subject", "group", "")
     for t in group_tuples:
-        group_id = t.get("subject", {}).get("subject", {}).get("id")
-        subject_relation = t.get("subject", {}).get("relation")
+        # Response format: {"tuple": {..., "subject": {"subject": {"id": "..."}, "relation": "..."}}, ...}
+        group_id = t.get("tuple", {}).get("subject", {}).get("subject", {}).get("id")
+        subject_relation = t.get("tuple", {}).get("subject", {}).get("relation")
         if group_id:
             relations_to_remove.append(
                 create_relationship(
@@ -565,7 +568,8 @@ def _collect_custom_role_permission_relations(role_id: str, read_tuples_fn) -> l
     relations_to_remove = []
     permission_tuples = read_tuples_fn("role", role_id, "", "principal", "*")
     for t in permission_tuples:
-        relation = t.get("relation")
+        # Response format: {"tuple": {"relation": "...", ...}, ...}
+        relation = t.get("tuple", {}).get("relation")
         if relation:
             relations_to_remove.append(
                 create_relationship(
