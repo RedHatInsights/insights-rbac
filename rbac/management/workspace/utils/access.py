@@ -217,12 +217,15 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
                 ancestor_ids = {str(ancestor.id) for ancestor in workspace.ancestors()}
                 accessible_workspace_ids.update(ancestor_ids)
         else:
-            # If no accessible workspaces, attach at least default and ungrouped workspace
+            # If no accessible workspaces, attach at least root, default, and ungrouped workspaces
+            root_workspace = Workspace.objects.filter(tenant=request.tenant, type=Workspace.Types.ROOT).first()
             default_workspace = Workspace.objects.filter(tenant=request.tenant, type=Workspace.Types.DEFAULT).first()
             ungrouped_workspace = Workspace.objects.filter(
                 tenant=request.tenant, type=Workspace.Types.UNGROUPED_HOSTS
             ).first()
 
+            if root_workspace:
+                accessible_workspace_ids.add(str(root_workspace.id))
             if default_workspace:
                 accessible_workspace_ids.add(str(default_workspace.id))
             if ungrouped_workspace:
