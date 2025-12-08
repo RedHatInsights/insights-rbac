@@ -716,7 +716,7 @@ namespace RoleBindings {
 
     @doc("List role bindings grouped by subject")
     @summary("List role bindings grouped by subject")
-    @route("by-subject")
+    @route("by-subject/")
     @opExample(#{
         parameters: #{
             limit: 10,
