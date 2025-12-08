@@ -85,7 +85,7 @@ class _SeedRolesConfig:
 def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
-    name = data.pop("name")
+    name = data.get("name")
     display_name = data.get("display_name", name)
     access_list = data.get("access")
     defaults = dict(
@@ -154,12 +154,15 @@ def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_ser
 def _update_or_create_roles(roles, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Update or create roles from list."""
     current_role_ids = set()
-    for role_json in roles:
+    # Sort roles by name to ensure consistent lock ordering and prevent deadlocks
+    sorted_roles = sorted(roles, key=lambda r: r.get("name", ""))
+    for role_json in sorted_roles:
         try:
-            role = _make_role(role_json, config, platform_roles, resource_service)
-            current_role_ids.add(role.id)
+            with transaction.atomic():
+                role = _make_role(role_json, config, platform_roles, resource_service)
+                current_role_ids.add(role.id)
         except Exception as e:
-            logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
+            logger.error(f"Failed to update or create system role: {role_json.get('name')} with error: {e}")
     return current_role_ids
 
 
@@ -175,22 +178,21 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
 
     platform_roles = _seed_platform_roles()
     resource_service = ImplicitResourceService.from_settings()
-    with transaction.atomic():
-        for role_file_name in role_files:
-            role_file_path = os.path.join(roles_directory, role_file_name)
-            with open(role_file_path) as json_file:
-                data = json.load(json_file)
-                role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(
-                    role_list,
-                    _SeedRolesConfig(
-                        force_create_relationships=force_create_relationships,
-                        force_update_relationships=force_update_relationships,
-                    ),
-                    platform_roles,
-                    resource_service,
-                )
-                current_role_ids.update(file_role_ids)
+    for role_file_name in role_files:
+        role_file_path = os.path.join(roles_directory, role_file_name)
+        with open(role_file_path) as json_file:
+            data = json.load(json_file)
+            role_list = data.get("roles")
+            file_role_ids = _update_or_create_roles(
+                role_list,
+                _SeedRolesConfig(
+                    force_create_relationships=force_create_relationships,
+                    force_update_relationships=force_update_relationships,
+                ),
+                platform_roles,
+                resource_service,
+            )
+            current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
     roles_to_delete = Role.objects.public_tenant_only().exclude(id__in=current_role_ids)
