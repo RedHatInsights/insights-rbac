@@ -27,7 +27,8 @@ from management.workspace.utils import (
 from rest_framework import permissions
 
 # Custom message for target workspace access denial
-TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = "You do not have write access to the target workspace."
+# This message is relation-agnostic: V1 uses 'write' operation, V2 uses 'create' permission
+TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = "You do not have permission to access the target workspace."
 
 
 class WorkspaceAccessPermission(permissions.BasePermission):
@@ -46,9 +47,13 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         - V2: Uses Inventory API with fine-grained permissions (view, create, edit, move, delete)
         - V1: Uses legacy role-based checks with read/write operations
 
-        For move operations, this method checks both:
-        - Source workspace: user needs 'move' permission (V2) or 'write' operation (V1)
+        For move operations (POST to /move endpoint), this method checks both:
+        - Source workspace: user needs 'create' permission (V2, from POST method) or 'write' operation (V1)
         - Target workspace: user needs 'create' permission (V2) or 'write' operation (V1)
+
+        Note: The permission_from_request function maps HTTP POST to 'create' permission,
+        which is used for the source workspace check in V2 mode. This is by design since
+        the move action is a POST request.
 
         Args:
             request: The HTTP request object
