@@ -692,7 +692,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_with_non_existent_workspace_in_attribute_filter(self, mock_flag, mock_channel):
-        """Test workspace list with attribute filter containing non-existent workspace ID returns default/ungrouped."""
+        """Test workspace list with attribute filter containing non-existent workspace ID returns root/default/ungrouped."""
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -726,13 +726,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 200 with at least default and ungrouped workspaces (new v2 behavior)
-            # Even though the user has no access to any real workspace, they get default/ungrouped
+            # Should return 200 with at least root, default, and ungrouped workspaces (new v2 behavior)
+            # Even though the user has no access to any real workspace, they get root/default/ungrouped
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify default and ungrouped workspaces are returned
+            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
@@ -1156,7 +1157,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_user_without_permissions(self, mock_flag, mock_channel):
-        """Test workspace list for user without any permissions returns at least default and ungrouped workspaces."""
+        """Test workspace list for user without any permissions returns at least root, default, and ungrouped workspaces."""
         # Mock Inventory API to return no workspaces (user has no permissions)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1179,12 +1180,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 200 with at least default and ungrouped workspaces (new v2 behavior)
+            # Should return 200 with at least root, default, and ungrouped workspaces (new v2 behavior)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify default and ungrouped workspaces are returned
+            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
@@ -1305,8 +1307,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_returns_default_and_ungrouped_when_no_access(self, mock_flag, mock_channel):
-        """Test that workspace list returns at least default and ungrouped workspaces when user has no access."""
+    def test_workspace_list_returns_root_default_and_ungrouped_when_no_access(self, mock_flag, mock_channel):
+        """Test that workspace list returns at least root, default, and ungrouped workspaces when user has no access."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1334,12 +1336,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return at least default and ungrouped workspaces
+            # Should return at least root, default, and ungrouped workspaces
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify default and ungrouped workspaces are returned
+            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
