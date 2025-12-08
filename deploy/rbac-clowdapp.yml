@@ -225,6 +225,18 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
