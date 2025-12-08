@@ -225,6 +225,18 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
@@ -540,6 +552,8 @@ objects:
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           - name: WORKSPACE_ORG_CREATION_LIMIT
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+            value: ${READ_YOUR_WRITES_TIMEOUT_SECONDS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
@@ -743,6 +757,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
         livenessProbe:
           exec:
             command: ["test", "-f", "/tmp/kubernetes-liveness"]
@@ -1719,6 +1735,9 @@ parameters:
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
   description: When true, prevents the ability to create peer workspaces against the default workspace
   value: 'False'
+- name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+  description: Timeout in seconds for read-your-writes consistency check after workspace creation
+  value: '10'
 - name: SCOPES
   description: The Scope for token generation
   value: 'openid'

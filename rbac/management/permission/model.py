@@ -19,6 +19,7 @@
 import dataclasses
 
 from django.db import models
+from migration_tool.models import cleanNameForV2SchemaCompatibility
 
 from api.models import TenantAwareModel
 
@@ -121,3 +122,7 @@ class Permission(TenantAwareModel):
         self.resource_type = context[1]
         self.verb = context[2]
         super(Permission, self).save(*args, **kwargs)
+
+    def v2_string(self) -> str:
+        """Convert this V1 permission to the string representation for a V2 permission."""
+        return cleanNameForV2SchemaCompatibility(self.application + "_" + self.resource_type + "_" + self.verb)

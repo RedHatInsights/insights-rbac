@@ -16,13 +16,15 @@
 #
 
 """Model for role V2 management."""
+from typing import Iterable, Optional
 
 import uuid_utils.compat as uuid
 from django.db import models
-from django.db.models import signals
+from django.db.models import QuerySet, signals
 from django.utils import timezone
 from management.models import Group, Permission, Role
 from management.rbac_fields import AutoDateTimeField
+from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from rest_framework import serializers
 
 from api.models import TenantAwareModel
@@ -37,14 +39,14 @@ class RoleV2(TenantAwareModel):
         PLATFORM = "platform"
 
     uuid = models.UUIDField(default=uuid.uuid7, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=150, null=False, blank=False)
+    name = models.CharField(max_length=175, null=False, blank=False)
     description = models.TextField(null=True, blank=True)
     type = models.CharField(
         choices=Types.choices, max_length=20, null=False, blank=False, db_index=True, default=Types.CUSTOM
     )
     permissions = models.ManyToManyField(Permission, related_name="v2_roles")
     children = models.ManyToManyField("self", related_name="parents", symmetrical=False)
-    v1_source = models.ForeignKey(Role, null=True, blank=True, related_name="v2_roles", on_delete=models.SET_NULL)
+    v1_source = models.ForeignKey(Role, null=True, blank=True, related_name="v2_roles", on_delete=models.CASCADE)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
 
@@ -58,6 +60,23 @@ class RoleV2(TenantAwareModel):
         """Save the model and run all validations from the model."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def as_migration_value(self) -> V2role:
+        """Get the V2role representing to this role's daya."""
+        if self.type == RoleV2.Types.PLATFORM:
+            raise ValueError("V2roles are not supported for PLATFORM roles.")
+
+        if self.type == RoleV2.Types.SEEDED:
+            return V2role.for_system_role(id=str(self.uuid))
+
+        if self.type == RoleV2.Types.CUSTOM:
+            return V2role(
+                id=str(self.uuid),
+                is_system=False,
+                permissions=frozenset(p.v2_string() for p in self.permissions.all()),
+            )
+
+        raise ValueError(f"Unexpected type of role: {self.type} for {self}")
 
 
 class TypedRoleV2Manager(models.Manager):
@@ -153,6 +172,39 @@ class RoleBinding(TenantAwareModel):
 
     resource_type = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
+
+    def bound_groups(self) -> QuerySet:
+        """Get a QuerySet for all groups bound to this RoleBinding."""
+        return Group.objects.filter(role_binding_entries__in=self.group_entries.all())
+
+    def update_groups(self, groups: Iterable[Group]):
+        """Update the groups bound to this RoleBinding."""
+        self.group_entries.all().delete()
+        RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
+
+    def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
+        """
+        Return the V2rolebinding equivalent of this role binding.
+
+        group_uuids is provided in the case where
+        """
+        if force_group_uuids is None:
+            force_group_uuids = [str(u) for u in self.bound_groups().values_list("uuid", flat=True)]
+
+        return V2rolebinding(
+            id=str(self.uuid),
+            role=self.role.as_migration_value(),
+            resource=V2boundresource(
+                # TODO: we currently assume all resources types are in namespace "rbac". This is currently true for
+                #  all the types we care about, but is not necessarily true in general. The semantics of the
+                #  Inventory API (which we will eventually have to migrate to) are different and do not have a
+                #  resource type namespace, per se.
+                resource_type=("rbac", self.resource_type),
+                resource_id=self.resource_id,
+            ),
+            groups=force_group_uuids,
+            users={},
+        )
 
     class Meta:
         constraints = [

@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the RoleV2 models."""
+import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -31,6 +32,7 @@ from management.models import (
     RoleV2,
     SeededRoleV2,
 )
+from management.role.model import Access
 from tests.identity_request import IdentityRequest
 
 
@@ -429,6 +431,13 @@ class RoleBindingModelTests(IdentityRequest):
         # Test role
         self.role = RoleV2.objects.create(name="test_role", tenant=self.tenant)
 
+        self.role.permissions.add(
+            Permission.objects.create(
+                tenant=Tenant.objects.get(tenant_name="public"),
+                permission="app:resource:verb",
+            )
+        )
+
         # Test groups
         self.group1 = Group.objects.create(name="group1", tenant=self.tenant)
         self.group2 = Group.objects.create(name="group2", tenant=self.tenant)
@@ -694,3 +703,67 @@ class RoleBindingModelTests(IdentityRequest):
 
         # Test group.role_binding_entries
         self.assertIn(bg, self.group1.role_binding_entries.all())
+
+    def test_as_migration_value(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding.group_entries.create(
+            group=self.group1,
+            binding=binding,
+        )
+
+        migration_value = binding.as_migration_value()
+
+        self.assertEqual(str(binding.uuid), migration_value.id)
+        self.assertEqual(("rbac", "workspace"), migration_value.resource.resource_type)
+        self.assertEqual("ws-12345", migration_value.resource.resource_id)
+        self.assertEqual(str(self.role.uuid), migration_value.role.id)
+        self.assertCountEqual(["app_resource_verb"], migration_value.role.permissions)
+        self.assertFalse(migration_value.role.is_system)
+        self.assertCountEqual([str(self.group1.uuid)], migration_value.groups)
+        self.assertEqual({}, migration_value.users)
+
+    def test_as_migration_value_force_groups(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        group_uuid = uuid.uuid4()
+        migration_value = binding.as_migration_value(force_group_uuids=[str(group_uuid)])
+
+        self.assertEqual(str(binding.uuid), migration_value.id)
+        self.assertEqual(("rbac", "workspace"), migration_value.resource.resource_type)
+        self.assertEqual("ws-12345", migration_value.resource.resource_id)
+        self.assertEqual(str(self.role.uuid), migration_value.role.id)
+        self.assertCountEqual(["app_resource_verb"], migration_value.role.permissions)
+        self.assertFalse(migration_value.role.is_system)
+        self.assertCountEqual([str(group_uuid)], migration_value.groups)
+        self.assertEqual({}, migration_value.users)
+
+    def test_update_groups(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding.update_groups([self.group1])
+        self.assertCountEqual([self.group1], binding.bound_groups())
+
+        binding.update_groups([self.group2])
+        self.assertCountEqual([self.group2], binding.bound_groups())
+
+        binding.update_groups([self.group1, self.group2])
+        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
+
+        binding.update_groups([])
+        self.assertCountEqual([], binding.bound_groups())

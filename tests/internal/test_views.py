@@ -2860,7 +2860,7 @@ class CleanInvalidWorkspaceResourceDefinitionsTests(BaseInternalViewsetTests):
         valid_binding = BindingMapping.objects.create(
             role=role,
             mappings={
-                "id": "valid-binding",
+                "id": str(uuid.uuid4()),
                 "groups": [],
                 "users": {},
                 "role": {"id": str(role.uuid), "is_system": False, "permissions": ["inventory_groups_read"]},
@@ -2873,7 +2873,7 @@ class CleanInvalidWorkspaceResourceDefinitionsTests(BaseInternalViewsetTests):
         invalid_binding = BindingMapping.objects.create(
             role=role,
             mappings={
-                "id": "invalid-binding",
+                "id": str(uuid.uuid4()),
                 "groups": [],
                 "users": {},
                 "role": {"id": str(role.uuid), "is_system": False, "permissions": ["inventory_groups_read"]},
