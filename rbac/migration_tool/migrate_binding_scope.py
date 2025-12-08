@@ -27,6 +27,8 @@ from management.relation_replicator.relation_replicator import RelationReplicato
 from management.role.model import Role
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 
+from api.models import Tenant
+
 logger = logging.getLogger(__name__)
 
 
@@ -103,7 +105,10 @@ def migrate_system_role_bindings_for_group(group: Group, replicator: RelationRep
     return bindings_cleaned
 
 
-def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator()):
+def migrate_all_role_bindings(
+    replicator: RelationReplicator = OutboxReplicator(),
+    tenant: Optional[Tenant] = None,
+):
     """
     Migrate all role bindings to correct scope.
 
@@ -112,10 +117,12 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
 
     Args:
         replicator: Replicator to use for relation updates. Defaults to OutboxReplicator.
+        tenant: Optional tenant to filter roles and groups. If None, migrates all tenants.
 
     Returns: Tuple of (items_checked, items_migrated)
     """
-    logger.info("Starting binding scope migration")
+    tenant_info = f" for tenant {tenant.org_id}" if tenant else ""
+    logger.info(f"Starting binding scope migration{tenant_info}")
     logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
 
@@ -123,6 +130,8 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     # Include custom roles with policies (assigned to groups), even if they have no bindings yet
     # Roles without policies don't need bindings since bindings would have empty groups
     custom_roles = Role.objects.filter(system=False, policies__isnull=False).distinct().order_by("pk")
+    if tenant:
+        custom_roles = custom_roles.filter(tenant=tenant)
 
     total_custom_roles = custom_roles.count()
     logger.info(f"Found {total_custom_roles} custom roles with policies to migrate")
@@ -163,6 +172,8 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
         .distinct()
         .order_by("pk")
     )
+    if tenant:
+        groups_with_system_roles = groups_with_system_roles.filter(tenant=tenant)
 
     total_groups = groups_with_system_roles.count()
     logger.info(f"Found {total_groups} groups with system roles to migrate")
@@ -201,7 +212,7 @@ def migrate_all_role_bindings(replicator: RelationReplicator = OutboxReplicator(
     total_migrated = custom_roles_migrated + groups_migrated
 
     logger.info(
-        f"Completed binding scope migration: "
+        f"Completed binding scope migration{tenant_info}: "
         f"{custom_roles_migrated} custom roles + {groups_migrated} groups migrated"
     )
 
