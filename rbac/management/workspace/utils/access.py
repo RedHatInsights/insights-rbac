@@ -31,6 +31,35 @@ from rest_framework.serializers import ValidationError
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
+def get_fallback_workspace_ids(tenant):
+    """
+    Get the IDs of fallback workspaces (root, default, ungrouped) for a tenant.
+
+    When a user has no accessible workspaces, these workspaces are returned
+    to ensure they can still see the basic workspace structure.
+
+    Uses a single database query to fetch all three workspace types.
+
+    Args:
+        tenant: The tenant to get fallback workspaces for
+
+    Returns:
+        set[str]: Set of workspace IDs for root, default, and ungrouped workspaces
+    """
+    workspace_ids = set()
+    workspaces = Workspace.objects.filter(
+        tenant=tenant,
+        type__in=[
+            Workspace.Types.ROOT,
+            Workspace.Types.DEFAULT,
+            Workspace.Types.UNGROUPED_HOSTS,
+        ],
+    )
+    for workspace in workspaces:
+        workspace_ids.add(str(workspace.id))
+    return workspace_ids
+
+
 def filter_top_level_workspaces(queryset):
     """
     Filter workspaces to return only top-level ones.
@@ -218,18 +247,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
                 accessible_workspace_ids.update(ancestor_ids)
         else:
             # If no accessible workspaces, attach at least root, default, and ungrouped workspaces
-            root_workspace = Workspace.objects.filter(tenant=request.tenant, type=Workspace.Types.ROOT).first()
-            default_workspace = Workspace.objects.filter(tenant=request.tenant, type=Workspace.Types.DEFAULT).first()
-            ungrouped_workspace = Workspace.objects.filter(
-                tenant=request.tenant, type=Workspace.Types.UNGROUPED_HOSTS
-            ).first()
-
-            if root_workspace:
-                accessible_workspace_ids.add(str(root_workspace.id))
-            if default_workspace:
-                accessible_workspace_ids.add(str(default_workspace.id))
-            if ungrouped_workspace:
-                accessible_workspace_ids.add(str(ungrouped_workspace.id))
+            accessible_workspace_ids = get_fallback_workspace_ids(request.tenant)
 
         # Store permission tuples for later filtering
         request.permission_tuples = [(None, ws_id) for ws_id in accessible_workspace_ids]
