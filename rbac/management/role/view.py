@@ -404,7 +404,11 @@ class RoleViewSet(
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
 
-        return super().update(request=request, args=args, kwargs=kwargs)
+        try:
+            with transaction.atomic():
+                return super().update(request=request, args=args, kwargs=kwargs)
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
 
     def update(self, request, *args, **kwargs):
         """Update a role.
