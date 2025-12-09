@@ -17,6 +17,7 @@
 """Defines the Workspace Access Permissions class."""
 
 from feature_flags import FEATURE_FLAGS
+from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
 from management.workspace.utils import (
     is_user_allowed_v1,
     is_user_allowed_v2,
@@ -69,6 +70,17 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # Branch based on feature flag - this is the ONLY place this check should occur
         if FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
             # V2: Use Inventory API with fine-grained permissions
+            # For system users (s2s communication), bypass v2 access checks and rely on user.admin
+            # Uses unified check_system_user_access to prevent behavior drift
+            system_check = check_system_user_access(request.user, action=view.action)
+            if system_check.result == SystemUserAccessResult.ALLOWED:
+                return True
+            if system_check.result == SystemUserAccessResult.DENIED:
+                return False
+            if system_check.result == SystemUserAccessResult.CHECK_MOVE_TARGET:
+                return self._check_move_target_exists_v1(request)
+            # SystemUserAccessResult.NOT_SYSTEM_USER - continue with normal checks
+
             # V2 relies solely on accessible workspaces from Inventory API
             if not is_user_allowed_v2(request, perm, ws_id):
                 return False
