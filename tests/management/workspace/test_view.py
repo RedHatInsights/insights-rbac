@@ -1263,6 +1263,40 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response_message.get("name"), wsB.name)
         self.assertEqual(response_message.get("parent_id"), str(wsA.id))
 
+    def test_update_workspace_invalid_uuid(self):
+        """Test that update fails with 400 when workspace id is not a valid UUID."""
+        client = APIClient()
+        invalid_uuid = "invalid-uuid"
+        url = f"/api/rbac/v2/workspaces/{invalid_uuid}/"
+        workspace_data = {"name": "Test"}
+
+        response = client.put(url, workspace_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not a valid UUID", str(response.data))
+
+    def test_retrieve_workspace_invalid_uuid(self):
+        """Test that retrieve fails with 400 when workspace id is not a valid UUID."""
+        client = APIClient()
+        invalid_uuid = "invalid-uuid"
+        url = f"/api/rbac/v2/workspaces/{invalid_uuid}/"
+
+        response = client.get(url, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not a valid UUID", str(response.data))
+
+    def test_delete_workspace_invalid_uuid(self):
+        """Test that delete fails with 400 when workspace id is not a valid UUID."""
+        client = APIClient()
+        invalid_uuid = "invalid-uuid"
+        url = f"/api/rbac/v2/workspaces/{invalid_uuid}/"
+
+        response = client.delete(url, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not a valid UUID", str(response.data))
+
     @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
     def test_edit_workspace_disregard_type(self):
         """Test for creating a workspace."""
@@ -1340,14 +1374,16 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(workspace_event.workspace["id"], deleted_workspace["id"])
 
     def test_delete_workspace_not_found(self):
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": "XXXX"})
+        # Use a valid UUID format that doesn't exist in the database
+        non_existent_uuid = "00000000-0000-0000-0000-000000000000"
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": non_existent_uuid})
         client = APIClient()
         response = client.delete(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         status_code = response.data.get("status")
         detail = response.data.get("detail")
-        self.assertEqual(detail, "Not found.")
+        self.assertEqual(detail, "No Workspace matches the given query.")
         self.assertEqual(status_code, 404)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
@@ -2787,7 +2823,9 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_not_found(self):
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": "XXXX"})
+        # Use a valid UUID format that doesn't exist in the database
+        non_existent_uuid = "00000000-0000-0000-0000-000000000000"
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": non_existent_uuid})
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
 
@@ -2795,7 +2833,7 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
         status_code = response.data.get("status")
         detail = response.data.get("detail")
 
-        self.assertEqual(detail, "Not found.")
+        self.assertEqual(detail, "No Workspace matches the given query.")
         self.assertEqual(status_code, 404)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
