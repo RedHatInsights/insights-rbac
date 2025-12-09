@@ -22,7 +22,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIRequestFactory
 from rest_framework.request import Request
 
-from api.common.pagination import PATH_INFO, StandardResultsSetPagination, V2ResultsSetPagination
+from api.common.pagination import PATH_INFO, StandardResultsSetPagination, V2CursorPagination, V2ResultsSetPagination
 
 
 class PaginationTest(TestCase):
@@ -150,3 +150,215 @@ class V2ResultsSetPaginationTest(TestCase):
         self.assertEqual(len(paginated_queryset), 0)
         self.assertEqual(self.paginator.limit, 0)
         self.assertEqual(self.paginator.max_limit, None)
+
+
+class V2CursorPaginationTest(TestCase):
+    """Tests against the V2CursorPagination functions."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.paginator = V2CursorPagination()
+        # Override ordering to use a field that exists on User model
+        self.paginator.ordering = "-date_joined"
+        self.users_list_comp = [User.objects.create(username=f"cursor_user_{i}") for i in range(25)]
+        self.queryset = User.objects.filter(username__startswith="cursor_user_")
+
+    def tearDown(self):
+        User.objects.filter(username__startswith="cursor_user_").delete()
+
+    def test_default_page_size(self):
+        """Test the default page size."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        self.assertEqual(len(paginated_queryset), 10)
+
+    def test_explicit_limit(self):
+        """Test an explicit limit via page_size_query_param."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        self.assertEqual(len(paginated_queryset), 5)
+
+    def test_max_page_size(self):
+        """Test that max page size is enforced."""
+        self.assertEqual(self.paginator.max_page_size, 1000)
+
+    def test_cursor_query_param(self):
+        """Test that cursor query param is set correctly."""
+        self.assertEqual(self.paginator.cursor_query_param, "cursor")
+
+    def test_get_paginated_response_structure(self):
+        """Test the paginated response structure."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([{"id": 1}])
+
+        self.assertIn("meta", response.data)
+        self.assertIn("links", response.data)
+        self.assertIn("data", response.data)
+        self.assertEqual(response.data["meta"]["limit"], 10)
+        self.assertIn("next", response.data["links"])
+        self.assertIn("previous", response.data["links"])
+
+    def test_get_paginated_response_uses_actual_limit(self):
+        """Test that paginated response uses the actual limit from request."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=25"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([{"id": 1}])
+
+        self.assertEqual(response.data["meta"]["limit"], 25)
+
+    def test_link_rewrite_with_path_info(self):
+        """Test link rewrite with PATH_INFO in request META."""
+        request = Mock()
+        request.META = {PATH_INFO: "/api/rbac/v2/role-bindings/by-subject/"}
+        link = "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=abc123"
+        expected = "/api/rbac/v2/role-bindings/by-subject/?cursor=abc123"
+        result = V2CursorPagination.link_rewrite(request, link)
+        self.assertEqual(result, expected)
+
+    def test_link_rewrite_without_path_info(self):
+        """Test link rewrite without PATH_INFO returns original link."""
+        request = Mock()
+        request.META = {}
+        link = "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=abc123"
+        result = V2CursorPagination.link_rewrite(request, link)
+        self.assertEqual(result, link)
+
+    def test_link_rewrite_with_none_link(self):
+        """Test link rewrite with None link returns None."""
+        request = Mock()
+        request.META = {PATH_INFO: "/api/rbac/v2/role-bindings/by-subject/"}
+        result = V2CursorPagination.link_rewrite(request, None)
+        self.assertIsNone(result)
+
+    @patch("api.common.pagination.CursorPagination.get_next_link", return_value=None)
+    def test_get_next_link_none(self, mock_super):
+        """Test get_next_link returns None when super returns None."""
+        link = self.paginator.get_next_link()
+        self.assertIsNone(link)
+
+    @patch("api.common.pagination.CursorPagination.get_previous_link", return_value=None)
+    def test_get_previous_link_none(self, mock_super):
+        """Test get_previous_link returns None when super returns None."""
+        link = self.paginator.get_previous_link()
+        self.assertIsNone(link)
+
+    @patch("api.common.pagination.CursorPagination.get_next_link")
+    def test_get_next_link_rewrites(self, mock_super):
+        """Test get_next_link rewrites the link."""
+        mock_super.return_value = "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=xyz"
+        self.paginator.request = Mock()
+        self.paginator.request.META = {PATH_INFO: "/api/rbac/v2/role-bindings/by-subject/"}
+        link = self.paginator.get_next_link()
+        self.assertEqual(link, "/api/rbac/v2/role-bindings/by-subject/?cursor=xyz")
+
+    @patch("api.common.pagination.CursorPagination.get_previous_link")
+    def test_get_previous_link_rewrites(self, mock_super):
+        """Test get_previous_link rewrites the link."""
+        mock_super.return_value = "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?cursor=abc"
+        self.paginator.request = Mock()
+        self.paginator.request.META = {PATH_INFO: "/api/rbac/v2/role-bindings/by-subject/"}
+        link = self.paginator.get_previous_link()
+        self.assertEqual(link, "/api/rbac/v2/role-bindings/by-subject/?cursor=abc")
+
+    def test_empty_queryset(self):
+        """Test pagination with empty queryset."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        empty_queryset = User.objects.none()
+
+        paginated_queryset = self.paginator.paginate_queryset(empty_queryset, request)
+        response = self.paginator.get_paginated_response([])
+
+        self.assertEqual(len(paginated_queryset), 0)
+        self.assertEqual(response.data["data"], [])
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    def test_max_page_size_enforced(self):
+        """Test that requests exceeding max_page_size are capped."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=2000"))
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+
+        # Should be capped to max_page_size (1000) or queryset size if smaller
+        self.assertLessEqual(len(paginated_queryset), self.paginator.max_page_size)
+
+    def test_first_page_has_no_previous(self):
+        """Test that first page has no previous link."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([])
+
+        self.assertIsNone(response.data["links"]["previous"])
+
+    def test_last_page_has_no_next(self):
+        """Test that last page has no next link."""
+        # Request all items in one page
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=100"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([])
+
+        self.assertIsNone(response.data["links"]["next"])
+
+    def test_middle_page_has_both_links(self):
+        """Test that middle pages have both next and previous links."""
+        # First, get the first page to obtain cursor for next page
+        request1 = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
+        request1.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        self.paginator.paginate_queryset(self.queryset, request1)
+        response1 = self.paginator.get_paginated_response([])
+
+        # Get the cursor from next link
+        next_link = response1.data["links"]["next"]
+        self.assertIsNotNone(next_link)
+
+        # Extract cursor from link and make second request
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(next_link)
+        cursor = parse_qs(parsed.query).get("cursor", [None])[0]
+        self.assertIsNotNone(cursor)
+
+        # Request second page
+        paginator2 = V2CursorPagination()
+        paginator2.ordering = "-date_joined"
+        request2 = Request(self.factory.get(f"/api/rbac/v2/role-bindings/by-subject/?limit=5&cursor={cursor}"))
+        request2.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginator2.paginate_queryset(self.queryset, request2)
+        response2 = paginator2.get_paginated_response([])
+
+        # Middle page should have both links
+        self.assertIsNotNone(response2.data["links"]["previous"])
+        self.assertIsNotNone(response2.data["links"]["next"])
+
+    def test_cursor_navigation_returns_different_results(self):
+        """Test that navigating with cursor returns different results."""
+        # Get first page
+        request1 = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
+        request1.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        page1 = self.paginator.paginate_queryset(self.queryset, request1)
+        page1_ids = [u.id for u in page1]
+
+        # Get cursor for next page
+        response1 = self.paginator.get_paginated_response([])
+        next_link = response1.data["links"]["next"]
+
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(next_link)
+        cursor = parse_qs(parsed.query).get("cursor", [None])[0]
+
+        # Get second page
+        paginator2 = V2CursorPagination()
+        paginator2.ordering = "-date_joined"
+        request2 = Request(self.factory.get(f"/api/rbac/v2/role-bindings/by-subject/?limit=5&cursor={cursor}"))
+        request2.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        page2 = paginator2.paginate_queryset(self.queryset, request2)
+        page2_ids = [u.id for u in page2]
+
+        # Pages should have different items
+        self.assertEqual(len(set(page1_ids) & set(page2_ids)), 0)
