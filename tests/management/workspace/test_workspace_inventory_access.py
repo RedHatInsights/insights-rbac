@@ -36,6 +36,7 @@ from management.models import (
     Role,
     Workspace,
 )
+from management.permissions.workspace_access import TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
 from management.workspace.service import WorkspaceService
 from django.test import TransactionTestCase
 from rest_framework import status
@@ -691,7 +692,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_with_non_existent_workspace_in_attribute_filter(self, mock_flag, mock_channel):
-        """Test workspace list with attribute filter containing non-existent workspace ID returns default/ungrouped."""
+        """Test workspace list with attribute filter containing non-existent workspace ID returns root/default/ungrouped."""
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -725,13 +726,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 200 with at least default and ungrouped workspaces (new v2 behavior)
-            # Even though the user has no access to any real workspace, they get default/ungrouped
+            # Should return 200 with at least root, default, and ungrouped workspaces (new v2 behavior)
+            # Even though the user has no access to any real workspace, they get root/default/ungrouped
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify default and ungrouped workspaces are returned
+            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
@@ -1155,7 +1157,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_user_without_permissions(self, mock_flag, mock_channel):
-        """Test workspace list for user without any permissions returns at least default and ungrouped workspaces."""
+        """Test workspace list for user without any permissions returns at least root, default, and ungrouped workspaces."""
         # Mock Inventory API to return no workspaces (user has no permissions)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1178,12 +1180,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 200 with at least default and ungrouped workspaces (new v2 behavior)
+            # Should return 200 with at least root, default, and ungrouped workspaces (new v2 behavior)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify default and ungrouped workspaces are returned
+            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
@@ -1304,8 +1307,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_returns_default_and_ungrouped_when_no_access(self, mock_flag, mock_channel):
-        """Test that workspace list returns at least default and ungrouped workspaces when user has no access."""
+    def test_workspace_list_returns_root_default_and_ungrouped_when_no_access(self, mock_flag, mock_channel):
+        """Test that workspace list returns at least root, default, and ungrouped workspaces when user has no access."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1333,12 +1336,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return at least default and ungrouped workspaces
+            # Should return at least root, default, and ungrouped workspaces
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify default and ungrouped workspaces are returned
+            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
@@ -1762,3 +1766,439 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             finally:
                 # Restore original MAX_PAGES
                 checker.MAX_PAGES = original_max_pages
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_move_uses_create_permission_for_target_in_v2(self, mock_flag, mock_channel, send_kafka_message):
+        """Test that workspace move operation uses 'create' permission for target workspace in V2 mode.
+
+        When V2 access check is enabled, the _check_target_workspace_access method should
+        check for 'create' permission on the target workspace (not 'write', which doesn't exist
+        in the SpiceDB schema for rbac/workspace).
+        """
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Track (workspace_id, relation) tuples for precise assertions
+        check_calls = []
+
+        source_workspace_id = str(self.standard_sub_workspace.id)
+        target_workspace_id = str(self.default_workspace.id)
+
+        def check_side_effect(request):
+            # Capture both workspace ID and relation being checked
+            workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
+            check_calls.append((workspace_id, request.relation))
+            mock_response = MagicMock()
+            mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+            return mock_response
+
+        mock_stub.CheckForUpdate.side_effect = check_side_effect
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access for the user
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=[
+                    str(self.standard_workspace.id),
+                    str(self.default_workspace.id),
+                ],
+            )
+
+            # Execute move: move standard_sub_workspace to default_workspace
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_sub_workspace.id},
+            )
+            client = APIClient()
+            data = {"parent_id": str(self.default_workspace.id)}
+            response = client.post(url, data, format="json", **headers)
+
+            # Should succeed
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            # For the /move POST endpoint, permission_from_request returns 'create' (POST -> create)
+            # Both source and target workspaces are checked with 'create' permission
+            # Verify that 'create' permission was checked on source workspace
+            self.assertTrue(
+                any(ws_id == source_workspace_id and rel == "create" for ws_id, rel in check_calls),
+                f"Expected 'create' permission check for source workspace {source_workspace_id}, got: {check_calls}",
+            )
+
+            # Verify that 'create' permission was checked on target workspace
+            self.assertTrue(
+                any(ws_id == target_workspace_id and rel == "create" for ws_id, rel in check_calls),
+                f"Expected 'create' permission check for target workspace {target_workspace_id}, got: {check_calls}",
+            )
+
+            # Verify no 'write' permission checks occurred (doesn't exist in SpiceDB schema)
+            self.assertFalse(
+                any(rel == "write" for _, rel in check_calls),
+                f"Should not check 'write' permission (doesn't exist in schema), got: {check_calls}",
+            )
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_move_denied_when_no_create_permission_on_target_v2(
+        self, mock_flag, mock_channel, send_kafka_message
+    ):
+        """Test that workspace move is denied when user lacks 'create' permission on target workspace in V2 mode."""
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Target workspace ID used to differentiate source vs target checks
+        target_workspace_id = str(self.default_workspace.id)
+
+        # Define permission responses: (workspace_id, relation) -> allowed status
+        # All checks are allowed EXCEPT 'create' on target workspace
+        denied_checks = {(target_workspace_id, "create")}
+
+        def check_side_effect(request):
+            mock_response = MagicMock()
+            workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
+            check_key = (workspace_id, request.relation)
+            mock_response.allowed = (
+                allowed_pb2.Allowed.ALLOWED_FALSE if check_key in denied_checks else allowed_pb2.Allowed.ALLOWED_TRUE
+            )
+            return mock_response
+
+        mock_stub.CheckForUpdate.side_effect = check_side_effect
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access for the user (source workspace)
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            # Execute move: try to move standard_sub_workspace to default_workspace
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_sub_workspace.id},
+            )
+            client = APIClient()
+            data = {"parent_id": target_workspace_id}
+            response = client.post(url, data, format="json", **headers)
+
+            # Should be denied (403 Forbidden)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertEqual(response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
+
+    # ==================== V1 Move Behavior Tests ====================
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
+    def test_workspace_move_admin_target_missing_v1_returns_403(self, mock_flag, send_kafka_message):
+        """Admin move in V1 mode should return 403 when target workspace doesn't exist."""
+        # Create non-existent target workspace ID
+        non_existent_target_id = str(uuid4())
+
+        # Use admin headers (org_admin=True by default in setUp)
+        url = reverse(
+            "v2_management:workspace-move",
+            kwargs={"pk": self.standard_sub_workspace.id},
+        )
+        client = APIClient()
+        data = {"parent_id": non_existent_target_id}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Should be denied (403 Forbidden) because target doesn't exist
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
+    def test_workspace_move_admin_target_exists_v1_allows_move(self, mock_flag, send_kafka_message):
+        """Admin move in V1 mode should succeed when target workspace exists in the same tenant."""
+        # Create a temporary workspace to move (to avoid affecting other tests)
+        temp_workspace = self.service.create(
+            {
+                "name": "Temp Workspace for Admin Move V1",
+                "description": "Will be moved",
+                "parent_id": self.standard_workspace.id,
+            },
+            self.tenant,
+        )
+
+        # Move temp_workspace to default_workspace (which exists)
+        url = reverse(
+            "v2_management:workspace-move",
+            kwargs={"pk": temp_workspace.id},
+        )
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Should succeed
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
+    def test_workspace_move_non_admin_no_write_on_target_v1_returns_403(self, mock_flag, send_kafka_message):
+        """Non-admin move in V1 mode should return 403 when user lacks write access on target workspace."""
+        # Use a unique user for this test to avoid conflicts with other tests
+        unique_user_data = {"username": "test_no_target_access_user", "email": "no_target@example.com"}
+        unique_customer_data = {**self.customer_data, "user_data": unique_user_data}
+
+        # Create request context for non-org admin user
+        request_context = self._create_request_context(unique_customer_data, unique_user_data, is_org_admin=False)
+        headers = request_context["request"].META
+
+        # Setup write access to default_workspace which includes standard_sub_workspace as descendant
+        # This allows the user to access the source workspace
+        self._setup_access_for_principal(
+            unique_user_data["username"],
+            "inventory:groups:write",
+            workspace_id=str(self.standard_workspace.id),  # Parent of standard_sub_workspace
+        )
+
+        # Create a separate workspace that user doesn't have access to (as target)
+        inaccessible_workspace = self.service.create(
+            {
+                "name": "Inaccessible Target Workspace",
+                "description": "User has no access",
+                "parent_id": self.default_workspace.id,
+            },
+            self.tenant,
+        )
+
+        # Try to move standard_sub_workspace to inaccessible_workspace (no write access on target)
+        url = reverse(
+            "v2_management:workspace-move",
+            kwargs={"pk": self.standard_sub_workspace.id},
+        )
+        client = APIClient()
+        data = {"parent_id": str(inaccessible_workspace.id)}
+        response = client.post(url, data, format="json", **headers)
+
+        # Should be denied (403 Forbidden) because user lacks write on target
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
+    def test_workspace_move_non_admin_has_write_on_both_v1_allows_move(self, mock_flag, send_kafka_message):
+        """Non-admin move in V1 mode should succeed when user has write on both source and target.
+
+        In V1 mode, granting write access to a workspace grants access to all its descendants.
+        So granting access to default_workspace grants access to all workspaces under it.
+        """
+        # Use a unique user for this test to avoid conflicts with cached principals
+        unique_user_data = {"username": "test_non_admin_move_v1_user", "email": "test_move@example.com"}
+        unique_customer_data = {**self.customer_data, "user_data": unique_user_data}
+
+        # Create a temporary workspace to move (to avoid affecting other tests)
+        temp_workspace = self.service.create(
+            {
+                "name": "Temp Workspace for Non-Admin Move V1",
+                "description": "Will be moved",
+                "parent_id": self.standard_workspace.id,
+            },
+            self.tenant,
+        )
+
+        # Create request context for non-org admin user with unique username
+        request_context = self._create_request_context(unique_customer_data, unique_user_data, is_org_admin=False)
+        headers = request_context["request"].META
+
+        # Setup write access to default_workspace - this grants access to all descendants
+        # (standard_workspace, temp_workspace) through the V1 permission model
+        self._setup_access_for_principal(
+            unique_user_data["username"],
+            "inventory:groups:write",
+            workspace_id=str(self.default_workspace.id),
+        )
+
+        # Move temp_workspace to default_workspace
+        # Source (temp_workspace): accessible as descendant of default_workspace
+        # Target (default_workspace): directly accessible
+        url = reverse(
+            "v2_management:workspace-move",
+            kwargs={"pk": temp_workspace.id},
+        )
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **headers)
+
+        # Should succeed
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    # ==================== Missing/Invalid parent_id Tests ====================
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_move_missing_parent_id_v2_returns_400(self, mock_flag, mock_channel, send_kafka_message):
+        """Move request with missing parent_id should return 400 (not 403) in V2 mode.
+
+        The permission layer should defer to view-level validation for missing parent_id.
+        """
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access for the user
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_sub_workspace.id},
+            )
+            client = APIClient()
+            # Send request with NO parent_id
+            data = {}
+            response = client.post(url, data, format="json", **headers)
+
+            # Should return 400 BAD REQUEST (not 403)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            # Verify the error message indicates missing parent_id
+            self.assertIn("parent_id", str(response.data))
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_move_invalid_uuid_parent_id_v2_returns_400(self, mock_flag, mock_channel, send_kafka_message):
+        """Move request with invalid UUID parent_id should return 400 (not 403) in V2 mode.
+
+        The permission layer should defer to view-level validation for invalid parent_id.
+        """
+        # Mock Inventory API
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access for the user
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_sub_workspace.id},
+            )
+            client = APIClient()
+            # Send request with invalid UUID parent_id
+            data = {"parent_id": "not-a-valid-uuid"}
+            response = client.post(url, data, format="json", **headers)
+
+            # Should return 400 BAD REQUEST (not 403)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
+    def test_workspace_move_missing_parent_id_v1_returns_400(self, mock_flag, send_kafka_message):
+        """Move request with missing parent_id should return 400 (not 403) in V1 mode.
+
+        The permission layer should defer to view-level validation for missing parent_id.
+        """
+        url = reverse(
+            "v2_management:workspace-move",
+            kwargs={"pk": self.standard_sub_workspace.id},
+        )
+        client = APIClient()
+        # Send request with NO parent_id
+        data = {}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Should return 400 BAD REQUEST (not 403)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # Verify the error message indicates missing parent_id
+        self.assertIn("parent_id", str(response.data))
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
+    def test_workspace_move_invalid_uuid_parent_id_v1_returns_400(self, mock_flag, send_kafka_message):
+        """Move request with invalid UUID parent_id should return 400 (not 403) in V1 mode.
+
+        The permission layer should defer to view-level validation for invalid parent_id.
+        """
+        url = reverse(
+            "v2_management:workspace-move",
+            kwargs={"pk": self.standard_sub_workspace.id},
+        )
+        client = APIClient()
+        # Send request with invalid UUID parent_id
+        data = {"parent_id": "not-a-valid-uuid"}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # Should return 400 BAD REQUEST (not 403)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

@@ -19,10 +19,11 @@
 
 import json
 import logging
-
+from typing import Optional
 
 import grpc
 from django.conf import settings
+from google.protobuf import json_format
 from google.rpc import error_details_pb2
 from grpc_status import rpc_status
 from internal.jwt_utils import JWTManager, JWTProvider
@@ -228,6 +229,74 @@ class RelationsApiReplicator(RelationReplicator):
 
             # Return the last response (for consistency token)
             return responses[-1] if responses else None
+
+    def read_tuples(
+        self,
+        resource_type: str,
+        resource_id: str = "",
+        relation: str = "",
+        subject_type: str = "",
+        subject_id: str = "",
+        subject_relation: Optional[str] = None,
+        resource_namespace: str = "rbac",
+        subject_namespace: str = "rbac",
+    ) -> list[dict]:
+        """Read tuples from the Relations API.
+
+        Args:
+            resource_type: Type of the resource (e.g., "tenant", "workspace", "role_binding", "role")
+            resource_id: ID of the resource (empty string for all)
+            relation: Relation to filter by (empty string for all relations)
+            subject_type: Type of the subject to filter by (empty string for all)
+            subject_id: ID of the subject to filter by (empty string for all)
+            subject_relation: Optional subject relation filter
+            resource_namespace: Namespace for resource (default "rbac")
+            subject_namespace: Namespace for subject (default "rbac")
+
+        Returns:
+            list[dict]: List of tuple dictionaries from Kessel
+
+        Raises:
+            grpc.RpcError: If the API call fails
+        """
+        # Get JWT token for authentication
+        token = jwt_manager.get_jwt_from_redis()
+        metadata = [("authorization", f"Bearer {token}")] if token else []
+
+        with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
+            stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
+
+            request = relation_tuples_pb2.ReadTuplesRequest(
+                filter=relation_tuples_pb2.RelationTupleFilter(
+                    resource_namespace=resource_namespace,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    relation=relation,
+                    subject_filter=relation_tuples_pb2.SubjectFilter(
+                        subject_namespace=subject_namespace,
+                        subject_type=subject_type,
+                        subject_id=subject_id,
+                        relation=subject_relation,
+                    ),
+                )
+            )
+
+            responses = execute_grpc_call(
+                operation_name="read tuples from the relation API server",
+                grpc_callable=lambda: stub.ReadTuples(request, metadata=metadata),
+                fencing_check=None,
+                log_context={
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                    "relation": relation,
+                },
+            )
+
+            result = []
+            if responses:
+                for r in responses:
+                    result.append(json_format.MessageToDict(r))
+            return result
 
 
 class GRPCError:
