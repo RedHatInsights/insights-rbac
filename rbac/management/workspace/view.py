@@ -20,14 +20,13 @@ import logging
 import uuid
 
 import pgtransaction
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ValidationError
 from django.db import OperationalError, transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
 from management.workspace.service import WorkspaceService
-from management.workspace.utils import is_user_allowed
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
 from rest_framework.decorators import action
@@ -163,11 +162,11 @@ class WorkspaceViewSet(BaseV2ViewSet):
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
 
-        # Validate name parameter: reject empty strings and strings containing NUL characters
+        # Validate name parameter: treat empty strings as "return all", reject NUL characters
         if name is not None:
             if not name.strip():
-                raise serializers.ValidationError({"name": "The 'name' query parameter cannot be empty."})
-            if "\x00" in name:
+                name = None  # Treat empty name as unset, returning all results
+            elif "\x00" in name:
                 raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
 
         if type_field != all_types:
@@ -208,9 +207,11 @@ class WorkspaceViewSet(BaseV2ViewSet):
         SerializationFailure. The retry=3 parameter automatically retries the transaction up to
         3 times when SerializationFailure or DeadlockDetected errors occur. This is expected
         behavior and retrying usually succeeds as concurrent transactions complete.
+
+        Note: Access checks for both source and target workspaces are handled by
+        WorkspaceAccessPermission.has_permission() before this method is called.
         """
         target_workspace_id = self._parent_id_query_param_validation(request)
-        self._check_target_workspace_write_access(request, target_workspace_id)
         workspace = self.get_object()
         serializer = self.get_serializer(workspace)
         return serializer.move(workspace, target_workspace_id)
@@ -254,16 +255,6 @@ class WorkspaceViewSet(BaseV2ViewSet):
                     message = error_message
                     break
             raise serializers.ValidationError(message)
-
-    @staticmethod
-    def _check_target_workspace_write_access(request, target_workspace_id: uuid.UUID) -> None:
-        """Check if user has write access to the target workspace."""
-        # Admin users bypass all access checks within the tenant
-        if request.user.admin and Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
-            return
-
-        if not is_user_allowed(request, "write", str(target_workspace_id)):
-            raise PermissionDenied("You do not have write access to the target workspace.")
 
     @staticmethod
     def _parent_id_query_param_validation(request: Request) -> uuid.UUID:

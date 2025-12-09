@@ -19,7 +19,11 @@ from __future__ import absolute_import, unicode_literals
 
 from celery import shared_task
 from django.core.management import call_command
-from internal.utils import clean_invalid_workspace_resource_definitions, replicate_missing_binding_tuples
+from internal.utils import (
+    clean_invalid_workspace_resource_definitions,
+    cleanup_tenant_orphan_bindings,
+    replicate_missing_binding_tuples,
+)
 from management.health.healthcheck import redis_health
 from management.principal.cleaner import (
     clean_tenants_principals,
@@ -109,3 +113,18 @@ def clean_invalid_workspace_resource_definitions_in_worker(dry_run=False):
         dict: Results with roles_checked, resource_definitions_fixed, bindings_deleted, and changes list.
     """
     return clean_invalid_workspace_resource_definitions(dry_run=dry_run)
+
+
+@shared_task
+def cleanup_tenant_orphan_bindings_in_worker(org_id, dry_run=False):
+    """
+    Celery task to clean up orphaned role binding relationships for a tenant.
+
+    Args:
+        org_id (str): Organization ID for the tenant to clean up
+        dry_run (bool): If True, only report what would be deleted without making changes
+
+    Returns:
+        dict: Results with cleanup counts and migration results
+    """
+    return cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)

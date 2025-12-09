@@ -287,6 +287,10 @@ LOGGING = {
 
 if CW_AWS_ACCESS_KEY_ID:
     NAMESPACE = ENVIRONMENT.get_value("APP_NAMESPACE", default="unknown")
+    # Allow different components (e.g., kafka-consumer) to use distinct CloudWatch log streams
+    # by appending a suffix to the namespace-based stream name
+    CW_STREAM_NAME_SUFFIX = ENVIRONMENT.get_value("CW_STREAM_NAME_SUFFIX", default="")
+    CW_STREAM_NAME = f"{NAMESPACE}{CW_STREAM_NAME_SUFFIX}" if CW_STREAM_NAME_SUFFIX else NAMESPACE
 
     boto3_logs_client = boto_client(
         "logs",
@@ -300,7 +304,7 @@ if CW_AWS_ACCESS_KEY_ID:
         "class": "watchtower.CloudWatchLogHandler",
         "boto3_client": boto3_logs_client,
         "log_group_name": CW_LOG_GROUP,
-        "stream_name": NAMESPACE,
+        "stream_name": CW_STREAM_NAME,
         "formatter": LOGGING_FORMATTER,
         "use_queues": True,
         "create_log_group": CW_CREATE_LOG_GROUP,
@@ -589,7 +593,7 @@ V1_ROLE_PERMISSION_BLOCK_LIST = [
 # Read-your-writes settings
 READ_YOUR_WRITES_WORKSPACE_ENABLED = ENVIRONMENT.bool("READ_YOUR_WRITES_WORKSPACE_ENABLED", default=False)
 READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="READ_YOUR_WRITES_CHANNEL")
-READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=2)
+READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=10)
 
 # Workspace settings
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")

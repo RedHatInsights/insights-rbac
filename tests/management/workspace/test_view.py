@@ -35,6 +35,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role, Workspace
+from management.permissions.workspace_access import TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.serializer import WorkspaceEventSerializer
 from management.workspace.service import WorkspaceService
@@ -1846,7 +1847,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         response = client.post(url, workspace_data_for_move, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         response_body = response.json()
-        self.assertEqual(response_body.get("detail"), "You do not have write access to the target workspace.")
+        self.assertEqual(response_body.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
 
     def test_move_parent_with_empty_parent_id(self):
         """Test you cannot move a workspace when empty string is provided as a parent id."""
@@ -2311,10 +2312,10 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         data = {"parent_id": str(target_workspace.id)}
         response = client.post(url, data, format="json", **headers)
 
-        # Verify - Should get 403 from our inner _check_target_workspace_write_access method
+        # Verify - Should get 403 from our permission class's target workspace check
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         # The error message should come from our PermissionDenied exception
-        self.assertIn("You do not have write access to the target workspace", str(response.data))
+        self.assertIn(TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE, str(response.data))
 
     @patch("management.workspace.serializer.WorkspaceSerializer.move")
     def test_move_retry_success_after_serialization_failure(self, mock_serializer_move):
@@ -2626,26 +2627,24 @@ class WorkspaceTestsList(WorkspaceViewTests):
         assert payload.get("data")[0]["name"] == ws_name_1.upper()
 
     def test_workspace_list_filter_by_name_empty_string(self):
-        """Test that filtering by empty name string returns a validation error."""
+        """Test that filtering by empty name string returns all workspaces."""
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?name=", None, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
-        self.assertIn("name", str(response.data))
-        self.assertIn("cannot be empty", str(response.data))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Empty name filter should return all workspaces (same as no filter)
+        self.assertIn("data", response.data)
 
     def test_workspace_list_filter_by_name_whitespace_only(self):
-        """Test that filtering by whitespace-only name string returns a validation error."""
+        """Test that filtering by whitespace-only name string returns all workspaces."""
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?name=   ", None, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.get("content-type"), "application/problem+json")
-        self.assertIn("name", str(response.data))
-        self.assertIn("cannot be empty", str(response.data))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Whitespace-only name filter should return all workspaces (same as no filter)
+        self.assertIn("data", response.data)
 
     def test_workspace_list_filter_by_name_with_nul_character(self):
         """Test that filtering by name containing NUL character returns a validation error."""

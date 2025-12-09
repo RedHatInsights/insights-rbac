@@ -1284,6 +1284,166 @@
         }
       }
     },
+    "/api/utils/cleanup_tenant_orphan_bindings/{org_id}/": {
+      "post": {
+        "tags": [
+          "V2",
+          "Tenant",
+          "Utils"
+        ],
+        "summary": "Clean up orphaned role binding relationships for a tenant",
+        "description": "Triggers a background worker task to clean up orphaned role binding relationships for a tenant. The task uses DFS to discover workspaces from Kessel, identifies orphaned/stale relationships, cleans them, and runs migrate_all_role_bindings() to recreate correct state.",
+        "operationId": "CleanupTenantOrphanBindings",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization ID for the tenant to clean up",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "description": "If true, only report counts without making changes or running migration",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Cleanup task queued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Status message"
+                    },
+                    "org_id": {
+                      "type": "string",
+                      "description": "Organization ID"
+                    },
+                    "dry_run": {
+                      "type": "boolean",
+                      "description": "Whether this is a dry run"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant, TenantMapping, or Workspace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/rebuild_tenant_workspace_relations/{org_id}/": {
+      "post": {
+        "tags": [
+          "V2",
+          "Tenant",
+          "Utils"
+        ],
+        "summary": "Rebuild workspace parent relations for a tenant in Kessel",
+        "description": "Traverses DB workspaces for a tenant and ensures their parent relations exist in Kessel. This should be run BEFORE cleanup_tenant_orphan_bindings if workspace parent relations are suspected to be missing. The hierarchy is: tenant -> root workspace -> default workspace -> other workspaces.",
+        "operationId": "RebuildTenantWorkspaceRelations",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization ID for the tenant to rebuild relations for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "description": "If true, only report what would be added without making changes",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rebuild completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org_id": {
+                      "type": "string",
+                      "description": "Organization ID"
+                    },
+                    "dry_run": {
+                      "type": "boolean",
+                      "description": "Whether this was a dry run"
+                    },
+                    "workspaces_checked": {
+                      "type": "integer",
+                      "description": "Number of workspaces checked in the DB"
+                    },
+                    "workspaces_missing_parent": {
+                      "type": "integer",
+                      "description": "Number of workspaces with missing parent relation in Kessel"
+                    },
+                    "relations_to_add": {
+                      "type": "integer",
+                      "description": "Number of parent relations to add"
+                    },
+                    "relations_added": {
+                      "type": "integer",
+                      "description": "Number of parent relations actually added (0 if dry_run)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant or Workspace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during rebuild operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/bootstrap_tenant/": {
       "post": {
         "tags": [
@@ -2770,15 +2930,17 @@
         "tags": [
           "Relations"
         ],
-        "summary": "Get a resource from relations api.",
-        "description": "Returns resource from relations api.",
+        "summary": "Check a relationship in the relations api.",
+        "description": "Checks if a relationship exists between a resource and subject in the relations api.",
         "requestBody": {
           "content": {
             "application/json": {
               "example": {
-                "resource_type": {
-                  "name": "group",
-                  "namespace": "rbac",
+                "resource": {
+                  "type": {
+                    "name": "group",
+                    "namespace": "rbac"
+                  },
                   "id": "bob_club"
                 },
                 "relation": "member",
@@ -2797,10 +2959,38 @@
         },
         "responses": {
           "200": {
-            "description": "Resource returned."
+            "description": "Relation check result returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
+                      "type": "boolean",
+                      "example": true
+                    }
+                  }
+                }
+              }
+            }
           },
           "204": {
-            "description": "No resource found."
+            "description": "No relation found."
+          },
+          "400": {
+            "description": "gRPC Error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "gRPCError": {
+                    "value": {
+                      "detail": "Error occurred in gRPC call",
+                      "error": "gRPC Error"
+                    }
+                  }
+                }
+              }
+            }
           },
           "500": {
             "description": "Unexpected Error",
@@ -2810,15 +3000,124 @@
                   "$ref": "#/components/schemas/Error500"
                 },
                 "examples": {
+                  "Error": {
+                    "value": {
+                      "detail": "Error occurred in call to check relation endpoint",
+                      "error": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_private/api/relations/read_tuples/": {
+      "post": {
+        "tags": [
+          "Relations"
+        ],
+        "summary": "Read tuples from the relations api.",
+        "description": "Reads relation tuples from the relations api based on filter criteria.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "filter": {
+                  "resource_namespace": "rbac",
+                  "resource_type": "group",
+                  "resource_id": "bob_club",
+                  "relation": "member",
+                  "subject_filter": {
+                    "subject_namespace": "rbac",
+                    "subject_type": "principal",
+                    "subject_id": "bob",
+                    "relation": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tuples returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tuples": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "A relation tuple from the relations API"
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "Success": {
+                    "value": {
+                      "tuples": [
+                        {
+                          "tuple": {
+                            "resource": {
+                              "type": {
+                                "namespace": "rbac",
+                                "name": "group"
+                              },
+                              "id": "bob_club"
+                            },
+                            "relation": "member",
+                            "subject": {
+                              "subject": {
+                                "type": {
+                                  "namespace": "rbac",
+                                  "name": "principal"
+                                },
+                                "id": "bob"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No tuples found."
+          },
+          "400": {
+            "description": "gRPC Error",
+            "content": {
+              "application/json": {
+                "examples": {
                   "gRPCError": {
                     "value": {
                       "detail": "Error occurred in gRPC call",
                       "error": "gRPC Error"
                     }
-                  },
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error500"
+                },
+                "examples": {
                   "Error": {
                     "value": {
-                      "detail": "Error occurred in call to check endpoint",
+                      "detail": "Error occurred in call to read tuples endpoint",
                       "error": "Error message"
                     }
                   }
@@ -3080,6 +3379,103 @@
           }
         }
       }
+    }
+    },
+    "/_private/api/inventory/check_role/{role_uuid}/": {
+      "post": {
+        "tags": [
+          "Inventory"
+        ],
+        "summary": "Check a role has correct V2 relations on inventory api.",
+        "description": "Checks if a role has the correct V2 relations and bindings replicated in the Inventory API. Generates expected tuples and verifies they exist.",
+        "parameters": [
+          {
+            "name": "role_uuid",
+            "in": "path",
+            "description": "UUID of the role to check.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role check result returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "V2_role_checks": {
+                      "type": "object",
+                      "properties": {
+                        "v1_role_uuid": {
+                          "type": "string",
+                          "format": "uuid",
+                          "example": "a8d33564-628f-4eba-bd59-6a2948bfb31e"
+                        },
+                        "v1_role_name": {
+                          "type": "string",
+                          "example": "Example Role"
+                        },
+                        "V2_role_relations_correct": {
+                          "type": "boolean",
+                          "example": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "gRPC Error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "gRPCError": {
+                    "value": {
+                      "detail": "gRPC error occurred during inventory role relation check",
+                      "error": "gRPC Error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Role not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error500"
+                },
+                "examples": {
+                  "Error": {
+                    "value": {
+                      "detail": "Unexpected error occurred during inventory role relation check",
+                      "error": "Error message"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "/utils/kafka_test_message/": {
       "get": {
@@ -3185,8 +3581,7 @@
         }
       }
     }
-  }
-},
+  },
   "servers": [
     {
       "url": "https://mtls.internal.console.stage.redhat.com/api/rbac/v1",

@@ -186,6 +186,41 @@ class MigrateTests(TestCase):
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}
         migrate_data(**kwargs)
 
+        # This role should be skipped in its entirety due to having a permission from an excluded app.
+        self.assertFalse(RoleV2.objects.filter(v1_source=self.role_a1).exists())
+
+        # The V1 role has permissions only in a single workspace, so there should be a single V2 role and a single
+        # binding.
+        role_a2_v2 = RoleV2.objects.get(v1_source=self.role_a2)
+
+        self.assertEqual(RoleV2.Types.CUSTOM, role_a2_v2.type)
+        self.assertEqual(self.role_a2, role_a2_v2.v1_source)
+        self.assertEqual(0, role_a2_v2.children.count())
+        self.assertEqual({"inventory:hosts:write"}, {p.permission for p in role_a2_v2.permissions.all()})
+
+        role_a2_binding = role_a2_v2.bindings.get()
+        self.assertCountEqual([self.group_a2], role_a2_binding.bound_groups())
+        self.assertEqual("workspace", role_a2_binding.resource_type)
+        self.assertEqual(self.workspace_id_1, role_a2_binding.resource_id)
+
+        # The V1 role has permissions in two workspaces, so there should be a single V2 role and two role bindings.
+        role_a3_v2 = RoleV2.objects.get(v1_source=self.role_a3)
+
+        self.assertEqual(RoleV2.Types.CUSTOM, role_a3_v2.type)
+        self.assertEqual(self.role_a3, role_a3_v2.v1_source)
+        self.assertEqual(0, role_a3_v2.children.count())
+        self.assertEqual({"inventory:hosts:write"}, {p.permission for p in role_a3_v2.permissions.all()})
+
+        role_a3_bindings = role_a3_v2.bindings.all()
+        self.assertEqual(2, len(role_a3_bindings))
+        self.assertCountEqual([self.workspace_id_1, self.workspace_id_2], [b.resource_id for b in role_a3_bindings])
+
+        for binding in role_a3_v2.bindings.all():
+            self.assertEqual("workspace", binding.resource_type)
+
+            # No groups are assigned this role.
+            self.assertFalse(binding.bound_groups().exists())
+
         org_id = self.tenant.org_id
         root_workspace_id = str(self.root_workspace.id)
         default_workspace_id = str(self.default_workspace.id)
