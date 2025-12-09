@@ -312,3 +312,49 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn("name", resource)
         self.assertIn("type", resource)
         self.assertEqual(resource["type"], "workspace")
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    def test_by_subject_strips_nul_bytes_from_resource_id(self, mock_permission):
+        """Test that NUL bytes are stripped from resource_id parameter."""
+        url = self._get_by_subject_url()
+        # Include NUL byte in resource_id - should be stripped and return empty results
+        response = self.client.get(
+            f"{url}?resource_id=\x00{self.workspace.id}\x00&resource_type=workspace",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    def test_by_subject_strips_nul_bytes_from_resource_type(self, mock_permission):
+        """Test that NUL bytes are stripped from resource_type parameter."""
+        url = self._get_by_subject_url()
+        # Include NUL byte in resource_type - should be stripped
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=\x00workspace\x00",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    def test_by_subject_nul_only_resource_id_returns_error(self, mock_permission):
+        """Test that resource_id with only NUL bytes returns validation error."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id=\x00&resource_type=workspace",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    def test_by_subject_nul_only_resource_type_returns_error(self, mock_permission):
+        """Test that resource_type with only NUL bytes returns validation error."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=\x00",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
