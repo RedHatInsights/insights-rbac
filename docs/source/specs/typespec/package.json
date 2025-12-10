@@ -17,6 +17,6 @@
     "@typespec/json-schema": "^1.6.0",
     "@typespec/openapi3": "^1.6.0",
     "@typespec/rest": "^0.77.0",
-    "@typespec/versioning": "^0.76.0"
+    "@typespec/versioning": "^0.77.0"
   }
 }
