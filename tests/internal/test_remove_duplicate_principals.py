@@ -86,7 +86,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Mock BOP response
         mock_proxy.return_value = {
             "status_code": 200,
-            "data": [{"username": "testuser", "user_id": 12345}],
+            "data": [{"username": "testuser", "user_id": 12345, "org_id": self.tenant.org_id}],
         }
 
         response = self.client.get(f"{self.url}?user_ids=12345", **self.request.META)
@@ -116,10 +116,10 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         group = Group.objects.create(name="TestGroup", tenant=self.tenant)
         group.principals.add(principal1, principal2)
 
-        # Mock BOP response
+        # Mock BOP response with org_id matching the tenant
         mock_proxy.return_value = {
             "status_code": 200,
-            "data": [{"username": "correctuser", "user_id": 12345}],
+            "data": [{"username": "correctuser", "user_id": 12345, "org_id": self.tenant.org_id}],
         }
 
         response = self.client.get(f"{self.url}?user_ids=12345", **self.request.META)
@@ -132,6 +132,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertEqual(duplicate_set["user_id"], "12345")
         self.assertEqual(duplicate_set["duplicate_count"], 2)
         self.assertEqual(duplicate_set["bop_username"], "correctuser")
+        self.assertEqual(duplicate_set["bop_org_id"], self.tenant.org_id)
         self.assertTrue(duplicate_set["bop_verified"])
 
         # Check that correct principal is marked as will_be_kept
@@ -140,6 +141,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         wrong_principal = next(p for p in principals_data if p["username"] == "wronguser")
 
         self.assertTrue(correct_principal["is_correct_username"])
+        self.assertTrue(correct_principal["is_correct_org"])
         self.assertTrue(correct_principal["will_be_kept"])
         self.assertFalse(wrong_principal["is_correct_username"])
         self.assertFalse(wrong_principal["will_be_kept"])
@@ -226,7 +228,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Mock BOP response
         mock_proxy.return_value = {
             "status_code": 200,
-            "data": [{"username": "correctuser", "user_id": 12345}],
+            "data": [{"username": "correctuser", "user_id": 12345, "org_id": self.tenant.org_id}],
         }
 
         response = self.client.post(f"{self.url}?user_ids=12345", **self.request.META)
@@ -246,6 +248,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertEqual(kept["username"], "correctuser")
         self.assertTrue(kept["verified_with_bop"])
         self.assertTrue(kept["username_matches_bop"])
+        self.assertTrue(kept["org_id_matches_bop"])
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
@@ -315,7 +318,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Mock BOP response
         mock_proxy.return_value = {
             "status_code": 200,
-            "data": [{"username": "correctuser", "user_id": 12345}],
+            "data": [{"username": "correctuser", "user_id": 12345, "org_id": self.tenant.org_id}],
         }
 
         response = self.client.post(f"{self.url}?user_ids=12345", **self.request.META)
@@ -374,7 +377,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Mock BOP response
         mock_proxy.return_value = {
             "status_code": 200,
-            "data": [{"username": "user1", "user_id": 12345}],
+            "data": [{"username": "user1", "user_id": 12345, "org_id": self.tenant.org_id}],
         }
 
         response = self.client.post(f"{self.url}?user_ids=12345", **self.request.META)
@@ -424,8 +427,8 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         mock_proxy.return_value = {
             "status_code": 200,
             "data": [
-                {"username": "user1", "user_id": 12345},
-                {"username": "user2", "user_id": 67890},
+                {"username": "user1", "user_id": 12345, "org_id": self.tenant.org_id},
+                {"username": "user2", "user_id": 67890, "org_id": self.tenant.org_id},
             ],
         }
 
@@ -469,7 +472,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Mock BOP response
         mock_proxy.return_value = {
             "status_code": 200,
-            "data": [{"username": "correctuser", "user_id": 12345}],
+            "data": [{"username": "correctuser", "user_id": 12345, "org_id": self.tenant.org_id}],
         }
 
         response = self.client.post(f"{self.url}?user_ids=12345", **self.request.META)
@@ -519,24 +522,26 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
             tenant=other_tenant,
         )
 
-        # Mock BOP response
+        # Mock BOP response - returns org_id matching self.tenant
+        # This means only principals in self.tenant will match
         mock_proxy.return_value = {
             "status_code": 200,
-            "data": [{"username": "correctuser", "user_id": 12345}],
+            "data": [{"username": "correctuser", "user_id": 12345, "org_id": self.tenant.org_id}],
         }
 
         response = self.client.post(f"{self.url}?user_ids=12345", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = json.loads(response.content)
 
-        # Should remove wrong principals from both tenants
-        self.assertEqual(data["total_removed"], 2)
-        self.assertEqual(data["total_kept"], 2)
+        # Should remove wrong principal from self.tenant and all principals from other_tenant
+        # (since other_tenant org_id doesn't match BOP response)
+        self.assertEqual(data["total_removed"], 3)  # principal_t1_wrong + both principal_t2_*
+        self.assertEqual(data["total_kept"], 1)  # Only principal_t1_correct matches
 
-        # Verify correct principals in both tenants kept
+        # Verify correct principal in self.tenant kept
         self.assertTrue(Principal.objects.filter(uuid=principal_t1_correct.uuid).exists())
-        self.assertTrue(Principal.objects.filter(uuid=principal_t2_correct.uuid).exists())
-
-        # Verify wrong principals deleted
+        # Verify wrong principal in self.tenant deleted
         self.assertFalse(Principal.objects.filter(uuid=principal_t1_wrong.uuid).exists())
+        # Verify all principals in other_tenant deleted (org_id doesn't match BOP)
+        self.assertFalse(Principal.objects.filter(uuid=principal_t2_correct.uuid).exists())
         self.assertFalse(Principal.objects.filter(uuid=principal_t2_wrong.uuid).exists())

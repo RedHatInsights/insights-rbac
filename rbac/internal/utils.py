@@ -1348,20 +1348,23 @@ def fix_admin_default_bindings(org_id: str) -> dict:
 
 
 def _query_bop_for_usernames(proxy, user_ids):
-    """Query BOP for correct usernames for given user_ids.
+    """Query BOP for correct usernames and org_ids for given user_ids.
 
     Args:
         proxy: PrincipalProxy instance to use for BOP queries
         user_ids (list): List of user IDs to query
 
     Returns:
-        tuple: (user_id_to_username dict, error_response or None)
-            - user_id_to_username: Mapping of user_id (str) -> username (str, lowercase)
+        tuple: (user_id_to_info dict, error_response or None)
+            - user_id_to_info: Mapping of user_id (str) -> dict with:
+                - correct_username (str, lowercase): The correct username from BOP
+                - correct_org_id (str): The correct org_id from BOP
+                - org_id (str): Same as correct_org_id (for convenience)
             - error_response: JsonResponse object if error occurred, None otherwise
     """
-    user_id_to_username = {}
+    user_id_to_info = {}
 
-    logger.info(f"Querying BOP for {len(user_ids)} user IDs to verify correct usernames")
+    logger.info(f"Querying BOP for {len(user_ids)} user IDs to verify correct usernames and org_ids")
 
     try:
         resp = proxy.request_filtered_principals(
@@ -1384,11 +1387,18 @@ def _query_bop_for_usernames(proxy, user_ids):
         for item in resp.get("data", []):
             bop_user_id = str(item.get("user_id"))
             bop_username = item.get("username")
+            bop_org_id = item.get("org_id")
             if bop_user_id and bop_username:
-                user_id_to_username[bop_user_id] = bop_username.lower()
-        logger.info(f"Successfully fetched {len(user_id_to_username)} usernames from BOP")
+                correct_username = bop_username.lower()
+                correct_org_id = str(bop_org_id) if bop_org_id else None
+                user_id_to_info[bop_user_id] = {
+                    "correct_username": correct_username,
+                    "correct_org_id": correct_org_id,
+                    "org_id": correct_org_id,  # Alias for convenience
+                }
+        logger.info(f"Successfully fetched {len(user_id_to_info)} usernames and org_ids from BOP")
 
-        return user_id_to_username, None
+        return user_id_to_info, None
 
     except Exception as e:
         error_msg = f"Failed to query BOP for usernames: {e}"
@@ -1418,7 +1428,7 @@ def _parse_user_ids(request):
 
 
 def _fetch_bop_usernames(user_ids, fail_on_error, proxy):
-    """Fetch BOP usernames with error handling.
+    """Fetch BOP usernames and org_ids with error handling.
 
     Args:
         user_ids (list): List of user IDs to query
@@ -1426,15 +1436,16 @@ def _fetch_bop_usernames(user_ids, fail_on_error, proxy):
         proxy: PrincipalProxy instance
 
     Returns:
-        tuple: (user_id_to_username dict, error_response or None)
+        tuple: (user_id_to_info dict, error_response or None)
+            - user_id_to_info: Mapping of user_id -> dict with correct_username, correct_org_id, org_id
     """
-    names, err = _query_bop_for_usernames(proxy, user_ids)
+    info, err = _query_bop_for_usernames(proxy, user_ids)
     if err:
         if fail_on_error:
             return None, err
         logger.warning("BOP lookup failed, continuing without verification")
         return {}, None
-    return names, None
+    return info, None
 
 
 def _get_duplicate_principals(request, user_ids):
@@ -1447,8 +1458,8 @@ def _get_duplicate_principals(request, user_ids):
     Returns:
         JsonResponse: Response with duplicate information
     """
-    # Query BOP for correct usernames (don't fail on error for GET)
-    user_id_to_username, _ = _fetch_bop_usernames(user_ids, fail_on_error=False, proxy=PROXY)
+    # Query BOP for correct usernames and org_ids (don't fail on error for GET)
+    user_id_to_info, _ = _fetch_bop_usernames(user_ids, fail_on_error=False, proxy=PROXY)
 
     # Return information about duplicates
     duplicates_info = []
@@ -1456,25 +1467,33 @@ def _get_duplicate_principals(request, user_ids):
     # Check each user_id individually
     for user_id in user_ids:
         # Get principals if duplicates exist
-        principals = list(Principal.objects.filter(user_id=user_id, type=Principal.Types.USER))
+        principals = list(
+            Principal.objects.filter(user_id=user_id, type=Principal.Types.USER).prefetch_related("tenant")
+        )
         if len(principals) <= 1:
             continue
 
-        correct_username = user_id_to_username.get(user_id)
+        bop_info = user_id_to_info.get(user_id)
+        correct_username = bop_info.get("correct_username") if bop_info else None
+        correct_org_id = bop_info.get("correct_org_id") if bop_info else None
 
         principal_details = []
         for p in principals:
             is_correct_username = p.username.lower() == correct_username if correct_username else None
+            is_correct_org = str(p.tenant.org_id) == correct_org_id if correct_org_id else None
+            is_correct = is_correct_username and is_correct_org if (correct_username and correct_org_id) else None
             principal_details.append(
                 {
                     "id": p.id,
                     "uuid": str(p.uuid),
                     "username": p.username,
+                    "org_id": str(p.tenant.org_id),
                     "type": p.type,
                     "group_count": p.group.count(),
                     "groups": list(p.group.values_list("uuid", "name")),
                     "is_correct_username": is_correct_username,
-                    "will_be_kept": is_correct_username if is_correct_username is not None else False,
+                    "is_correct_org": is_correct_org,
+                    "will_be_kept": is_correct if is_correct is not None else False,
                 }
             )
 
@@ -1483,7 +1502,8 @@ def _get_duplicate_principals(request, user_ids):
                 "user_id": user_id,
                 "duplicate_count": len(principals),
                 "bop_username": correct_username,
-                "bop_verified": correct_username is not None,
+                "bop_org_id": correct_org_id,
+                "bop_verified": correct_username is not None and correct_org_id is not None,
                 "principals": principal_details,
             }
         )
@@ -1511,8 +1531,8 @@ def _remove_duplicate_principals(request, user_ids):
     total_removed = 0
     user_ids_not_found_in_bop = []
 
-    # Query BOP for correct usernames (fail on error for POST)
-    user_id_to_username, error_response = _fetch_bop_usernames(user_ids, fail_on_error=True, proxy=PROXY)
+    # Query BOP for correct usernames and org_ids (fail on error for POST)
+    user_id_to_info, error_response = _fetch_bop_usernames(user_ids, fail_on_error=True, proxy=PROXY)
     if error_response:
         return error_response
 
@@ -1520,18 +1540,27 @@ def _remove_duplicate_principals(request, user_ids):
     for user_id in user_ids:
         with transaction.atomic():
             # Lock the principals for update
-            principals = list(Principal.objects.filter(user_id=user_id, type=Principal.Types.USER).select_for_update())
+            principals = list(
+                Principal.objects.filter(user_id=user_id, type=Principal.Types.USER)
+                .prefetch_related("tenant")
+                .select_for_update()
+            )
 
             # Only process if there are duplicates (count > 1)
             if len(principals) <= 1:
                 continue
 
             # Check if user_id exists in BOP
-            correct_username = user_id_to_username.get(user_id)
+            bop_info = user_id_to_info.get(user_id)
+            correct_username = bop_info.get("correct_username") if bop_info else None
+            correct_org_id = bop_info.get("correct_org_id") if bop_info else None
 
-            if not correct_username:
-                # User ID not found in BOP -> delete ALL principals
-                logger.warning(f"User ID {user_id} not found in BOP. Deleting all {len(principals)} principal(s).")
+            if not correct_username or not correct_org_id:
+                # User ID not found in BOP or missing org_id -> delete ALL principals
+                logger.warning(
+                    f"User ID {user_id} not found in BOP or missing org_id. "
+                    f"Deleting all {len(principals)} principal(s)."
+                )
                 user_ids_not_found_in_bop.append(user_id)
 
             # First pass: identify principal to keep (if any)
@@ -1539,30 +1568,43 @@ def _remove_duplicate_principals(request, user_ids):
             principals_to_delete = []
 
             for principal in principals:
-                if correct_username and principal.username.lower() == correct_username:
-                    # Username matches BOP -> keep
+                principal_username_match = (
+                    principal.username.lower() == correct_username if correct_username else False
+                )
+                principal_org_match = str(principal.tenant.org_id) == correct_org_id if correct_org_id else False
+
+                if principal_username_match and principal_org_match:
+                    # Username and org_id match BOP -> keep
                     principal_to_keep = principal
                     logger.info(
-                        f"Principal username '{principal.username}' matches BOP. Keeping principal "
-                        f"(user_id={user_id}, uuid={principal.uuid})"
+                        f"Principal username '{principal.username}' and "
+                        f"org_id '{principal.tenant.org_id}' match BOP. "
+                        f"Keeping principal (user_id={user_id}, uuid={principal.uuid})"
                     )
                     kept_principals.append(
                         {
                             "uuid": str(principal.uuid),
                             "username": principal.username,
+                            "org_id": str(principal.tenant.org_id),
                             "user_id": principal.user_id,
                             "verified_with_bop": True,
                             "bop_username": correct_username,
+                            "bop_org_id": correct_org_id,
                             "username_matches_bop": True,
+                            "org_id_matches_bop": True,
                         }
                     )
                 else:
-                    # No BOP username OR username doesn't match -> delete
+                    # No BOP info OR username/org_id doesn't match -> delete
                     principals_to_delete.append(principal)
-                    if correct_username:
+                    if correct_username or correct_org_id:
+                        mismatch_reasons = []
+                        if correct_username and not principal_username_match:
+                            mismatch_reasons.append(f"username '{principal.username}' != '{correct_username}'")
+                        if correct_org_id and not principal_org_match:
+                            mismatch_reasons.append(f"org_id '{principal.tenant.org_id}' != '{correct_org_id}'")
                         logger.info(
-                            f"Principal username '{principal.username}' does not match "
-                            f"BOP username '{correct_username}'. "
+                            f"Principal does not match BOP ({', '.join(mismatch_reasons)}). "
                             f"Will delete principal (user_id={user_id}, uuid={principal.uuid})"
                         )
 
@@ -1573,7 +1615,11 @@ def _remove_duplicate_principals(request, user_ids):
 
                 for group in groups:
                     # If we have a correct principal, migrate the group membership
-                    if principal_to_keep and principal_to_keep not in group.principals.all():
+                    if (
+                        principal_to_keep
+                        and principal_to_keep.tenant == group.tenant
+                        and principal_to_keep not in group.principals.all()
+                    ):
                         group.principals.add(principal_to_keep)
                         logger.info(
                             f"Migrated group membership: Added principal {principal_to_keep.username} "
