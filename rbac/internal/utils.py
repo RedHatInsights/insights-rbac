@@ -72,8 +72,11 @@ def get_replicator(write_relationships: str) -> RelationReplicator:
     if option == "logging":
         return LoggingReplicator()
 
-    # "false" or any other value
-    return NoopReplicator()
+    # "false"
+    if option == "false":
+        return NoopReplicator()
+
+    raise ValueError(f"Invalid write_relationships option: {write_relationships}")
 
 
 def build_internal_user(request, json_rh_auth):
