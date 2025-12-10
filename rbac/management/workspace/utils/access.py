@@ -20,6 +20,7 @@ from uuid import UUID
 
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
+from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
 from management.permissions.workspace_inventory_access import (
     WorkspaceInventoryAccessChecker,
 )
@@ -167,6 +168,18 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     Returns:
         bool: True if the user has permission, False otherwise
     """
+    # For system users (s2s communication), bypass v2 access checks and rely on user.admin
+    # Uses unified check_system_user_access to prevent behavior drift
+    # Note: action is not passed here since is_user_allowed_v2 doesn't have view context;
+    # the caller (WorkspaceAccessPermission) handles move-specific logic with action parameter
+    system_check = check_system_user_access(request.user)
+    if system_check.is_system:
+        # For system users, ALLOWED and CHECK_MOVE_TARGET both return True here
+        # (move-specific checks are handled by the caller with full view context)
+        # DENIED returns False
+        return system_check.result != SystemUserAccessResult.DENIED
+    # NOT_SYSTEM_USER - continue with normal checks
+
     # Try to get user_id from principal, request.user, or IT service API
     principal = get_principal_from_request(request)
     if principal is not None and principal.user_id is not None:

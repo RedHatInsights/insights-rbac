@@ -118,6 +118,7 @@ class User:
 
     account: Optional[str] = None
     admin: bool = False
+    internal: bool = False
     access = {}
     system: bool = False
     is_active: bool = True
@@ -136,6 +137,7 @@ class User:
             self.username == other.username
             and self.account == other.account
             and self.admin == other.admin
+            and self.internal == other.internal
             and self.access == other.access
             and self.system == other.system
             and self.is_active == other.is_active
@@ -154,8 +156,8 @@ class User:
         """Return a string representation of the User instance."""
         return (
             f"User(username={self.username!r}, account={self.account!r}, admin={self.admin!r}, "
-            f"system={self.system!r}, is_active={self.is_active!r}, org_id={self.org_id!r}, "
-            f"user_id={self.user_id!r}, bearer_token={'***' if self.bearer_token else ''}, "
+            f"internal={self.internal!r}, system={self.system!r}, is_active={self.is_active!r}, "
+            f"org_id={self.org_id!r}, user_id={self.user_id!r}, bearer_token={'***' if self.bearer_token else ''}, "
             f"client_id={self.client_id!r}, is_service_account={self.is_service_account!r})"
         )
 

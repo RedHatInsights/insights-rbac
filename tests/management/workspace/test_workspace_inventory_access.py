@@ -19,9 +19,10 @@
 import random
 import string
 from importlib import reload
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
+from django.test import TransactionTestCase
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
 from google.protobuf import json_format
@@ -38,7 +39,6 @@ from management.models import (
 )
 from management.permissions.workspace_access import TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
 from management.workspace.service import WorkspaceService
-from django.test import TransactionTestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 from tests.identity_request import BaseIdentityRequest
@@ -692,7 +692,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_with_non_existent_workspace_in_attribute_filter(self, mock_flag, mock_channel):
-        """Test workspace list with attribute filter containing non-existent workspace ID returns root/default/ungrouped."""
+        """Test workspace list with attribute filter containing non-existent workspace ID.
+
+        Returns root/default/ungrouped.
+        """
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1157,7 +1160,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_user_without_permissions(self, mock_flag, mock_channel):
-        """Test workspace list for user without any permissions returns at least root, default, and ungrouped workspaces."""
+        """Test workspace list for user without any permissions.
+
+        Returns at least root, default, and ungrouped workspaces.
+        """
         # Mock Inventory API to return no workspaces (user has no permissions)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1348,13 +1354,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch("management.workspace.utils.access.PrincipalProxy")
-    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    @patch(
+        "management.workspace.utils.access.get_principal_from_request",
+        return_value=None,
+    )
     def test_workspace_access_with_none_principal_fallback_to_it_service(
         self, mock_get_principal, mock_proxy_class, mock_channel
     ):
         """Test workspace access when get_principal_from_request returns None, falls back to IT service."""
-        from unittest.mock import Mock
-
         from management.principal.model import Principal
         from management.workspace.utils.access import is_user_allowed_v2
 
@@ -1385,6 +1392,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_request.user.username = "testuser"
             mock_request.user.org_id = "test-org-123"
             mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
+            mock_request.user.system = False  # Not a system user
             mock_request.tenant = self.tenant
 
             # Call is_user_allowed_v2 directly
@@ -1405,11 +1413,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertIn(expected_principal_id, str(call_args))
 
     @patch("management.workspace.utils.access.PrincipalProxy")
-    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    @patch(
+        "management.workspace.utils.access.get_principal_from_request",
+        return_value=None,
+    )
     def test_workspace_access_with_none_principal_it_service_failure(self, mock_get_principal, mock_proxy_class):
         """Test workspace access when IT service fails to return user_id."""
-        from unittest.mock import Mock
-
         from management.workspace.utils.access import is_user_allowed_v2
 
         # Mock PrincipalProxy to return error
@@ -1425,6 +1434,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request.user.username = "testuser"
         mock_request.user.org_id = "test-org-123"
         mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
+        mock_request.user.system = False  # Not a system user
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1436,17 +1446,19 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             # Verify warning was logged
             mock_logger.warning.assert_called_once_with(
-                "Failed to retrieve user_id from IT service for username: %s", "testuser"
+                "Failed to retrieve user_id from IT service for username: %s",
+                "testuser",
             )
 
     @patch("management.workspace.utils.access.PrincipalProxy")
-    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    @patch(
+        "management.workspace.utils.access.get_principal_from_request",
+        return_value=None,
+    )
     def test_workspace_access_with_none_principal_it_service_empty_response(
         self, mock_get_principal, mock_proxy_class
     ):
         """Test workspace access when IT service returns empty data."""
-        from unittest.mock import Mock
-
         from management.workspace.utils.access import is_user_allowed_v2
 
         # Mock PrincipalProxy to return empty data
@@ -1462,6 +1474,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request.user.username = "testuser"
         mock_request.user.org_id = "test-org-123"
         mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
+        mock_request.user.system = False  # Not a system user
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1473,20 +1486,23 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             # Verify warning was logged
             mock_logger.warning.assert_called_once_with(
-                "Failed to retrieve user_id from IT service for username: %s", "testuser"
+                "Failed to retrieve user_id from IT service for username: %s",
+                "testuser",
             )
 
-    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    @patch(
+        "management.workspace.utils.access.get_principal_from_request",
+        return_value=None,
+    )
     def test_workspace_access_with_none_principal_and_no_username(self, mock_get_principal):
         """Test workspace access when get_principal_from_request returns None and no username available."""
-        from unittest.mock import Mock
-
         from management.workspace.utils.access import is_user_allowed_v2
 
         # Create a mock request with no username and no user_id
         mock_request = Mock()
         mock_request.user.username = None
         mock_request.user.user_id = None  # Explicitly set to None to trigger fallback
+        mock_request.user.system = False  # Not a system user
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1499,11 +1515,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Verify warning was logged
             mock_logger.warning.assert_called_once_with("No username available from request.user, denying access")
 
-    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    @patch(
+        "management.workspace.utils.access.get_principal_from_request",
+        return_value=None,
+    )
     def test_workspace_access_with_none_principal_and_no_org_id(self, mock_get_principal):
         """Test workspace access when get_principal_from_request returns None and no org_id available."""
-        from unittest.mock import Mock
-
         from management.workspace.utils.access import is_user_allowed_v2
 
         # Create a mock request with username but no org_id or user_id
@@ -1511,6 +1528,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request.user.username = "testuser"
         mock_request.user.org_id = None
         mock_request.user.user_id = None  # Explicitly set to None to trigger fallback
+        mock_request.user.system = False  # Not a system user
         mock_request.tenant = self.tenant
 
         with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1525,13 +1543,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch("management.workspace.utils.access.PrincipalProxy")
-    @patch("management.workspace.utils.access.get_principal_from_request", return_value=None)
+    @patch(
+        "management.workspace.utils.access.get_principal_from_request",
+        return_value=None,
+    )
     def test_workspace_access_with_none_principal_logs_debug_for_it_service(
         self, mock_get_principal, mock_proxy_class, mock_channel
     ):
         """Test that workspace access logs debug message when user_id retrieved from IT service."""
-        from unittest.mock import Mock
-
         from management.workspace.utils.access import is_user_allowed_v2
 
         # Mock PrincipalProxy to return user_id from IT service
@@ -1560,6 +1579,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_request.user.username = "testuser"
             mock_request.user.org_id = "test-org-123"
             mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
+            mock_request.user.system = False  # Not a system user
             mock_request.tenant = self.tenant
 
             with patch("management.workspace.utils.access.logger") as mock_logger:
@@ -1656,7 +1676,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     def test_workspace_inventory_access_checker_pagination_constants(self):
         """Test that WorkspaceInventoryAccessChecker uses correct pagination constants."""
-        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+        from management.permissions.workspace_inventory_access import (
+            WorkspaceInventoryAccessChecker,
+        )
 
         checker = WorkspaceInventoryAccessChecker()
         # Verify PAGE_SIZE is set to 1000 for pagination
@@ -1668,7 +1690,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     @patch("management.inventory_client.create_client_channel_inventory")
     def test_lookup_accessible_workspaces_duplicate_continuation_token_guard(self, mock_channel, mock_logger):
         """Guard rail: stop when the server returns the same continuation token that was sent."""
-        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+        from management.permissions.workspace_inventory_access import (
+            WorkspaceInventoryAccessChecker,
+        )
 
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1714,7 +1738,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     @patch("management.inventory_client.create_client_channel_inventory")
     def test_lookup_accessible_workspaces_max_pages_guard(self, mock_channel, mock_logger):
         """Guard rail: stop pagination when MAX_PAGES is reached even if server keeps returning tokens."""
-        from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
+        from management.permissions.workspace_inventory_access import (
+            WorkspaceInventoryAccessChecker,
+        )
 
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1972,7 +1998,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_move_non_admin_no_write_on_target_v1_returns_403(self, mock_flag, send_kafka_message):
         """Non-admin move in V1 mode should return 403 when user lacks write access on target workspace."""
         # Use a unique user for this test to avoid conflicts with other tests
-        unique_user_data = {"username": "test_no_target_access_user", "email": "no_target@example.com"}
+        unique_user_data = {
+            "username": "test_no_target_access_user",
+            "email": "no_target@example.com",
+        }
         unique_customer_data = {**self.customer_data, "user_data": unique_user_data}
 
         # Create request context for non-org admin user
@@ -2022,7 +2051,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         So granting access to default_workspace grants access to all workspaces under it.
         """
         # Use a unique user for this test to avoid conflicts with cached principals
-        unique_user_data = {"username": "test_non_admin_move_v1_user", "email": "test_move@example.com"}
+        unique_user_data = {
+            "username": "test_non_admin_move_v1_user",
+            "email": "test_move@example.com",
+        }
         unique_customer_data = {**self.customer_data, "user_data": unique_user_data}
 
         # Create a temporary workspace to move (to avoid affecting other tests)
@@ -2202,3 +2234,227 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         # Should return 400 BAD REQUEST (not 403)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_system_user_with_admin_bypasses_v2_access_checks(self):
+        """Test that system users (s2s communication) with admin=True bypass v2 access checks."""
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Create a mock request for a system user with admin privileges
+        mock_request = Mock()
+        mock_request.user.system = True
+        mock_request.user.admin = True
+        mock_request.tenant = self.tenant
+
+        # Call is_user_allowed_v2 directly - should return True without any external API calls
+        result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+        # Verify the function returns True (access allowed for system admin)
+        self.assertTrue(result)
+
+    def test_system_user_without_admin_denied_in_v2_access_checks(self):
+        """Test that system users (s2s communication) without admin=True are denied access in v2."""
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Create a mock request for a system user without admin privileges
+        mock_request = Mock()
+        mock_request.user.system = True
+        mock_request.user.admin = False
+        mock_request.tenant = self.tenant
+
+        # Call is_user_allowed_v2 directly - should return False
+        result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+        # Verify the function returns False (access denied for non-admin system user)
+        self.assertFalse(result)
+
+    def test_system_user_without_admin_attribute_denied_in_v2_access_checks(self):
+        """Test that system users without an explicit admin attribute are denied by default.
+
+        This validates the default-deny behavior in is_system_user_admin when the
+        admin attribute is missing from the user object.
+        """
+        from types import SimpleNamespace
+
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Create a mock request for a system user WITHOUT an admin attribute
+        mock_request = Mock()
+        mock_request.user = SimpleNamespace(system=True)  # No admin attribute
+        mock_request.tenant = self.tenant
+
+        # Call is_user_allowed_v2 directly - should return False (default-deny)
+        result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+        # Verify the function returns False (access denied when admin attribute is missing)
+        self.assertFalse(result)
+
+    def test_system_user_admin_bypasses_v2_for_any_operation(self):
+        """Test that system admin users bypass v2 access checks for all operations."""
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        operations = ["view", "create", "edit", "move", "delete"]
+
+        for operation in operations:
+            mock_request = Mock()
+            mock_request.user.system = True
+            mock_request.user.admin = True
+            mock_request.tenant = self.tenant
+
+            # All operations should be allowed for system admin users
+            result = is_user_allowed_v2(mock_request, operation, str(self.standard_workspace.id))
+            self.assertTrue(result, f"System admin should be allowed for operation: {operation}")
+
+    @patch("management.permissions.workspace_access.is_user_allowed_v2")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_permission_class_system_admin_bypasses_v2_for_list(self, mock_flag, mock_is_user_allowed_v2):
+        """Test that WorkspaceAccessPermission bypasses v2 checks for system admin users on list action."""
+        from management.permissions.workspace_access import WorkspaceAccessPermission
+
+        permission = WorkspaceAccessPermission()
+
+        # Create mock request for system admin user
+        mock_request = Mock()
+        mock_request.user.system = True
+        mock_request.user.admin = True
+        mock_request.tenant = self.tenant
+        mock_request.method = "GET"
+
+        # Mock view for list action
+        mock_view = Mock()
+        mock_view.action = "list"
+        mock_view.kwargs = {}
+
+        # Call has_permission
+        result = permission.has_permission(mock_request, mock_view)
+
+        # System admin should be allowed
+        self.assertTrue(result)
+        # V2 access check should NOT be called (bypassed for system users)
+        mock_is_user_allowed_v2.assert_not_called()
+
+    @patch("management.permissions.workspace_access.is_user_allowed_v2")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_permission_class_system_non_admin_denied(self, mock_flag, mock_is_user_allowed_v2):
+        """Test that WorkspaceAccessPermission denies access for system users without admin."""
+        from management.permissions.workspace_access import WorkspaceAccessPermission
+
+        permission = WorkspaceAccessPermission()
+
+        # Create mock request for system non-admin user
+        mock_request = Mock()
+        mock_request.user.system = True
+        mock_request.user.admin = False
+        mock_request.tenant = self.tenant
+        mock_request.method = "GET"
+
+        # Mock view for list action
+        mock_view = Mock()
+        mock_view.action = "list"
+        mock_view.kwargs = {}
+
+        # Call has_permission
+        result = permission.has_permission(mock_request, mock_view)
+
+        # System non-admin should be denied
+        self.assertFalse(result)
+        # V2 access check should NOT be called (system user check happens first)
+        mock_is_user_allowed_v2.assert_not_called()
+
+    @patch("management.workspace.model.Workspace.objects")
+    @patch("management.permissions.workspace_access.is_user_allowed_v2")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_permission_class_system_admin_move_checks_target_exists(
+        self, mock_flag, mock_is_user_allowed_v2, mock_workspace_objects
+    ):
+        """Test that system admin users performing move use v1 target existence check, not v2."""
+        from management.permissions.workspace_access import WorkspaceAccessPermission
+
+        permission = WorkspaceAccessPermission()
+
+        target_workspace_id = str(self.default_workspace.id)
+
+        # Create mock request for system admin user with move action
+        mock_request = Mock()
+        mock_request.user.system = True
+        mock_request.user.admin = True
+        mock_request.tenant = self.tenant
+        mock_request.method = "POST"
+        mock_request.data = {"parent_id": target_workspace_id}
+
+        # Mock view for move action
+        mock_view = Mock()
+        mock_view.action = "move"
+        mock_view.kwargs = {"pk": str(self.standard_sub_workspace.id)}
+
+        # Mock workspace existence check
+        mock_workspace_objects.filter.return_value.exists.return_value = True
+
+        # Call has_permission
+        result = permission.has_permission(mock_request, mock_view)
+
+        # System admin should be allowed
+        self.assertTrue(result)
+        # V2 access check should NOT be called (bypassed for system users)
+        mock_is_user_allowed_v2.assert_not_called()
+        # V1 target existence check should be called
+        mock_workspace_objects.filter.assert_called_once_with(id=target_workspace_id, tenant=self.tenant)
+
+    @patch("management.workspace.model.Workspace.objects")
+    @patch("management.permissions.workspace_access.is_user_allowed_v2")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_permission_class_system_admin_move_denied_when_workspace_missing(
+        self, mock_flag, mock_is_user_allowed_v2, mock_workspace_objects
+    ):
+        """Test that system admin move is denied when target workspace does not exist.
+
+        This tests the deny branch of the v1 existence logic for system users,
+        asserting that v2 is never called even in the deny case.
+        """
+        from management.permissions.workspace_access import (
+            TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE,
+            WorkspaceAccessPermission,
+        )
+
+        permission = WorkspaceAccessPermission()
+
+        nonexistent_workspace_id = str(uuid4())
+
+        # Create mock request for system admin user with move action
+        mock_request = Mock()
+        mock_request.user.system = True
+        mock_request.user.admin = True
+        mock_request.tenant = self.tenant
+        mock_request.method = "POST"
+        mock_request.data = {"parent_id": nonexistent_workspace_id}
+
+        # Mock view for move action
+        mock_view = Mock()
+        mock_view.action = "move"
+        mock_view.kwargs = {"pk": str(self.standard_sub_workspace.id)}
+
+        # Mock workspace existence check to return False (workspace doesn't exist)
+        mock_workspace_objects.filter.return_value.exists.return_value = False
+
+        # Call has_permission
+        result = permission.has_permission(mock_request, mock_view)
+
+        # System admin should be denied because workspace doesn't exist
+        self.assertFalse(result)
+        # V2 access check should NOT be called (bypassed for system users)
+        mock_is_user_allowed_v2.assert_not_called()
+        # V1 target existence check should be called
+        mock_workspace_objects.filter.assert_called_once_with(id=nonexistent_workspace_id, tenant=self.tenant)
+        # Permission message should be set
+        self.assertEqual(permission.message, TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)

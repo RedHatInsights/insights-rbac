@@ -318,7 +318,7 @@ class IdentityHeaderMiddleware:
 
         # Code to be executed for each request/response after
         # the view is called.
-        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
+        is_internal_request = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
         is_system = False
 
         if hasattr(request, "user") and request.user:
@@ -335,17 +335,17 @@ class IdentityHeaderMiddleware:
             status=response.get("status_code"),
         ).inc()
 
-        IdentityHeaderMiddleware.log_request(request, response, is_internal)
+        IdentityHeaderMiddleware.log_request(request, response, is_internal_request)
         return response
 
     @staticmethod
-    def log_request(request, response, is_internal=False):
+    def log_request(request, response, is_internal_request=False):
         """Log requests for identity middleware.
 
         Args:
             request (object): The request object
             response (object): The response object
-            is_internal (bool): Boolean for if request is internal
+            is_internal_request (bool): Boolean for if request is internal
         """
         query_string = ""
         is_admin = False
@@ -357,6 +357,7 @@ class IdentityHeaderMiddleware:
         if request.META.get("QUERY_STRING"):
             query_string = "?{}".format(request.META.get("QUERY_STRING"))
 
+        is_internal = False
         if hasattr(request, "user") and request.user:
             username = request.user.username
             if username:
@@ -365,6 +366,7 @@ class IdentityHeaderMiddleware:
                 org_id = request.user.org_id
                 is_system = request.user.system
                 user_id = request.user.user_id
+                is_internal = getattr(request.user, "internal", False)
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
@@ -408,6 +410,7 @@ class IdentityHeaderMiddleware:
             "is_admin": is_admin,
             "is_system": is_system,
             "is_internal": is_internal,
+            "is_internal_request": is_internal_request,
         }
         logger.info(log_object)
 
