@@ -29,7 +29,9 @@ from django.db import transaction
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import BindingMapping, Group, Role, Workspace
+from management.permission.scope_service import TenantScopeResources
 from management.relation_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -40,7 +42,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
-from management.tenant_mapping.model import TenantMapping
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_service.relations import default_role_binding_tuples
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.utils import create_relationship
@@ -1262,3 +1265,78 @@ def is_str_valid_uuid(uuid_str: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def fix_admin_default_bindings(org_id: str) -> dict:
+    """
+    Fix missing admin default bindings for a tenant.
+
+    Admin default bindings may be missing if the tenant was bootstrapped before
+    the admin default group was seeded. This function re-replicates the admin
+    default bindings for the tenant.
+
+    This is safe to run even when replication is enabled because admin default
+    bindings are NOT customizable (unlike platform default bindings).
+
+    Args:
+        org_id (str): Organization ID for the tenant to fix
+
+    Returns:
+        dict: Results with admin_bindings_replicated count or error
+    """
+    logger = logging.getLogger(__name__)
+
+    try:
+        tenant = Tenant.objects.get(org_id=org_id)
+    except Tenant.DoesNotExist:
+        return {"org_id": org_id, "error": f"Tenant {org_id} not found"}
+
+    try:
+        tenant_mapping = tenant.tenant_mapping
+    except TenantMapping.DoesNotExist:
+        return {"org_id": org_id, "error": "TenantMapping not found. Tenant may not be bootstrapped."}
+
+    try:
+        root_workspace = Workspace.objects.root(tenant=tenant)
+        default_workspace = Workspace.objects.default(tenant=tenant)
+    except Workspace.DoesNotExist as e:
+        return {"org_id": org_id, "error": f"Missing root or default workspace: {str(e)}"}
+
+    try:
+        policy_service = GlobalPolicyIdService.shared()
+        scope_resources = TenantScopeResources.for_models(
+            tenant=tenant,
+            default_workspace=default_workspace,
+            root_workspace=root_workspace,
+        )
+
+        admin_bindings = default_role_binding_tuples(
+            tenant_mapping=tenant_mapping,
+            target_resources=scope_resources,
+            access_type=DefaultAccessType.ADMIN,
+            policy_service=policy_service,
+        )
+
+        if admin_bindings:
+            replicator = OutboxReplicator()
+            replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                    info={
+                        "org_id": org_id,
+                        "admin_only": True,
+                        "admin_bindings_count": len(admin_bindings),
+                    },
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=admin_bindings,
+                )
+            )
+            return {"org_id": org_id, "admin_bindings_replicated": len(admin_bindings)}
+        else:
+            return {"org_id": org_id, "admin_bindings_replicated": 0}
+
+    except DefaultGroupNotAvailableError:
+        return {"org_id": org_id, "error": "Admin default group not available"}
+    except Exception as e:
+        logger.error(f"Error fixing admin default bindings for tenant {org_id}: {str(e)}", exc_info=True)
+        return {"org_id": org_id, "error": str(e)}

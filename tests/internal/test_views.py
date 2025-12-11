@@ -1295,6 +1295,81 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_force_admin_only_bootstrap(self, replicate):
+        """Test force_admin_only=true for bootstrap_tenant endpoint.
+
+        Admin default bindings are NOT customizable, so force_admin_only is safe
+        even when replication is enabled (unlike force=true).
+        """
+        from management.group.definer import seed_group
+
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+
+        # Seed the platform/admin default groups so GlobalPolicyIdService can find them
+        seed_group()
+
+        # Test 1: Non-existent tenant returns error
+        payload = {"org_ids": ["nonexistent_org"]}
+        response = self.client.post(
+            "/_private/api/utils/bootstrap_tenant/?force_admin_only=true",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result = response.json()["results"][0]
+        self.assertEqual(result["org_id"], "nonexistent_org")
+        self.assertIn("error", result)
+
+        # Test 2: Unbootstrapped tenant (no TenantMapping) returns error
+        new_tenant = Tenant.objects.create(org_id="unbootstrapped_org")
+        payload = {"org_ids": [new_tenant.org_id]}
+        response = self.client.post(
+            "/_private/api/utils/bootstrap_tenant/?force_admin_only=true",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result = response.json()["results"][0]
+        self.assertIn("error", result)
+        self.assertIn("TenantMapping not found", result["error"])
+        new_tenant.delete()
+
+        # Test 3: Bootstrapped tenant - should succeed and replicate admin bindings
+        bootstrap_service = V2TenantBootstrapService(replicator)
+        bootstrapped = bootstrap_service.bootstrap_tenant(self.tenant)
+        tenant_mapping = self.tenant.tenant_mapping
+        tuples.clear()
+
+        payload = {"org_ids": [self.tenant.org_id]}
+        response = self.client.post(
+            "/_private/api/utils/bootstrap_tenant/?force_admin_only=true",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result = response.json()["results"][0]
+        self.assertEqual(result["org_id"], self.tenant.org_id)
+        self.assertIn("admin_bindings_replicated", result)
+        self.assertGreater(result["admin_bindings_replicated"], 0)
+        self.assertGreater(len(tuples), 0)
+
+        # Verify tuples include admin group bindings (subject relation with admin group UUID)
+        admin_group_uuid = str(tenant_mapping.default_admin_group_uuid)
+        found_admin_binding = False
+        for t in tuples:
+            # RelationTuple has: relation, subject_type_name, subject_id
+            if t.relation == "subject" and t.subject_type_name == "group" and admin_group_uuid in t.subject_id:
+                found_admin_binding = True
+                break
+        self.assertTrue(found_admin_binding, f"No admin binding found for group {admin_group_uuid}")
+
     def test_listing_migration_resources(self):
         """Test that we can list migration resources."""
         org_id = "12345678"
