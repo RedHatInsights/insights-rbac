@@ -59,7 +59,19 @@ class RoleBindingViewSet(BaseV2ViewSet):
 
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
-        """List role bindings grouped by subject."""
+        """
+        List role bindings grouped by subject.
+
+        Query Parameters:
+            resource_type (required): Type of the resource (e.g., "workspace" or "rbac/workspace").
+            resource_id (required): Identifier of the resource (e.g., workspace UUID).
+            subject_type (optional): Filter by subject type ("group" or "user").
+            subject_id (optional): Filter by subject UUID.
+            parent_role_bindings (optional): If "true", use the Relations API to include inherited bindings.
+            fields (optional): Comma-separated subset of top-level fields to include.
+            order_by (optional): Ordering for results ("latest_modified" or "-latest_modified").
+            limit (optional): Page size for cursor pagination (default: 10, max: 1000).
+        """
         resource_id = request.query_params.get("resource_id")
         resource_type_param = request.query_params.get("resource_type")
         if not resource_id:
