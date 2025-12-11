@@ -295,7 +295,9 @@ class RoleBindingViewSet(BaseV2ViewSet):
                 return RoleBindingGroup.objects.none()
             base = RoleBindingGroup.objects.filter(binding__uuid__in=binding_uuids)
         else:
-            base = RoleBindingGroup.objects.filter(binding__resource_type=resource_type, binding__resource_id=resource_id)
+            base = RoleBindingGroup.objects.filter(
+                binding__resource_type=resource_type, binding__resource_id=resource_id
+            )
 
         return base.prefetch_related(Prefetch("binding", queryset=binding_queryset))
 
@@ -376,7 +378,9 @@ class RoleBindingViewSet(BaseV2ViewSet):
                 request = lookup_pb2.LookupSubjectsRequest(**request_kwargs)
                 logger.info("LookupSubjects request payload: %s", request)
 
-                responses: Iterable[lookup_pb2.LookupSubjectsResponse] = stub.LookupSubjects(request, metadata=metadata)
+                responses: Iterable[lookup_pb2.LookupSubjectsResponse] = stub.LookupSubjects(
+                    request, metadata=metadata
+                )
                 for idx, response in enumerate(responses, start=1):
                     payload = json_format.MessageToDict(response)
                     logger.info("LookupSubjects response #%s: %s", idx, payload)

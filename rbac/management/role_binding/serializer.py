@@ -18,8 +18,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Iterable, List, Optional
-from uuid import UUID
+from typing import Any, Iterable, Optional
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -111,10 +110,7 @@ class RoleBindingBySubjectSerializer(serializers.Serializer):
             binding: RoleBinding = binding_entry.binding  # type: ignore[attr-defined]
             if not binding:
                 continue
-            if (
-                binding.resource_type == request.resource_type
-                and binding.resource_id == request.resource_id
-            ):
+            if binding.resource_type == request.resource_type and binding.resource_id == request.resource_id:
                 continue
             parent_key = f"{binding.resource_type}:{binding.resource_id}"
             if parent_key in parents:
@@ -145,7 +141,7 @@ class RoleBindingBySubjectSerializer(serializers.Serializer):
 
     def _serialize_principal_subject(self, principal: Principal) -> dict:
         """Serialize a user subject payload."""
-        payload = {
+        payload: dict[str, Any] = {
             "type": "user",
             "user": {
                 "id": str(principal.uuid),
@@ -199,11 +195,7 @@ class RoleBindingBySubjectSerializer(serializers.Serializer):
 
         name = None
         if tenant:
-            workspace = (
-                Workspace.objects.filter(id=resource_id, tenant=tenant)
-                .only("id", "name")
-                .first()
-            )
+            workspace = Workspace.objects.filter(id=resource_id, tenant=tenant).only("id", "name").first()
             if workspace:
                 name = workspace.name
 

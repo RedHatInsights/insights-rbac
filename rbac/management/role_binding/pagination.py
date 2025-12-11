@@ -25,4 +25,3 @@ class RoleBindingCursorPagination(CursorPagination):
     page_size_query_param = "limit"
     max_page_size = 1000
     ordering = "-latest_modified"
-
