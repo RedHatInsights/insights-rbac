@@ -208,7 +208,8 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
                     f"{obj_reporter}/{obj.get('resourceType', '')}:{obj.get('resourceId', '')}/"
                     f"{relation}#{subj_reporter}/{subj.get('resourceType', '')}:{subj.get('resourceId', '')}"
                 )
-                check_list.append(check_str)
+                check_exists = self.check_inventory_core(check)
+                check_list.append({"check": check_str, "exists": check_exists})
         return bootstrapped_tenant_correct, check_list
 
 
