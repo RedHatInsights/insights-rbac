@@ -193,7 +193,23 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
                 logger.warning(f'{mapping["org_id"]} does not have the expected hierarchy for bootstrapped tenant.')
             else:
                 logger.info(f'{mapping["org_id"]} is correctly bootstrapped.')
-        return bootstrapped_tenant_correct
+
+            # Convert checks to readable format for logging in response
+            check_list = []
+            for check in checks:
+                check_dict = json_format.MessageToDict(check)
+                obj = check_dict.get("object", {})
+                subj = check_dict.get("subject", {}).get("resource", {})
+                relation = check_dict.get("relation", "")
+                obj_reporter = obj.get("reporter", {}).get("type", "")
+                subj_reporter = subj.get("reporter", {}).get("type", "")
+
+                check_str = (
+                    f"{obj_reporter}/{obj.get('resourceType', '')}:{obj.get('resourceId', '')}/"
+                    f"{relation}#{subj_reporter}/{subj.get('resourceType', '')}:{subj.get('resourceId', '')}"
+                )
+                check_list.append(check_str)
+        return bootstrapped_tenant_correct, check_list
 
 
 class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
