@@ -168,7 +168,8 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
                             resource_id=mapping["tenant_mapping"]["default_group_uuid"],
                             resource_type="group",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
+                        ),
+                        relation="member",
                     ),
                 ),
                 # Check default admin role binding is assigned to correct group
@@ -184,7 +185,8 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
                             resource_id=mapping["tenant_mapping"]["default_admin_group_uuid"],
                             resource_type="group",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
+                        ),
+                        relation="member",
                     ),
                 ),
             ]
@@ -199,14 +201,18 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
             for check in checks:
                 check_dict = json_format.MessageToDict(check)
                 obj = check_dict.get("object", {})
-                subj = check_dict.get("subject", {}).get("resource", {})
+                subject = check_dict.get("subject", {})
+                subject_resource = subject.get("resource", {})
                 relation = check_dict.get("relation", "")
+                subject_relation = subject.get("relation", "")
                 obj_reporter = obj.get("reporter", {}).get("type", "")
-                subj_reporter = subj.get("reporter", {}).get("type", "")
+                subject_reporter = subject_resource.get("reporter", {}).get("type", "")
 
+                subject_relation_suffix = f"#{subject_relation}" if subject_relation else ""
                 check_str = (
                     f"{obj_reporter}/{obj.get('resourceType', '')}:{obj.get('resourceId', '')}/"
-                    f"{relation}#{subj_reporter}/{subj.get('resourceType', '')}:{subj.get('resourceId', '')}"
+                    f"{relation}#{subject_reporter}/{subject_resource.get('resourceType', '')}:"
+                    f"{subject_resource.get('resourceId', '')}{subject_relation_suffix}"
                 )
                 check_exists = self.check_inventory_core(check)
                 check_list.append({"check": check_str, "exists": check_exists})
