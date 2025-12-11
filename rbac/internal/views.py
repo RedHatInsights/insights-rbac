@@ -1899,8 +1899,12 @@ def check_bootstrapped_tenants(request, org_id):
             },
         }
         try:
-            bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
-            bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+            bootstrap_tenants_correct, checks = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
+            bootstrapped_tenant_response = {
+                "org_id": tenant.org_id,
+                "bootstrapped_correct": bootstrap_tenants_correct,
+                "relations_checked": checks,
+            }
         except RpcError as e:
             return JsonResponse(
                 {"detail": "gRPC error occurred during inventory bootstrapped tenant check", "error": str(e)},
