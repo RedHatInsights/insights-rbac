@@ -563,7 +563,7 @@ INVENTORY_API_TOKEN_URL = ENVIRONMENT.get_value(
     default="https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token",
 )
 INVENTORY_API_LOCAL = ENVIRONMENT.bool("INVENTORY_API_LOCAL", default=True)
-INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9001")
+INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
 KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME = "kessel-inventory"
 INVENTORY_API_PORT = 9000
 if CLOWDER_ENABLED:
