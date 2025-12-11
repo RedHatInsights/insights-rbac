@@ -107,17 +107,17 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
         if mapping:
             # If mapping provided create the correct check requests for check_relation_core
             checks = [
-                # Check root workspace has correct default workspace
+                # Check default workspace has root workspace as parent
                 CheckRequest(
                     object=resource_reference_pb2.ResourceReference(
-                        resource_id=mapping["root_workspace"],
+                        resource_id=mapping["default_workspace"],
                         resource_type="workspace",
                         reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
                     ),
                     relation="parent",
                     subject=subject_reference_pb2.SubjectReference(
                         resource=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["default_workspace"],
+                            resource_id=mapping["root_workspace"],
                             resource_type="workspace",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
                         )
