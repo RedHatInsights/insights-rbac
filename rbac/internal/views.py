@@ -38,6 +38,7 @@ from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     delete_bindings,
+    fix_admin_default_bindings,
     get_or_create_ungrouped_workspace,
     load_request_body,
     read_tuples_from_kessel,
@@ -971,14 +972,18 @@ def fetch_replication_data(request):
 def bootstrap_tenant(request):
     """View method for bootstrapping a tenant.
 
-    POST /_private/api/utils/bootstrap_tenant/?org_id=12345&force=false
+    POST /_private/api/utils/bootstrap_tenant/?force=false&force_admin_only=false
 
-    org_id:
-        (required) The org_id of the Tenant to bootstrap.
+    Body: {"org_ids": ["12345", "67890"]}
 
     force:
         Whether or not to force replication to happen, even if the Tenant is already bootstrapped.
-        Cannot be 'true' if replication is on, due to inconsistency risk.
+        Cannot be 'true' if replication is on, due to inconsistency risk with custom default groups.
+
+    force_admin_only:
+        Re-replicate only admin default bindings. This is SAFE even when replication is on because
+        admin default bindings are NOT customizable (unlike platform default bindings).
+        Use this to fix tenants that were bootstrapped before admin default groups were seeded.
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
@@ -989,17 +994,28 @@ def bootstrap_tenant(request):
 
     org_ids_data = json.loads(request.body.decode("utf-8").replace("'", '"'))
     force = request.GET.get("force", "false").lower() == "true"
+    force_admin_only = request.GET.get("force_admin_only", "false").lower() == "true"
+
     if "org_ids" not in org_ids_data or len(org_ids_data["org_ids"]) == 0:
         return HttpResponse(
             'Invalid request: the "org_ids" array in the body must contain at least one org_id', status=400
         )
     org_ids = org_ids_data["org_ids"]
+
+    # force=true has race condition risk with custom default group creation
+    # force_admin_only=true is safe because admin default bindings are not customizable
     if force and settings.REPLICATION_TO_RELATION_ENABLED:
         return HttpResponse(
             "Forcing replication is not allowed when replication is on, "
             "due to race condition with default group customization.",
             status=400,
         )
+
+    # Handle force_admin_only separately - this is safe even with replication on
+    if force_admin_only:
+        results = [fix_admin_default_bindings(org_id) for org_id in org_ids]
+        return JsonResponse({"results": results}, status=200)
+
     with transaction.atomic():
         bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         for org_id in org_ids:

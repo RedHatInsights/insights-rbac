@@ -1498,7 +1498,17 @@
             "name": "force",
             "in": "query",
             "required": false,
-            "description": "Whether or not to force replication to happen, even if the Tenant is already bootstrapped. Cannot be 'true' if replication is on, due to inconsistency risk.",
+            "description": "Whether or not to force replication to happen, even if the Tenant is already bootstrapped. Cannot be 'true' if replication is on, due to inconsistency risk with custom default groups.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "force_admin_only",
+            "in": "query",
+            "required": false,
+            "description": "Re-replicate only admin default bindings. This is SAFE even when replication is on because admin default bindings are NOT customizable (unlike platform default bindings). Use this to fix tenants that were bootstrapped before admin default groups were seeded.",
             "schema": {
               "default": false,
               "type": "boolean"
@@ -1507,7 +1517,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Bootstrap tenant with org_id finished."
+            "description": "Bootstrap tenant with org_id finished. When force_admin_only=true, returns JSON with results array containing admin_bindings_replicated count or error for each org_id."
           },
           "400": {
             "description": "Invalid request, must supply the 'org_id' query parameter.",
