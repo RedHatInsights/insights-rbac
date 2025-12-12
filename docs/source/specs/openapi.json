@@ -3731,7 +3731,18 @@
           },
           {
             "type": "object",
+            "required": [
+              "user_available",
+              "first_name",
+              "last_name",
+              "email"
+            ],
             "properties": {
+              "user_available": {
+                "type": "boolean",
+                "enum": [true],
+                "example": true
+              },
               "first_name": {
                 "type": "string",
                 "example": "Jane"
@@ -3749,16 +3760,26 @@
         ]
       },
       "CrossAccountRequestByUserId": {
+
         "allOf": [
           {
             "$ref": "#/components/schemas/CrossAccountRequest"
           },
           {
             "type": "object",
+            "required": [
+              "user_id",
+              "user_available"
+            ],
             "properties": {
               "user_id": {
                 "type": "string",
                 "example": "1234"
+              },
+              "user_available": {
+                "type": "boolean",
+                "enum": [false],
+                "example": false
               }
             }
           }

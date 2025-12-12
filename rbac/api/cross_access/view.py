@@ -189,9 +189,16 @@ class CrossAccountRequestViewSet(
 
         # Replace the user_id with user's info
         for element in result.data["data"]:
-            user_id = element.pop("user_id")
-            requestor_info = principals[user_id]
-            element.update(requestor_info)
+            user_id = element["user_id"]
+            requestor_info = principals.get(user_id)
+
+            if requestor_info is not None:
+                element["user_available"] = True
+
+                del element["user_id"]
+                element.update(requestor_info)
+            else:
+                element["user_available"] = False
 
         return result
 
