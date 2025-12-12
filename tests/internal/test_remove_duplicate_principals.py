@@ -26,6 +26,7 @@ from api.models import Tenant
 from management.models import Group, Principal
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
+from tests.internal.test_views import valid_destructive_time
 
 
 @override_settings(
@@ -146,6 +147,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertFalse(wrong_principal["is_correct_username"])
         self.assertFalse(wrong_principal["will_be_kept"])
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_bop_query_failure(self, mock_proxy):
         """Test POST when BOP query fails returns 500."""
@@ -160,6 +162,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         data = json.loads(response.content)
         self.assertIn("BOP query failed", data["error"])
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_bop_query_exception(self, mock_proxy):
         """Test POST when BOP query raises exception returns 500."""
@@ -172,6 +175,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertIn("BOP query failed", data["error"])
         self.assertIn("Connection timeout", data["details"])
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_user_id_not_in_bop_deletes_all(self, mock_proxy, mock_replicator):
@@ -207,6 +211,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Verify principals were deleted
         self.assertEqual(Principal.objects.filter(user_id="12345").count(), 0)
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_username_mismatch_deletes_incorrect(self, mock_proxy, mock_replicator):
@@ -250,6 +255,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertTrue(kept["username_matches_bop"])
         self.assertTrue(kept["org_id_matches_bop"])
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_no_matching_username_deletes_all(self, mock_proxy, mock_replicator):
@@ -284,6 +290,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Verify all principals deleted
         self.assertEqual(Principal.objects.filter(user_id="12345").count(), 0)
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_migrates_group_memberships(self, mock_proxy, mock_replicator):
@@ -347,6 +354,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # (group2 already had correct_principal so no addition needed)
         self.assertGreaterEqual(mock_replicator.call_count, 2)
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_only_processes_user_type(self, mock_proxy, mock_replicator):
@@ -391,6 +399,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Verify service account was not touched
         self.assertTrue(Principal.objects.filter(uuid=sa.uuid).exists())
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_multiple_user_ids(self, mock_proxy, mock_replicator):
@@ -447,6 +456,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertFalse(Principal.objects.filter(uuid=user1_wrong.uuid).exists())
         self.assertFalse(Principal.objects.filter(uuid=user2_wrong.uuid).exists())
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_verifies_replication_event_details(self, mock_proxy, mock_replicator):
@@ -483,6 +493,7 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         # Should be called at least twice: once for removal, once for addition
         self.assertGreaterEqual(mock_replicator.call_count, 2, "Should have multiple replication calls")
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
     def test_post_handles_multiple_tenants_separately(self, mock_proxy, mock_replicator):

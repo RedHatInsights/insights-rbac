@@ -1271,7 +1271,6 @@ def is_str_valid_uuid(uuid_str: str) -> bool:
         return False
 
 
-<<<<<<< HEAD
 def fix_admin_default_bindings(org_id: str) -> dict:
     """
     Fix missing admin default bindings for a tenant.

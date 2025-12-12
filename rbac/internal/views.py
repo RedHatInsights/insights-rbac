@@ -786,6 +786,8 @@ def remove_duplicate_principals(request):
         return _get_duplicate_principals(request, user_ids)
 
     if request.method == "POST":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
         return _remove_duplicate_principals(request, user_ids)
 
 
