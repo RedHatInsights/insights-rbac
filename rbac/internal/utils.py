@@ -26,12 +26,15 @@ from typing import Optional
 import jsonschema
 from django.conf import settings
 from django.db import transaction
+from django.http import HttpResponse, JsonResponse
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.models import BindingMapping, Group, Role, Workspace
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.models import BindingMapping, Group, Principal, Role, Workspace
 from management.permission.scope_service import TenantScopeResources
+from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -52,6 +55,7 @@ from api.models import Tenant, User
 
 
 logger = logging.getLogger(__name__)
+PROXY = PrincipalProxy()
 
 
 def get_replicator(write_relationships: str) -> RelationReplicator:
@@ -1340,3 +1344,336 @@ def fix_admin_default_bindings(org_id: str) -> dict:
     except Exception as e:
         logger.error(f"Error fixing admin default bindings for tenant {org_id}: {str(e)}", exc_info=True)
         return {"org_id": org_id, "error": str(e)}
+
+
+def _query_bop_for_usernames(proxy, user_ids):
+    """Query BOP for correct usernames and org_ids for given user_ids.
+
+    Args:
+        proxy: PrincipalProxy instance to use for BOP queries
+        user_ids (list): List of user IDs to query
+
+    Returns:
+        tuple: (user_id_to_info dict, error_response or None)
+            - user_id_to_info: Mapping of user_id (str) -> dict with:
+                - correct_username (str, lowercase): The correct username from BOP
+                - correct_org_id (str): The correct org_id from BOP
+                - org_id (str): Same as correct_org_id (for convenience)
+            - error_response: JsonResponse object if error occurred, None otherwise
+    """
+    user_id_to_info = {}
+
+    logger.info(f"Querying BOP for {len(user_ids)} user IDs to verify correct usernames and org_ids")
+
+    try:
+        resp = proxy.request_filtered_principals(
+            user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
+        )
+
+        if resp.get("status_code") != 200:
+            error_msg = f"BOP query failed with status {resp.get('status_code')}: {resp.get('errors')}"
+            logger.error(error_msg)
+            error_response = JsonResponse(
+                {
+                    "error": "BOP query failed. Cannot proceed without verification.",
+                    "details": error_msg,
+                    "status_code": resp.get("status_code"),
+                },
+                status=500,
+            )
+            return None, error_response
+
+        for item in resp.get("data", []):
+            bop_user_id = str(item.get("user_id"))
+            bop_username = item.get("username")
+            bop_org_id = item.get("org_id")
+            if bop_user_id and bop_username:
+                correct_username = bop_username.lower()
+                correct_org_id = str(bop_org_id) if bop_org_id else None
+                user_id_to_info[bop_user_id] = {
+                    "correct_username": correct_username,
+                    "correct_org_id": correct_org_id,
+                    "org_id": correct_org_id,  # Alias for convenience
+                }
+        logger.info(f"Successfully fetched {len(user_id_to_info)} usernames and org_ids from BOP")
+
+        return user_id_to_info, None
+
+    except Exception as e:
+        error_msg = f"Failed to query BOP for usernames: {e}"
+        logger.error(error_msg)
+        error_response = JsonResponse(
+            {"error": "BOP query failed. Cannot proceed without verification.", "details": error_msg}, status=500
+        )
+        return None, error_response
+
+
+def _parse_user_ids(request):
+    """Parse the comma-separated list of user_ids from the request."""
+    user_ids_param = request.GET.get("user_ids")
+
+    if not user_ids_param:
+        return HttpResponse(
+            'Missing required parameter "user_ids". Provide a comma-separated list of user IDs.', status=400
+        )
+
+    # Parse the comma-separated list of user_ids
+    user_ids = [uid.strip() for uid in user_ids_param.split(",") if uid.strip()]
+
+    if not user_ids:
+        return HttpResponse('Invalid "user_ids" parameter. Provide at least one user ID.', status=400)
+
+    return user_ids
+
+
+def _fetch_bop_usernames(user_ids, fail_on_error, proxy):
+    """Fetch BOP usernames and org_ids with error handling.
+
+    Args:
+        user_ids (list): List of user IDs to query
+        fail_on_error (bool): Whether to return error response on BOP failure
+        proxy: PrincipalProxy instance
+
+    Returns:
+        tuple: (user_id_to_info dict, error_response or None)
+            - user_id_to_info: Mapping of user_id -> dict with correct_username, correct_org_id, org_id
+    """
+    info, err = _query_bop_for_usernames(proxy, user_ids)
+    if err:
+        if fail_on_error:
+            return None, err
+        logger.warning("BOP lookup failed, continuing without verification")
+        return {}, None
+    return info, None
+
+
+def _get_duplicate_principals(request, user_ids):
+    """GET method logic: Return information about duplicate principals.
+
+    Args:
+        request: HTTP request object
+        user_ids (list): List of user IDs to check
+
+    Returns:
+        JsonResponse: Response with duplicate information
+    """
+    # Query BOP for correct usernames and org_ids (don't fail on error for GET)
+    user_id_to_info, _ = _fetch_bop_usernames(user_ids, fail_on_error=False, proxy=PROXY)
+
+    # Return information about duplicates
+    duplicates_info = []
+
+    # Check each user_id individually
+    for user_id in user_ids:
+        # Get principals if duplicates exist
+        principals = list(
+            Principal.objects.filter(user_id=user_id, type=Principal.Types.USER).prefetch_related("tenant")
+        )
+        if len(principals) <= 1:
+            continue
+
+        bop_info = user_id_to_info.get(user_id)
+        correct_username = bop_info.get("correct_username") if bop_info else None
+        correct_org_id = bop_info.get("correct_org_id") if bop_info else None
+
+        principal_details = []
+        for p in principals:
+            is_correct_username = p.username.lower() == correct_username if correct_username else None
+            is_correct_org = str(p.tenant.org_id) == correct_org_id if correct_org_id else None
+            is_correct = is_correct_username and is_correct_org if (correct_username and correct_org_id) else None
+            principal_details.append(
+                {
+                    "id": p.id,
+                    "uuid": str(p.uuid),
+                    "username": p.username,
+                    "org_id": str(p.tenant.org_id),
+                    "type": p.type,
+                    "group_count": p.group.count(),
+                    "groups": list(p.group.values_list("uuid", "name")),
+                    "is_correct_username": is_correct_username,
+                    "is_correct_org": is_correct_org,
+                    "will_be_kept": is_correct if is_correct is not None else False,
+                }
+            )
+
+        duplicates_info.append(
+            {
+                "user_id": user_id,
+                "duplicate_count": len(principals),
+                "bop_username": correct_username,
+                "bop_org_id": correct_org_id,
+                "bop_verified": correct_username is not None and correct_org_id is not None,
+                "principals": principal_details,
+            }
+        )
+
+    response_data = {
+        "total_duplicate_sets": len(duplicates_info),
+        "duplicates": duplicates_info,
+    }
+    return JsonResponse(response_data, safe=False)
+
+
+def _remove_duplicate_principals(request, user_ids):
+    """POST method logic: Remove duplicate principals based on BOP verification.
+
+    Args:
+        request: HTTP request object
+        user_ids (list): List of user IDs to process
+
+    Returns:
+        JsonResponse: Response with removal statistics
+    """
+    removed_principals = []
+    kept_principals = []
+    affected_groups = set()
+    total_removed = 0
+    user_ids_not_found_in_bop = []
+
+    # Query BOP for correct usernames and org_ids (fail on error for POST)
+    user_id_to_info, error_response = _fetch_bop_usernames(user_ids, fail_on_error=True, proxy=PROXY)
+    if error_response:
+        return error_response
+
+    # Check each user_id individually
+    for user_id in user_ids:
+        with transaction.atomic():
+            # Lock the principals for update
+            principals = list(
+                Principal.objects.filter(user_id=user_id, type=Principal.Types.USER)
+                .prefetch_related("tenant")
+                .select_for_update()
+            )
+
+            # Only process if there are duplicates (count > 1)
+            if len(principals) <= 1:
+                continue
+
+            # Check if user_id exists in BOP
+            bop_info = user_id_to_info.get(user_id)
+            correct_username = bop_info.get("correct_username") if bop_info else None
+            correct_org_id = bop_info.get("correct_org_id") if bop_info else None
+
+            if not correct_username or not correct_org_id:
+                # User ID not found in BOP or missing org_id -> delete ALL principals
+                logger.warning(
+                    f"User ID {user_id} not found in BOP or missing org_id. "
+                    f"Deleting all {len(principals)} principal(s)."
+                )
+                user_ids_not_found_in_bop.append(user_id)
+
+            # First pass: identify principal to keep (if any)
+            principal_to_keep = None
+            principals_to_delete = []
+
+            for principal in principals:
+                principal_username_match = (
+                    principal.username.lower() == correct_username if correct_username else False
+                )
+                principal_org_match = str(principal.tenant.org_id) == correct_org_id if correct_org_id else False
+
+                if principal_username_match and principal_org_match:
+                    # Username and org_id match BOP -> keep
+                    principal_to_keep = principal
+                    logger.info(
+                        f"Principal username '{principal.username}' and "
+                        f"org_id '{principal.tenant.org_id}' match BOP. "
+                        f"Keeping principal (user_id={user_id}, uuid={principal.uuid})"
+                    )
+                    kept_principals.append(
+                        {
+                            "uuid": str(principal.uuid),
+                            "username": principal.username,
+                            "org_id": str(principal.tenant.org_id),
+                            "user_id": principal.user_id,
+                            "verified_with_bop": True,
+                            "bop_username": correct_username,
+                            "bop_org_id": correct_org_id,
+                            "username_matches_bop": True,
+                            "org_id_matches_bop": True,
+                        }
+                    )
+                else:
+                    # No BOP info OR username/org_id doesn't match -> delete
+                    principals_to_delete.append(principal)
+                    if correct_username or correct_org_id:
+                        mismatch_reasons = []
+                        if correct_username and not principal_username_match:
+                            mismatch_reasons.append(f"username '{principal.username}' != '{correct_username}'")
+                        if correct_org_id and not principal_org_match:
+                            mismatch_reasons.append(f"org_id '{principal.tenant.org_id}' != '{correct_org_id}'")
+                        logger.info(
+                            f"Principal does not match BOP ({', '.join(mismatch_reasons)}). "
+                            f"Will delete principal (user_id={user_id}, uuid={principal.uuid})"
+                        )
+
+            # Second pass: migrate group memberships and delete incorrect principals
+            for principal in principals_to_delete:
+                # Get all groups this principal is in
+                groups = list(principal.group.all().prefetch_related("principals"))
+
+                for group in groups:
+                    # If we have a correct principal, migrate the group membership
+                    if (
+                        principal_to_keep
+                        and principal_to_keep.tenant == group.tenant
+                        and principal_to_keep not in group.principals.all()
+                    ):
+                        group.principals.add(principal_to_keep)
+                        logger.info(
+                            f"Migrated group membership: Added principal {principal_to_keep.username} "
+                            f"(uuid={principal_to_keep.uuid}) to group {group.name} (uuid={group.uuid})"
+                        )
+
+                    # Remove the incorrect principal from the group
+                    group.principals.remove(principal)
+                    affected_groups.add(str(group.uuid))
+                    logger.info(
+                        f"Removed principal {principal.username} (uuid={principal.uuid}) "
+                        f"from group {group.name} (uuid={group.uuid})"
+                    )
+
+                # Replicate the changes
+                if groups:
+                    for group in groups:
+                        try:
+                            # Replicate the removal
+                            dual_write_handler = RelationApiDualWriteGroupHandler(
+                                group, ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP
+                            )
+                            dual_write_handler.replicate_removed_principals([principal])
+
+                            # If we migrated to the keeper, replicate the addition
+                            if principal_to_keep and principal_to_keep in group.principals.all():
+                                dual_write_handler_add = RelationApiDualWriteGroupHandler(
+                                    group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
+                                )
+                                dual_write_handler_add.replicate_new_principals([principal_to_keep])
+                                logger.info(f"Replicated addition of keeper principal to group {group.uuid}")
+
+                            logger.info(f"Replicated removal of principal from group {group.uuid}")
+                        except Exception as e:
+                            logger.error(f"Failed to replicate for group {group.uuid}: {e}")
+
+                # Delete the principal
+                removed_principals.append(
+                    {
+                        "uuid": str(principal.uuid),
+                        "username": principal.username,
+                        "user_id": principal.user_id,
+                        "had_groups": len(groups),
+                    }
+                )
+                principal.delete()
+                total_removed += 1
+                logger.info(f"Deleted principal {principal.username} (uuid={principal.uuid})")
+
+    response_data = {
+        "total_removed": total_removed,
+        "total_kept": len(kept_principals),
+        "affected_groups_count": len(affected_groups),
+        "user_ids_not_found_in_bop": user_ids_not_found_in_bop,
+        "removed_principals": removed_principals,
+        "kept_principals": kept_principals,
+    }
+    return JsonResponse(response_data, safe=False, status=200)
