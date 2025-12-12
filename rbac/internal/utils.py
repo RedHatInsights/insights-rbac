@@ -47,6 +47,7 @@ from management.relation_replicator.relation_replicator import (
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.relations import default_role_binding_tuples
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.utils import create_relationship
@@ -1535,6 +1536,9 @@ def _remove_duplicate_principals(request, user_ids):
     if error_response:
         return error_response
 
+    # Create bootstrap service once (used for all principal deletions)
+    bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+
     # Check each user_id individually
     for user_id in user_ids:
         with transaction.atomic():
@@ -1562,23 +1566,20 @@ def _remove_duplicate_principals(request, user_ids):
                 )
                 user_ids_not_found_in_bop.append(user_id)
 
-            # First pass: identify principal to keep (if any)
+            # Identify principal to keep (if any) and those to delete
             principal_to_keep = None
             principals_to_delete = []
 
             for principal in principals:
-                principal_username_match = (
-                    principal.username.lower() == correct_username if correct_username else False
-                )
-                principal_org_match = str(principal.tenant.org_id) == correct_org_id if correct_org_id else False
+                username_matches = principal.username.lower() == correct_username if correct_username else False
+                org_matches = str(principal.tenant.org_id) == correct_org_id if correct_org_id else False
 
-                if principal_username_match and principal_org_match:
+                if username_matches and org_matches:
                     # Username and org_id match BOP -> keep
                     principal_to_keep = principal
                     logger.info(
-                        f"Principal username '{principal.username}' and "
-                        f"org_id '{principal.tenant.org_id}' match BOP. "
-                        f"Keeping principal (user_id={user_id}, uuid={principal.uuid})"
+                        f"Keeping principal (user_id={user_id}, uuid={principal.uuid}): "
+                        f"matches BOP username='{correct_username}', org_id='{correct_org_id}'"
                     )
                     kept_principals.append(
                         {
@@ -1594,79 +1595,75 @@ def _remove_duplicate_principals(request, user_ids):
                         }
                     )
                 else:
-                    # No BOP info OR username/org_id doesn't match -> delete
                     principals_to_delete.append(principal)
                     if correct_username or correct_org_id:
                         mismatch_reasons = []
-                        if correct_username and not principal_username_match:
+                        if correct_username and not username_matches:
                             mismatch_reasons.append(f"username '{principal.username}' != '{correct_username}'")
-                        if correct_org_id and not principal_org_match:
+                        if correct_org_id and not org_matches:
                             mismatch_reasons.append(f"org_id '{principal.tenant.org_id}' != '{correct_org_id}'")
                         logger.info(
-                            f"Principal does not match BOP ({', '.join(mismatch_reasons)}). "
-                            f"Will delete principal (user_id={user_id}, uuid={principal.uuid})"
+                            f"Will delete principal (user_id={user_id}, uuid={principal.uuid}): "
+                            f"BOP mismatch ({', '.join(mismatch_reasons)})"
                         )
 
-            # Second pass: migrate group memberships and delete incorrect principals
+            # Delete incorrect principals and migrate group memberships
             for principal in principals_to_delete:
-                # Get all groups this principal is in
                 groups = list(principal.group.all().prefetch_related("principals"))
+                principal_info = {
+                    "uuid": str(principal.uuid),
+                    "username": principal.username,
+                    "user_id": principal.user_id,
+                    "had_groups": len(groups),
+                }
 
+                # Track all groups this principal was in (will be removed by _disable_user_in_tenant)
                 for group in groups:
-                    # If we have a correct principal, migrate the group membership
-                    if (
-                        principal_to_keep
-                        and principal_to_keep.tenant == group.tenant
-                        and principal_to_keep not in group.principals.all()
-                    ):
-                        group.principals.add(principal_to_keep)
-                        logger.info(
-                            f"Migrated group membership: Added principal {principal_to_keep.username} "
-                            f"(uuid={principal_to_keep.uuid}) to group {group.name} (uuid={group.uuid})"
-                        )
-
-                    # Remove the incorrect principal from the group
-                    group.principals.remove(principal)
                     affected_groups.add(str(group.uuid))
-                    logger.info(
-                        f"Removed principal {principal.username} (uuid={principal.uuid}) "
-                        f"from group {group.name} (uuid={group.uuid})"
-                    )
 
-                # Replicate the changes
-                if groups:
+                # Migrate group memberships to keeper before deletion
+                if principal_to_keep and groups:
                     for group in groups:
-                        try:
-                            # Replicate the removal
-                            dual_write_handler = RelationApiDualWriteGroupHandler(
-                                group, ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP
-                            )
-                            dual_write_handler.replicate_removed_principals([principal])
-
-                            # If we migrated to the keeper, replicate the addition
-                            if principal_to_keep and principal_to_keep in group.principals.all():
-                                dual_write_handler_add = RelationApiDualWriteGroupHandler(
+                        if (
+                            principal_to_keep.tenant == group.tenant
+                            and principal_to_keep not in group.principals.all()
+                        ):
+                            group.principals.add(principal_to_keep)
+                            logger.info(f"Migrated membership to keeper: group {group.name} (uuid={group.uuid})")
+                            try:
+                                dual_write_handler = RelationApiDualWriteGroupHandler(
                                     group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
                                 )
-                                dual_write_handler_add.replicate_new_principals([principal_to_keep])
-                                logger.info(f"Replicated addition of keeper principal to group {group.uuid}")
+                                dual_write_handler.replicate_new_principals([principal_to_keep])
+                            except Exception as e:
+                                logger.error(f"Failed to replicate addition for group {group.uuid}: {e}")
 
-                            logger.info(f"Replicated removal of principal from group {group.uuid}")
-                        except Exception as e:
-                            logger.error(f"Failed to replicate for group {group.uuid}: {e}")
+                # Delete principal using appropriate method
+                if principal.user_id:
+                    try:
+                        user = User(
+                            username=principal.username,
+                            org_id=principal.tenant.org_id,
+                            user_id=principal.user_id,
+                            is_active=False,
+                        )
+                        bootstrap_service._disable_user_in_tenant(user)
+                        logger.info(f"Deleted principal via _disable_user_in_tenant: {principal_info['username']}")
+                    except Principal.DoesNotExist:
+                        logger.warning(f"Principal {principal_info['username']} was already deleted")
+                else:
+                    # No user_id - manually remove from groups and delete
+                    for group in groups:
+                        group.principals.remove(principal)
+                        affected_groups.add(str(group.uuid))
+                    principal.delete()
+                    logger.warning(
+                        f"Deleted principal directly (no user_id, no default group cleanup): "
+                        f"{principal_info['username']}"
+                    )
 
-                # Delete the principal
-                removed_principals.append(
-                    {
-                        "uuid": str(principal.uuid),
-                        "username": principal.username,
-                        "user_id": principal.user_id,
-                        "had_groups": len(groups),
-                    }
-                )
-                principal.delete()
+                removed_principals.append(principal_info)
                 total_removed += 1
-                logger.info(f"Deleted principal {principal.username} (uuid={principal.uuid})")
 
     response_data = {
         "total_removed": total_removed,
