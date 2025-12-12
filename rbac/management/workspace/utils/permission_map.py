@@ -16,7 +16,9 @@
 #
 """Permission mapping utilities for workspace operations."""
 import logging
+import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from management.models import Workspace
 from rest_framework import permissions
@@ -105,10 +107,18 @@ def permission_from_request(request, view=None) -> str:
                 )
             else:
                 try:
+                    # Validate UUID format before querying to avoid ValidationError
+                    uuid.UUID(str(workspace_id))
                     current_pid = Workspace.objects.filter(pk=workspace_id).values_list("parent_id", flat=True).first()
                     # If current parent exists and differs from new parent, this is a move
                     if current_pid and str(new_pid) != str(current_pid):
                         return "move"
+                except (ValueError, ValidationError):
+                    # Invalid UUID format - fall back to edit permission
+                    # The view will handle the proper 404/400 response later
+                    logger.debug(
+                        "Invalid workspace_id format for move detection; " "falling back to 'edit' permission"
+                    )
                 except DatabaseError:
                     # Database error during lookup - fall back to edit permission
                     logger.warning(

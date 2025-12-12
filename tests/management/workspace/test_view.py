@@ -1275,6 +1275,26 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("not a valid UUID", str(response.data))
 
+    def test_update_workspace_invalid_uuid_with_parent_id_in_body(self):
+        """Test that update with parent_id in body fails with 400 when workspace id is not a valid UUID.
+
+        This specifically tests the move detection code path in permission_from_request
+        which queries the database to compare parent IDs.
+        """
+        client = APIClient()
+        invalid_uuid = "id"  # The literal string "id" as seen in the Sentry error
+        url = f"/api/rbac/v2/workspaces/{invalid_uuid}/"
+        workspace_data = {
+            "name": "Test Workspace",
+            "parent_id": str(self.default_workspace.id),
+            "description": "Test description",
+        }
+
+        response = client.put(url, workspace_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not a valid UUID", str(response.data))
+
     def test_retrieve_workspace_invalid_uuid(self):
         """Test that retrieve fails with 400 when workspace id is not a valid UUID."""
         client = APIClient()
