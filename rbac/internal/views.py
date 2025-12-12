@@ -1899,8 +1899,12 @@ def check_bootstrapped_tenants(request, org_id):
             },
         }
         try:
-            bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
-            bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+            bootstrap_tenants_correct, checks = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
+            bootstrapped_tenant_response = {
+                "org_id": tenant.org_id,
+                "bootstrapped_correct": bootstrap_tenants_correct,
+                "relations_checked": checks,
+            }
         except RpcError as e:
             return JsonResponse(
                 {"detail": "gRPC error occurred during inventory bootstrapped tenant check", "error": str(e)},
@@ -2229,6 +2233,11 @@ def migrate_binding_scope(request):
     """View method for running binding scope migration.
 
     POST /_private/api/utils/migrate_binding_scope/
+    query params:
+        write_relationships: True, False, outbox, logging (default: True)
+            - True/outbox: Create V2 models and replicate to outbox
+            - logging: Create V2 models and log what would be replicated
+            - False: Create V2 models without replication
 
     Migrates all role bindings to the correct scope based on permission scopes.
     Iterates through roles (not binding mappings) and uses dual write handlers.
@@ -2236,12 +2245,17 @@ def migrate_binding_scope(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
 
-    logger.info(f"Running binding scope migration: {request.method} {request.user.username}")
+    write_relationships = request.GET.get("write_relationships", "True")
 
-    migrate_binding_scope_in_worker.delay()
+    logger.info(f"Running binding scope migration: write_relationships={write_relationships}")
+
+    migrate_binding_scope_in_worker.delay(write_relationships=write_relationships)
 
     return JsonResponse(
-        {"message": "Binding scope migration is running in a background worker."},
+        {
+            "message": "Binding scope migration is running in a background worker.",
+            "write_relationships": write_relationships,
+        },
         status=202,
     )
 

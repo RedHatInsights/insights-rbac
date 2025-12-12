@@ -1254,6 +1254,19 @@
         "summary": "Migrate role binding scopes",
         "description": "Migrate all role bindings to the correct scope based on permission scopes. Iterates through roles (not binding mappings) and uses dual write handlers.",
         "operationId": "MigrateBindingScope",
+        "parameters": [
+          {
+            "name": "write_relationships",
+            "in": "query",
+            "description": "How to handle replication. 'True' or 'outbox' replicates to outbox (default). 'logging' logs what would be replicated. 'False' creates V2 models without replication.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["True", "False", "outbox", "logging"],
+              "default": "True"
+            }
+          }
+        ],
         "responses": {
           "202": {
             "description": "Binding scope migration is running in a background worker.",
@@ -1265,6 +1278,10 @@
                     "message": {
                       "type": "string",
                       "description": "Status message"
+                    },
+                    "write_relationships": {
+                      "type": "string",
+                      "description": "The replication mode being used"
                     }
                   }
                 }

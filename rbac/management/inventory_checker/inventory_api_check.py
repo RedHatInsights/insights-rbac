@@ -52,12 +52,11 @@ class InventoryApiBaseChecker:
         if isinstance(checks, CheckRequest):
             checks = [checks]
 
-            with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
-                stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
+        with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+            stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
-                responses = [stub.Check(req) for req in checks]
-                return all(self._is_allowed(res) for res in responses)
-        return False
+            responses = [stub.Check(req) for req in checks]
+            return all(self._is_allowed(res) for res in responses)
 
     def _is_allowed(self, response):
         response_dict = json_format.MessageToDict(response)
@@ -106,94 +105,134 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
         """Core logic to check bootstrapped tenants are correct."""
         if mapping:
             # If mapping provided create the correct check requests for check_relation_core
-            checks = [
-                # Check root workspace has correct default workspace
-                CheckRequest(
-                    object=resource_reference_pb2.ResourceReference(
-                        resource_id=mapping["root_workspace"],
-                        resource_type="workspace",
-                        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                    ),
-                    relation="parent",
-                    subject=subject_reference_pb2.SubjectReference(
-                        resource=resource_reference_pb2.ResourceReference(
+            # Each tuple contains (name, check_request) for labeling purposes
+            checks_with_names = [
+                # Check default workspace has root workspace as parent
+                (
+                    "workspace_parent",
+                    CheckRequest(
+                        object=resource_reference_pb2.ResourceReference(
                             resource_id=mapping["default_workspace"],
                             resource_type="workspace",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
+                        ),
+                        relation="parent",
+                        subject=subject_reference_pb2.SubjectReference(
+                            resource=resource_reference_pb2.ResourceReference(
+                                resource_id=mapping["root_workspace"],
+                                resource_type="workspace",
+                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                            )
+                        ),
                     ),
                 ),
                 # Check default workspace has correct default role binding
-                CheckRequest(
-                    object=resource_reference_pb2.ResourceReference(
-                        resource_id=mapping["default_workspace"],
-                        resource_type="workspace",
-                        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                    ),
-                    relation="binding",
-                    subject=subject_reference_pb2.SubjectReference(
-                        resource=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["tenant_mapping"]["default_role_binding_uuid"],
-                            resource_type="role_binding",
+                (
+                    "default_access_binding",
+                    CheckRequest(
+                        object=resource_reference_pb2.ResourceReference(
+                            resource_id=mapping["default_workspace"],
+                            resource_type="workspace",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
+                        ),
+                        relation="binding",
+                        subject=subject_reference_pb2.SubjectReference(
+                            resource=resource_reference_pb2.ResourceReference(
+                                resource_id=mapping["tenant_mapping"]["default_role_binding_uuid"],
+                                resource_type="role_binding",
+                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                            )
+                        ),
                     ),
                 ),
                 # Check default workspace has correct default admin role binding
-                CheckRequest(
-                    object=resource_reference_pb2.ResourceReference(
-                        resource_id=mapping["default_workspace"],
-                        resource_type="workspace",
-                        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                    ),
-                    relation="binding",
-                    subject=subject_reference_pb2.SubjectReference(
-                        resource=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
-                            resource_type="role_binding",
+                (
+                    "admin_default_access_binding",
+                    CheckRequest(
+                        object=resource_reference_pb2.ResourceReference(
+                            resource_id=mapping["default_workspace"],
+                            resource_type="workspace",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
+                        ),
+                        relation="binding",
+                        subject=subject_reference_pb2.SubjectReference(
+                            resource=resource_reference_pb2.ResourceReference(
+                                resource_id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
+                                resource_type="role_binding",
+                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                            )
+                        ),
                     ),
                 ),
                 # Check default role binding is assigned to correct group
-                CheckRequest(
-                    object=resource_reference_pb2.ResourceReference(
-                        resource_id=mapping["tenant_mapping"]["default_role_binding_uuid"],
-                        resource_type="role_binding",
-                        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                    ),
-                    relation="subject",
-                    subject=subject_reference_pb2.SubjectReference(
-                        resource=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["tenant_mapping"]["default_group_uuid"],
-                            resource_type="group",
+                (
+                    "default_access_subject",
+                    CheckRequest(
+                        object=resource_reference_pb2.ResourceReference(
+                            resource_id=mapping["tenant_mapping"]["default_role_binding_uuid"],
+                            resource_type="role_binding",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
+                        ),
+                        relation="subject",
+                        subject=subject_reference_pb2.SubjectReference(
+                            resource=resource_reference_pb2.ResourceReference(
+                                resource_id=mapping["tenant_mapping"]["default_group_uuid"],
+                                resource_type="group",
+                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                            ),
+                            relation="member",
+                        ),
                     ),
                 ),
                 # Check default admin role binding is assigned to correct group
-                CheckRequest(
-                    object=resource_reference_pb2.ResourceReference(
-                        resource_id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
-                        resource_type="role_binding",
-                        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                    ),
-                    relation="subject",
-                    subject=subject_reference_pb2.SubjectReference(
-                        resource=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["tenant_mapping"]["default_admin_group_uuid"],
-                            resource_type="group",
+                (
+                    "admin_default_access_subject",
+                    CheckRequest(
+                        object=resource_reference_pb2.ResourceReference(
+                            resource_id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
+                            resource_type="role_binding",
                             reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        )
+                        ),
+                        relation="subject",
+                        subject=subject_reference_pb2.SubjectReference(
+                            resource=resource_reference_pb2.ResourceReference(
+                                resource_id=mapping["tenant_mapping"]["default_admin_group_uuid"],
+                                resource_type="group",
+                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
+                            ),
+                            relation="member",
+                        ),
                     ),
                 ),
             ]
+            checks = [check for _, check in checks_with_names]
             bootstrapped_tenant_correct = self.check_inventory_core(checks)
             if not bootstrapped_tenant_correct:
                 logger.warning(f'{mapping["org_id"]} does not have the expected hierarchy for bootstrapped tenant.')
             else:
                 logger.info(f'{mapping["org_id"]} is correctly bootstrapped.')
-        return bootstrapped_tenant_correct
+
+            # Convert checks to readable format for logging in response
+            check_list = []
+            for name, check in checks_with_names:
+                check_dict = json_format.MessageToDict(check)
+                obj = check_dict.get("object", {})
+                subject = check_dict.get("subject", {})
+                subject_resource = subject.get("resource", {})
+                relation = check_dict.get("relation", "")
+                subject_relation = subject.get("relation", "")
+                obj_reporter = obj.get("reporter", {}).get("type", "")
+                subject_reporter = subject_resource.get("reporter", {}).get("type", "")
+
+                subject_relation_suffix = f"#{subject_relation}" if subject_relation else ""
+                check_str = (
+                    f"{obj_reporter}/{obj.get('resourceType', '')}:{obj.get('resourceId', '')}/"
+                    f"{relation}#{subject_reporter}/{subject_resource.get('resourceType', '')}:"
+                    f"{subject_resource.get('resourceId', '')}{subject_relation_suffix}"
+                )
+                check_exists = self.check_inventory_core(check)
+                check_list.append({"name": name, "check": check_str, "exists": check_exists})
+        return bootstrapped_tenant_correct, check_list
 
 
 class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):

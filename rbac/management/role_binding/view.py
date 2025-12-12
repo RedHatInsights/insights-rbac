@@ -48,8 +48,8 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - resource_id: Filter by resource ID
             - resource_type: Filter by resource type
         """
-        resource_id = request.query_params.get("resource_id")
-        resource_type = request.query_params.get("resource_type")
+        resource_id = request.query_params.get("resource_id", "").replace("\x00", "")
+        resource_type = request.query_params.get("resource_type", "").replace("\x00", "")
 
         if not resource_id:
             raise serializers.ValidationError({"resource_id": "This query parameter is required."})
