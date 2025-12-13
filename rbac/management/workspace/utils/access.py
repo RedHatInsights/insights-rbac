@@ -16,6 +16,7 @@
 #
 """Workspace access checking utilities."""
 import logging
+import time
 from uuid import UUID
 
 from feature_flags import FEATURE_FLAGS
@@ -29,7 +30,33 @@ from management.principal.proxy import PrincipalProxy
 from management.utils import get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
 
+from rbac import settings
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+def _log_v2_timing(timings, total_start, extra_fields, reason=None):
+    """
+    Log timing breakdown for is_user_allowed_v2 if timing logging is enabled.
+
+    Args:
+        timings: Dictionary of timing measurements
+        total_start: Start time from time.perf_counter()
+        extra_fields: Additional fields to include in log (e.g., workspace count, path)
+        reason: Optional reason for early return (e.g., "it_service_failure")
+    """
+    if not settings.WORKSPACE_ACCESS_TIMING_ENABLED:
+        return
+
+    timings["total"] = time.perf_counter() - total_start
+    log_extra = {
+        "timings_ms": {k: round(v * 1000, 2) for k, v in timings.items()},
+        **extra_fields,
+    }
+    if reason:
+        log_extra["early_return_reason"] = reason
+
+    logger.info("is_user_allowed_v2 timing breakdown", extra=log_extra)
 
 
 def get_fallback_workspace_ids(tenant):
@@ -168,11 +195,16 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     Returns:
         bool: True if the user has permission, False otherwise
     """
+    total_start = time.perf_counter()
+    timings = {}
+
     # For system users (s2s communication), bypass v2 access checks and rely on user.admin
     # Uses unified check_system_user_access to prevent behavior drift
     # Note: action is not passed here since is_user_allowed_v2 doesn't have view context;
     # the caller (WorkspaceAccessPermission) handles move-specific logic with action parameter
+    t0 = time.perf_counter()
     system_check = check_system_user_access(request.user)
+    timings["system_user_check"] = time.perf_counter() - t0
     if system_check.is_system:
         # For system users, ALLOWED and CHECK_MOVE_TARGET both return True here
         # (move-specific checks are handled by the caller with full view context)
@@ -181,7 +213,9 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     # NOT_SYSTEM_USER - continue with normal checks
 
     # Try to get user_id from principal, request.user, or IT service API
+    t0 = time.perf_counter()
     principal = get_principal_from_request(request)
+    timings["get_principal_from_request"] = time.perf_counter() - t0
     if principal is not None and principal.user_id is not None:
         user_id = principal.user_id
     elif (user_id := getattr(request.user, "user_id", None)) is not None:
@@ -192,23 +226,29 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
         org_id = getattr(request.user, "org_id", None)
         if not org_id:
             logger.warning("No org_id available from request.user, denying access")
+            _log_v2_timing(timings, total_start, {"request_path": request.path}, reason="no_org_id")
             return False
 
+        t0 = time.perf_counter()
         proxy = PrincipalProxy()
         resp = proxy.request_filtered_principals([username], org_id=org_id, options={"return_id": True})
+        timings["it_service_api_call"] = time.perf_counter() - t0
 
         if resp.get("status_code") != 200 or not resp.get("data"):
             logger.warning("Failed to retrieve user_id from IT service for username: %s", username)
+            _log_v2_timing(timings, total_start, {"request_path": request.path}, reason="it_service_failure")
             return False
 
         user_id = resp["data"][0].get("user_id")
         if not user_id:
             logger.warning("IT service response missing user_id for username: %s", username)
+            _log_v2_timing(timings, total_start, {"request_path": request.path}, reason="it_service_missing_user_id")
             return False
 
         logger.debug("Retrieved user_id from IT service via PrincipalProxy")
     else:
         logger.warning("No username available from request.user, denying access")
+        _log_v2_timing(timings, total_start, {"request_path": request.path}, reason="no_username")
         return False
 
     # Log warning if user_id is None after all lookup attempts
@@ -241,7 +281,9 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     # For list operations (None workspace_id), get all accessible workspaces
     if target_workspace is None:
         # Lookup accessible workspaces using StreamedListObjects
+        t0 = time.perf_counter()
         accessible_workspace_ids = checker.lookup_accessible_workspaces(principal_id=principal_id, relation=relation)
+        timings["inventory_api_lookup"] = time.perf_counter() - t0
 
         # Convert to set of UUIDs for proper filtering
         accessible_workspace_ids = set(accessible_workspace_ids)
@@ -249,25 +291,50 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
         if accessible_workspace_ids:
             # Add ancestors only from the top-level workspace(s) in accessible workspaces (for ancestry needs)
             # Get workspace objects for accessible IDs
+            t0 = time.perf_counter()
             accessible_workspaces = Workspace.objects.filter(id__in=accessible_workspace_ids, tenant=request.tenant)
+            timings["db_filter_accessible_workspaces"] = time.perf_counter() - t0
 
             # Find the top-level workspace(s) - those that are not children of any other accessible workspace
+            t0 = time.perf_counter()
             top_level_workspaces = filter_top_level_workspaces(accessible_workspaces)
+            timings["filter_top_level_workspaces"] = time.perf_counter() - t0
 
+            t0 = time.perf_counter()
             for workspace in top_level_workspaces:
                 # Add ancestors directly for this top-level workspace
                 ancestor_ids = {str(ancestor.id) for ancestor in workspace.ancestors()}
                 accessible_workspace_ids.update(ancestor_ids)
+            timings["add_ancestor_ids"] = time.perf_counter() - t0
         else:
             # If no accessible workspaces, attach at least root, default, and ungrouped workspaces
+            t0 = time.perf_counter()
             accessible_workspace_ids = get_fallback_workspace_ids(request.tenant)
+            timings["get_fallback_workspace_ids"] = time.perf_counter() - t0
 
         # Store permission tuples for later filtering
         request.permission_tuples = [(None, ws_id) for ws_id in accessible_workspace_ids]
+
+        _log_v2_timing(
+            timings,
+            total_start,
+            {"accessible_workspace_count": len(accessible_workspace_ids), "request_path": request.path},
+        )
         return bool(accessible_workspace_ids)
 
     # For specific workspace operations, check access for that workspace
-    return checker.check_workspace_access(workspace_id=target_workspace, principal_id=principal_id, relation=relation)
+    t0 = time.perf_counter()
+    result = checker.check_workspace_access(
+        workspace_id=target_workspace, principal_id=principal_id, relation=relation
+    )
+    timings["inventory_api_check_access"] = time.perf_counter() - t0
+
+    _log_v2_timing(
+        timings,
+        total_start,
+        {"target_workspace": target_workspace, "request_path": request.path},
+    )
+    return result
 
 
 def get_access_permission_tuples(access, tenant, root_workspace_id, is_get_action):

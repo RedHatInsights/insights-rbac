@@ -18,6 +18,7 @@
 """Workspace access checker using Inventory API."""
 
 import logging
+import time
 from typing import Optional, Set
 
 import grpc
@@ -37,6 +38,41 @@ from management.inventory_client import (
 from rbac import settings
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+def _log_lookup_timing(
+    principal_id: str,
+    workspace_count: int,
+    page_count: int,
+    iterator_setup_seconds: float,
+    stream_iteration_seconds: float,
+    max_pages: int,
+) -> None:
+    """
+    Log timing breakdown for lookup_accessible_workspaces if timing logging is enabled.
+
+    Args:
+        principal_id: Principal identifier for the lookup
+        workspace_count: Number of workspaces found
+        page_count: Number of pages fetched
+        iterator_setup_seconds: Time spent establishing gRPC streaming iterators
+        stream_iteration_seconds: Time spent iterating over gRPC stream responses
+        max_pages: Maximum allowed pages (for hit_max_pages calculation)
+    """
+    if not settings.WORKSPACE_ACCESS_TIMING_ENABLED:
+        return
+
+    logger.info(
+        "lookup_accessible_workspaces timing",
+        extra={
+            "principal_id": principal_id,
+            "workspace_count": workspace_count,
+            "page_count": page_count,
+            "iterator_setup_ms": round(iterator_setup_seconds * 1000, 2),
+            "stream_iteration_ms": round(stream_iteration_seconds * 1000, 2),
+            "hit_max_pages": page_count >= max_pages,
+        },
+    )
 
 
 class WorkspaceInventoryAccessChecker:
@@ -211,14 +247,22 @@ class WorkspaceInventoryAccessChecker:
             accessible_workspaces = set()
             continuation_token = None
             page_count = 0
+            # Time spent establishing gRPC streaming iterators (stub method invocation)
+            iterator_setup_seconds = 0.0
+            # Time spent iterating over gRPC stream responses
+            stream_iteration_seconds = 0.0
 
             while page_count < self.MAX_PAGES:
                 page_count += 1
 
                 request_data = self._build_streamed_request(principal_id, relation, continuation_token)
+
+                t0 = time.perf_counter()
                 responses = stub.StreamedListObjects(request_data)
+                iterator_setup_seconds += time.perf_counter() - t0
 
                 last_token = None
+                t0 = time.perf_counter()
                 for response in responses:
                     workspace_id = self._extract_workspace_id(response)
                     if workspace_id:
@@ -232,6 +276,7 @@ class WorkspaceInventoryAccessChecker:
                     token = self._extract_continuation_token(response)
                     if token:
                         last_token = token
+                stream_iteration_seconds += time.perf_counter() - t0
 
                 if not last_token:
                     break
@@ -254,6 +299,15 @@ class WorkspaceInventoryAccessChecker:
             logger.info(
                 f"Accessible workspaces for principal={principal_id}: "
                 f"{len(accessible_workspaces)} found via StreamedListObjects"
+            )
+
+            _log_lookup_timing(
+                principal_id=principal_id,
+                workspace_count=len(accessible_workspaces),
+                page_count=page_count,
+                iterator_setup_seconds=iterator_setup_seconds,
+                stream_iteration_seconds=stream_iteration_seconds,
+                max_pages=self.MAX_PAGES,
             )
 
             return accessible_workspaces

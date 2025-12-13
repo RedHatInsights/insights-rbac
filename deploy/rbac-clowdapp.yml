@@ -550,6 +550,8 @@ objects:
             value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
           - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: WORKSPACE_ACCESS_TIMING_ENABLED
+            value: ${WORKSPACE_ACCESS_TIMING_ENABLED}
           - name: WORKSPACE_ORG_CREATION_LIMIT
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
           - name: READ_YOUR_WRITES_TIMEOUT_SECONDS
@@ -1735,6 +1737,9 @@ parameters:
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
   description: When true, prevents the ability to create peer workspaces against the default workspace
   value: 'False'
+- name: WORKSPACE_ACCESS_TIMING_ENABLED
+  description: Enable detailed timing logs for v2 workspace access checks (for performance investigation)
+  value: 'True'
 - name: READ_YOUR_WRITES_TIMEOUT_SECONDS
   description: Timeout in seconds for read-your-writes consistency check after workspace creation
   value: '10'
