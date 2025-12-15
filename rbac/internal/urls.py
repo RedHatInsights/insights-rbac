@@ -81,6 +81,7 @@ urlpatterns = [
     path("api/utils/set_tenant_ready/", views.set_tenant_ready),
     path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
     path("api/utils/populate_tenant_org_id/", views.populate_tenant_org_id_view),
+    path("api/utils/remove_duplicate_principals/", views.remove_duplicate_principals),
     path("api/utils/invalid_default_admin_groups/", views.invalid_default_admin_groups),
     path("api/utils/ocm_performance/", views.ocm_performance),
     path("api/utils/get_org_admin/<int:org_or_account>/", views.get_org_admin),
