@@ -3760,7 +3760,6 @@
         ]
       },
       "CrossAccountRequestByUserId": {
-
         "allOf": [
           {
             "$ref": "#/components/schemas/CrossAccountRequest"
