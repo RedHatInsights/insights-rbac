@@ -23,7 +23,10 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
-from management.models import Group, Principal
+from management.group.model import Group
+from management.models import Principal
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.tenant_mapping.model import TenantMapping
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.internal.test_views import valid_destructive_time
@@ -212,10 +215,24 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertEqual(Principal.objects.filter(user_id="12345").count(), 0)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("internal.utils.PROXY.request_filtered_principals")
-    def test_post_username_mismatch_deletes_incorrect(self, mock_proxy, mock_replicator):
+    def test_post_username_mismatch_deletes_incorrect(self, mock_proxy, mock_replicator, mock_outbox_replicate):
         """Test POST when username doesn't match BOP deletes incorrect principal."""
+        # Capture replication events for default group cleanup
+        replication_events = []
+
+        def capture_replication(event):
+            replication_events.append(event)
+
+        mock_outbox_replicate.side_effect = capture_replication
+
+        # Get tenant mapping for default group UUIDs
+        mapping = TenantMapping.objects.get(tenant=self.tenant)
+        default_group_uuid = str(mapping.default_group_uuid)
+        default_admin_group_uuid = str(mapping.default_admin_group_uuid)
+
         # Create principals
         correct_principal = Principal.objects.create(
             username="correctuser",
@@ -254,6 +271,48 @@ class RemoveDuplicatePrincipalsTests(IdentityRequest):
         self.assertTrue(kept["verified_with_bop"])
         self.assertTrue(kept["username_matches_bop"])
         self.assertTrue(kept["org_id_matches_bop"])
+
+        # Verify default group relationship tuples are removed
+        disable_events = [
+            event for event in replication_events if event.event_type == ReplicationEventType.EXTERNAL_USER_DISABLE
+        ]
+        self.assertGreater(len(disable_events), 0, "Should have EXTERNAL_USER_DISABLE event")
+
+        disable_event = disable_events[0]
+        tuples_to_remove = disable_event.remove
+
+        # Verify tuples for default group relationships are present
+        expected_default_group_tuple = Group.relationship_to_user_id_for_group(default_group_uuid, "12345")
+        expected_default_admin_group_tuple = Group.relationship_to_user_id_for_group(default_admin_group_uuid, "12345")
+
+        # Compare by checking resource_type, resource_id, relation, subject_type, and subject_id
+        def tuple_matches(tuple1, tuple2):
+            """Check if two Relationship tuples match."""
+            return (
+                tuple1.resource.type.namespace == tuple2.resource.type.namespace
+                and tuple1.resource.type.name == tuple2.resource.type.name
+                and tuple1.resource.id == tuple2.resource.id
+                and tuple1.relation == tuple2.relation
+                and tuple1.subject.subject.type.namespace == tuple2.subject.subject.type.namespace
+                and tuple1.subject.subject.type.name == tuple2.subject.subject.type.name
+                and tuple1.subject.subject.id == tuple2.subject.subject.id
+            )
+
+        default_group_found = any(tuple_matches(t, expected_default_group_tuple) for t in tuples_to_remove)
+        default_admin_group_found = any(tuple_matches(t, expected_default_admin_group_tuple) for t in tuples_to_remove)
+
+        self.assertTrue(
+            default_group_found,
+            f"Should include default group relationship tuple in removal. "
+            f"Expected: {expected_default_group_tuple}, "
+            f"Found tuples: {tuples_to_remove}",
+        )
+        self.assertTrue(
+            default_admin_group_found,
+            f"Should include default admin group relationship tuple in removal. "
+            f"Expected: {expected_default_admin_group_tuple}, "
+            f"Found tuples: {tuples_to_remove}",
+        )
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
