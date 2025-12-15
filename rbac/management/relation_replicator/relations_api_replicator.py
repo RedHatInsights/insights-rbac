@@ -70,7 +70,8 @@ def execute_grpc_call(operation_name, grpc_callable, fencing_check=None, log_con
             logger.error(
                 f"Invalid fencing token during {operation_name} - partition reassigned. "
                 f"Lock ID: {fencing_check.lock_id if fencing_check else 'N/A'}, "
-                f"Token: {fencing_check.lock_token if fencing_check else 'N/A'}"
+                f"Token: {fencing_check.lock_token if fencing_check else 'N/A'}. "
+                f"Relations API error: code={error.code}, reason={error.reason}, message={error.message}"
             )
         else:
             # Build error message with context
