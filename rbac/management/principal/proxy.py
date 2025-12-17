@@ -353,3 +353,85 @@ def external_principal_to_user(principal: dict) -> User:
     user.is_active = principal.get("is_active", False)
     user.admin = principal.get("is_org_admin", False)
     return user
+
+
+def get_user_id_from_request(request) -> str | None:
+    """
+    Get user_id from a request using multiple lookup strategies.
+
+    Tries to get user_id from (in order of precedence):
+    1. Principal from database (via get_principal_from_request)
+    2. request.user.user_id attached to the request
+    3. IT service via PrincipalProxy
+
+    Args:
+        request: The HTTP request object
+
+    Returns:
+        str: The user_id, or None if not found
+    """
+    from management.utils import get_principal_from_request
+
+    # 1. Try to get from Principal in database
+    principal = get_principal_from_request(request)
+    if principal is not None:
+        user_id = getattr(principal, "user_id", None)
+        if user_id:
+            return user_id
+
+    # 2. Try to get from request.user.user_id
+    user_id = getattr(request.user, "user_id", None)
+    if user_id:
+        return user_id
+
+    # 3. Fall back to IT service via PrincipalProxy
+    username = getattr(request.user, "username", None)
+    if not username:
+        LOGGER.debug("No username available from request.user for user_id lookup")
+        return None
+
+    org_id = getattr(request.user, "org_id", None)
+    if not org_id:
+        LOGGER.debug("No org_id available from request.user for user_id lookup")
+        return None
+
+    try:
+        proxy = PrincipalProxy()
+        resp = proxy.request_filtered_principals([username], org_id=org_id, options={"return_id": True})
+    except requests.exceptions.RequestException as e:
+        LOGGER.warning("PrincipalProxy request failed during user_id lookup: %s: %s", type(e).__name__, e)
+        return None
+
+    if resp.get("status_code") != 200 or not resp.get("data"):
+        LOGGER.debug("Failed to retrieve user_id from IT service for username: %s", username)
+        return None
+
+    user_id = resp["data"][0].get("user_id")
+    if not user_id:
+        LOGGER.debug("IT service response missing user_id for username: %s", username)
+        return None
+
+    LOGGER.debug("Retrieved user_id from IT service via PrincipalProxy")
+    return user_id
+
+
+def get_kessel_principal_id(request) -> str | None:
+    """
+    Get the principal ID formatted for Kessel API from a request.
+
+    This utility function looks up the user_id using multiple strategies
+    and formats it as a Kessel principal resource ID.
+
+    Args:
+        request: The HTTP request object
+
+    Returns:
+        str: The principal ID formatted for Kessel API (e.g., "localhost/user_id"),
+             or None if user_id could not be determined
+    """
+    user_id = get_user_id_from_request(request)
+    if not user_id:
+        LOGGER.debug("user_id is None after all lookup attempts")
+        return None
+
+    return Principal.user_id_to_principal_resource_id(user_id)
