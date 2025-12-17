@@ -369,6 +369,43 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
             self.assertGreater(len(binding_tuples), 0)
 
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+    def test_role_without_policy_is_migrated(self):
+        """Test that custom role without any policy (not assigned to any group) is still migrated."""
+        # Create custom role with access but NO policy (not assigned to any group)
+        role = Role.objects.create(tenant=self.tenant, name="Role Without Policy", system=False)
+        Access.objects.create(role=role, permission=self.default_permission, tenant=self.tenant)
+
+        # Verify: NO policy exists for this role
+        self.assertFalse(role.policies.exists(), "Role should have no policies")
+
+        # Verify initial state: no V2 models
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 0)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 0)
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 0)
+
+        # Perform migration using migrate_all_role_bindings
+        replicator = InMemoryRelationReplicator(self.tuples)
+        checked, migrated = migrate_all_role_bindings(replicator=replicator, tenant=self.tenant)
+
+        # Should have checked and migrated at least one role
+        self.assertGreaterEqual(checked, 1, "Should have checked at least one role")
+        self.assertGreaterEqual(migrated, 1, "Should have migrated at least one role")
+
+        # V2 models SHOULD be created even without policy
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 1, "CustomRoleV2 should be created")
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 1, "RoleBinding should be created")
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1, "BindingMapping should be created")
+
+        # Verify the binding has empty groups (since no policy/group is assigned)
+        binding = BindingMapping.objects.filter(role=role).first()
+        self.assertEqual(binding.mappings.get("groups", []), [], "Binding should have no groups")
+
+        # Verify tuples were created
+        binding_id = binding.mappings["id"]
+        binding_tuples = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
+        self.assertGreater(len(binding_tuples), 0, "Should have tuples for the binding")
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
     def test_role_migration_is_idempotent(self):
         """Test that running migration multiple times on the same role is safe."""
         # Create role
