@@ -22,11 +22,11 @@ from uuid import UUID
 
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
+from management.permissions.kessel_principal_utils import get_kessel_principal_id_for_v2_access
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
 from management.permissions.workspace_inventory_access import (
     WorkspaceInventoryAccessChecker,
 )
-from management.principal.proxy import get_kessel_principal_id
 from management.utils import get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
 
@@ -248,13 +248,13 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
             return result
         # NOT_SYSTEM_USER - continue with normal checks
 
-        # Get principal_id using unified utility that handles:
+        # Get principal_id using unified v2 access utility that handles:
         # - Principal from database
         # - request.user.user_id
-        # - Bearer token via ITSSOTokenValidator (for service accounts)
         # - IT service via PrincipalProxy
+        # - Bearer token via ITSSOTokenValidator (for service accounts)
         with record_timing(timings, "get_principal_id"):
-            principal_id = get_kessel_principal_id(request)
+            principal_id = get_kessel_principal_id_for_v2_access(request)
         if not principal_id:
             logger.warning(
                 "Could not determine principal_id for access check",
