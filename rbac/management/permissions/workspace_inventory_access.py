@@ -118,6 +118,45 @@ class WorkspaceInventoryAccessChecker:
             logger.error(f"Inventory API connectivity error: {type(e).__name__}: {e}")
             return default
 
+    def check_resource_access(
+        self,
+        resource_type: str,
+        resource_id: str,
+        principal_id: str,
+        relation: str,
+    ) -> bool:
+        """
+        Check if a principal has access to a specific resource using Inventory API CheckForUpdate.
+
+        This method uses strongly consistent reads to ensure the most up-to-date permission
+        state is used for all resource access checks.
+
+        Args:
+            resource_type: Type of resource to check (e.g., "workspace")
+            resource_id: UUID of the resource to check
+            principal_id: Principal identifier (e.g., "localhost/username")
+            relation: The relation to check
+
+        Returns:
+            bool: True if principal has access, False otherwise
+        """
+        check_request = CheckForUpdateRequest(
+            object=make_resource_ref(resource_type, resource_id),
+            relation=relation,
+            subject=make_subject_ref(principal_id),
+        )
+
+        def rpc(stub):
+            response = stub.CheckForUpdate(check_request)
+            return self._log_and_return_allowed(
+                response.allowed,
+                resource_id,
+                principal_id,
+                relation,
+            )
+
+        return self._call_inventory(rpc, False)
+
     def check_workspace_access(
         self,
         workspace_id: str,
@@ -127,8 +166,7 @@ class WorkspaceInventoryAccessChecker:
         """
         Check if a principal has access to a specific workspace using Inventory API CheckForUpdate.
 
-        This method uses strongly consistent reads to ensure the most up-to-date permission
-        state is used for all workspace access checks.
+        This is a convenience method that calls check_resource_access with resource_type="workspace".
 
         Args:
             workspace_id: UUID of the workspace to check
@@ -138,22 +176,12 @@ class WorkspaceInventoryAccessChecker:
         Returns:
             bool: True if principal has access, False otherwise
         """
-        check_request = CheckForUpdateRequest(
-            object=make_resource_ref("workspace", workspace_id),
+        return self.check_resource_access(
+            resource_type="workspace",
+            resource_id=workspace_id,
+            principal_id=principal_id,
             relation=relation,
-            subject=make_subject_ref(principal_id),
         )
-
-        def rpc(stub):
-            response = stub.CheckForUpdate(check_request)
-            return self._log_and_return_allowed(
-                response.allowed,
-                workspace_id,
-                principal_id,
-                relation,
-            )
-
-        return self._call_inventory(rpc, False)
 
     def _build_streamed_request(
         self,
