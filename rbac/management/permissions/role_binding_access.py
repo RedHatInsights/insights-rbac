@@ -19,10 +19,10 @@
 
 import logging
 
+from management.permissions.kessel_principal_utils import get_kessel_principal_id_for_v2_access
 from management.permissions.workspace_inventory_access import (
     WorkspaceInventoryAccessChecker,
 )
-from management.principal.proxy import get_kessel_principal_id
 from rest_framework import permissions
 
 logger = logging.getLogger(__name__)
@@ -114,9 +114,20 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
             logger.debug("Denied access for unknown resource_type: %s", resource_type)
             return False
 
-        # Get principal_id for Kessel API check using the reusable utility
-        principal_id = get_kessel_principal_id(request)
+        # Get principal_id for Kessel API check using the v2 access utility
+        # This handles service account authentication via ITSSOTokenValidator
+        principal_id = get_kessel_principal_id_for_v2_access(request)
         if not principal_id:
+            logger.warning(
+                "Could not determine principal_id for role binding access check",
+                extra={
+                    "org_id": getattr(request.user, "org_id", None),
+                    "has_username": bool(getattr(request.user, "username", None)),
+                    "is_service_account": getattr(request.user, "is_service_account", False),
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                },
+            )
             return False
 
         # Use WorkspaceInventoryAccessChecker for the Kessel permission check
