@@ -308,6 +308,7 @@ class WorkspaceAuditLogModelTests(TransactionalIdentityRequest):
         self.assertEqual(audit_log.resource_uuid, workspace.id)
         self.assertIsNone(audit_log.resource_id)
         self.assertIn("Test Workspace", audit_log.description)
+        self.assertEqual(audit_log.tenant_id, self.tenant.id)
 
     def test_log_workspace_update_captures_name_change(self) -> None:
         """Test that log_workspace_update captures name changes."""
@@ -357,6 +358,7 @@ class WorkspaceAuditLogModelTests(TransactionalIdentityRequest):
         self.assertEqual(audit_log.action, AuditLog.DELETE)
         self.assertEqual(audit_log.resource_uuid, workspace.id)
         self.assertIn("Workspace to Delete", audit_log.description)
+        self.assertEqual(audit_log.tenant_id, self.tenant.id)
 
     def test_log_workspace_move_sets_correct_fields(self) -> None:
         """Test that log_workspace_move sets all required fields correctly."""
@@ -389,3 +391,4 @@ class WorkspaceAuditLogModelTests(TransactionalIdentityRequest):
         self.assertIn("Moving Workspace", audit_log.description)
         self.assertIn(str(old_parent_id), audit_log.description)
         self.assertIn(str(new_parent_id), audit_log.description)
+        self.assertEqual(audit_log.tenant_id, self.tenant.id)
