@@ -223,12 +223,14 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """
         return super().destroy(request, *args, **kwargs)
 
+    @transaction.atomic()
     def perform_destroy(self, instance) -> None:
         """Delegate to service for destroy logic and log the audit event.
 
         Note: We log before destroy to capture instance data (name, id) while it still exists.
-        This is safe because destroy() uses @transaction.atomic() - if destroy fails,
-        both the audit log and delete are rolled back together.
+        The @transaction.atomic() ensures if destroy fails, both the audit log and delete
+        are rolled back together - this is explicit here to prevent regression if the
+        parent destroy() method's transaction is ever removed.
         """
         self._log_workspace_delete(instance)
         self._service.destroy(instance)
