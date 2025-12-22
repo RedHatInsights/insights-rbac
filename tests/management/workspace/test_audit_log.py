@@ -169,6 +169,34 @@ class WorkspaceAuditLogTests(TransactionalIdentityRequest):
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    def test_partial_update_workspace_creates_audit_log(self, replicate_workspace, replicate) -> None:
+        """Test that partial update (PATCH) creates correct audit log."""
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": str(self.standard_workspace.id)})
+        client = APIClient()
+        # PATCH only updates the name field
+        patch_data = {"name": "Patched Workspace Name"}
+        response = client.patch(url, patch_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        audit_logs = AuditLog.objects.filter(resource_type=AuditLog.WORKSPACE, action=AuditLog.EDIT)
+        self.assertEqual(audit_logs.count(), 1)
+
+        audit_log = audit_logs.first()
+        self.assertEqual(audit_log.action, AuditLog.EDIT)
+        self.assertEqual(audit_log.resource_type, AuditLog.WORKSPACE)
+        self.assertIn("Patched Workspace Name", audit_log.description)
+        self.assertIn("name:", audit_log.description)
+        # Description was not changed, so should not appear in audit log
+        self.assertNotIn("description updated", audit_log.description)
+        self.assertEqual(str(audit_log.resource_uuid), str(self.standard_workspace.id))
+        self.assertEqual(audit_log.principal_username, self.user_data["username"])
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
     def test_delete_workspace_creates_audit_log(self, replicate_workspace, replicate) -> None:
         """Test that deleting a workspace creates an audit log entry."""
         replicate.side_effect = self.in_memory_replicator.replicate
