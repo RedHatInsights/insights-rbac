@@ -32,11 +32,13 @@ class AuditLog(TenantAwareModel):
     ROLE = "role"
     USER = "user"
     PERMISSION = "permission"
+    WORKSPACE = "workspace"
     RESOURCE_CHOICES = (
         (GROUP, "Group"),
         (ROLE, "Role"),
         (USER, "User"),
         (PERMISSION, "Permission"),
+        (WORKSPACE, "Workspace"),
     )
 
     DELETE = "delete"
@@ -44,12 +46,14 @@ class AuditLog(TenantAwareModel):
     EDIT = "edit"
     CREATE = "create"
     REMOVE = "remove"
+    MOVE = "move"
     ACTION_CHOICES = (
         (DELETE, "Delete"),
         (ADD, "Add"),
         (EDIT, "Edit"),
         (CREATE, "Create"),
         (REMOVE, "Remove"),
+        (MOVE, "Move"),
     )
 
     created = models.DateTimeField(default=timezone.now)
@@ -201,5 +205,58 @@ class AuditLog(TenantAwareModel):
             )
 
         self.action = AuditLog.REMOVE
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_workspace_create(self, request, workspace) -> None:
+        """Audit Log when a workspace is created."""
+        self.principal_username = request.user.username
+        self.resource_type = AuditLog.WORKSPACE
+        self.resource_id = None  # Workspace uses UUID as primary key
+        self.resource_uuid = workspace.id
+        self.description = f"Created workspace: {workspace.name}"
+        self.action = AuditLog.CREATE
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_workspace_update(self, request, workspace, original_name: str, original_description: str | None) -> None:
+        """Audit Log when a workspace is updated."""
+        self.principal_username = request.user.username
+        self.resource_type = AuditLog.WORKSPACE
+        self.resource_id = None
+        self.resource_uuid = workspace.id
+
+        changes = []
+        if original_name != workspace.name:
+            changes.append(f"name: '{original_name}' -> '{workspace.name}'")
+        if original_description != workspace.description:
+            changes.append("description updated")
+
+        change_details = ", ".join(changes) if changes else "no changes detected"
+        self.description = f"Updated workspace: {workspace.name} ({change_details})"
+        self.action = AuditLog.EDIT
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_workspace_delete(self, request, workspace) -> None:
+        """Audit Log when a workspace is deleted."""
+        self.principal_username = request.user.username
+        self.resource_type = AuditLog.WORKSPACE
+        self.resource_id = None
+        self.resource_uuid = workspace.id
+        self.description = f"Deleted workspace: {workspace.name}"
+        self.action = AuditLog.DELETE
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_workspace_move(self, request, workspace, old_parent_id, new_parent_id) -> None:
+        """Audit Log when a workspace is moved to a new parent."""
+        self.principal_username = request.user.username
+        self.resource_type = AuditLog.WORKSPACE
+        self.resource_id = None
+        self.resource_uuid = workspace.id
+        self.secondary_resource_uuid = new_parent_id
+        self.description = f"Moved workspace: {workspace.name} from parent {old_parent_id} to {new_parent_id}"
+        self.action = AuditLog.MOVE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
