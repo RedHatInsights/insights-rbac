@@ -26,6 +26,7 @@ from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
+from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
@@ -45,11 +46,15 @@ VALID_BOOLEAN_VALUES = ["true", "false"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class WorkspaceViewSet(BaseV2ViewSet):
+class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
     """Workspace View.
 
     A viewset that provides default `create()`, `destroy` and `retrieve()`.
 
+    Access control is handled by:
+    - WorkspaceAccessPermission: Coarse-grained endpoint access
+    - WorkspaceAccessFilterBackend: Queryset filtering via Kessel Inventory API
+    - WorkspaceObjectAccessMixin: 404 for inaccessible workspaces (no existence leak)
     """
 
     permission_classes = (WorkspaceAccessPermission,)
@@ -57,7 +62,8 @@ class WorkspaceViewSet(BaseV2ViewSet):
     serializer_class = WorkspaceSerializer
     ordering_fields = ("name",)
     ordering = ("name",)
-    filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
+    # WorkspaceAccessFilterBackend must be first to filter by access before other filters
+    filter_backends = (WorkspaceAccessFilterBackend, filters.DjangoFilterBackend, OrderingFilter)
 
     def __init__(self, **kwargs):
         """Init viewset."""
@@ -152,12 +158,15 @@ class WorkspaceViewSet(BaseV2ViewSet):
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
-        """Get a list of workspaces."""
+        """Get a list of workspaces.
+
+        Access filtering is handled by WorkspaceAccessFilterBackend.
+        This method only handles additional query parameter filtering.
+        """
         all_types = "all"
-        queryset = self.get_queryset()
-        if getattr(request, "permission_tuples", None):
-            permitted_wss = [tuple[1] for tuple in request.permission_tuples]
-            queryset = queryset.filter(id__in=permitted_wss)
+        # Use filter_queryset to apply all filter backends (including access filtering)
+        queryset = self.filter_queryset(self.get_queryset())
+
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
