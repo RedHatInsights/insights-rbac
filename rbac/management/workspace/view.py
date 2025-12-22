@@ -65,38 +65,35 @@ class WorkspaceViewSet(BaseV2ViewSet):
         super().__init__(**kwargs)
         self._service = WorkspaceService()
 
-    def _log_workspace_action(self, action: str, workspace, **extra) -> None:
-        """Centralized audit logging for workspace operations."""
+    def _log_workspace_create(self, workspace) -> None:
+        """Log audit event for workspace creation."""
         audit_log = AuditLog()
+        audit_log.log_workspace_create(self.request, workspace)
+        logger.info("Workspace created: %s (id: %s)", workspace.name, workspace.id)
 
-        if action == "create":
-            audit_log.log_workspace_create(self.request, workspace)
-            logger.info("Workspace created: %s (id: %s)", workspace.name, workspace.id)
-        elif action == "update":
-            audit_log.log_workspace_update(
-                self.request,
-                workspace,
-                extra["original_name"],
-                extra["original_description"],
-            )
-            logger.info("Workspace updated: %s (id: %s)", workspace.name, workspace.id)
-        elif action == "delete":
-            audit_log.log_workspace_delete(self.request, workspace)
-            logger.info("Workspace deleted: %s (id: %s)", workspace.name, workspace.id)
-        elif action == "move":
-            audit_log.log_workspace_move(
-                self.request,
-                workspace,
-                extra["old_parent_id"],
-                extra["target_parent_id"],
-            )
-            logger.info(
-                "Workspace moved: %s (id: %s) from parent %s to %s",
-                workspace.name,
-                workspace.id,
-                extra["old_parent_id"],
-                extra["target_parent_id"],
-            )
+    def _log_workspace_update(self, workspace, original_name: str, original_description: str | None) -> None:
+        """Log audit event for workspace update."""
+        audit_log = AuditLog()
+        audit_log.log_workspace_update(self.request, workspace, original_name, original_description)
+        logger.info("Workspace updated: %s (id: %s)", workspace.name, workspace.id)
+
+    def _log_workspace_delete(self, workspace) -> None:
+        """Log audit event for workspace deletion."""
+        audit_log = AuditLog()
+        audit_log.log_workspace_delete(self.request, workspace)
+        logger.info("Workspace deleted: %s (id: %s)", workspace.name, workspace.id)
+
+    def _log_workspace_move(self, workspace, old_parent_id, target_parent_id) -> None:
+        """Log audit event for workspace move."""
+        audit_log = AuditLog()
+        audit_log.log_workspace_move(self.request, workspace, old_parent_id, target_parent_id)
+        logger.info(
+            "Workspace moved: %s (id: %s) from parent %s to %s",
+            workspace.name,
+            workspace.id,
+            old_parent_id,
+            target_parent_id,
+        )
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
@@ -146,7 +143,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
     def perform_create(self, serializer) -> None:
         """Create workspace and log the audit event."""
         workspace = serializer.save()
-        self._log_workspace_action("create", workspace)
+        self._log_workspace_create(workspace)
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
@@ -229,7 +226,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
     def perform_destroy(self, instance) -> None:
         """Delegate to service for destroy logic and log the audit event."""
         # Log before destroy since instance will be deleted
-        self._log_workspace_action("delete", instance)
+        self._log_workspace_delete(instance)
         self._service.destroy(instance)
 
     @transaction.atomic()
@@ -246,12 +243,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
         workspace = serializer.save()
 
-        self._log_workspace_action(
-            "update",
-            workspace,
-            original_name=original_name,
-            original_description=original_description,
-        )
+        self._log_workspace_update(workspace, original_name, original_description)
 
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
     def _move_atomic(self, request):
@@ -276,12 +268,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
         # Log the move operation
         workspace.refresh_from_db()
-        self._log_workspace_action(
-            "move",
-            workspace,
-            old_parent_id=old_parent_id,
-            target_parent_id=target_workspace_id,
-        )
+        self._log_workspace_move(workspace, old_parent_id, target_workspace_id)
         return result
 
     @action(detail=True, methods=["post"], url_path="move")

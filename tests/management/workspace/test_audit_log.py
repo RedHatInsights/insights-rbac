@@ -135,6 +135,8 @@ class WorkspaceAuditLogTests(TransactionalIdentityRequest):
         self.assertEqual(audit_log.resource_type, AuditLog.WORKSPACE)
         self.assertIn("Updated Workspace Name", audit_log.description)
         self.assertIn("name:", audit_log.description)
+        # Verify description change is also logged when both name and description change
+        self.assertIn("description updated", audit_log.description)
         self.assertEqual(str(audit_log.resource_uuid), str(self.standard_workspace.id))
         self.assertEqual(audit_log.principal_username, self.user_data["username"])
 
@@ -157,8 +159,12 @@ class WorkspaceAuditLogTests(TransactionalIdentityRequest):
         self.assertEqual(audit_logs.count(), 1)
 
         audit_log = audit_logs.first()
+        self.assertEqual(audit_log.action, AuditLog.EDIT)
+        self.assertEqual(audit_log.resource_type, AuditLog.WORKSPACE)
         self.assertIn("description updated", audit_log.description)
         self.assertNotIn("name:", audit_log.description)
+        self.assertEqual(str(audit_log.resource_uuid), str(self.standard_workspace.id))
+        self.assertEqual(audit_log.principal_username, self.user_data["username"])
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
