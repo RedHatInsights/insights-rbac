@@ -1446,7 +1446,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify debug was logged (now uses debug instead of warning)
+            # Verify debug was logged (uses debug level in proxy module)
             mock_logger.debug.assert_any_call(
                 "Failed to retrieve user_id from IT service for username: %s",
                 "testuser",
@@ -1487,7 +1487,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify debug was logged (now uses debug instead of warning)
+            # Verify debug was logged (uses debug level in proxy module)
             mock_logger.debug.assert_any_call(
                 "Failed to retrieve user_id from IT service for username: %s",
                 "testuser",
@@ -1516,7 +1516,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify debug was logged (now uses debug instead of warning)
+            # Verify debug was logged (uses debug level in proxy module)
             mock_logger.debug.assert_any_call("No username available from request.user for user_id lookup")
 
     @patch(
@@ -1543,7 +1543,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify debug was logged (now uses debug instead of warning)
+            # Verify debug was logged (uses debug level in proxy module)
             mock_logger.debug.assert_any_call("No org_id available from request.user for user_id lookup")
 
     @patch("management.inventory_client.create_client_channel_inventory")
