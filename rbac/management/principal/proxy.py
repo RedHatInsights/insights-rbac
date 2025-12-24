@@ -362,7 +362,8 @@ def get_user_id_from_request(request) -> str | None:
     Tries to get user_id from (in order of precedence):
     1. Principal from database (via get_principal_from_request)
     2. request.user.user_id attached to the request
-    3. IT service via PrincipalProxy
+    3. Bearer token via ITSSOTokenValidator (for service accounts)
+    4. IT service via PrincipalProxy
 
     Args:
         request: The HTTP request object
@@ -384,7 +385,14 @@ def get_user_id_from_request(request) -> str | None:
     if user_id:
         return user_id
 
-    # 3. Fall back to IT service via PrincipalProxy
+    # 3. Try to get from bearer token via ITSSOTokenValidator (for service accounts)
+    is_service_account = getattr(request.user, "is_service_account", False)
+    if is_service_account:
+        user_id = _get_user_id_from_bearer_token(request)
+        if user_id:
+            return user_id
+
+    # 4. Fall back to IT service via PrincipalProxy
     username = getattr(request.user, "username", None)
     if not username:
         LOGGER.debug("No username available from request.user for user_id lookup")
@@ -413,6 +421,38 @@ def get_user_id_from_request(request) -> str | None:
 
     LOGGER.debug("Retrieved user_id from IT service via PrincipalProxy")
     return user_id
+
+
+def _get_user_id_from_bearer_token(request) -> str | None:
+    """
+    Extract user_id from bearer token using ITSSOTokenValidator.
+
+    This is used for service account authentication where user_id
+    is not available in the x-rh-identity header but can be extracted
+    from the JWT bearer token.
+
+    Args:
+        request: The HTTP request object
+
+    Returns:
+        str: The user_id from the JWT "sub" claim, or None if extraction fails
+    """
+    from management.authorization.token_validator import ITSSOTokenValidator
+    from management.authorization.invalid_token import InvalidTokenError
+    from management.authorization.missing_authorization import MissingAuthorizationError
+
+    try:
+        token_validator = ITSSOTokenValidator()
+        user = token_validator.get_user_from_bearer_token(request)
+        if user and user.user_id:
+            LOGGER.debug("Retrieved user_id from bearer token via ITSSOTokenValidator")
+            return user.user_id
+    except (InvalidTokenError, MissingAuthorizationError) as e:
+        LOGGER.debug("Failed to extract user_id from bearer token: %s", e)
+    except Exception as e:
+        LOGGER.warning("Unexpected error extracting user_id from bearer token: %s: %s", type(e).__name__, e)
+
+    return None
 
 
 def get_kessel_principal_id(request) -> str | None:

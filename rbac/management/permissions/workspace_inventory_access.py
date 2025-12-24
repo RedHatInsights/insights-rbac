@@ -18,6 +18,7 @@
 """Workspace access checker using Inventory API."""
 
 import logging
+import time
 from typing import Optional, Set
 
 import grpc
@@ -239,14 +240,22 @@ class WorkspaceInventoryAccessChecker:
             accessible_workspaces = set()
             continuation_token = None
             page_count = 0
+            # Time spent establishing gRPC streaming iterators (stub method invocation)
+            iterator_setup_seconds = 0.0
+            # Time spent iterating over gRPC stream responses
+            stream_iteration_seconds = 0.0
 
             while page_count < self.MAX_PAGES:
                 page_count += 1
 
                 request_data = self._build_streamed_request(principal_id, relation, continuation_token)
+
+                t0 = time.perf_counter()
                 responses = stub.StreamedListObjects(request_data)
+                iterator_setup_seconds += time.perf_counter() - t0
 
                 last_token = None
+                t0 = time.perf_counter()
                 for response in responses:
                     workspace_id = self._extract_workspace_id(response)
                     if workspace_id:
@@ -260,6 +269,7 @@ class WorkspaceInventoryAccessChecker:
                     token = self._extract_continuation_token(response)
                     if token:
                         last_token = token
+                stream_iteration_seconds += time.perf_counter() - t0
 
                 if not last_token:
                     break
@@ -283,6 +293,21 @@ class WorkspaceInventoryAccessChecker:
                 f"Accessible workspaces for principal={principal_id}: "
                 f"{len(accessible_workspaces)} found via StreamedListObjects"
             )
+
+            if settings.WORKSPACE_ACCESS_TIMING_ENABLED:
+                logger.info(
+                    "lookup_accessible_workspaces timing",
+                    extra={
+                        "principal_id": principal_id,
+                        "relation": relation,
+                        "workspace_count": len(accessible_workspaces),
+                        "page_count": page_count,
+                        "max_pages": self.MAX_PAGES,
+                        "iterator_setup_ms": round(iterator_setup_seconds * 1000, 2),
+                        "stream_iteration_ms": round(stream_iteration_seconds * 1000, 2),
+                        "hit_max_pages": page_count >= self.MAX_PAGES,
+                    },
+                )
 
             return accessible_workspaces
 
