@@ -32,6 +32,7 @@ from management.principal.proxy import PrincipalProxy
 from management.utils import get_principal_from_request
 from management.workspace.model import Workspace
 from management.workspace.utils import permission_from_request
+from management.workspace.utils.access import filter_top_level_workspaces, get_fallback_workspace_ids
 from rest_framework import filters
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,19 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
             return queryset.none()
 
         # Get accessible workspace IDs from Inventory API
-        accessible_ids = self._get_accessible_workspace_ids(request, view)
+        try:
+            accessible_ids = self._get_accessible_workspace_ids(request, view)
+        except Exception as e:
+            logger.exception(
+                "Exception while getting accessible workspaces from Inventory API: "
+                "user=%s, org_id=%s, action=%s, method=%s, error=%s",
+                getattr(request.user, "username", "unknown"),
+                getattr(request.user, "org_id", "unknown"),
+                getattr(view, "action", "unknown"),
+                request.method,
+                str(e),
+            )
+            return queryset.none()
 
         if accessible_ids is None:
             # Failed to get accessible workspaces - return empty for safety
@@ -179,8 +192,6 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
 
     def _add_ancestors_for_top_level(self, accessible_ids: Set[str], tenant) -> Set[str]:
         """Add ancestor IDs for top-level accessible workspaces."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         accessible_workspaces = Workspace.objects.filter(id__in=accessible_ids, tenant=tenant)
         top_level = filter_top_level_workspaces(accessible_workspaces)
 
@@ -193,8 +204,6 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
 
     def _get_fallback_workspace_ids(self, tenant) -> Set[str]:
         """Get fallback workspace IDs (root, default, ungrouped)."""
-        from management.workspace.utils.access import get_fallback_workspace_ids
-
         return get_fallback_workspace_ids(tenant)
 
 

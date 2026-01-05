@@ -150,6 +150,29 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
         # Should return empty queryset
         queryset.none.assert_called_once()
 
+    @patch("management.workspace.filters.WorkspaceAccessFilterBackend._get_accessible_workspace_ids")
+    @patch("management.workspace.filters.check_system_user_access")
+    @patch("management.workspace.filters.FEATURE_FLAGS")
+    def test_returns_empty_when_inventory_api_raises_exception(
+        self, mock_flags, mock_system_check, mock_get_accessible
+    ):
+        """Returns empty queryset when Inventory API call raises an exception."""
+        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
+        mock_system_check.return_value = Mock(result=SystemUserAccessResult.NOT_SYSTEM_USER)
+
+        # Mock Inventory API raising an exception
+        mock_get_accessible.side_effect = Exception("Inventory API connection failed")
+
+        request = Mock()
+        request.method = "GET"
+        queryset = Mock()
+        view = Mock(action="list")
+
+        self.filter_backend.filter_queryset(request, queryset, view)
+
+        # Should return empty queryset on exception
+        queryset.none.assert_called_once()
+
     @patch("management.workspace.filters.FEATURE_FLAGS")
     def test_v1_filter_uses_permission_tuples(self, mock_flags):
         """V1 filtering uses permission_tuples from request."""
