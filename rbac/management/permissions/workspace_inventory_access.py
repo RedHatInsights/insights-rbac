@@ -220,7 +220,9 @@ class WorkspaceInventoryAccessChecker:
         token = getattr(pagination, "continuation_token", None)
         return token or None
 
-    def lookup_accessible_workspaces(self, principal_id: str, relation: str) -> Set[str]:
+    def lookup_accessible_workspaces(
+        self, principal_id: str, relation: str, request_id: Optional[str] = None
+    ) -> Set[str]:
         """
         Lookup which workspaces are accessible to the principal using Inventory API StreamedListObjects.
 
@@ -231,6 +233,7 @@ class WorkspaceInventoryAccessChecker:
         Args:
             principal_id: Principal identifier (e.g., "localhost/username")
             relation: The relation to check
+            request_id: Optional request ID for logging/tracing
 
         Returns:
             Set[str]: Set of workspace IDs that the principal has access to
@@ -296,8 +299,9 @@ class WorkspaceInventoryAccessChecker:
 
             if settings.WORKSPACE_ACCESS_TIMING_ENABLED:
                 logger.info(
-                    "lookup_accessible_workspaces timing",
-                    extra={
+                    "lookup_accessible_workspaces timing: %s",
+                    {
+                        "request_id": request_id,
                         "principal_id": principal_id,
                         "relation": relation,
                         "workspace_count": len(accessible_workspaces),
