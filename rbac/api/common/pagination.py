@@ -135,21 +135,25 @@ class V2CursorPagination(CursorPagination):
     cursor_query_param = "cursor"
 
     def get_ordering(self, request, queryset, view):
-        """Get ordering from order_by query parameter or use default."""
+        """Get ordering from order_by query parameter or use default.
+
+        Validates field names and falls back to default if invalid.
+        """
         order_by = request.query_params.get("order_by")
         if not order_by:
             return (self.ordering,)
 
-        order_fields = []
-        for field_spec in order_by.split(","):
-            field_spec = field_spec.strip()
-            if field_spec:
-                order_fields.append(field_spec)
+        order_fields = [f.strip() for f in order_by.split(",") if f.strip()]
+        if not order_fields:
+            return (self.ordering,)
 
-        if order_fields:
+        try:
+            # Validate ordering fields against queryset
+            ordered = queryset.order_by(*order_fields)
+            str(ordered.query)
             return tuple(order_fields)
-
-        return (self.ordering,)
+        except Exception:
+            return (self.ordering,)
 
     @staticmethod
     def link_rewrite(request, link):

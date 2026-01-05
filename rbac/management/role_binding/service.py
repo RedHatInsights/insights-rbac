@@ -178,15 +178,16 @@ class RoleBindingService:
 
         Returns:
             QuerySet of Group objects annotated with role binding information
+
+        Note:
+            Ordering is handled by V2CursorPagination.get_ordering() to ensure
+            cursor pagination works correctly with the requested order_by parameter.
         """
         # Build base queryset for the specified resource
         queryset = self._build_base_queryset(params.resource_id, params.resource_type)
 
         # Apply subject filters
         queryset = self._apply_subject_filters(queryset, params.subject_type, params.subject_id)
-
-        # Apply ordering
-        queryset = self._apply_ordering(queryset, params.order_by)
 
         return queryset
 
@@ -315,26 +316,3 @@ class RoleBindingService:
             queryset = queryset.filter(uuid=subject_id)
 
         return queryset
-
-    def _apply_ordering(self, queryset: QuerySet, order_by: Optional[str]) -> QuerySet:
-        """Apply ordering to queryset.
-
-        Args:
-            queryset: QuerySet to order
-            order_by: Comma-separated order fields (prefix '-' for descending)
-
-        Returns:
-            Ordered queryset
-        """
-        default_ordering = "-modified"
-
-        if not order_by:
-            return queryset.order_by(default_ordering)
-
-        try:
-            order_fields = [f.strip() for f in order_by.split(",") if f.strip()]
-            ordered = queryset.order_by(*order_fields)
-            str(ordered.query)  # Validate field names
-            return ordered
-        except Exception:
-            return queryset.order_by(default_ordering)

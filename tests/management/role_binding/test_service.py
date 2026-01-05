@@ -402,65 +402,6 @@ class RoleBindingServiceTests(IdentityRequest):
         self.assertIsNotNone(context["field_selection"])
         self.assertIn("group.name", context["field_selection"].subject_fields)
 
-    def test_ordering_by_last_modified_descending(self):
-        """Test default ordering by last_modified descending."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-        )
-        queryset = self.service.get_role_bindings_by_subject(params)
-
-        # Should not raise an error
-        list(queryset)
-
-    def test_ordering_by_name(self):
-        """Test ordering by name field."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            order_by="name",
-        )
-        queryset = self.service.get_role_bindings_by_subject(params)
-
-        # Should not raise an error
-        list(queryset)
-
-    def test_ordering_by_name_descending(self):
-        """Test descending order with - prefix."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            order_by="-name",
-        )
-        queryset = self.service.get_role_bindings_by_subject(params)
-
-        # Should not raise an error
-        list(queryset)
-
-    def test_ordering_by_modified(self):
-        """Test ordering by modified field."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            order_by="-modified",
-        )
-        queryset = self.service.get_role_bindings_by_subject(params)
-
-        # Should not raise an error
-        list(queryset)
-
-    def test_ordering_by_invalid_field_uses_default(self):
-        """Test that invalid order_by field falls back to default."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            order_by="invalid_field",
-        )
-        queryset = self.service.get_role_bindings_by_subject(params)
-
-        # Should not raise an error, uses default ordering
-        list(queryset)
-
 
 class RoleBindingSerializerTests(IdentityRequest):
     """Tests for RoleBindingByGroupSerializer."""
