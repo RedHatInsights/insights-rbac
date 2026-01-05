@@ -18,7 +18,10 @@
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
-from management.permissions.workspace_access import WorkspaceAccessPermission
+from management.permissions.role_binding_access import (
+    RoleBindingKesselAccessPermission,
+    RoleBindingSystemUserAccessPermission,
+)
 from management.querysets import get_role_binding_groups_queryset
 from management.workspace.model import Workspace
 from rest_framework import serializers
@@ -37,7 +40,10 @@ class RoleBindingViewSet(BaseV2ViewSet):
     """
 
     serializer_class = RoleBindingByGroupSerializer
-    permission_classes = (WorkspaceAccessPermission,)
+    permission_classes = (
+        RoleBindingSystemUserAccessPermission,
+        RoleBindingKesselAccessPermission,
+    )
     pagination_class = V2CursorPagination
 
     @action(detail=False, methods=["get"], url_path="by-subject")

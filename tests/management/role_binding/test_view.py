@@ -134,7 +134,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         """Get the by-subject URL."""
         return reverse("v2_management:role-bindings-by-subject")
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_returns_paginated_response(self, mock_permission):
         """Test that by_subject returns a paginated response structure."""
         url = self._get_by_subject_url()
@@ -151,7 +154,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn("next", response.data["links"])
         self.assertIn("previous", response.data["links"])
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_default_limit(self, mock_permission):
         """Test that default limit is 10."""
         url = self._get_by_subject_url()
@@ -164,7 +170,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(response.data["meta"]["limit"], 10)
         self.assertEqual(len(response.data["data"]), 10)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_custom_limit(self, mock_permission):
         """Test that custom limit is respected."""
         url = self._get_by_subject_url()
@@ -177,7 +186,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(response.data["meta"]["limit"], 5)
         self.assertEqual(len(response.data["data"]), 5)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_cursor_pagination(self, mock_permission):
         """Test that cursor pagination works correctly."""
         url = self._get_by_subject_url()
@@ -208,7 +220,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         # Pages should have different subjects
         self.assertEqual(len(set(page1_subjects) & set(page2_subjects)), 0)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_empty_results(self, mock_permission):
         """Test that empty results return valid structure."""
         url = self._get_by_subject_url()
@@ -224,7 +239,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIsNone(response.data["links"]["next"])
         self.assertIsNone(response.data["links"]["previous"])
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_first_page_has_no_previous(self, mock_permission):
         """Test that first page has no previous link."""
         url = self._get_by_subject_url()
@@ -237,7 +255,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIsNone(response.data["links"]["previous"])
         self.assertIsNotNone(response.data["links"]["next"])
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_last_page_has_no_next(self, mock_permission):
         """Test that last page has no next link."""
         url = self._get_by_subject_url()
@@ -251,7 +272,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["links"]["next"])
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_requires_resource_id(self, mock_permission):
         """Test that resource_id is required."""
         url = self._get_by_subject_url()
@@ -262,7 +286,10 @@ class RoleBindingViewSetTest(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_requires_resource_type(self, mock_permission):
         """Test that resource_type is required."""
         url = self._get_by_subject_url()
@@ -273,7 +300,10 @@ class RoleBindingViewSetTest(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_data_structure(self, mock_permission):
         """Test that response data matches expected structure."""
         url = self._get_by_subject_url()
@@ -313,7 +343,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn("type", resource)
         self.assertEqual(resource["type"], "workspace")
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_strips_nul_bytes_from_resource_id(self, mock_permission):
         """Test that NUL bytes are stripped from resource_id parameter."""
         url = self._get_by_subject_url()
@@ -325,7 +358,10 @@ class RoleBindingViewSetTest(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_strips_nul_bytes_from_resource_type(self, mock_permission):
         """Test that NUL bytes are stripped from resource_type parameter."""
         url = self._get_by_subject_url()
@@ -337,7 +373,10 @@ class RoleBindingViewSetTest(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_nul_only_resource_id_returns_error(self, mock_permission):
         """Test that resource_id with only NUL bytes returns validation error."""
         url = self._get_by_subject_url()
@@ -348,7 +387,10 @@ class RoleBindingViewSetTest(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission", return_value=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_nul_only_resource_type_returns_error(self, mock_permission):
         """Test that resource_type with only NUL bytes returns validation error."""
         url = self._get_by_subject_url()

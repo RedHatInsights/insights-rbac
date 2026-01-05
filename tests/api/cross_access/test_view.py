@@ -224,6 +224,53 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
                     "last_name": "test",
                     "account_number": "567890",
                     "user_id": "1111111",
+                },
+            ],
+        },
+    )
+    def test_list_missing_user(self, mock_request):
+        """Test listing of cross account request based on account number of identity."""
+        client = APIClient()
+        response = client.get(URL_LIST, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 4)
+
+        data = response.data["data"]
+
+        user1_cars = [r for r in data if r["request_id"] == str(self.request_1.request_id)]
+        user2_cars = [r for r in data if r["request_id"] == str(self.request_2.request_id)]
+
+        self.assertEqual(1, len(user1_cars))
+        self.assertEqual(1, len(user2_cars))
+
+        user1_car = user1_cars[0]
+        user2_car = user2_cars[0]
+
+        self.assertTrue(user1_car["user_available"])
+        self.assertNotIn("user_id", user1_car)
+        self.assertEqual("user", user1_car["first_name"])
+        self.assertEqual("test", user1_car["last_name"])
+        self.assertEqual("test_user@email.com", user1_car["email"])
+
+        self.assertFalse(user2_car["user_available"])
+        self.assertEqual("2222222", user2_car["user_id"])
+        self.assertNotIn("first_name", user2_car)
+        self.assertNotIn("last_name", user2_car)
+        self.assertNotIn("email", user2_car)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
                 }
             ],
         },
