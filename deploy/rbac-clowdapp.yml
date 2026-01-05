@@ -568,6 +568,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: WORKSPACE_ACCESS_TIMING_ENABLED
+            value: ${WORKSPACE_ACCESS_TIMING_ENABLED}
           - name: RBAC_KAFKA_CONSUMER_TOPIC
             value: ${RBAC_KAFKA_CONSUMER_TOPIC}
           ####### Following envs are additional to workers
@@ -1792,3 +1794,6 @@ parameters:
 - name: TENANT_SCOPE_PERMISSIONS
   description: Comma-separated list of permissions that bind to tenant scope (supports wildcards like rbac:*:*)
   value: ''
+- name: WORKSPACE_ACCESS_TIMING_ENABLED
+  description: Enable detailed timing logs for v2 workspace access checks (for performance investigation)
+  value: 'False'
