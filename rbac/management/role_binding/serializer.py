@@ -19,56 +19,6 @@ from management.models import Group
 from rest_framework import serializers
 
 
-def get_nested_attr(obj, path: str, default=None):
-    """Get a nested attribute using dot notation.
-
-    Args:
-        obj: The object to get the attribute from
-        path: Dot-notation path (e.g., "group.name" or "name")
-        default: Default value if attribute not found
-
-    Returns:
-        The attribute value or default
-    """
-    parts = path.split(".")
-    value = obj
-
-    for part in parts:
-        if value is None:
-            return default
-        value = getattr(value, part, None)
-
-    return value if value is not None else default
-
-
-def extract_fields(obj, requested_fields: set, prefix: str = "") -> dict:
-    """Extract fields from an object based on requested field paths.
-
-    Args:
-        obj: The object to extract fields from
-        requested_fields: Set of dot-notation field paths (e.g., {"group.name", "group.description"})
-        prefix: Prefix to strip from field paths (e.g., "group.")
-
-    Returns:
-        Dict with field names as keys and values from the object
-    """
-    data = {}
-
-    for field_path in requested_fields:
-        # Strip prefix if present (e.g., "group.name" -> "name" when prefix="group.")
-        if prefix and field_path.startswith(prefix):
-            attr_name = field_path.removeprefix(prefix)
-        else:
-            attr_name = field_path
-
-        # Get the attribute value
-        value = getattr(obj, attr_name, None)
-        if value is not None:
-            data[attr_name] = value
-
-    return data
-
-
 class RoleBindingByGroupSerializer(serializers.Serializer):
     """Serializer for role bindings by group.
 
