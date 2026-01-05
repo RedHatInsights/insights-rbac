@@ -36,6 +36,7 @@ from rest_framework.permissions import SAFE_METHODS
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from api.common.pagination import V2ResultsSetPagination
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 from ..utils import flatten_validation_error, validate_uuid
@@ -44,6 +45,13 @@ INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+class WorkspacePagination(V2ResultsSetPagination):
+    """Custom pagination for Workspace API with higher max_limit."""
+
+    # 3000 - max limit of count of workspaces per org id - UI needs to list all workspaces for main page
+    max_limit = 3000
 
 
 class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
@@ -60,6 +68,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
     permission_classes = (WorkspaceAccessPermission,)
     queryset = Workspace.objects.annotate()
     serializer_class = WorkspaceSerializer
+    pagination_class = WorkspacePagination
     ordering_fields = ("name",)
     ordering = ("name",)
     # WorkspaceAccessFilterBackend must be first to filter by access before other filters
