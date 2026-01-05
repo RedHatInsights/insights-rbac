@@ -14,7 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Defines the Workspace Access Permissions class."""
+"""Workspace access permission - coarse-grained endpoint checks.
+
+This permission class handles:
+- Endpoint-level access (can this user type call this endpoint?)
+- System user authentication
+- Move operation: target workspace access check
+- V1 mode: source workspace access check (legacy behavior)
+- V2 mode: source workspace access check via is_user_allowed_v2
+
+Data filtering for list operations is handled by WorkspaceAccessFilterBackend
+in management/workspace/filters.py.
+"""
 
 from feature_flags import FEATURE_FLAGS
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
@@ -38,6 +49,17 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
     This is the single entry point for workspace access control, handling
     the V1/V2 feature flag branching in one place.
+
+    Responsibilities:
+    - Endpoint-level access (can this user type call this endpoint?)
+    - System user authentication
+    - Move operation: target workspace access check
+    - V1 mode: source workspace access check (legacy behavior)
+    - V2 mode: source workspace access check via is_user_allowed_v2
+
+    Note: For V2 list operations, the WorkspaceAccessFilterBackend handles
+    queryset filtering via Kessel Inventory API. This permission class
+    allows list requests to proceed, and the FilterBackend controls visibility.
     """
 
     def has_permission(self, request, view):
@@ -69,29 +91,62 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         # Branch based on feature flag - this is the ONLY place this check should occur
         if FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
-            # V2: Use Inventory API with fine-grained permissions
-            # For system users (s2s communication), bypass v2 access checks and rely on user.admin
-            # Uses unified check_system_user_access to prevent behavior drift
-            system_check = check_system_user_access(request.user, action=view.action)
-            if system_check.result == SystemUserAccessResult.ALLOWED:
-                return True
-            if system_check.result == SystemUserAccessResult.DENIED:
-                return False
-            if system_check.result == SystemUserAccessResult.CHECK_MOVE_TARGET:
-                return self._check_move_target_exists_v1(request)
-            # SystemUserAccessResult.NOT_SYSTEM_USER - continue with normal checks
-
-            # V2 relies solely on accessible workspaces from Inventory API
-            if not is_user_allowed_v2(request, perm, ws_id):
-                return False
-
-            # For move operations, also check target workspace access
-            if view.action == "move":
-                return self._check_move_target_access_v2(request)
-
-            return True
+            return self._has_permission_v2(request, view, perm, ws_id)
 
         # V1: Use legacy role-based checks with read/write operations
+        return self._has_permission_v1(request, view, ws_id)
+
+    def _has_permission_v2(self, request, view, perm, ws_id) -> bool:
+        """
+        V2 permission check - coarse-grained for create/move, FilterBackend for detail/list.
+
+        The WorkspaceAccessFilterBackend handles access filtering for list/detail operations
+        via queryset. This ensures consistent 404 behavior for both non-existing and
+        inaccessible workspaces (prevents existence leakage).
+
+        This permission class handles:
+        - System user bypass/denial
+        - Create operation: check 'create' permission on parent workspace
+        - Move operation: check 'create' permission on target workspace
+
+        For list/detail operations, allow the request to proceed and let the
+        FilterBackend handle access via queryset filtering.
+        """
+        # For system users (s2s communication), bypass v2 access checks and rely on user.admin
+        # Uses unified check_system_user_access to prevent behavior drift
+        system_check = check_system_user_access(request.user, action=view.action)
+        if system_check.result == SystemUserAccessResult.ALLOWED:
+            return True
+        if system_check.result == SystemUserAccessResult.DENIED:
+            return False
+        if system_check.result == SystemUserAccessResult.CHECK_MOVE_TARGET:
+            return self._check_move_target_exists_v1(request)
+        # SystemUserAccessResult.NOT_SYSTEM_USER - continue with normal checks
+
+        # For create operations, check permission on parent workspace (ws_id)
+        # ws_id is the parent workspace ID where the new workspace will be created
+        if view.action == "create":
+            if not is_user_allowed_v2(request, perm, ws_id):
+                return False
+            return True
+
+        # For move operations, check target workspace access
+        # Source workspace access is handled by FilterBackend
+        if view.action == "move":
+            return self._check_move_target_access_v2(request)
+
+        # For list/detail operations, allow request to proceed
+        # FilterBackend handles access filtering via queryset
+        # This ensures 404 for both non-existing and inaccessible workspaces
+        return True
+
+    def _has_permission_v1(self, request, view, ws_id) -> bool:
+        """
+        V1 permission check using legacy role-based access control.
+
+        Admin users have full access (except move requires target validation).
+        Non-admin users are checked against role-based permissions.
+        """
         # Admin users have full access, but for move operations they still need
         # the target workspace to exist within their tenant
         if request.user.admin:
