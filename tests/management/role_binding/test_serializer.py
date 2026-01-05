@@ -391,8 +391,8 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         }
         self.assertEqual(result, expected)
 
-    def test_resource_returns_none_when_no_request_in_context(self):
-        """Test get_resource with Group but no request in context."""
+    def test_resource_returns_data_when_no_request_in_context(self):
+        """Test get_resource with Group returns data even without request in context."""
         context = {
             "resource_id": "ws-12345",
             "resource_name": "Test Workspace",
@@ -402,7 +402,12 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(context=context)
         result = serializer.get_resource(self.group)
 
-        self.assertIsNone(result)
+        expected = {
+            "id": "ws-12345",
+            "name": "Test Workspace",
+            "type": "workspace",
+        }
+        self.assertEqual(result, expected)
 
     def test_resource_returns_none_when_context_is_empty(self):
         """Test get_resource with Group and empty context."""
