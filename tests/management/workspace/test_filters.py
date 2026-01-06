@@ -59,118 +59,109 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
         self.assertEqual(result, queryset)
         queryset.filter.assert_not_called()
 
-    @patch("management.workspace.filters.check_system_user_access")
+    @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_system_admin_bypasses_filter(self, mock_flags, mock_system_check):
-        """System admin users bypass the filter."""
+    def test_filters_queryset_by_accessible_workspaces(self, mock_flags, mock_is_user_allowed_v2):
+        """FilterBackend filters queryset to accessible workspaces for list action."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_system_check.return_value = Mock(result=SystemUserAccessResult.ALLOWED)
 
-        request = Mock()
-        queryset = Mock()
-        view = Mock(action="list")
+        # Mock is_user_allowed_v2 to set permission_tuples on request
+        def set_permission_tuples(req, relation, target_workspace):
+            req.permission_tuples = [(None, "ws-1"), (None, "ws-2")]
+            return True
 
-        result = self.filter_backend.filter_queryset(request, queryset, view)
-
-        # Should return unfiltered queryset
-        self.assertEqual(result, queryset)
-        queryset.filter.assert_not_called()
-
-    @patch("management.workspace.filters.check_system_user_access")
-    @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_system_non_admin_returns_empty_queryset(self, mock_flags, mock_system_check):
-        """System non-admin users get empty queryset."""
-        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_system_check.return_value = Mock(result=SystemUserAccessResult.DENIED)
-
-        request = Mock()
-        queryset = Mock()
-        view = Mock(action="list")
-
-        self.filter_backend.filter_queryset(request, queryset, view)
-
-        # Should return empty queryset
-        queryset.none.assert_called_once()
-
-    @patch("management.workspace.filters.WorkspaceInventoryAccessChecker")
-    @patch("management.workspace.filters.get_principal_from_request")
-    @patch("management.workspace.filters.check_system_user_access")
-    @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_filters_queryset_by_accessible_workspaces(
-        self, mock_flags, mock_system_check, mock_get_principal, mock_checker_class
-    ):
-        """FilterBackend filters queryset to accessible workspaces."""
-        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_system_check.return_value = Mock(result=SystemUserAccessResult.NOT_SYSTEM_USER)
-
-        # Mock principal with user_id
-        mock_principal = Mock(user_id="user123")
-        mock_get_principal.return_value = mock_principal
-
-        # Mock Inventory API response - return empty to skip ancestor logic
-        accessible_ids = set()  # Empty set triggers fallback
-        mock_checker = Mock()
-        mock_checker.lookup_accessible_workspaces.return_value = accessible_ids
-        mock_checker_class.return_value = mock_checker
+        mock_is_user_allowed_v2.side_effect = set_permission_tuples
 
         request = Mock(tenant=Mock())
-        request.method = "GET"  # Required for permission_from_request
-        queryset = Mock()
-        view = Mock(action="list")
-
-        with patch(
-            "management.workspace.filters.WorkspaceAccessFilterBackend._get_fallback_workspace_ids"
-        ) as mock_fallback:
-            mock_fallback.return_value = {"ws-fallback-1", "ws-fallback-2"}
-            self.filter_backend.filter_queryset(request, queryset, view)
-
-        # Should filter queryset
-        queryset.filter.assert_called()
-
-    @patch("management.workspace.filters.get_principal_from_request")
-    @patch("management.workspace.filters.check_system_user_access")
-    @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_returns_empty_when_no_principal_id(self, mock_flags, mock_system_check, mock_get_principal):
-        """Returns empty queryset when principal ID cannot be determined."""
-        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_system_check.return_value = Mock(result=SystemUserAccessResult.NOT_SYSTEM_USER)
-
-        # Mock no principal
-        mock_get_principal.return_value = None
-
-        request = Mock()
-        request.user.user_id = None
-        request.user.username = None
-        request.method = "GET"  # Required for permission_from_request
-        queryset = Mock()
-        view = Mock(action="list")
-
-        self.filter_backend.filter_queryset(request, queryset, view)
-
-        # Should return empty queryset
-        queryset.none.assert_called_once()
-
-    @patch("management.workspace.filters.WorkspaceAccessFilterBackend._get_accessible_workspace_ids")
-    @patch("management.workspace.filters.check_system_user_access")
-    @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_returns_empty_when_inventory_api_raises_exception(
-        self, mock_flags, mock_system_check, mock_get_accessible
-    ):
-        """Returns empty queryset when Inventory API call raises an exception."""
-        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_system_check.return_value = Mock(result=SystemUserAccessResult.NOT_SYSTEM_USER)
-
-        # Mock Inventory API raising an exception
-        mock_get_accessible.side_effect = Exception("Inventory API connection failed")
-
-        request = Mock()
         request.method = "GET"
         queryset = Mock()
         view = Mock(action="list")
 
         self.filter_backend.filter_queryset(request, queryset, view)
 
+        # Should call is_user_allowed_v2 with None workspace_id for list
+        mock_is_user_allowed_v2.assert_called_once()
+        call_args = mock_is_user_allowed_v2.call_args
+        self.assertIsNone(call_args[0][2])  # target_workspace should be None
+
+        # Should filter queryset by accessible IDs
+        queryset.filter.assert_called()
+
+    @patch("management.workspace.filters.is_user_allowed_v2")
+    @patch("management.workspace.filters.FEATURE_FLAGS")
+    def test_detail_action_uses_workspace_id(self, mock_flags, mock_is_user_allowed_v2):
+        """FilterBackend uses workspace_id for detail actions (CheckForUpdate)."""
+        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
+        mock_is_user_allowed_v2.return_value = True
+
+        request = Mock(tenant=Mock())
+        request.method = "GET"
+        queryset = Mock()
+        view = Mock(action="retrieve", kwargs={"pk": "ws-123"})
+
+        self.filter_backend.filter_queryset(request, queryset, view)
+
+        # Should call is_user_allowed_v2 with specific workspace_id
+        mock_is_user_allowed_v2.assert_called_once()
+        call_args = mock_is_user_allowed_v2.call_args
+        self.assertEqual(call_args[0][2], "ws-123")  # target_workspace should be ws-123
+
+        # Should filter queryset to just that workspace
+        queryset.filter.assert_called_once()
+
+    @patch("management.workspace.filters.is_user_allowed_v2")
+    @patch("management.workspace.filters.FEATURE_FLAGS")
+    def test_detail_action_returns_empty_when_access_denied(self, mock_flags, mock_is_user_allowed_v2):
+        """Detail action returns empty queryset when access is denied."""
+        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
+        mock_is_user_allowed_v2.return_value = False
+
+        request = Mock(tenant=Mock())
+        request.method = "GET"
+        queryset = Mock()
+        view = Mock(action="retrieve", kwargs={"pk": "ws-123"})
+
+        self.filter_backend.filter_queryset(request, queryset, view)
+
+        # Should return empty queryset
+        queryset.none.assert_called_once()
+
+    @patch("management.workspace.filters.is_user_allowed_v2")
+    @patch("management.workspace.filters.FEATURE_FLAGS")
+    def test_returns_empty_when_is_user_allowed_raises_exception(self, mock_flags, mock_is_user_allowed_v2):
+        """Returns empty queryset when is_user_allowed_v2 raises an exception."""
+        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
+        mock_is_user_allowed_v2.side_effect = Exception("Inventory API connection failed")
+
+        request = Mock()
+        request.method = "GET"
+        request.user.username = "test"
+        request.user.org_id = "org123"
+        queryset = Mock()
+        view = Mock(action="list")
+
+        self.filter_backend.filter_queryset(request, queryset, view)
+
         # Should return empty queryset on exception
+        queryset.none.assert_called_once()
+
+    @patch("management.workspace.filters.is_user_allowed_v2")
+    @patch("management.workspace.filters.FEATURE_FLAGS")
+    def test_returns_empty_when_no_permission_tuples_set(self, mock_flags, mock_is_user_allowed_v2):
+        """Returns empty queryset when is_user_allowed_v2 doesn't set permission_tuples."""
+        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
+        mock_is_user_allowed_v2.return_value = False  # Returns but doesn't set permission_tuples
+
+        request = Mock(tenant=Mock())
+        request.method = "GET"
+        # Ensure permission_tuples is not set
+        del request.permission_tuples
+        queryset = Mock()
+        view = Mock(action="list")
+
+        self.filter_backend.filter_queryset(request, queryset, view)
+
+        # Should return empty queryset when no permission_tuples
         queryset.none.assert_called_once()
 
     @patch("management.workspace.filters.FEATURE_FLAGS")
@@ -190,6 +181,34 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
         call_args = queryset.filter.call_args
         self.assertIn("id__in", call_args.kwargs)
         self.assertEqual(set(call_args.kwargs["id__in"]), {"ws-1", "ws-2"})
+
+    @patch("management.workspace.filters.is_user_allowed_v2")
+    @patch("management.workspace.filters.FEATURE_FLAGS")
+    def test_detail_actions_include_all_detail_types(self, mock_flags, mock_is_user_allowed_v2):
+        """All detail action types use CheckForUpdate via is_user_allowed_v2 with workspace_id."""
+        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
+        mock_is_user_allowed_v2.return_value = True
+
+        detail_actions = ["retrieve", "update", "partial_update", "destroy", "move"]
+
+        for action in detail_actions:
+            mock_is_user_allowed_v2.reset_mock()
+
+            request = Mock(tenant=Mock())
+            request.method = "GET" if action == "retrieve" else "POST"
+            queryset = Mock()
+            view = Mock(action=action, kwargs={"pk": "ws-456"})
+
+            self.filter_backend.filter_queryset(request, queryset, view)
+
+            # Should call is_user_allowed_v2 with workspace_id for all detail actions
+            mock_is_user_allowed_v2.assert_called_once()
+            call_args = mock_is_user_allowed_v2.call_args
+            self.assertEqual(
+                call_args[0][2],
+                "ws-456",
+                f"Action {action} should pass workspace_id to is_user_allowed_v2",
+            )
 
 
 class TransactionIdentityRequest(BaseIdentityRequest, TransactionTestCase):
@@ -255,7 +274,10 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
         return responses
 
     @patch("management.inventory_client.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_list_returns_only_accessible_workspaces(self, mock_flag, mock_channel):
         """Test that list endpoint returns only accessible workspaces via FilterBackend."""
         mock_stub = MagicMock()
@@ -284,13 +306,16 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             self.assertIn(str(self.standard_workspace.id), returned_ids)
 
     @patch("management.inventory_client.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_detail_returns_404_for_inaccessible_workspace(self, mock_flag, mock_channel):
         """Test that detail endpoint returns 404 for inaccessible workspace (no existence leak)."""
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # Inventory API returns access denied
+        # Inventory API returns access denied via CheckForUpdate
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -302,7 +327,10 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
-            url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
@@ -310,8 +338,14 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             # User cannot distinguish between non-existing and inaccessible workspaces
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+            # Verify CheckForUpdate was called (not StreamedListObjects)
+            mock_stub.CheckForUpdate.assert_called()
+
     @patch("management.inventory_client.create_client_channel_inventory")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_list_returns_fallback_workspaces_when_no_access(self, mock_flag, mock_channel):
         """Test that list returns fallback workspaces (root, default, ungrouped) when user has no access."""
         mock_stub = MagicMock()
@@ -340,7 +374,10 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=False)
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
     def test_v1_mode_uses_permission_tuples_filtering(self, mock_flag):
         """Test that V1 mode still works with permission_tuples filtering."""
         # In V1 mode, the permission check sets permission_tuples
@@ -371,7 +408,10 @@ class WorkspacePermissionAndFilterBackendIntegrationTests(TransactionTestCase):
     @patch("management.permissions.workspace_access.permission_from_request")
     @patch("management.permissions.workspace_access.workspace_from_request")
     @patch("management.permissions.workspace_access.check_system_user_access")
-    @patch("feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled", return_value=True)
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
     def test_has_permission_allows_list_for_non_system_users(
         self, mock_flag, mock_system, mock_ws_from_req, mock_perm_from_req
     ):
