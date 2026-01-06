@@ -37,7 +37,9 @@ from management.models import (
     Role,
     Workspace,
 )
-from management.permissions.workspace_access import TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+from management.permissions.workspace_access import (
+    TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE,
+)
 from management.workspace.service import WorkspaceService
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -441,12 +443,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
         between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - FilterBackend uses StreamedListObjects
-        # Return empty list to simulate no access
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        mock_stub.StreamedListObjects.return_value = iter([])
+        # Mock CheckForUpdate to return access denied
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -467,8 +471,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should return 404 (not 403) to prevent existence leakage
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -806,13 +810,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_update_with_inventory_access_check(self, mock_flag, mock_channel):
         """Test workspace update (PUT) with Inventory API access check via FilterBackend."""
-        # Mock Inventory API - FilterBackend uses StreamedListObjects for queryset filtering
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # Mock StreamedListObjects to return the workspace user has access to
-        mock_responses = self._create_mock_workspace_responses([self.standard_workspace.id])
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        # Mock CheckForUpdate to return access allowed
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -846,8 +851,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data["name"], "Updated Workspace Name")
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -860,12 +865,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
         between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - FilterBackend uses StreamedListObjects
-        # Return empty list to simulate no access
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        mock_stub.StreamedListObjects.return_value = iter([])
+        # Mock CheckForUpdate to return access denied
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -892,8 +899,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # User cannot tell if workspace doesn't exist or they lack access
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -902,13 +909,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_update_with_invalid_data(self, mock_flag, mock_channel):
         """Test workspace update (PUT) with invalid data to ensure validation errors are handled."""
-        # Mock Inventory API - FilterBackend uses StreamedListObjects for queryset filtering
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # Mock StreamedListObjects to return the workspace user has access to
-        mock_responses = self._create_mock_workspace_responses([self.standard_workspace.id])
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        # Mock CheckForUpdate to return access allowed
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -950,13 +958,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_patch_with_inventory_access_check(self, mock_flag, mock_channel):
         """Test workspace partial update (PATCH) with Inventory API access check via FilterBackend."""
-        # Mock Inventory API - FilterBackend uses StreamedListObjects for queryset filtering
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # Mock StreamedListObjects to return the workspace user has access to
-        mock_responses = self._create_mock_workspace_responses([self.standard_workspace.id])
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        # Mock CheckForUpdate to return access allowed
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -987,8 +996,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data["description"], "Patched description")
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1001,12 +1010,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
         between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - FilterBackend uses StreamedListObjects
-        # Return empty list to simulate no access
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        mock_stub.StreamedListObjects.return_value = iter([])
+        # Mock CheckForUpdate to return access denied
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1029,8 +1040,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should return 404 (not 403) to prevent existence leakage
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1049,13 +1060,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.tenant,
         )
 
-        # Mock Inventory API - FilterBackend uses StreamedListObjects for queryset filtering
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # Mock StreamedListObjects to return the workspace user has access to
-        mock_responses = self._create_mock_workspace_responses([temp_workspace.id])
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        # Mock CheckForUpdate to return access allowed
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1080,8 +1092,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should be able to delete workspace
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1094,12 +1106,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
         between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - FilterBackend uses StreamedListObjects
-        # Return empty list to simulate no access
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        mock_stub.StreamedListObjects.return_value = iter([])
+        # Mock CheckForUpdate to return access denied
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1120,8 +1134,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should return 404 (not 403) to prevent existence leakage
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1130,12 +1144,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_delete_non_existent(self, mock_flag, mock_channel):
         """Test deleting a non-existent workspace returns 404."""
-        # Mock Inventory API - FilterBackend uses StreamedListObjects
-        # Return empty list (non-existent workspace won't be in accessible set)
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        mock_stub.StreamedListObjects.return_value = iter([])
+        # Mock CheckForUpdate to return access allowed (doesn't matter - workspace doesn't exist)
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1166,8 +1182,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should return 404 NOT FOUND
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify StreamedListObjects was called for FilterBackend queryset filtering
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1818,7 +1834,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         """Test that workspace move operation uses 'create' permission for target workspace in V2 mode.
 
         With the FilterBackend architecture:
-        - Source workspace access is checked via FilterBackend (StreamedListObjects)
+        - Source workspace access is checked via FilterBackend (CheckForUpdate since move is a detail action)
         - Target workspace access is checked via permission class (CheckForUpdate with 'create' relation)
         """
         # Mock Inventory API
@@ -1840,10 +1856,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             return mock_response
 
         mock_stub.CheckForUpdate.side_effect = check_side_effect
-
-        # Mock StreamedListObjects to return the source workspace as accessible
-        mock_responses = self._create_mock_workspace_responses([self.standard_sub_workspace.id])
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1875,8 +1887,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should succeed
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            # Verify StreamedListObjects was called for FilterBackend source workspace check
-            mock_stub.StreamedListObjects.assert_called()
+            # Verify CheckForUpdate was called (for both source and target workspace checks)
+            mock_stub.CheckForUpdate.assert_called()
 
             # Verify that 'create' permission was checked on target workspace via CheckForUpdate
             self.assertTrue(
