@@ -46,7 +46,7 @@ kessel-sdk = {extras = ["auth"], version = "*"}
 
 [dev-packages]
 sphinx-rtd-theme = "==3.0.2"
-sphinx = "==8.2.3"
+sphinx = "==9.1.0"
 tox = "==4.32.0"
 coverage = "==7.13.1"
 faker = "==38.3.0"
