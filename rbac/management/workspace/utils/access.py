@@ -80,7 +80,7 @@ def _log_v2_timing(timings, total_start, extra_fields, reason=None):
     if reason:
         log_extra["early_return_reason"] = reason
 
-    logger.info("is_user_allowed_v2 timing breakdown", extra=log_extra)
+    logger.info("is_user_allowed_v2 timing breakdown: %s", log_extra)
 
 
 def get_fallback_workspace_ids(tenant):
@@ -225,6 +225,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
     base_extra = {
         "org_id": getattr(request.user, "org_id", None),
         "request_path": request.path,
+        "request_id": getattr(request, "req_id", None),
     }
     early_reason = None
     result = False
@@ -316,7 +317,9 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
             # Lookup accessible workspaces using StreamedListObjects
             with record_timing(timings, "inventory_api_lookup"):
                 accessible_workspace_ids = checker.lookup_accessible_workspaces(
-                    principal_id=principal_id, relation=relation
+                    principal_id=principal_id,
+                    relation=relation,
+                    request_id=getattr(request, "req_id", None),
                 )
 
             # Convert to set of UUIDs for proper filtering
