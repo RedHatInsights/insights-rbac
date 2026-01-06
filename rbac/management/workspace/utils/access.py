@@ -216,17 +216,22 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
                 # Add ancestors directly for this top-level workspace
                 ancestor_ids = {str(ancestor.id) for ancestor in workspace.ancestors()}
                 accessible_workspace_ids.update(ancestor_ids)
-        else:
-            # If no accessible workspaces, attach at least default and ungrouped workspace
-            default_workspace = Workspace.objects.filter(tenant=request.tenant, type=Workspace.Types.DEFAULT).first()
-            ungrouped_workspace = Workspace.objects.filter(
-                tenant=request.tenant, type=Workspace.Types.UNGROUPED_HOSTS
-            ).first()
 
-            if default_workspace:
-                accessible_workspace_ids.add(str(default_workspace.id))
-            if ungrouped_workspace:
-                accessible_workspace_ids.add(str(ungrouped_workspace.id))
+        # Always include root, default, and ungrouped workspaces for visibility
+        # This ensures users can see the basic workspace structure even if they
+        # only have access to workspaces not under default
+        root_workspace = Workspace.objects.filter(tenant=request.tenant, type=Workspace.Types.ROOT).first()
+        default_workspace = Workspace.objects.filter(tenant=request.tenant, type=Workspace.Types.DEFAULT).first()
+        ungrouped_workspace = Workspace.objects.filter(
+            tenant=request.tenant, type=Workspace.Types.UNGROUPED_HOSTS
+        ).first()
+
+        if root_workspace:
+            accessible_workspace_ids.add(str(root_workspace.id))
+        if default_workspace:
+            accessible_workspace_ids.add(str(default_workspace.id))
+        if ungrouped_workspace:
+            accessible_workspace_ids.add(str(ungrouped_workspace.id))
 
         # Store permission tuples for later filtering
         request.permission_tuples = [(None, ws_id) for ws_id in accessible_workspace_ids]
