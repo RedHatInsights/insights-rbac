@@ -177,8 +177,20 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """
         Destroy the instance.
 
-        Overridden only to add transaction.
+        Validates that the workspace type allows deletion BEFORE permission checks.
+        This ensures proper 400 Bad Request for non-deletable workspaces (root, default,
+        ungrouped-hosts) rather than 403 Forbidden from permission checks.
         """
+        # Validate workspace is deletable before permission checks
+        # This must happen before get_object() which applies permission filtering
+        pk = kwargs.get("pk")
+        if pk:
+            validate_uuid(pk, "workspace uuid validation")
+            # Query directly without permission filtering to check type
+            workspace = Workspace.objects.filter(id=pk, tenant=request.tenant).first()
+            if workspace and workspace.type != Workspace.Types.STANDARD:
+                raise serializers.ValidationError(f"Unable to delete {workspace.type} workspace")
+
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
