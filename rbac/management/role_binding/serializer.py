@@ -45,23 +45,25 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
         return self.context.get("field_selection")
 
     def to_representation(self, instance):
-        """Override to support field selection."""
+        """Override to support field selection.
+
+        Default (no fields param): Returns only basic required fields.
+        With fields param: Only explicitly requested fields are included,
+        except subject.type which is always included.
+        """
         ret = super().to_representation(instance)
 
         field_selection = self._get_field_selection()
-        if field_selection is None:
-            # No filter - include all fields (last_modified is already in ret)
-            return ret
 
-        # Apply field selection - always include core objects, filter root fields
+        # Base response always includes core objects
         filtered = {
             "subject": ret.get("subject"),
             "roles": ret.get("roles"),
             "resource": ret.get("resource"),
         }
 
-        # Include last_modified only if explicitly requested when filtering
-        if "last_modified" in field_selection.root_fields:
+        # Include last_modified only if explicitly requested
+        if field_selection and "last_modified" in field_selection.root_fields:
             filtered["last_modified"] = ret.get("last_modified")
 
         return filtered
@@ -75,38 +77,37 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
     def get_subject(self, obj):
         """Extract subject information from the Group.
 
-        Always includes id and type (required fields).
-        Group details are dynamically extracted based on field selection.
-        If no field selection specified, includes all group fields.
+        Default (no fields param): Returns only id and type.
+        With fields param: Only type is always included. Other fields
+        (including id) are only included if explicitly requested.
         """
         if not isinstance(obj, Group):
             return None
 
         field_selection = self._get_field_selection()
 
-        # Base subject data (always included)
-        subject = {
-            "id": obj.uuid,
-            "type": "group",
-        }
-
-        # Determine which fields to include
-        if field_selection is None or not field_selection.subject_fields:
-            subject["group"] = {
-                "name": obj.name,
-                "description": obj.description,
-                "user_count": getattr(obj, "principalCount", 0),
+        # Default behavior: only basic fields
+        if field_selection is None:
+            return {
+                "id": obj.uuid,
+                "type": "group",
             }
-        else:
-            # Extract field names from "group.X" paths
-            fields_to_include = set()
-            for field_path in field_selection.subject_fields:
-                if field_path.startswith("group."):
-                    fields_to_include.add(field_path[6:])  # Remove "group." prefix
-                else:
-                    fields_to_include.add(field_path)
 
-            # Dynamically extract requested fields from the object
+        # With fields param: type is always included
+        subject = {"type": "group"}
+
+        # Check if id is explicitly requested
+        if "id" in field_selection.subject_fields:
+            subject["id"] = obj.uuid
+
+        # Extract field names from "group.X" paths
+        fields_to_include = set()
+        for field_path in field_selection.subject_fields:
+            if field_path.startswith("group."):
+                fields_to_include.add(field_path[6:])  # Remove "group." prefix
+
+        # Dynamically extract requested fields from the object
+        if fields_to_include:
             group_details = {}
             for field_name in fields_to_include:
                 # Handle special case for user_count -> principalCount
@@ -125,9 +126,8 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
     def get_roles(self, obj):
         """Extract roles from the prefetched role bindings.
 
-        Always includes role id (required field).
-        Other role fields are dynamically extracted based on field selection.
-        If no field selection specified, includes all role fields.
+        Default (no fields param): Returns only role id.
+        With fields param: id is always included, plus explicitly requested fields.
         """
         if isinstance(obj, dict):
             return obj.get("roles", [])
@@ -136,7 +136,6 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
             return []
 
         field_selection = self._get_field_selection()
-        include_all = field_selection is None or not field_selection.role_fields
 
         roles = []
         seen_role_ids = set()
@@ -149,21 +148,16 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
             if not role or role.uuid in seen_role_ids:
                 continue
 
-            if include_all:
-                # No filter - include default role fields per OpenAPI spec
-                role_data = {
-                    "id": role.uuid,
-                    "name": role.name,
-                }
-            else:
-                # Always include id
-                role_data = {"id": role.uuid}
+            # id is always included
+            role_data = {"id": role.uuid}
 
-                # Dynamically extract requested fields from the role
+            if field_selection is not None:
+                # Add explicitly requested fields
                 for field_name in field_selection.role_fields:
-                    value = getattr(role, field_name, None)
-                    if value is not None:
-                        role_data[field_name] = value
+                    if field_name != "id":
+                        value = getattr(role, field_name, None)
+                        if value is not None:
+                            role_data[field_name] = value
 
             roles.append(role_data)
             seen_role_ids.add(role.uuid)
@@ -173,9 +167,8 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
     def get_resource(self, obj):
         """Extract resource information from the request context.
 
-        Always includes resource id (required field).
-        Other resource fields are dynamically extracted based on field selection.
-        If no field selection specified, includes all resource fields.
+        Default (no fields param): Returns only resource id.
+        With fields param: id is always included, plus explicitly requested fields.
         Returns None if context has no resource information.
         """
         if isinstance(obj, dict):
@@ -190,29 +183,21 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
             return None
 
         field_selection = self._get_field_selection()
-        include_all = field_selection is None or not field_selection.resource_fields
 
-        if include_all:
-            # No filter - include all resource fields
-            return {
-                "id": resource_id,
+        # id is always included
+        resource_data = {"id": resource_id}
+
+        if field_selection is not None:
+            # Add explicitly requested fields
+            field_values = {
                 "name": resource_name,
                 "type": resource_type,
             }
 
-        # Always include id
-        resource_data = {"id": resource_id}
-
-        # Map field names to values
-        field_values = {
-            "name": resource_name,
-            "type": resource_type,
-        }
-
-        # Dynamically extract requested fields
-        for field_name in field_selection.resource_fields:
-            value = field_values.get(field_name)
-            if value is not None:
-                resource_data[field_name] = value
+            for field_name in field_selection.resource_fields:
+                if field_name != "id":
+                    value = field_values.get(field_name)
+                    if value is not None:
+                        resource_data[field_name] = value
 
         return resource_data

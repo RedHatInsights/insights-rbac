@@ -109,28 +109,25 @@ class FieldSelection:
         return selection
 
     @staticmethod
-    def _split_fields(fields_str: str) -> list:
+    def _split_fields(fields_str: str) -> list[str]:
         """Split fields string by comma, respecting parentheses."""
+        if not fields_str:
+            return []
+
         parts = []
-        current = []
+        start = 0
         depth = 0
 
-        for char in fields_str:
+        for i, char in enumerate(fields_str):
             if char == "(":
                 depth += 1
-                current.append(char)
             elif char == ")":
                 depth -= 1
-                current.append(char)
             elif char == "," and depth == 0:
-                parts.append("".join(current))
-                current = []
-            else:
-                current.append(char)
+                parts.append(fields_str[start:i].strip())
+                start = i + 1
 
-        if current:
-            parts.append("".join(current))
-
+        parts.append(fields_str[start:].strip())
         return parts
 
 

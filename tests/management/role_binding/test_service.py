@@ -493,18 +493,28 @@ class RoleBindingSerializerTests(IdentityRequest):
         super().tearDown()
 
     def test_default_response_includes_all_spec_fields(self):
-        """Test that default response includes all OpenAPI spec fields."""
+        """Test that default response includes basic required fields.
+
+        Default behavior returns only:
+        - subject (id, type)
+        - roles (id only)
+        - resource (id only)
+        - no last_modified
+        """
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
-        # Check top-level fields
-        self.assertIn("last_modified", data)
+        # Check top-level fields - no last_modified by default
+        self.assertNotIn("last_modified", data)
         self.assertIn("subject", data)
         self.assertIn("roles", data)
         self.assertIn("resource", data)
 
     def test_default_subject_structure_matches_spec(self):
-        """Test that subject structure matches OpenAPI spec."""
+        """Test that subject structure matches default spec.
+
+        Default behavior returns only id and type (no group details).
+        """
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
@@ -512,18 +522,14 @@ class RoleBindingSerializerTests(IdentityRequest):
         self.assertIn("id", subject)
         self.assertIn("type", subject)
         self.assertEqual(subject["type"], "group")
-        self.assertIn("group", subject)
-
-        group = subject["group"]
-        self.assertIn("name", group)
-        self.assertIn("description", group)
-        self.assertIn("user_count", group)
-        self.assertEqual(group["name"], "test_group")
-        self.assertEqual(group["description"], "Test group description")
-        self.assertEqual(group["user_count"], 1)
+        # Default behavior: no group details
+        self.assertNotIn("group", subject)
 
     def test_default_roles_structure_matches_spec(self):
-        """Test that roles structure matches OpenAPI spec."""
+        """Test that roles structure matches default spec.
+
+        Default behavior returns only role id.
+        """
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
@@ -532,41 +538,54 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         role = roles[0]
         self.assertIn("id", role)
-        self.assertIn("name", role)
-        self.assertEqual(role["name"], "test_role")
-        # Should NOT include extra fields not in spec
+        # Default behavior: no name included
+        self.assertNotIn("name", role)
         self.assertNotIn("description", role)
         self.assertNotIn("type", role)
         self.assertNotIn("created", role)
         self.assertNotIn("modified", role)
 
     def test_default_resource_structure_matches_spec(self):
-        """Test that resource structure matches OpenAPI spec."""
+        """Test that resource structure matches default spec.
+
+        Default behavior returns only resource id.
+        """
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
         resource = data["resource"]
         self.assertIn("id", resource)
-        self.assertIn("name", resource)
-        self.assertIn("type", resource)
-        self.assertEqual(resource["name"], "Test Workspace")
-        self.assertEqual(resource["type"], "workspace")
+        # Default behavior: no name or type included
+        self.assertNotIn("name", resource)
+        self.assertNotIn("type", resource)
 
     def test_field_selection_filters_subject_fields(self):
-        """Test that field selection filters subject group fields."""
+        """Test that field selection filters subject group fields.
+
+        Only subject.type is always included. Other fields require explicit request.
+        """
         field_selection = FieldSelection.parse("subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
         data = serializer.data
 
-        group = data["subject"]["group"]
+        subject = data["subject"]
+        # type is always included
+        self.assertIn("type", subject)
+        # id is NOT included unless explicitly requested
+        self.assertNotIn("id", subject)
+
+        group = subject["group"]
         self.assertIn("name", group)
         self.assertNotIn("description", group)
         self.assertNotIn("user_count", group)
 
     def test_field_selection_filters_role_fields(self):
-        """Test that field selection filters role fields."""
+        """Test that field selection filters role fields.
+
+        id is always included, plus explicitly requested fields.
+        """
         field_selection = FieldSelection.parse("role(name)")
         context = {**self.context, "field_selection": field_selection}
 
@@ -574,11 +593,15 @@ class RoleBindingSerializerTests(IdentityRequest):
         data = serializer.data
 
         role = data["roles"][0]
-        self.assertIn("id", role)  # Always included
+        # id is always included
+        self.assertIn("id", role)
         self.assertIn("name", role)
 
     def test_field_selection_filters_resource_fields(self):
-        """Test that field selection filters resource fields."""
+        """Test that field selection filters resource fields.
+
+        id is always included, plus explicitly requested fields.
+        """
         field_selection = FieldSelection.parse("resource(type)")
         context = {**self.context, "field_selection": field_selection}
 
@@ -586,7 +609,8 @@ class RoleBindingSerializerTests(IdentityRequest):
         data = serializer.data
 
         resource = data["resource"]
-        self.assertIn("id", resource)  # Always included
+        # id is always included
+        self.assertIn("id", resource)
         self.assertIn("type", resource)
         self.assertNotIn("name", resource)
 

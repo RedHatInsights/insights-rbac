@@ -20,6 +20,7 @@ from unittest.mock import Mock
 
 from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
 from management.role_binding.serializer import RoleBindingByGroupSerializer
+from management.role_binding.service import FieldSelection
 from tests.identity_request import IdentityRequest
 
 
@@ -146,25 +147,27 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
     # get_subject tests
 
     def test_subject_returns_correct_structure_for_group(self):
-        """Test get_subject with Group object returns correct structure."""
+        """Test get_subject with Group object returns correct default structure.
+
+        Default behavior (no field_selection) returns only id and type.
+        """
         self.group.principalCount = 1
 
         serializer = RoleBindingByGroupSerializer()
         result = serializer.get_subject(self.group)
 
+        # Default behavior: only id and type
         expected = {
             "id": self.group.uuid,
             "type": "group",
-            "group": {
-                "name": "test_group",
-                "description": "Test group description",
-                "user_count": 1,
-            },
         }
         self.assertEqual(result, expected)
 
     def test_subject_handles_group_with_no_description(self):
-        """Test get_subject with Group that has no description."""
+        """Test get_subject with Group that has no description.
+
+        Default behavior returns only id and type (no group details).
+        """
         group = Group.objects.create(
             name="no_desc_group",
             description=None,
@@ -175,13 +178,18 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer()
         result = serializer.get_subject(group)
 
-        self.assertEqual(result["group"]["description"], None)
-        self.assertEqual(result["group"]["name"], "no_desc_group")
+        # Default behavior: only id and type, no group details
+        self.assertEqual(result["id"], group.uuid)
+        self.assertEqual(result["type"], "group")
+        self.assertNotIn("group", result)
 
         group.delete()
 
     def test_subject_includes_correct_user_count_for_multiple_principals(self):
-        """Test get_subject with Group having multiple principals."""
+        """Test get_subject with Group having multiple principals.
+
+        Requires field_selection to include group.user_count.
+        """
         principal2 = Principal.objects.create(
             username="user2",
             tenant=self.tenant,
@@ -190,9 +198,11 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.group.principals.add(principal2)
         self.group.principalCount = 2
 
-        serializer = RoleBindingByGroupSerializer()
+        field_selection = FieldSelection(subject_fields={"group.user_count"})
+        serializer = RoleBindingByGroupSerializer(context={"field_selection": field_selection})
         result = serializer.get_subject(self.group)
 
+        self.assertEqual(result["type"], "group")
         self.assertEqual(result["group"]["user_count"], 2)
 
         principal2.delete()
@@ -241,7 +251,10 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.assertEqual(result, [])
 
     def test_roles_extracts_roles_from_group_prefetched_bindings(self):
-        """Test get_roles with Group having prefetched bindings."""
+        """Test get_roles with Group having prefetched bindings.
+
+        id is always included.
+        """
         mock_binding = Mock()
         mock_binding.role = self.role
 
@@ -255,8 +268,10 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         result = serializer.get_roles(mock_group)
 
         self.assertEqual(len(result), 1)
+        # id is always included
         self.assertEqual(result[0]["id"], self.role.uuid)
-        self.assertEqual(result[0]["name"], self.role.name)
+        # Default behavior: no name included
+        self.assertNotIn("name", result[0])
 
     def test_roles_deduplicates_same_role_from_multiple_bindings(self):
         """Test get_roles deduplicates roles when same role appears multiple times."""
@@ -373,7 +388,10 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.assertEqual(result, {})
 
     def test_resource_builds_from_context_for_group(self):
-        """Test get_resource with Group object and context."""
+        """Test get_resource with Group object and context.
+
+        Default behavior returns only resource id.
+        """
         context = {
             "request": Mock(),
             "resource_id": "ws-12345",
@@ -384,15 +402,15 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(context=context)
         result = serializer.get_resource(self.group)
 
-        expected = {
-            "id": "ws-12345",
-            "name": "Test Workspace",
-            "type": "workspace",
-        }
+        # Default behavior: only id
+        expected = {"id": "ws-12345"}
         self.assertEqual(result, expected)
 
     def test_resource_returns_data_when_no_request_in_context(self):
-        """Test get_resource with Group returns data even without request in context."""
+        """Test get_resource with Group returns data even without request in context.
+
+        Default behavior returns only resource id.
+        """
         context = {
             "resource_id": "ws-12345",
             "resource_name": "Test Workspace",
@@ -402,11 +420,8 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(context=context)
         result = serializer.get_resource(self.group)
 
-        expected = {
-            "id": "ws-12345",
-            "name": "Test Workspace",
-            "type": "workspace",
-        }
+        # Default behavior: only id
+        expected = {"id": "ws-12345"}
         self.assertEqual(result, expected)
 
     def test_resource_returns_none_when_context_is_empty(self):
@@ -417,7 +432,10 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.assertIsNone(result)
 
     def test_resource_handles_partial_context_values(self):
-        """Test get_resource with partial context values."""
+        """Test get_resource with partial context values.
+
+        Default behavior returns only resource id.
+        """
         context = {
             "request": Mock(),
             "resource_id": "ws-12345",
@@ -426,17 +444,17 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(context=context)
         result = serializer.get_resource(self.group)
 
-        expected = {
-            "id": "ws-12345",
-            "name": None,
-            "type": None,
-        }
+        # Default behavior: only id
+        expected = {"id": "ws-12345"}
         self.assertEqual(result, expected)
 
     # Full serialization tests
 
     def test_full_serialization_with_dict_input(self):
-        """Test full serialization with dict input."""
+        """Test full serialization with dict input.
+
+        Default behavior returns only basic fields (no last_modified).
+        """
         modified_time = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         obj = {
             "modified": modified_time,
@@ -451,14 +469,24 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(obj)
         data = serializer.data
 
-        self.assertEqual(data["last_modified"], modified_time)
+        # Default behavior: last_modified not included
+        self.assertNotIn("last_modified", data)
         self.assertIsNone(data["subject"])
         self.assertEqual(len(data["roles"]), 1)
+        # Roles from dict pass through as-is
         self.assertEqual(data["roles"][0]["name"], "Workspace Admin")
+        # Resource from dict passes through as-is
         self.assertEqual(data["resource"]["type"], "workspace")
 
     def test_full_serialization_with_group_and_context(self):
-        """Test full serialization with Group object and context."""
+        """Test full serialization with Group object and context.
+
+        Default behavior returns only basic fields:
+        - subject: id, type (no group details)
+        - roles: id only (no name)
+        - resource: id only (no name, type)
+        - no last_modified
+        """
         self.group.principalCount = 1
         self.group.latest_modified = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
 
@@ -480,16 +508,21 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(self.group, context=context)
         data = serializer.data
 
-        self.assertEqual(data["last_modified"], self.group.latest_modified)
+        # Default behavior: only basic fields
+        self.assertNotIn("last_modified", data)
         self.assertEqual(data["subject"]["id"], self.group.uuid)
         self.assertEqual(data["subject"]["type"], "group")
-        self.assertEqual(data["subject"]["group"]["name"], "test_group")
+        self.assertNotIn("group", data["subject"])
         self.assertEqual(len(data["roles"]), 1)
-        self.assertEqual(data["roles"][0]["name"], "test_role")
-        self.assertEqual(data["resource"]["id"], "ws-12345")
+        self.assertEqual(data["roles"][0]["id"], self.role.uuid)
+        self.assertNotIn("name", data["roles"][0])
+        self.assertEqual(data["resource"], {"id": "ws-12345"})
 
     def test_full_serialization_with_multiple_groups(self):
-        """Test serialization of multiple groups."""
+        """Test serialization of multiple groups.
+
+        Default behavior returns only basic fields (id, type) for each subject.
+        """
         group2 = Group.objects.create(
             name="test_group_2",
             description="Second group",
@@ -509,13 +542,25 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         data = serializer.data
 
         self.assertEqual(len(data), 2)
-        self.assertEqual(data[0]["subject"]["group"]["name"], "test_group")
-        self.assertEqual(data[1]["subject"]["group"]["name"], "test_group_2")
+        # Default behavior: only id and type, no group details
+        self.assertEqual(data[0]["subject"]["id"], self.group.uuid)
+        self.assertEqual(data[0]["subject"]["type"], "group")
+        self.assertNotIn("group", data[0]["subject"])
+        self.assertEqual(data[1]["subject"]["id"], group2.uuid)
+        self.assertEqual(data[1]["subject"]["type"], "group")
+        self.assertNotIn("group", data[1]["subject"])
 
         group2.delete()
 
     def test_serialized_output_matches_expected_structure(self):
-        """Test that serialized output matches the expected structure."""
+        """Test that serialized output matches the expected default structure.
+
+        Default behavior returns only basic fields:
+        - subject: id, type (no group details)
+        - roles: id only
+        - resource: id only
+        - no last_modified
+        """
         self.group.principalCount = 5
         self.group.latest_modified = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
 
@@ -537,30 +582,27 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(self.group, context=context)
         data = serializer.data
 
-        # Verify all top-level fields exist
-        self.assertIn("last_modified", data)
+        # Verify top-level fields (no last_modified by default)
+        self.assertNotIn("last_modified", data)
         self.assertIn("subject", data)
         self.assertIn("roles", data)
         self.assertIn("resource", data)
 
-        # Verify subject structure matches GroupSubject
+        # Verify subject structure - only id and type by default
         subject = data["subject"]
         self.assertEqual(subject["type"], "group")
         self.assertIn("id", subject)
-        self.assertIn("group", subject)
-        self.assertIn("name", subject["group"])
-        self.assertIn("description", subject["group"])
-        self.assertIn("user_count", subject["group"])
+        self.assertNotIn("group", subject)
 
-        # Verify roles structure
+        # Verify roles structure - only id by default
         self.assertIsInstance(data["roles"], list)
         if data["roles"]:
             role = data["roles"][0]
             self.assertIn("id", role)
-            self.assertIn("name", role)
+            self.assertNotIn("name", role)
 
-        # Verify resource structure
+        # Verify resource structure - only id by default
         resource = data["resource"]
         self.assertIn("id", resource)
-        self.assertIn("name", resource)
-        self.assertIn("type", resource)
+        self.assertNotIn("name", resource)
+        self.assertNotIn("type", resource)
