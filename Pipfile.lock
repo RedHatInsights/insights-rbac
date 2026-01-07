@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "44e1ac1ffa26fab87f440002b6ffec379dff5df1a30797e54ed8fb0c02a2a17a"
+            "sha256": "913d0a2df44726fcf289d6288da76596fb1eda4ce3cc6270485da4832cd87b1e"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -91,12 +91,12 @@
         },
         "celery": {
             "hashes": [
-                "sha256:33cf01477b175017fc8f22c5ee8a65157591043ba8ca78a443fe703aa910f581",
-                "sha256:641405206042d52ae460e4e9751a2e31b06cf80ab836fcf92e0b9311d7ea8113"
+                "sha256:3ffafacbe056951b629c7abcf9064c4a2366de0bdfc9fdba421b97ebb68619a5",
+                "sha256:4a8921c3fcf2ad76317d3b29020772103581ed2454c4c042cc55dcc43585009b"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==5.6.0"
+            "version": "==5.6.2"
         },
         "certifi": {
             "hashes": [
@@ -503,14 +503,6 @@
             "markers": "python_version >= '3.6'",
             "version": "==2.2.0"
         },
-        "exceptiongroup": {
-            "hashes": [
-                "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219",
-                "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598"
-            ],
-            "markers": "python_version >= '3.7'",
-            "version": "==1.3.1"
-        },
         "fcache": {
             "hashes": [
                 "sha256:79949f0aafe8cedc5c9064631b3c157941a288e59f9991dd158c23e8e60b5422",
@@ -732,12 +724,12 @@
         },
         "jsonschema": {
             "hashes": [
-                "sha256:3fba0169e345c7175110351d456342c364814cfcf3b964ba4587f22915230a63",
-                "sha256:e4a9655ce0da0c0b67a085847e00a3a51449e1157f4f75e9fb5aa545e122eb85"
+                "sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326",
+                "sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.9'",
-            "version": "==4.25.1"
+            "markers": "python_version >= '3.10'",
+            "version": "==4.26.0"
         },
         "jsonschema-specifications": {
             "hashes": [
