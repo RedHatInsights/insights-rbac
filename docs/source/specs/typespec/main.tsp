@@ -888,3 +888,9 @@ namespace RoleBindings {
 
     ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
 }
+
+@route("/roles/")
+@tag("Roles")
+@doc("Operations about roles")
+namespace Roles {
+}
