@@ -14,215 +14,211 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Serializers for role binding v2 endpoints."""
-from __future__ import annotations
+"""Serializers for role binding management."""
+import re
+from dataclasses import dataclass, field
+from typing import Optional
 
-from collections import OrderedDict
-from datetime import timezone as dt_timezone
-from typing import Any, Iterable, Optional
-
-from django.utils import timezone
-from management.group.model import Group
-from management.principal.model import Principal
-from management.role.v2_model import RoleBinding
-from management.workspace.model import Workspace
+from management.models import Group
 from rest_framework import serializers
 
 
-def _isoformat(value):
-    """Return an ISO-8601 UTC string for the provided datetime."""
-    if value is None:
-        return None
-    if timezone.is_naive(value):
-        value = timezone.make_aware(value, dt_timezone.utc)
-    return value.astimezone(dt_timezone.utc).isoformat().replace("+00:00", "Z")
+class FieldSelectionValidationError(Exception):
+    """Exception raised when field selection validation fails."""
+
+    def __init__(self, message: str):
+        """Initialize with error message."""
+        self.message = message
+        super().__init__(self.message)
 
 
-class RoleBindingBySubjectSerializer(serializers.Serializer):
-    """Serializer that presents role bindings grouped by subject (group/user)."""
+@dataclass
+class FieldSelection:
+    """Data class representing parsed field selections from the fields parameter."""
 
-    last_modified = serializers.SerializerMethodField()
-    subject = serializers.SerializerMethodField()
-    roles = serializers.SerializerMethodField()
-    resource = serializers.SerializerMethodField()
-    inherited_from = serializers.SerializerMethodField()
+    # Valid fields for each object type
+    # subject: id and type are always included; group.* fields available when type="group"
+    VALID_SUBJECT_FIELDS = {"id", "type", "group.name", "group.description", "group.user_count"}
+    VALID_ROLE_FIELDS = {"id", "name"}
+    VALID_RESOURCE_FIELDS = {"id", "name", "type"}
+    VALID_ROOT_FIELDS = {"last_modified"}
+    VALID_OBJECT_NAMES = {"subject", "role", "resource"}
 
-    def __init__(self, *args, **kwargs):
-        """Allow dynamic field filtering through the `fields` kwarg."""
-        requested_fields = kwargs.pop("fields", None)
-        super().__init__(*args, **kwargs)
-        if requested_fields:
-            allowed = set(field.strip() for field in requested_fields.split(",") if field.strip())
-            existing = set(self.fields.keys())
-            for field_name in existing - allowed:
-                self.fields.pop(field_name)
+    subject_fields: set = field(default_factory=set)
+    role_fields: set = field(default_factory=set)
+    resource_fields: set = field(default_factory=set)
+    root_fields: set = field(default_factory=set)
 
-    #
-    # Serializer method helpers
-    #
-    def get_last_modified(self, obj):
-        """Return the latest modification timestamp for the aggregated bindings."""
-        latest = getattr(obj, "latest_modified", None)
-        return _isoformat(latest)
+    @classmethod
+    def parse(cls, fields_param: Optional[str]) -> Optional["FieldSelection"]:
+        """Parse fields parameter string into FieldSelection.
 
-    def get_subject(self, obj):
-        """Return subject metadata for groups or principals."""
-        if isinstance(obj, Group):
-            return self._serialize_group_subject(obj)
-        return self._serialize_principal_subject(obj)
+        Syntax:
+        - object(field1,field2) - nested fields for an object
+        - field - root level field
+        - Multiple specs separated by commas outside parentheses
 
-    def get_roles(self, obj):
-        """Return the roles granted to this subject for the requested resource."""
-        bindings = self._subject_bindings(obj)
-        roles = []
-        seen = set()
-        for binding_entry in bindings:
-            binding: RoleBinding = binding_entry.binding  # type: ignore[attr-defined]
-            if not binding or not binding.role:
-                continue
-            role_uuid = str(binding.role.uuid)
-            if role_uuid in seen:
-                continue
-            seen.add(role_uuid)
-            roles.append({"id": role_uuid, "name": binding.role.name})
-        return roles
+        Examples:
+        - subject(group.name,group.user_count),role(name)
+        - last_modified
+        - subject(id),role(name),resource(name,type)
 
-    def get_resource(self, obj):
-        """Return information about the resource being queried."""
-        request = self.context.get("request")
-        if not request:
-            return {}
-        return {
-            "type": request.resource_type,
-            "id": request.resource_id,
-            "name": getattr(request, "resource_name", None),
-        }
+        Args:
+            fields_param: The fields parameter string to parse
 
-    def get_inherited_from(self, obj):
-        """Return parent resources if bindings are inherited."""
-        request = self.context.get("request")
-        if not request or not getattr(request, "include_inherited", False):
-            return None
-        return self.get_inherited_parent_resources(obj)
+        Returns:
+            FieldSelection object or None if fields_param is empty
 
-    def get_inherited_parent_resources(self, obj):
+        Raises:
+            FieldSelectionValidationError: If invalid fields are found
         """
-        Return distinct parent resources from which this subject inherits bindings.
-
-        This helper centralizes inherited-resource computation so it can be reused
-        as the serializer evolves (e.g., if/when to_representation is introduced).
-        """
-        request = self.context.get("request")
-        if not request or not getattr(request, "include_inherited", False):
+        if not fields_param:
             return None
 
-        bindings = self._subject_bindings(obj)
-        parents: OrderedDict[str, dict] = OrderedDict()
-        for binding_entry in bindings:
-            binding: RoleBinding = binding_entry.binding  # type: ignore[attr-defined]
-            if not binding:
+        selection = cls()
+        invalid_fields = []
+
+        # Split by comma but not inside parentheses
+        parts = cls._split_fields(fields_param)
+
+        for part in parts:
+            part = part.strip()
+            if not part:
                 continue
-            if binding.resource_type == request.resource_type and binding.resource_id == request.resource_id:
-                continue
-            parent_key = f"{binding.resource_type}:{binding.resource_id}"
-            if parent_key in parents:
-                continue
-            parents[parent_key] = {
-                "type": binding.resource_type,
-                "id": binding.resource_id,
-                "name": self._resolve_resource_name(binding.resource_type, binding.resource_id),
-            }
 
-        return list(parents.values()) or None
+            # Check if it's object(fields) pattern
+            match = re.match(r"(\w+)\(([^)]+)\)", part)
+            if match:
+                obj_name = match.group(1)
+                obj_fields = {f.strip() for f in match.group(2).split(",")}
 
-    #
-    # Internal helpers
-    #
-    def _serialize_group_subject(self, group: Group) -> dict:
-        """Serialize a group subject payload."""
-        return {
-            "type": "group",
-            "group": {
-                "id": str(group.uuid),
-                "name": group.name,
-                "description": group.description,
-                "user_count": getattr(group, "principalCount", None),
-            },
-        }
+                if obj_name == "subject":
+                    invalid = obj_fields - cls.VALID_SUBJECT_FIELDS
+                    if invalid:
+                        invalid_fields.extend([f"subject({f})" for f in invalid])
+                    selection.subject_fields.update(obj_fields)
+                elif obj_name == "role":
+                    invalid = obj_fields - cls.VALID_ROLE_FIELDS
+                    if invalid:
+                        invalid_fields.extend([f"role({f})" for f in invalid])
+                    selection.role_fields.update(obj_fields)
+                elif obj_name == "resource":
+                    invalid = obj_fields - cls.VALID_RESOURCE_FIELDS
+                    if invalid:
+                        invalid_fields.extend([f"resource({f})" for f in invalid])
+                    selection.resource_fields.update(obj_fields)
+                else:
+                    invalid_fields.append(f"Unknown object type: '{obj_name}'")
+            else:
+                # Root level field
+                if part not in cls.VALID_ROOT_FIELDS:
+                    invalid_fields.append(f"Unknown field: '{part}'")
+                selection.root_fields.add(part)
 
-    def _serialize_principal_subject(self, principal: Principal) -> dict:
-        """Serialize a user subject payload."""
-        payload: dict[str, Any] = {
-            "type": "user",
-            "user": {
-                "id": str(principal.uuid),
-                "username": principal.username,
-                "user_id": principal.user_id,
-            },
-        }
-
-        groups = []
-        for group in getattr(principal, "filtered_groups", []):
-            groups.append(
-                {
-                    "id": str(group.uuid),
-                    "name": group.name,
-                    "description": group.description,
-                }
+        if invalid_fields:
+            raise FieldSelectionValidationError(
+                f"Invalid field(s): {', '.join(invalid_fields)}. "
+                f"Valid subject fields: {sorted(cls.VALID_SUBJECT_FIELDS)}. "
+                f"Valid role fields: {sorted(cls.VALID_ROLE_FIELDS)}. "
+                f"Valid resource fields: {sorted(cls.VALID_RESOURCE_FIELDS)}. "
+                f"Valid root fields: {sorted(cls.VALID_ROOT_FIELDS)}."
             )
 
-        if groups:
-            payload["groups"] = groups
-        return payload
+        return selection
 
-    def _subject_bindings(self, obj) -> Iterable:
-        """Return the prefetched binding entries for a subject."""
-        if isinstance(obj, Group):
-            return getattr(obj, "filtered_bindings", [])
+    @staticmethod
+    def _split_fields(fields_str: str) -> list[str]:
+        """Split fields string by comma, respecting parentheses."""
+        if not fields_str:
+            return []
 
-        binding_entries = []
-        for group in getattr(obj, "filtered_groups", []):
-            binding_entries.extend(getattr(group, "filtered_bindings", []))
-        return binding_entries
+        parts = []
+        start = 0
+        depth = 0
 
-    def _resolve_resource_name(self, resource_type: str, resource_id: str) -> Optional[str]:
-        """Resolve the resource name when possible (currently workspace-only)."""
-        # Normalize RBAC-local workspace types so that both "workspace" and
-        # "rbac/workspace" behave the same when resolving names.
-        if resource_type in {"rbac/workspace"}:
-            resource_type = "workspace"
+        for i, char in enumerate(fields_str):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(fields_str[start:i].strip())
+                start = i + 1
 
-        if resource_type != "workspace":
-            return None
-
-        cache = getattr(self, "_workspace_cache", {})
-        if resource_id in cache:
-            return cache[resource_id]
-
-        tenant = None
-        request = self.context.get("request")
-        if request:
-            tenant = getattr(request, "tenant", None)
-
-        name = None
-        if tenant:
-            workspace = Workspace.objects.filter(id=resource_id, tenant=tenant).only("id", "name").first()
-            if workspace:
-                name = workspace.name
-
-        cache[resource_id] = name
-        self._workspace_cache = cache
-        return name
+        parts.append(fields_str[start:].strip())
+        return parts
 
 
-class RoleBindingByGroupSerializer(serializers.Serializer):
+class RoleBindingInputSerializer(serializers.Serializer):
+    """Input serializer for role binding query parameters.
+
+    Handles validation of query parameters for the role binding API.
     """
-    Backwards-compatible serializer for group-focused role binding responses.
 
-    This serializer exists to support existing unit tests and older response shapes.
-    It intentionally returns:
-    - last_modified as a datetime (not an ISO string)
-    - subject.id and role.id as UUID objects (not strings)
+    resource_id = serializers.CharField(required=True, help_text="Filter by resource ID")
+    resource_type = serializers.CharField(required=True, help_text="Filter by resource type")
+    subject_type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject type")
+    subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
+    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+    order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
+
+    def to_internal_value(self, data):
+        """Sanitize input data by stripping NUL bytes before field validation."""
+        sanitized = {
+            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
+        }
+        return super().to_internal_value(sanitized)
+
+    def validate_resource_id(self, value):
+        """Validate resource_id is provided."""
+        if not value:
+            raise serializers.ValidationError("resource_id is required to identify the resource for role bindings.")
+        return value
+
+    def validate_resource_type(self, value):
+        """Validate resource_type is provided."""
+        if not value:
+            raise serializers.ValidationError(
+                "resource_type is required to specify the type of resource (e.g., 'workspace')."
+            )
+        return value
+
+    def validate_subject_type(self, value):
+        """Return None for empty values."""
+        return value or None
+
+    def validate_subject_id(self, value):
+        """Return None for empty values."""
+        return value or None
+
+    def validate_fields(self, value):
+        """Parse and validate fields parameter into FieldSelection object."""
+        if not value:
+            return None
+        try:
+            return FieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+    def validate_order_by(self, value):
+        """Return None for empty values."""
+        return value or None
+
+
+class RoleBindingOutputSerializer(serializers.Serializer):
+    """Serializer for role bindings by group.
+
+    This serializer formats Group objects that have been annotated with
+    role binding information via the service layer.
+
+    Supports dynamic field selection through the 'field_selection' context parameter.
+    Fields are accessed directly on the model using dot notation from the query parameter.
+
+    Field selection syntax:
+    - subject(group.name, group.description) - accesses obj.name, obj.description
+    - role(name, description) - accesses role.name, role.description
+    - resource(name, type) - accesses resource name and type from context
+    - last_modified - include root-level field
     """
 
     last_modified = serializers.SerializerMethodField()
@@ -230,72 +226,168 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
 
-    def get_last_modified(self, obj):
-        """
-        Return last modified timestamp.
+    def _get_field_selection(self):
+        """Get field selection from context."""
+        return self.context.get("field_selection")
 
-        - For dict input, prefer "modified" then "latest_modified"
-        - For Group input, read obj.latest_modified when available
+    def to_representation(self, instance):
+        """Override to support field selection.
+
+        Default (no fields param): Returns only basic required fields.
+        With fields param: Only explicitly requested fields are included,
+        except subject.type which is always included.
         """
+        ret = super().to_representation(instance)
+
+        field_selection = self._get_field_selection()
+
+        # Base response always includes core objects
+        filtered = {
+            "subject": ret.get("subject"),
+            "roles": ret.get("roles"),
+            "resource": ret.get("resource"),
+        }
+
+        # Include last_modified only if explicitly requested
+        if field_selection and "last_modified" in field_selection.root_fields:
+            filtered["last_modified"] = ret.get("last_modified")
+
+        return filtered
+
+    def get_last_modified(self, obj):
+        """Extract last modified timestamp."""
         if isinstance(obj, dict):
             return obj.get("modified") or obj.get("latest_modified")
         return getattr(obj, "latest_modified", None)
 
     def get_subject(self, obj):
-        """Serialize a Group subject, or return None for non-Group inputs."""
+        """Extract subject information from the Group.
+
+        Default (no fields param): Returns only id and type.
+        With fields param: Only type is always included. Other fields
+        (including id) are only included if explicitly requested.
+        """
         if not isinstance(obj, Group):
             return None
-        return {
-            "id": obj.uuid,
-            "type": "group",
-            "group": {
-                "name": obj.name,
-                "description": obj.description,
-                "user_count": getattr(obj, "principalCount", None),
-            },
-        }
+
+        field_selection = self._get_field_selection()
+
+        # Default behavior: only basic fields
+        if field_selection is None:
+            return {
+                "id": obj.uuid,
+                "type": "group",
+            }
+
+        # With fields param: type is always included
+        subject = {"type": "group"}
+
+        # Check if id is explicitly requested
+        if "id" in field_selection.subject_fields:
+            subject["id"] = obj.uuid
+
+        # Extract field names from "group.X" paths
+        fields_to_include = set()
+        for field_path in field_selection.subject_fields:
+            if field_path.startswith("group."):
+                fields_to_include.add(field_path[6:])  # Remove "group." prefix
+
+        # Dynamically extract requested fields from the object
+        if fields_to_include:
+            group_details = {}
+            for field_name in fields_to_include:
+                # Handle special case for user_count -> principalCount
+                if field_name == "user_count":
+                    group_details[field_name] = getattr(obj, "principalCount", 0)
+                else:
+                    value = getattr(obj, field_name, None)
+                    if value is not None:
+                        group_details[field_name] = value
+
+            if group_details:
+                subject["group"] = group_details
+
+        return subject
 
     def get_roles(self, obj):
-        """
-        Return roles for a group.
+        """Extract roles from the prefetched role bindings.
 
-        - For dict input, pass through "roles" if present
-        - For Group input, extract from obj.filtered_bindings (prefetched RoleBindingGroup)
+        Default (no fields param): Returns only role id.
+        With fields param: id is always included, plus explicitly requested fields.
         """
         if isinstance(obj, dict):
-            return obj.get("roles", []) or []
+            return obj.get("roles", [])
+
+        if not isinstance(obj, Group) or not hasattr(obj, "filtered_bindings"):
+            return []
+
+        field_selection = self._get_field_selection()
 
         roles = []
-        seen = set()
-        for binding_group in getattr(obj, "filtered_bindings", []) or []:
-            binding = getattr(binding_group, "binding", None)
-            if not binding:
+        seen_role_ids = set()
+
+        for binding_group in obj.filtered_bindings:
+            if not hasattr(binding_group, "binding") or not binding_group.binding:
                 continue
-            role = getattr(binding, "role", None)
-            if not role:
+
+            role = binding_group.binding.role
+            if not role or role.uuid in seen_role_ids:
                 continue
-            if role.uuid in seen:
-                continue
-            seen.add(role.uuid)
-            roles.append({"id": role.uuid, "name": role.name})
+
+            # id is always included
+            role_data = {"id": role.uuid}
+
+            if field_selection is not None:
+                # Add explicitly requested fields
+                for field_name in field_selection.role_fields:
+                    if field_name != "id":
+                        value = getattr(role, field_name, None)
+                        if value is not None:
+                            role_data[field_name] = value
+
+            roles.append(role_data)
+            seen_role_ids.add(role.uuid)
+
         return roles
 
     def get_resource(self, obj):
-        """
-        Return the resource being queried.
+        """Extract resource information from the request context.
 
-        - For dict input, pass through "resource" if present
-        - For Group input, build from serializer context when "request" is present
+        Default (no fields param): Returns only resource id.
+        With fields param: id is always included, plus explicitly requested fields.
+        Returns None if context has no resource information.
         """
         if isinstance(obj, dict):
-            return obj.get("resource", {}) or {}
+            return obj.get("resource", {})
 
-        # Match existing tests: if no request in context, return None
-        if "request" not in (self.context or {}):
+        # Check if context has any resource information
+        resource_id = self.context.get("resource_id")
+        resource_name = self.context.get("resource_name")
+        resource_type = self.context.get("resource_type")
+
+        if not any([resource_id, resource_name, resource_type]):
             return None
 
-        return {
-            "id": (self.context or {}).get("resource_id"),
-            "name": (self.context or {}).get("resource_name"),
-            "type": (self.context or {}).get("resource_type"),
-        }
+        field_selection = self._get_field_selection()
+
+        # id is always included
+        resource_data = {"id": resource_id}
+
+        if field_selection is not None:
+            # Add explicitly requested fields
+            field_values = {
+                "name": resource_name,
+                "type": resource_type,
+            }
+
+            for field_name in field_selection.resource_fields:
+                if field_name != "id":
+                    value = field_values.get(field_name)
+                    if value is not None:
+                        resource_data[field_name] = value
+
+        return resource_data
+
+
+# Backward compatibility alias
+RoleBindingByGroupSerializer = RoleBindingOutputSerializer
