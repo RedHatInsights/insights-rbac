@@ -88,7 +88,7 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
     ROLE_BINDING_VIEW_RELATION = "role_binding_view"
 
     # Allowlist of valid resource types for role binding access checks
-    ALLOWED_RESOURCE_TYPES = {"workspace"}
+    ALLOWED_RESOURCE_TYPES = {"workspace", "rbac/workspace"}
 
     def has_permission(self, request, view):
         """
@@ -109,10 +109,12 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
         if not resource_id or not resource_type:
             return True
 
-        # Validate resource_type against allowlist and fail closed on unknown types
+        # Normalize and validate resource_type against allowlist and fail closed on unknown types
         if resource_type not in self.ALLOWED_RESOURCE_TYPES:
             logger.debug("Denied access for unknown resource_type: %s", resource_type)
             return False
+        if resource_type == "rbac/workspace":
+            resource_type = "workspace"
 
         # Get principal_id for Kessel API check using the reusable utility
         principal_id = get_kessel_principal_id(request)

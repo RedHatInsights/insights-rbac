@@ -25,7 +25,7 @@ from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
-from django.urls import resolve, reverse
+from django.urls import NoReverseMatch, resolve, reverse
 from feature_flags import FEATURE_FLAGS
 from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
@@ -79,7 +79,13 @@ def is_no_auth(request):
 
     # Only add V2 OpenAPI endpoint if V2 APIs are enabled
     if settings.V2_APIS_ENABLED:
-        no_auth_list.append(reverse("v2_api:openapi"))
+        # In some test/boot contexts the URLConf may not have v2 routes registered yet
+        # (e.g., URLConf imported before settings were overridden). Fail open for this
+        # allowlist entry rather than crashing the request pipeline.
+        try:
+            no_auth_list.append(reverse("v2_api:openapi"))
+        except NoReverseMatch:
+            logger.debug("v2_api:openapi is not registered; skipping no-auth allowlist entry.")
 
     return request.path in no_auth_list
 

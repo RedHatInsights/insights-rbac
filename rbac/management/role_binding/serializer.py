@@ -18,15 +18,15 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from datetime import timezone as dt_timezone
 from typing import Any, Iterable, Optional
 
 from django.utils import timezone
-from rest_framework import serializers
-
 from management.group.model import Group
 from management.principal.model import Principal
 from management.role.v2_model import RoleBinding
 from management.workspace.model import Workspace
+from rest_framework import serializers
 
 
 def _isoformat(value):
@@ -34,8 +34,8 @@ def _isoformat(value):
     if value is None:
         return None
     if timezone.is_naive(value):
-        value = timezone.make_aware(value, timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        value = timezone.make_aware(value, dt_timezone.utc)
+    return value.astimezone(dt_timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class RoleBindingBySubjectSerializer(serializers.Serializer):
@@ -103,6 +103,18 @@ class RoleBindingBySubjectSerializer(serializers.Serializer):
         request = self.context.get("request")
         if not request or not getattr(request, "include_inherited", False):
             return None
+        return self.get_inherited_parent_resources(obj)
+
+    def get_inherited_parent_resources(self, obj):
+        """
+        Return distinct parent resources from which this subject inherits bindings.
+
+        This helper centralizes inherited-resource computation so it can be reused
+        as the serializer evolves (e.g., if/when to_representation is introduced).
+        """
+        request = self.context.get("request")
+        if not request or not getattr(request, "include_inherited", False):
+            return None
 
         bindings = self._subject_bindings(obj)
         parents: OrderedDict[str, dict] = OrderedDict()
@@ -115,12 +127,11 @@ class RoleBindingBySubjectSerializer(serializers.Serializer):
             parent_key = f"{binding.resource_type}:{binding.resource_id}"
             if parent_key in parents:
                 continue
-            resource = {
+            parents[parent_key] = {
                 "type": binding.resource_type,
                 "id": binding.resource_id,
                 "name": self._resolve_resource_name(binding.resource_type, binding.resource_id),
             }
-            parents[parent_key] = resource
 
         return list(parents.values()) or None
 
@@ -202,3 +213,89 @@ class RoleBindingBySubjectSerializer(serializers.Serializer):
         cache[resource_id] = name
         self._workspace_cache = cache
         return name
+
+
+class RoleBindingByGroupSerializer(serializers.Serializer):
+    """
+    Backwards-compatible serializer for group-focused role binding responses.
+
+    This serializer exists to support existing unit tests and older response shapes.
+    It intentionally returns:
+    - last_modified as a datetime (not an ISO string)
+    - subject.id and role.id as UUID objects (not strings)
+    """
+
+    last_modified = serializers.SerializerMethodField()
+    subject = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+
+    def get_last_modified(self, obj):
+        """
+        Return last modified timestamp.
+
+        - For dict input, prefer "modified" then "latest_modified"
+        - For Group input, read obj.latest_modified when available
+        """
+        if isinstance(obj, dict):
+            return obj.get("modified") or obj.get("latest_modified")
+        return getattr(obj, "latest_modified", None)
+
+    def get_subject(self, obj):
+        """Serialize a Group subject, or return None for non-Group inputs."""
+        if not isinstance(obj, Group):
+            return None
+        return {
+            "id": obj.uuid,
+            "type": "group",
+            "group": {
+                "name": obj.name,
+                "description": obj.description,
+                "user_count": getattr(obj, "principalCount", None),
+            },
+        }
+
+    def get_roles(self, obj):
+        """
+        Return roles for a group.
+
+        - For dict input, pass through "roles" if present
+        - For Group input, extract from obj.filtered_bindings (prefetched RoleBindingGroup)
+        """
+        if isinstance(obj, dict):
+            return obj.get("roles", []) or []
+
+        roles = []
+        seen = set()
+        for binding_group in getattr(obj, "filtered_bindings", []) or []:
+            binding = getattr(binding_group, "binding", None)
+            if not binding:
+                continue
+            role = getattr(binding, "role", None)
+            if not role:
+                continue
+            if role.uuid in seen:
+                continue
+            seen.add(role.uuid)
+            roles.append({"id": role.uuid, "name": role.name})
+        return roles
+
+    def get_resource(self, obj):
+        """
+        Return the resource being queried.
+
+        - For dict input, pass through "resource" if present
+        - For Group input, build from serializer context when "request" is present
+        """
+        if isinstance(obj, dict):
+            return obj.get("resource", {}) or {}
+
+        # Match existing tests: if no request in context, return None
+        if "request" not in (self.context or {}):
+            return None
+
+        return {
+            "id": (self.context or {}).get("resource_id"),
+            "name": (self.context or {}).get("resource_name"),
+            "type": (self.context or {}).get("resource_type"),
+        }

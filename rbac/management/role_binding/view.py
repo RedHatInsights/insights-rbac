@@ -26,25 +26,23 @@ from django.db.models import Count, Max, Prefetch, Q, Value
 from google.protobuf import json_format
 from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
-from rest_framework import serializers
-from rest_framework.decorators import action
-from rest_framework.response import Response
-
 from management.base_viewsets import BaseV2ViewSet
 from management.cache import JWTCache
 from management.group.model import Group
-from management.permissions.workspace_access import WorkspaceAccessPermission
-from management.principal.model import Principal
-from management.role.v2_model import RoleBinding, RoleBindingGroup
-from management.utils import create_client_channel_relation
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
-from management.querysets import get_role_binding_groups_queryset
-from management.workspace.model import Workspace
 
-from .pagination import RoleBindingCursorPagination
+from management.principal.model import Principal
+from management.role.v2_model import RoleBinding, RoleBindingGroup
+from management.utils import create_client_channel_relation
+from management.workspace.model import Workspace
+from rest_framework import serializers
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from api.common.pagination import V2CursorPagination
 from .serializer import RoleBindingBySubjectSerializer
 
 logger = logging.getLogger(__name__)
@@ -55,12 +53,18 @@ _jwt_provider = JWTProvider()
 _jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 
 
+class RoleBindingBySubjectCursorPagination(V2CursorPagination):
+    """Use shared V2 cursor pagination with ordering aligned to annotated latest_modified."""
+
+    ordering = "-latest_modified"
+
+
 class RoleBindingViewSet(BaseV2ViewSet):
     """Role Binding ViewSet providing read-only access to bindings by subject."""
 
     serializer_class = RoleBindingBySubjectSerializer
-    permission_classes = (WorkspaceAccessPermission,)
-    pagination_class = RoleBindingCursorPagination
+    permission_classes = (RoleBindingSystemUserAccessPermission, RoleBindingKesselAccessPermission)
+    pagination_class = RoleBindingBySubjectCursorPagination
 
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
@@ -77,8 +81,14 @@ class RoleBindingViewSet(BaseV2ViewSet):
             order_by (optional): Ordering for results ("latest_modified" or "-latest_modified").
             limit (optional): Page size for cursor pagination (default: 10, max: 1000).
         """
+        # Sanitize query params defensively to avoid NUL-byte injection causing
+        # unexpected validation failures or downstream behavior.
         resource_id = request.query_params.get("resource_id")
+        if resource_id is not None:
+            resource_id = resource_id.replace("\x00", "")
         resource_type_param = request.query_params.get("resource_type")
+        if resource_type_param is not None:
+            resource_type_param = resource_type_param.replace("\x00", "")
         if not resource_id:
             raise serializers.ValidationError({"resource_id": "This query parameter is required."})
         if not resource_type_param:

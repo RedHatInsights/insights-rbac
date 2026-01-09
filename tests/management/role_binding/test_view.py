@@ -16,10 +16,12 @@
 #
 """Tests for the V2 role binding viewset."""
 
+import importlib
+import os
 from uuid import uuid4
 
 from django.test.utils import override_settings
-from django.urls import reverse
+from django.urls import clear_url_caches, set_urlconf
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -30,15 +32,40 @@ from management.role.v2_model import RoleV2, RoleBinding, RoleBindingGroup
 from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
 from unittest.mock import patch
+from unittest.mock import MagicMock
 
 
 @override_settings(V2_APIS_ENABLED=True)
 class RoleBindingViewsetTests(IdentityRequest):
     """Test the v2 role binding by-subject endpoint."""
 
+    @staticmethod
+    def role_bindings_by_subject_url() -> str:
+        """
+        Build the by-subject URL using the same API_PATH_PREFIX logic as rbac.urls.
+
+        rbac.urls reads API_PATH_PREFIX from the environment at import time, so tests
+        must construct URLs consistently with that value.
+        """
+        prefix = os.getenv("API_PATH_PREFIX", "api/")
+        if prefix.startswith("/"):
+            prefix = prefix[1:]
+        if not prefix.endswith("/"):
+            prefix = f"{prefix}/"
+        return f"/{prefix}v2/role-bindings/by-subject/"
+
     def setUp(self):
         """Set up a tenant, workspace, group, principal and role bindings."""
         super().setUp()
+        # Ensure the URLConf is built with V2 routes enabled for this test run.
+        # The root URLConf conditionally registers v2 routes based on settings at import time,
+        # so we reload it under the overridden settings.
+        import rbac.urls as rbac_urls
+
+        importlib.reload(rbac_urls)
+        clear_url_caches()
+        set_urlconf(rbac_urls)
+
         self.client = APIClient()
 
         # Ensure tenant exists in DB (IdentityRequest already created one, but we want the persisted instance)
@@ -85,9 +112,17 @@ class RoleBindingViewsetTests(IdentityRequest):
         )
         RoleBindingGroup.objects.create(group=self.group, binding=self.parent_binding)
 
-    def test_by_subject_direct_bindings_only(self):
+    @patch("management.permissions.workspace_inventory_access.inventory_client")
+    def test_by_subject_direct_bindings_only(self, mock_inventory_client):
         """When parent_role_bindings is false, only direct bindings are considered."""
-        url = reverse("v2_management:role-bindings-by-subject")
+        # Allow access via Inventory check (role_binding_view).
+        mock_stub = MagicMock()
+        mock_response = MagicMock()
+        mock_response.allowed = 1  # allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
+        mock_inventory_client.return_value.__enter__.return_value = mock_stub
+
+        url = self.role_bindings_by_subject_url()
         response = self.client.get(
             url,
             {
@@ -100,11 +135,13 @@ class RoleBindingViewsetTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Using cursor pagination: DRF returns results list
-        self.assertIn("results", response.data)
-        self.assertEqual(len(response.data["results"]), 1)
+        # Using V2 cursor pagination: response contains meta/links/data
+        self.assertIn("meta", response.data)
+        self.assertIn("links", response.data)
+        self.assertIn("data", response.data)
+        self.assertEqual(len(response.data["data"]), 1)
 
-        record = response.data["results"][0]
+        record = response.data["data"][0]
         self.assertIn("subject", record)
         self.assertEqual(record["subject"]["type"], "group")
         self.assertEqual(record["subject"]["group"]["id"], str(self.group.uuid))
@@ -118,12 +155,20 @@ class RoleBindingViewsetTests(IdentityRequest):
 
     @override_settings(RELATION_API_SERVER="localhost:9001")
     @patch("management.role_binding.view.RoleBindingViewSet._lookup_binding_uuids_via_relations")
-    def test_by_subject_includes_inherited_from_relations(self, mock_lookup):
+    @patch("management.permissions.workspace_inventory_access.inventory_client")
+    def test_by_subject_includes_inherited_from_relations(self, mock_inventory_client, mock_lookup):
         """When parent_role_bindings is true, bindings returned from Relations are used."""
         # Simulate Relations returning both direct and parent binding UUIDs
         mock_lookup.return_value = [str(self.direct_binding.uuid), str(self.parent_binding.uuid)]
 
-        url = reverse("v2_management:role-bindings-by-subject")
+        # Allow access via Inventory check (role_binding_view).
+        mock_stub = MagicMock()
+        mock_response = MagicMock()
+        mock_response.allowed = 1  # allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
+        mock_inventory_client.return_value.__enter__.return_value = mock_stub
+
+        url = self.role_bindings_by_subject_url()
         response = self.client.get(
             url,
             {
@@ -137,10 +182,12 @@ class RoleBindingViewsetTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("results", response.data)
-        self.assertEqual(len(response.data["results"]), 1)
+        self.assertIn("meta", response.data)
+        self.assertIn("links", response.data)
+        self.assertIn("data", response.data)
+        self.assertEqual(len(response.data["data"]), 1)
 
-        record = response.data["results"][0]
+        record = response.data["data"][0]
         self.assertIn("roles", record)
         role_ids = {r["id"] for r in record["roles"]}
         self.assertIn(str(self.role_v2.uuid), role_ids)
