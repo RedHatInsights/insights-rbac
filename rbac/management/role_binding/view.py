@@ -33,7 +33,6 @@ from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
-
 from management.principal.model import Principal
 from management.role.v2_model import RoleBinding, RoleBindingGroup
 from management.utils import create_client_channel_relation
@@ -43,7 +42,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingBySubjectSerializer
+from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class RoleBindingBySubjectCursorPagination(V2CursorPagination):
 class RoleBindingViewSet(BaseV2ViewSet):
     """Role Binding ViewSet providing read-only access to bindings by subject."""
 
-    serializer_class = RoleBindingBySubjectSerializer
+    serializer_class = RoleBindingOutputSerializer
     permission_classes = (RoleBindingSystemUserAccessPermission, RoleBindingKesselAccessPermission)
     pagination_class = RoleBindingBySubjectCursorPagination
 
@@ -81,18 +80,11 @@ class RoleBindingViewSet(BaseV2ViewSet):
             order_by (optional): Ordering for results ("latest_modified" or "-latest_modified").
             limit (optional): Page size for cursor pagination (default: 10, max: 1000).
         """
-        # Sanitize query params defensively to avoid NUL-byte injection causing
-        # unexpected validation failures or downstream behavior.
-        resource_id = request.query_params.get("resource_id")
-        if resource_id is not None:
-            resource_id = resource_id.replace("\x00", "")
-        resource_type_param = request.query_params.get("resource_type")
-        if resource_type_param is not None:
-            resource_type_param = resource_type_param.replace("\x00", "")
-        if not resource_id:
-            raise serializers.ValidationError({"resource_id": "This query parameter is required."})
-        if not resource_type_param:
-            raise serializers.ValidationError({"resource_type": "This query parameter is required."})
+        input_serializer = RoleBindingInputSerializer(data=request.query_params)
+        input_serializer.is_valid(raise_exception=True)
+
+        resource_id = input_serializer.validated_data["resource_id"]
+        resource_type_param = input_serializer.validated_data["resource_type"]
 
         # Normalize resource_type for internal use. For RBAC-local resources we only
         # store the short name (e.g. "workspace") in the database, but the caller
@@ -106,10 +98,10 @@ class RoleBindingViewSet(BaseV2ViewSet):
         if resource_type_db == "workspace" and not self._is_valid_uuid(resource_id):
             raise serializers.ValidationError({"resource_id": "A valid UUID is required for workspace resources."})
 
-        subject_type = request.query_params.get("subject_type")
-        subject_id = request.query_params.get("subject_id")
-        fields = request.query_params.get("fields")
-        order_by = request.query_params.get("order_by")
+        subject_type = input_serializer.validated_data.get("subject_type")
+        subject_id = input_serializer.validated_data.get("subject_id")
+        field_selection = input_serializer.validated_data.get("fields")
+        order_by = input_serializer.validated_data.get("order_by")
         parent_role_bindings = str(request.query_params.get("parent_role_bindings", "false")).lower()
         include_inherited = parent_role_bindings in {"true", "1", "yes"}
 
@@ -143,8 +135,13 @@ class RoleBindingViewSet(BaseV2ViewSet):
         serializer = self.get_serializer(
             page if page is not None else queryset,
             many=True,
-            fields=fields,
-            context={"request": request},
+            context={
+                "request": request,
+                "resource_id": resource_id,
+                "resource_name": request.resource_name,
+                "resource_type": resource_type_param,
+                "field_selection": field_selection,
+            },
         )
 
         if page is not None:

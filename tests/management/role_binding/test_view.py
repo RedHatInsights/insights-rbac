@@ -144,9 +144,11 @@ class RoleBindingViewsetTests(IdentityRequest):
         record = response.data["data"][0]
         self.assertIn("subject", record)
         self.assertEqual(record["subject"]["type"], "group")
-        self.assertEqual(record["subject"]["group"]["id"], str(self.group.uuid))
+        # With the v2 role binding output serializer, subject id is at subject.id.
+        # The nested subject.group object is only included when explicitly requested via fields.
+        self.assertEqual(str(record["subject"]["id"]), str(self.group.uuid))
         self.assertIn("roles", record)
-        role_ids = {r["id"] for r in record["roles"]}
+        role_ids = {str(r["id"]) for r in record["roles"]}
         self.assertIn(str(self.role_v2.uuid), role_ids)
         self.assertIn("resource", record)
         self.assertEqual(record["resource"]["id"], str(self.child_workspace.id))
@@ -189,7 +191,7 @@ class RoleBindingViewsetTests(IdentityRequest):
 
         record = response.data["data"][0]
         self.assertIn("roles", record)
-        role_ids = {r["id"] for r in record["roles"]}
+        role_ids = {str(r["id"]) for r in record["roles"]}
         self.assertIn(str(self.role_v2.uuid), role_ids)
 
         # The resource in the response should be the child workspace
