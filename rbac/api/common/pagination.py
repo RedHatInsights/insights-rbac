@@ -20,6 +20,7 @@ import logging
 import re
 from urllib.parse import urlparse
 
+from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.utils.urls import replace_query_param
@@ -124,8 +125,15 @@ class V2CursorPagination(CursorPagination):
     and better performance for large datasets.
 
     Supports dynamic ordering via the order_by query parameter.
-    Available ordering fields: name, description, uuid, modified, created,
-    principalCount, latest_modified.
+    Ordering REQUIRES dot notation (e.g., group.name, role.name).
+    Direct field names without dot notation are not allowed.
+    Multiple fields can be specified via comma-separated values
+    or multiple order_by parameters.
+
+    Available ordering fields:
+    - group.name, group.description, group.user_count, group.uuid,
+      group.created, group.modified
+    - role.name, role.uuid, role.created, role.modified
     """
 
     page_size = 10
@@ -134,26 +142,83 @@ class V2CursorPagination(CursorPagination):
     ordering = "-modified"
     cursor_query_param = "cursor"
 
+    # Mapping of dot notation fields to Django ORM fields
+    # For role binding by-subject endpoint, the queryset is on Group model
+    FIELD_MAPPING = {
+        # Group fields
+        "group.name": "name",
+        "group.description": "description",
+        "group.user_count": "principalCount",
+        "group.uuid": "uuid",
+        "group.created": "created",
+        "group.modified": "modified",
+        # Role fields (accessed via related path)
+        "role.name": "role_binding_entries__binding__role__name",
+        "role.uuid": "role_binding_entries__binding__role__uuid",
+        "role.modified": "role_binding_entries__binding__role__modified",
+        "role.created": "role_binding_entries__binding__role__created",
+    }
+
+    def _convert_order_field(self, field: str) -> str | None:
+        """Convert dot notation field to Django ORM field.
+
+        Only accepts fields using dot notation (e.g., group.name, role.name).
+        Direct field names without dot notation are rejected.
+
+        Args:
+            field: The field name, must use dot notation (e.g., group.name, -role.modified)
+
+        Returns:
+            The Django ORM field name, or None if the field is invalid
+        """
+        # Handle descending order prefix
+        descending = field.startswith("-")
+        field_name = field[1:] if descending else field
+
+        # Reject fields without dot notation - dot notation is required
+        if "." not in field_name:
+            return None
+
+        # Check if it's a known mapping
+        if field_name in self.FIELD_MAPPING:
+            orm_field = self.FIELD_MAPPING[field_name]
+            return f"-{orm_field}" if descending else orm_field
+
+        # Unknown dot notation field - reject it
+        return None
+
     def get_ordering(self, request, queryset, view):
         """Get ordering from order_by query parameter or use default.
 
-        Validates field names and falls back to default if invalid.
+        Requires dot notation for ordering fields (e.g., group.name, role.name).
+        Direct field names are not allowed. Multiple fields can be specified
+        via comma-separated values or multiple order_by parameters.
+        Raises ValidationError if invalid ordering is provided.
         """
-        order_by = request.query_params.get("order_by")
-        if not order_by:
+        order_by_list = request.query_params.getlist("order_by")
+
+        # No order_by provided, use default
+        if not order_by_list:
             return (self.ordering,)
 
-        order_fields = [f.strip() for f in order_by.split(",") if f.strip()]
+        # Collect all fields from all order_by parameters (supports both comma-separated and multiple params)
+        order_fields = []
+        for order_by in order_by_list:
+            order_fields.extend([f.strip() for f in order_by.split(",") if f.strip()])
+
         if not order_fields:
             return (self.ordering,)
 
-        try:
-            # Validate ordering fields against queryset
-            ordered = queryset.order_by(*order_fields)
-            str(ordered.query)
-            return tuple(order_fields)
-        except Exception:
-            return (self.ordering,)
+        # Convert dot notation to Django ORM fields
+        converted_fields = []
+        for field in order_fields:
+            converted_field = self._convert_order_field(field)
+            if converted_field is None:
+                valid_fields = ", ".join(sorted(self.FIELD_MAPPING.keys()))
+                raise ValidationError({"order_by": f"Invalid ordering field '{field}'. Valid fields: {valid_fields}"})
+            converted_fields.append(converted_field)
+
+        return tuple(converted_fields)
 
     @staticmethod
     def link_rewrite(request, link):

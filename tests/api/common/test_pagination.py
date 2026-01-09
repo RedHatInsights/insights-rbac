@@ -22,6 +22,8 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIRequestFactory
 from rest_framework.request import Request
 
+from rest_framework.exceptions import ValidationError
+
 from api.common.pagination import PATH_INFO, StandardResultsSetPagination, V2CursorPagination, V2ResultsSetPagination
 
 
@@ -362,3 +364,109 @@ class V2CursorPaginationTest(TestCase):
 
         # Pages should have different items
         self.assertEqual(len(set(page1_ids) & set(page2_ids)), 0)
+
+    def test_convert_order_field_rejects_simple_field(self):
+        """Test _convert_order_field rejects simple field names without dot notation."""
+        self.assertIsNone(self.paginator._convert_order_field("name"))
+        self.assertIsNone(self.paginator._convert_order_field("modified"))
+        self.assertIsNone(self.paginator._convert_order_field("uuid"))
+
+    def test_convert_order_field_rejects_descending_simple_field(self):
+        """Test _convert_order_field rejects descending simple field names."""
+        self.assertIsNone(self.paginator._convert_order_field("-name"))
+        self.assertIsNone(self.paginator._convert_order_field("-modified"))
+
+    def test_convert_order_field_dot_notation_group(self):
+        """Test _convert_order_field with group dot notation."""
+        self.assertEqual(self.paginator._convert_order_field("group.name"), "name")
+        self.assertEqual(self.paginator._convert_order_field("group.description"), "description")
+        self.assertEqual(self.paginator._convert_order_field("group.user_count"), "principalCount")
+        self.assertEqual(self.paginator._convert_order_field("group.uuid"), "uuid")
+        self.assertEqual(self.paginator._convert_order_field("group.modified"), "modified")
+        self.assertEqual(self.paginator._convert_order_field("group.created"), "created")
+
+    def test_convert_order_field_dot_notation_group_descending(self):
+        """Test _convert_order_field with group dot notation and descending prefix."""
+        self.assertEqual(self.paginator._convert_order_field("-group.name"), "-name")
+        self.assertEqual(self.paginator._convert_order_field("-group.user_count"), "-principalCount")
+
+    def test_convert_order_field_dot_notation_role(self):
+        """Test _convert_order_field with role dot notation."""
+        self.assertEqual(self.paginator._convert_order_field("role.name"), "role_binding_entries__binding__role__name")
+        self.assertEqual(self.paginator._convert_order_field("role.uuid"), "role_binding_entries__binding__role__uuid")
+        self.assertEqual(
+            self.paginator._convert_order_field("-role.modified"), "-role_binding_entries__binding__role__modified"
+        )
+
+    def test_convert_order_field_rejects_unknown_dot_notation(self):
+        """Test _convert_order_field rejects unknown dot notation fields."""
+        self.assertIsNone(self.paginator._convert_order_field("foo.bar"))
+        self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz"))
+        self.assertIsNone(self.paginator._convert_order_field("unknown.field"))
+
+    def test_get_ordering_with_group_name(self):
+        """Test get_ordering converts group.name to name."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=group.name"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("name",))
+
+    def test_get_ordering_with_group_name_descending(self):
+        """Test get_ordering converts -group.name to -name."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=-group.name"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("-name",))
+
+    def test_get_ordering_with_group_user_count(self):
+        """Test get_ordering converts group.user_count to principalCount."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=group.user_count"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("principalCount",))
+
+    def test_get_ordering_with_role_name(self):
+        """Test get_ordering converts role.name to ORM path."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=role.name"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("role_binding_entries__binding__role__name",))
+
+    def test_get_ordering_with_role_name_descending(self):
+        """Test get_ordering converts -role.name to descending ORM path."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=-role.name"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("-role_binding_entries__binding__role__name",))
+
+    def test_get_ordering_accepts_comma_separated_fields(self):
+        """Test get_ordering accepts comma-separated fields."""
+        request = Request(
+            self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=group.name,-group.modified")
+        )
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("name", "-modified"))
+
+    def test_get_ordering_accepts_multiple_order_by_params(self):
+        """Test get_ordering accepts multiple order_by parameters."""
+        request = Request(
+            self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=group.name&order_by=-group.modified")
+        )
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("name", "-modified"))
+
+    def test_get_ordering_rejects_direct_field_names(self):
+        """Test get_ordering raises ValidationError for direct field names."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=name"))
+        with self.assertRaises(ValidationError) as context:
+            self.paginator.get_ordering(request, self.queryset, None)
+        self.assertIn("order_by", context.exception.detail)
+
+    def test_get_ordering_rejects_unknown_dot_notation(self):
+        """Test get_ordering raises ValidationError for unknown dot notation fields."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=foo.bar"))
+        with self.assertRaises(ValidationError) as context:
+            self.paginator.get_ordering(request, self.queryset, None)
+        self.assertIn("order_by", context.exception.detail)
+
+    def test_get_ordering_rejects_mixed_valid_and_invalid(self):
+        """Test get_ordering raises ValidationError when any field is invalid."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=group.name,invalid_field"))
+        with self.assertRaises(ValidationError) as context:
+            self.paginator.get_ordering(request, self.queryset, None)
+        self.assertIn("order_by", context.exception.detail)
