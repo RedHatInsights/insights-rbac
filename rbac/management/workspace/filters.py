@@ -93,12 +93,17 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
         if workspace_id:
             return queryset.filter(id=workspace_id) if has_access else queryset.none()
 
-        # For list actions: filter by permission_tuples set by is_user_allowed_v2
+        # For list actions: check access decision first, then filter by permission_tuples
+        if not has_access:
+            return queryset.none()
+
+        # If permission_tuples is set, filter by those IDs
         if hasattr(request, "permission_tuples") and request.permission_tuples:
             accessible_ids = {ws_tuple[1] for ws_tuple in request.permission_tuples}
             return queryset.filter(id__in=accessible_ids)
 
-        return queryset.none()
+        # has_access is True but no permission_tuples (system user bypass) - return all workspaces
+        return queryset
 
     def _filter_v1(self, request, queryset, view):
         """

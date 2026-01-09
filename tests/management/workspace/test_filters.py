@@ -147,10 +147,10 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
 
     @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_returns_empty_when_no_permission_tuples_set(self, mock_flags, mock_is_user_allowed_v2):
-        """Returns empty queryset when is_user_allowed_v2 doesn't set permission_tuples."""
+    def test_returns_empty_when_access_denied_and_no_permission_tuples(self, mock_flags, mock_is_user_allowed_v2):
+        """Returns empty queryset when access denied and no permission_tuples."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_is_user_allowed_v2.return_value = False  # Returns but doesn't set permission_tuples
+        mock_is_user_allowed_v2.return_value = False  # Access denied
 
         request = Mock(tenant=Mock())
         request.method = "GET"
@@ -161,8 +161,30 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
 
         self.filter_backend.filter_queryset(request, queryset, view)
 
-        # Should return empty queryset when no permission_tuples
+        # Should return empty queryset when access denied
         queryset.none.assert_called_once()
+
+    @patch("management.workspace.filters.is_user_allowed_v2")
+    @patch("management.workspace.filters.FEATURE_FLAGS")
+    def test_returns_all_workspaces_for_system_user(self, mock_flags, mock_is_user_allowed_v2):
+        """Returns all workspaces when system user has access but no permission_tuples set."""
+        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
+        # System user: access granted but permission_tuples not set
+        mock_is_user_allowed_v2.return_value = True
+
+        request = Mock(tenant=Mock())
+        request.method = "GET"
+        # System users don't have permission_tuples set
+        del request.permission_tuples
+        queryset = Mock()
+        view = Mock(action="list")
+
+        result = self.filter_backend.filter_queryset(request, queryset, view)
+
+        # Should return full queryset for system users (access granted, no filtering)
+        self.assertEqual(result, queryset)
+        queryset.none.assert_not_called()
+        queryset.filter.assert_not_called()
 
     @patch("management.workspace.filters.FEATURE_FLAGS")
     def test_v1_filter_uses_permission_tuples(self, mock_flags):
