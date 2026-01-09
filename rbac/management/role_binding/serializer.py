@@ -19,7 +19,58 @@ from management.models import Group
 from rest_framework import serializers
 
 
-class RoleBindingByGroupSerializer(serializers.Serializer):
+class RoleBindingInputSerializer(serializers.Serializer):
+    """Input serializer for role binding query parameters.
+
+    Handles validation of query parameters for the role binding API.
+    """
+
+    resource_id = serializers.CharField(required=True, help_text="Filter by resource ID")
+    resource_type = serializers.CharField(required=True, help_text="Filter by resource type")
+    subject_type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject type")
+    subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
+    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+    order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
+
+    def to_internal_value(self, data):
+        """Sanitize input data by stripping NUL bytes before field validation."""
+        sanitized = {
+            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
+        }
+        return super().to_internal_value(sanitized)
+
+    def validate_resource_id(self, value):
+        """Validate resource_id is provided."""
+        if not value:
+            raise serializers.ValidationError("resource_id is required to identify the resource for role bindings.")
+        return value
+
+    def validate_resource_type(self, value):
+        """Validate resource_type is provided."""
+        if not value:
+            raise serializers.ValidationError(
+                "resource_type is required to specify the type of resource (e.g., 'workspace')."
+            )
+        return value
+
+    def validate_subject_type(self, value):
+        """Return None for empty values."""
+        return value or None
+
+    def validate_subject_id(self, value):
+        """Return None for empty values."""
+        return value or None
+
+    def validate_fields(self, value):
+        """Return None for empty values."""
+        return value or None
+
+    def validate_order_by(self, value):
+        """Return None for empty values."""
+        return value or None
+
+
+class RoleBindingOutputSerializer(serializers.Serializer):
     """Serializer for role bindings by group.
 
     This serializer formats Group objects that have been annotated with
@@ -201,3 +252,7 @@ class RoleBindingByGroupSerializer(serializers.Serializer):
                         resource_data[field_name] = value
 
         return resource_data
+
+
+# Backward compatibility alias
+RoleBindingByGroupSerializer = RoleBindingOutputSerializer

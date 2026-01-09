@@ -167,11 +167,11 @@ class RoleBindingService:
             order_by=order_by,
         )
 
-    def get_role_bindings_by_subject(self, params: RoleBindingQueryParams) -> QuerySet:
-        """Get role bindings grouped by subject (group).
+    def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
+        """Get role bindings grouped by subject (group) from a dictionary of parameters.
 
         Args:
-            params: Validated query parameters
+            params: Dictionary of validated query parameters (from input serializer)
 
         Returns:
             QuerySet of Group objects annotated with role binding information
@@ -181,10 +181,10 @@ class RoleBindingService:
             cursor pagination works correctly with the requested order_by parameter.
         """
         # Build base queryset for the specified resource
-        queryset = self._build_base_queryset(params.resource_id, params.resource_type)
+        queryset = self._build_base_queryset(params["resource_id"], params["resource_type"])
 
         # Apply subject filters
-        queryset = self._apply_subject_filters(queryset, params.subject_type, params.subject_id)
+        queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
 
         return queryset
 
@@ -218,20 +218,24 @@ class RoleBindingService:
                 return None
         return None
 
-    def build_context(self, params: RoleBindingQueryParams) -> dict:
-        """Build serializer context with resource information.
+    def build_context(self, params: dict) -> dict:
+        """Build serializer context with resource information from a dictionary.
 
         Args:
-            params: Query parameters
+            params: Dictionary of validated query parameters (from input serializer)
 
         Returns:
-            Context dict for serializer
+            Context dict for output serializer
         """
+        resource_id = params["resource_id"]
+        resource_type = params["resource_type"]
+        fields = params.get("fields")
+
         return {
-            "resource_id": params.resource_id,
-            "resource_type": params.resource_type,
-            "resource_name": self.get_resource_name(params.resource_id, params.resource_type),
-            "field_selection": self.get_field_selection(params),
+            "resource_id": resource_id,
+            "resource_type": resource_type,
+            "resource_name": self.get_resource_name(resource_id, resource_type),
+            "field_selection": FieldSelection.parse(fields),
         }
 
     def _build_base_queryset(self, resource_id: str, resource_type: str) -> QuerySet:

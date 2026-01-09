@@ -25,7 +25,7 @@ from management.permissions.role_binding_access import (
 from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingByGroupSerializer
+from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
     """
 
-    serializer_class = RoleBindingByGroupSerializer
+    serializer_class = RoleBindingOutputSerializer
     permission_classes = (
         RoleBindingSystemUserAccessPermission,
         RoleBindingKesselAccessPermission,
@@ -69,18 +69,20 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
+        # Validate and parse query parameters using input serializer
+        input_serializer = RoleBindingInputSerializer(data=request.query_params)
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
+
         service = RoleBindingService(tenant=request.tenant)
 
-        # Parse and validate query parameters
-        params = service.parse_query_params(request.query_params)
+        # Get role bindings queryset using validated parameters
+        queryset = service.get_role_bindings_by_subject(validated_params)
 
-        # Get role bindings queryset
-        queryset = service.get_role_bindings_by_subject(params)
-
-        # Build context for serializer
+        # Build context for output serializer
         context = {
             "request": request,
-            **service.build_context(params),
+            **service.build_context(validated_params),
         }
 
         page = self.paginate_queryset(queryset)

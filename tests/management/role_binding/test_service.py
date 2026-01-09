@@ -270,10 +270,10 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_get_role_bindings_by_subject_returns_groups(self):
         """Test that get_role_bindings_by_subject returns groups."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
         queryset = self.service.get_role_bindings_by_subject(params)
 
         self.assertEqual(queryset.count(), 1)
@@ -282,10 +282,10 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_get_role_bindings_by_subject_annotates_principal_count(self):
         """Test that groups are annotated with principal count."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
         queryset = self.service.get_role_bindings_by_subject(params)
 
         group = queryset.first()
@@ -314,11 +314,11 @@ class RoleBindingServiceTests(IdentityRequest):
         )
 
         # Filter by original group's UUID
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            subject_id=str(self.group.uuid),
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_id": str(self.group.uuid),
+        }
         queryset = self.service.get_role_bindings_by_subject(params)
 
         self.assertEqual(queryset.count(), 1)
@@ -332,32 +332,32 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_get_role_bindings_by_subject_filters_by_subject_type_group(self):
         """Test filtering by subject_type='group' returns results."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            subject_type="group",
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "group",
+        }
         queryset = self.service.get_role_bindings_by_subject(params)
 
         self.assertEqual(queryset.count(), 1)
 
     def test_get_role_bindings_by_subject_filters_by_unsupported_subject_type(self):
         """Test filtering by unsupported subject_type returns empty."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            subject_type="user",  # Not currently supported
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",  # Not currently supported
+        }
         queryset = self.service.get_role_bindings_by_subject(params)
 
         self.assertEqual(queryset.count(), 0)
 
     def test_get_role_bindings_by_subject_empty_results(self):
         """Test that non-existent resource returns empty queryset."""
-        params = RoleBindingQueryParams(
-            resource_id="00000000-0000-0000-0000-000000000000",
-            resource_type="workspace",
-        )
+        params = {
+            "resource_id": "00000000-0000-0000-0000-000000000000",
+            "resource_type": "workspace",
+        }
         queryset = self.service.get_role_bindings_by_subject(params)
 
         self.assertEqual(queryset.count(), 0)
@@ -379,10 +379,10 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_build_context(self):
         """Test building serializer context."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
         context = self.service.build_context(params)
 
         self.assertEqual(context["resource_id"], str(self.workspace.id))
@@ -392,11 +392,11 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_build_context_with_fields(self):
         """Test building context with field selection."""
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-            fields="subject(group.name)",
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "fields": "subject(group.name)",
+        }
         context = self.service.build_context(params)
 
         self.assertIsNotNone(context["field_selection"])
@@ -464,10 +464,10 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         # Get annotated group for serializer
         self.service = RoleBindingService(tenant=self.tenant)
-        params = RoleBindingQueryParams(
-            resource_id=str(self.workspace.id),
-            resource_type="workspace",
-        )
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
         queryset = self.service.get_role_bindings_by_subject(params)
         self.annotated_group = queryset.first()
 
