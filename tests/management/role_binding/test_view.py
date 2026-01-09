@@ -305,7 +305,14 @@ class RoleBindingViewSetTest(IdentityRequest):
         return_value=True,
     )
     def test_by_subject_data_structure(self, mock_permission):
-        """Test that response data matches expected structure."""
+        """Test that response data matches expected default structure.
+
+        Default behavior returns only basic required fields:
+        - subject: id, type (no group details)
+        - roles: id only
+        - resource: id only
+        - no last_modified
+        """
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=1",
@@ -317,31 +324,30 @@ class RoleBindingViewSetTest(IdentityRequest):
 
         item = response.data["data"][0]
 
-        # Verify structure
-        self.assertIn("last_modified", item)
+        # Verify structure - no last_modified by default
+        self.assertNotIn("last_modified", item)
         self.assertIn("subject", item)
         self.assertIn("roles", item)
         self.assertIn("resource", item)
 
-        # Verify subject structure
+        # Verify subject structure - only id and type by default
         subject = item["subject"]
         self.assertIn("id", subject)
         self.assertIn("type", subject)
         self.assertEqual(subject["type"], "group")
-        self.assertIn("group", subject)
-        self.assertIn("name", subject["group"])
-        self.assertIn("description", subject["group"])
-        self.assertIn("user_count", subject["group"])
+        self.assertNotIn("group", subject)
 
-        # Verify roles structure
+        # Verify roles structure - only id by default
         self.assertIsInstance(item["roles"], list)
+        if item["roles"]:
+            self.assertIn("id", item["roles"][0])
+            self.assertNotIn("name", item["roles"][0])
 
-        # Verify resource structure
+        # Verify resource structure - only id by default
         resource = item["resource"]
         self.assertIn("id", resource)
-        self.assertIn("name", resource)
-        self.assertIn("type", resource)
-        self.assertEqual(resource["type"], "workspace")
+        self.assertNotIn("name", resource)
+        self.assertNotIn("type", resource)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",

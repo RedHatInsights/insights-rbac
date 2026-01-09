@@ -122,6 +122,10 @@ class V2CursorPagination(CursorPagination):
 
     Uses cursor-based pagination which provides consistent ordering
     and better performance for large datasets.
+
+    Supports dynamic ordering via the order_by query parameter.
+    Available ordering fields: name, description, uuid, modified, created,
+    principalCount, latest_modified.
     """
 
     page_size = 10
@@ -129,6 +133,27 @@ class V2CursorPagination(CursorPagination):
     max_page_size = 1000
     ordering = "-modified"
     cursor_query_param = "cursor"
+
+    def get_ordering(self, request, queryset, view):
+        """Get ordering from order_by query parameter or use default.
+
+        Validates field names and falls back to default if invalid.
+        """
+        order_by = request.query_params.get("order_by")
+        if not order_by:
+            return (self.ordering,)
+
+        order_fields = [f.strip() for f in order_by.split(",") if f.strip()]
+        if not order_fields:
+            return (self.ordering,)
+
+        try:
+            # Validate ordering fields against queryset
+            ordered = queryset.order_by(*order_fields)
+            str(ordered.query)
+            return tuple(order_fields)
+        except Exception:
+            return (self.ordering,)
 
     @staticmethod
     def link_rewrite(request, link):

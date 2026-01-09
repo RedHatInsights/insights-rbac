@@ -22,13 +22,11 @@ from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
-from management.querysets import get_role_binding_groups_queryset
-from management.workspace.model import Workspace
-from rest_framework import serializers
 from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingByGroupSerializer
+from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
+from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +35,20 @@ class RoleBindingViewSet(BaseV2ViewSet):
     """Role Binding ViewSet.
 
     Provides read-only access to role bindings currently.
+
+    Query Parameters (by-subject endpoint):
+        Required:
+            - resource_id: Filter by resource ID
+            - resource_type: Filter by resource type
+
+        Optional:
+            - subject_type: Filter by subject type (e.g., 'group')
+            - subject_id: Filter by subject ID
+            - fields: Control which fields are included in the response
+            - order_by: Sort by specified field(s), prefix with '-' for descending
     """
 
-    serializer_class = RoleBindingByGroupSerializer
+    serializer_class = RoleBindingOutputSerializer
     permission_classes = (
         RoleBindingSystemUserAccessPermission,
         RoleBindingKesselAccessPermission,
@@ -53,39 +62,29 @@ class RoleBindingViewSet(BaseV2ViewSet):
         Required query parameters:
             - resource_id: Filter by resource ID
             - resource_type: Filter by resource type
+
+        Optional query parameters:
+            - subject_type: Filter by subject type (e.g., 'group')
+            - subject_id: Filter by subject ID (UUID)
+            - fields: Control which fields are included in the response
+            - order_by: Sort by specified field(s), prefix with '-' for descending
         """
-        resource_id = request.query_params.get("resource_id", "").replace("\x00", "")
-        resource_type = request.query_params.get("resource_type", "").replace("\x00", "")
+        # Validate and parse query parameters using input serializer
+        input_serializer = RoleBindingInputSerializer(data=request.query_params)
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
 
-        if not resource_id:
-            raise serializers.ValidationError({"resource_id": "This query parameter is required."})
-        if not resource_type:
-            raise serializers.ValidationError({"resource_type": "This query parameter is required."})
+        service = RoleBindingService(tenant=request.tenant)
 
-        queryset = get_role_binding_groups_queryset(
-            resource_id=resource_id,
-            resource_type=resource_type,
-            tenant=request.tenant,
-        )
+        # Get role bindings queryset using validated parameters
+        queryset = service.get_role_bindings_by_subject(validated_params)
 
+        # Build context for output serializer
         context = {
             "request": request,
-            "resource_id": resource_id,
-            "resource_type": resource_type,
-            "resource_name": self._get_resource_name(resource_id, resource_type, request.tenant),
+            **service.build_context(validated_params),
         }
 
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
-
-    def _get_resource_name(self, resource_id, resource_type, tenant):
-        """Get the name of the resource."""
-        if resource_type == "workspace":
-            try:
-                workspace = Workspace.objects.get(id=resource_id, tenant=tenant)
-                return workspace.name
-            except Workspace.DoesNotExist:
-                logger.warning(f"Workspace {resource_id} not found for tenant {tenant}")
-                return None
-        return None
