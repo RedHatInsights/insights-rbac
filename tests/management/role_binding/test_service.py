@@ -16,68 +16,12 @@
 #
 """Tests for the RoleBindingService and Serializer."""
 from django.test import TestCase
-from rest_framework import serializers
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import RoleBindingByGroupSerializer
-from management.role_binding.service import (
-    FieldSelection,
-    RoleBindingQueryParams,
-    RoleBindingService,
-)
+from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
+from management.role_binding.service import RoleBindingService
 from tests.identity_request import IdentityRequest
-
-
-class RoleBindingQueryParamsTests(TestCase):
-    """Tests for RoleBindingQueryParams dataclass."""
-
-    def test_valid_required_params(self):
-        """Test that valid required params are accepted."""
-        params = RoleBindingQueryParams(
-            resource_id="workspace-123",
-            resource_type="workspace",
-        )
-        self.assertEqual(params.resource_id, "workspace-123")
-        self.assertEqual(params.resource_type, "workspace")
-
-    def test_missing_resource_id_raises_error(self):
-        """Test that missing resource_id raises ValidationError."""
-        with self.assertRaises(serializers.ValidationError) as context:
-            RoleBindingQueryParams(resource_id="", resource_type="workspace")
-        self.assertIn("resource_id", str(context.exception))
-
-    def test_missing_resource_type_raises_error(self):
-        """Test that missing resource_type raises ValidationError."""
-        with self.assertRaises(serializers.ValidationError) as context:
-            RoleBindingQueryParams(resource_id="workspace-123", resource_type="")
-        self.assertIn("resource_type", str(context.exception))
-
-    def test_optional_params_default_to_none(self):
-        """Test that optional params default to None."""
-        params = RoleBindingQueryParams(
-            resource_id="workspace-123",
-            resource_type="workspace",
-        )
-        self.assertIsNone(params.subject_type)
-        self.assertIsNone(params.subject_id)
-        self.assertIsNone(params.fields)
-        self.assertIsNone(params.order_by)
-
-    def test_optional_params_can_be_set(self):
-        """Test that optional params can be set."""
-        params = RoleBindingQueryParams(
-            resource_id="workspace-123",
-            resource_type="workspace",
-            subject_type="group",
-            subject_id="group-uuid",
-            fields="subject(group.name)",
-            order_by="-last_modified",
-        )
-        self.assertEqual(params.subject_type, "group")
-        self.assertEqual(params.subject_id, "group-uuid")
-        self.assertEqual(params.fields, "subject(group.name)")
-        self.assertEqual(params.order_by, "-last_modified")
 
 
 class FieldSelectionTests(TestCase):
@@ -148,6 +92,46 @@ class FieldSelectionTests(TestCase):
         self.assertEqual(len(parts), 2)
         self.assertEqual(parts[0], "subject(a,b)")
         self.assertEqual(parts[1], "role(c)")
+
+    def test_parse_raises_error_for_invalid_subject_field(self):
+        """Test that parse raises error for invalid subject field."""
+        from management.role_binding.serializer import FieldSelectionValidationError
+
+        with self.assertRaises(FieldSelectionValidationError) as context:
+            FieldSelection.parse("subject(invalid_field)")
+        self.assertIn("invalid_field", str(context.exception))
+
+    def test_parse_raises_error_for_invalid_role_field(self):
+        """Test that parse raises error for invalid role field."""
+        from management.role_binding.serializer import FieldSelectionValidationError
+
+        with self.assertRaises(FieldSelectionValidationError) as context:
+            FieldSelection.parse("role(invalid_field)")
+        self.assertIn("invalid_field", str(context.exception))
+
+    def test_parse_raises_error_for_invalid_resource_field(self):
+        """Test that parse raises error for invalid resource field."""
+        from management.role_binding.serializer import FieldSelectionValidationError
+
+        with self.assertRaises(FieldSelectionValidationError) as context:
+            FieldSelection.parse("resource(invalid_field)")
+        self.assertIn("invalid_field", str(context.exception))
+
+    def test_parse_raises_error_for_unknown_object_type(self):
+        """Test that parse raises error for unknown object type."""
+        from management.role_binding.serializer import FieldSelectionValidationError
+
+        with self.assertRaises(FieldSelectionValidationError) as context:
+            FieldSelection.parse("unknown(field)")
+        self.assertIn("Unknown object type", str(context.exception))
+
+    def test_parse_raises_error_for_invalid_root_field(self):
+        """Test that parse raises error for invalid root field."""
+        from management.role_binding.serializer import FieldSelectionValidationError
+
+        with self.assertRaises(FieldSelectionValidationError) as context:
+            FieldSelection.parse("invalid_root_field")
+        self.assertIn("Unknown field", str(context.exception))
 
 
 class RoleBindingServiceTests(IdentityRequest):
@@ -229,44 +213,6 @@ class RoleBindingServiceTests(IdentityRequest):
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         super().tearDown()
-
-    def test_parse_query_params_valid(self):
-        """Test parsing valid query parameters."""
-        query_params = {
-            "resource_id": str(self.workspace.id),
-            "resource_type": "workspace",
-            "subject_type": "group",
-            "subject_id": str(self.group.uuid),
-        }
-        params = self.service.parse_query_params(query_params)
-
-        self.assertEqual(params.resource_id, str(self.workspace.id))
-        self.assertEqual(params.resource_type, "workspace")
-        self.assertEqual(params.subject_type, "group")
-        self.assertEqual(params.subject_id, str(self.group.uuid))
-
-    def test_parse_query_params_strips_null_bytes(self):
-        """Test that null bytes are stripped from parameters."""
-        query_params = {
-            "resource_id": f"\x00{self.workspace.id}\x00",
-            "resource_type": "\x00workspace\x00",
-        }
-        params = self.service.parse_query_params(query_params)
-
-        self.assertEqual(params.resource_id, str(self.workspace.id))
-        self.assertEqual(params.resource_type, "workspace")
-
-    def test_parse_query_params_missing_resource_id(self):
-        """Test that missing resource_id raises error."""
-        query_params = {"resource_type": "workspace"}
-        with self.assertRaises(serializers.ValidationError):
-            self.service.parse_query_params(query_params)
-
-    def test_parse_query_params_missing_resource_type(self):
-        """Test that missing resource_type raises error."""
-        query_params = {"resource_id": str(self.workspace.id)}
-        with self.assertRaises(serializers.ValidationError):
-            self.service.parse_query_params(query_params)
 
     def test_get_role_bindings_by_subject_returns_groups(self):
         """Test that get_role_bindings_by_subject returns groups."""
@@ -391,11 +337,12 @@ class RoleBindingServiceTests(IdentityRequest):
         self.assertIsNone(context["field_selection"])
 
     def test_build_context_with_fields(self):
-        """Test building context with field selection."""
+        """Test building context with field selection (pre-parsed by input serializer)."""
+        field_selection = FieldSelection.parse("subject(group.name)")
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
-            "fields": "subject(group.name)",
+            "fields": field_selection,
         }
         context = self.service.build_context(params)
 
@@ -633,19 +580,6 @@ class RoleBindingSerializerTests(IdentityRequest):
         data = serializer.data
 
         self.assertIn("last_modified", data)
-
-    def test_field_selection_dynamic_group_field_access(self):
-        """Test that dynamic field access works for group fields."""
-        # Request a field that exists on the model but isn't in defaults
-        field_selection = FieldSelection.parse("subject(group.uuid)")
-        context = {**self.context, "field_selection": field_selection}
-
-        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
-        data = serializer.data
-
-        group = data["subject"]["group"]
-        self.assertIn("uuid", group)
-        self.assertEqual(str(group["uuid"]), str(self.group.uuid))
 
     def test_combined_field_selection(self):
         """Test combined field selection across multiple objects."""

@@ -16,8 +16,6 @@
 #
 """Service layer for role binding management."""
 import logging
-import re
-from dataclasses import dataclass, field
 from typing import Optional
 
 from django.db.models import Max, Prefetch, Q, QuerySet
@@ -26,109 +24,11 @@ from management.group.model import Group
 from management.principal.model import Principal
 from management.role.v2_model import RoleBinding, RoleBindingGroup
 from management.workspace.model import Workspace
-from rest_framework import serializers
 
 from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class RoleBindingQueryParams:
-    """Data class to hold validated query parameters for role binding queries."""
-
-    resource_id: str
-    resource_type: str
-    subject_type: Optional[str] = None
-    subject_id: Optional[str] = None
-    fields: Optional[str] = None
-    order_by: Optional[str] = None
-
-    def __post_init__(self):
-        """Validate required fields after initialization."""
-        if not self.resource_id:
-            raise serializers.ValidationError({"resource_id": "This query parameter is required."})
-        if not self.resource_type:
-            raise serializers.ValidationError({"resource_type": "This query parameter is required."})
-
-
-@dataclass
-class FieldSelection:
-    """Data class representing parsed field selections from the fields parameter."""
-
-    subject_fields: set = field(default_factory=set)
-    role_fields: set = field(default_factory=set)
-    resource_fields: set = field(default_factory=set)
-    root_fields: set = field(default_factory=set)
-
-    @classmethod
-    def parse(cls, fields_param: Optional[str]) -> Optional["FieldSelection"]:
-        """Parse fields parameter string into FieldSelection.
-
-        Syntax:
-        - object(field1,field2) - nested fields for an object
-        - field - root level field
-        - Multiple specs separated by commas outside parentheses
-
-        Examples:
-        - subject(group.name,group.user_count),role(name)
-        - last_modified
-        - subject(user.username),role(name),resource(name,type)
-        """
-        if not fields_param:
-            return None
-
-        selection = cls()
-
-        # Pattern to match object(fields) or plain field
-        # Split by comma but not inside parentheses
-        parts = cls._split_fields(fields_param)
-
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-
-            # Check if it's object(fields) pattern
-            match = re.match(r"(\w+)\(([^)]+)\)", part)
-            if match:
-                obj_name = match.group(1)
-                obj_fields = {f.strip() for f in match.group(2).split(",")}
-
-                if obj_name == "subject":
-                    selection.subject_fields.update(obj_fields)
-                elif obj_name == "role":
-                    selection.role_fields.update(obj_fields)
-                elif obj_name == "resource":
-                    selection.resource_fields.update(obj_fields)
-            else:
-                # Root level field
-                selection.root_fields.add(part)
-
-        return selection
-
-    @staticmethod
-    def _split_fields(fields_str: str) -> list[str]:
-        """Split fields string by comma, respecting parentheses."""
-        if not fields_str:
-            return []
-
-        parts = []
-        start = 0
-        depth = 0
-
-        for i, char in enumerate(fields_str):
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                depth -= 1
-            elif char == "," and depth == 0:
-                parts.append(fields_str[start:i].strip())
-                start = i + 1
-
-        parts.append(fields_str[start:].strip())
-        return parts
 
 
 class RoleBindingService:
@@ -137,35 +37,6 @@ class RoleBindingService:
     def __init__(self, tenant: Tenant):
         """Initialize the service with a tenant."""
         self.tenant = tenant
-
-    def parse_query_params(self, query_params: dict) -> RoleBindingQueryParams:
-        """Parse and validate query parameters from request.
-
-        Args:
-            query_params: Dict-like object with query parameters
-
-        Returns:
-            RoleBindingQueryParams with validated parameters
-
-        Raises:
-            serializers.ValidationError: If required parameters are missing
-        """
-        # Sanitize inputs (remove null bytes)
-        resource_id = query_params.get("resource_id", "").replace("\x00", "")
-        resource_type = query_params.get("resource_type", "").replace("\x00", "")
-        subject_type = query_params.get("subject_type", "").replace("\x00", "") or None
-        subject_id = query_params.get("subject_id", "").replace("\x00", "") or None
-        fields = query_params.get("fields", "").replace("\x00", "") or None
-        order_by = query_params.get("order_by", "").replace("\x00", "") or None
-
-        return RoleBindingQueryParams(
-            resource_id=resource_id,
-            resource_type=resource_type,
-            subject_type=subject_type,
-            subject_id=subject_id,
-            fields=fields,
-            order_by=order_by,
-        )
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject (group) from a dictionary of parameters.
@@ -187,17 +58,6 @@ class RoleBindingService:
         queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
 
         return queryset
-
-    def get_field_selection(self, params: RoleBindingQueryParams) -> Optional[FieldSelection]:
-        """Parse and return field selection from parameters.
-
-        Args:
-            params: Query parameters containing fields string
-
-        Returns:
-            FieldSelection object or None if no fields specified
-        """
-        return FieldSelection.parse(params.fields)
 
     def get_resource_name(self, resource_id: str, resource_type: str) -> Optional[str]:
         """Get the name of a resource by ID and type.
@@ -222,20 +82,20 @@ class RoleBindingService:
         """Build serializer context with resource information from a dictionary.
 
         Args:
-            params: Dictionary of validated query parameters (from input serializer)
+            params: Dictionary of validated query parameters (from input serializer).
+                    The 'fields' key contains an already-parsed FieldSelection object or None.
 
         Returns:
             Context dict for output serializer
         """
         resource_id = params["resource_id"]
         resource_type = params["resource_type"]
-        fields = params.get("fields")
 
         return {
             "resource_id": resource_id,
             "resource_type": resource_type,
             "resource_name": self.get_resource_name(resource_id, resource_type),
-            "field_selection": FieldSelection.parse(fields),
+            "field_selection": params.get("fields"),
         }
 
     def _build_base_queryset(self, resource_id: str, resource_type: str) -> QuerySet:

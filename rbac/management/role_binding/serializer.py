@@ -15,8 +15,138 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Serializers for role binding management."""
+import re
+from dataclasses import dataclass, field
+from typing import Optional
+
 from management.models import Group
 from rest_framework import serializers
+
+
+class FieldSelectionValidationError(Exception):
+    """Exception raised when field selection validation fails."""
+
+    def __init__(self, message: str):
+        """Initialize with error message."""
+        self.message = message
+        super().__init__(self.message)
+
+
+@dataclass
+class FieldSelection:
+    """Data class representing parsed field selections from the fields parameter."""
+
+    # Valid fields for each object type
+    # subject: id and type are always included; group.* fields available when type="group"
+    VALID_SUBJECT_FIELDS = {"id", "type", "group.name", "group.description", "group.user_count"}
+    VALID_ROLE_FIELDS = {"id", "name"}
+    VALID_RESOURCE_FIELDS = {"id", "name", "type"}
+    VALID_ROOT_FIELDS = {"last_modified"}
+    VALID_OBJECT_NAMES = {"subject", "role", "resource"}
+
+    subject_fields: set = field(default_factory=set)
+    role_fields: set = field(default_factory=set)
+    resource_fields: set = field(default_factory=set)
+    root_fields: set = field(default_factory=set)
+
+    @classmethod
+    def parse(cls, fields_param: Optional[str]) -> Optional["FieldSelection"]:
+        """Parse fields parameter string into FieldSelection.
+
+        Syntax:
+        - object(field1,field2) - nested fields for an object
+        - field - root level field
+        - Multiple specs separated by commas outside parentheses
+
+        Examples:
+        - subject(group.name,group.user_count),role(name)
+        - last_modified
+        - subject(id),role(name),resource(name,type)
+
+        Args:
+            fields_param: The fields parameter string to parse
+
+        Returns:
+            FieldSelection object or None if fields_param is empty
+
+        Raises:
+            FieldSelectionValidationError: If invalid fields are found
+        """
+        if not fields_param:
+            return None
+
+        selection = cls()
+        invalid_fields = []
+
+        # Split by comma but not inside parentheses
+        parts = cls._split_fields(fields_param)
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            # Check if it's object(fields) pattern
+            match = re.match(r"(\w+)\(([^)]+)\)", part)
+            if match:
+                obj_name = match.group(1)
+                obj_fields = {f.strip() for f in match.group(2).split(",")}
+
+                if obj_name == "subject":
+                    invalid = obj_fields - cls.VALID_SUBJECT_FIELDS
+                    if invalid:
+                        invalid_fields.extend([f"subject({f})" for f in invalid])
+                    selection.subject_fields.update(obj_fields)
+                elif obj_name == "role":
+                    invalid = obj_fields - cls.VALID_ROLE_FIELDS
+                    if invalid:
+                        invalid_fields.extend([f"role({f})" for f in invalid])
+                    selection.role_fields.update(obj_fields)
+                elif obj_name == "resource":
+                    invalid = obj_fields - cls.VALID_RESOURCE_FIELDS
+                    if invalid:
+                        invalid_fields.extend([f"resource({f})" for f in invalid])
+                    selection.resource_fields.update(obj_fields)
+                else:
+                    invalid_fields.append(f"Unknown object type: '{obj_name}'")
+            else:
+                # Root level field
+                if part not in cls.VALID_ROOT_FIELDS:
+                    invalid_fields.append(f"Unknown field: '{part}'")
+                selection.root_fields.add(part)
+
+        if invalid_fields:
+            raise FieldSelectionValidationError(
+                f"Invalid field(s): {', '.join(invalid_fields)}. "
+                f"Valid subject fields: {sorted(cls.VALID_SUBJECT_FIELDS)}. "
+                f"Valid role fields: {sorted(cls.VALID_ROLE_FIELDS)}. "
+                f"Valid resource fields: {sorted(cls.VALID_RESOURCE_FIELDS)}. "
+                f"Valid root fields: {sorted(cls.VALID_ROOT_FIELDS)}."
+            )
+
+        return selection
+
+    @staticmethod
+    def _split_fields(fields_str: str) -> list[str]:
+        """Split fields string by comma, respecting parentheses."""
+        if not fields_str:
+            return []
+
+        parts = []
+        start = 0
+        depth = 0
+
+        for i, char in enumerate(fields_str):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(fields_str[start:i].strip())
+                start = i + 1
+
+        parts.append(fields_str[start:].strip())
+        return parts
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -62,8 +192,13 @@ class RoleBindingInputSerializer(serializers.Serializer):
         return value or None
 
     def validate_fields(self, value):
-        """Return None for empty values."""
-        return value or None
+        """Parse and validate fields parameter into FieldSelection object."""
+        if not value:
+            return None
+        try:
+            return FieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
 
     def validate_order_by(self, value):
         """Return None for empty values."""
