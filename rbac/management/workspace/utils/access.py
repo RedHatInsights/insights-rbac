@@ -22,12 +22,11 @@ from uuid import UUID
 
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
+from management.permissions.kessel_principal_utils import get_kessel_principal_id_for_v2_access
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
 from management.permissions.workspace_inventory_access import (
     WorkspaceInventoryAccessChecker,
 )
-from management.principal.model import Principal
-from management.principal.proxy import PrincipalProxy
 from management.utils import get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
 
@@ -249,62 +248,26 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
             return result
         # NOT_SYSTEM_USER - continue with normal checks
 
-        # Try to get user_id from principal, request.user, or IT service API
+        # Get principal_id using unified v2 access utility that handles:
+        # - Principal from database
+        # - request.user.user_id
+        # - IT service via PrincipalProxy
+        # - Bearer token via ITSSOTokenValidator (for service accounts)
         with record_timing(timings, "get_principal_id"):
-            principal = get_principal_from_request(request)
-            if principal is not None and principal.user_id is not None:
-                user_id = principal.user_id
-            elif (user_id := getattr(request.user, "user_id", None)) is not None:
-                # user_id available from request identity header
-                pass
-            elif username := getattr(request.user, "username", None):
-                # Fallback: query IT service via PrincipalProxy to get user_id
-                org_id = getattr(request.user, "org_id", None)
-                if not org_id:
-                    logger.warning("No org_id available from request.user, denying access")
-                    early_reason = "no_org_id"
-                    return False
-
-                proxy = PrincipalProxy()
-                resp = proxy.request_filtered_principals([username], org_id=org_id, options={"return_id": True})
-
-                if resp.get("status_code") != 200 or not resp.get("data"):
-                    logger.warning("Failed to retrieve user_id from IT service for username: %s", username)
-                    early_reason = "it_service_failure"
-                    return False
-
-                user_id = resp["data"][0].get("user_id")
-                if not user_id:
-                    logger.warning("IT service response missing user_id for username: %s", username)
-                    early_reason = "missing_user_id"
-                    return False
-
-                logger.debug("Retrieved user_id from IT service via PrincipalProxy")
-            else:
-                logger.warning("No username available from request.user, denying access")
-                early_reason = "no_username"
-                return False
-
-        # Log warning if user_id is None after all lookup attempts
-        if user_id is None:
-            org_id = getattr(request.user, "org_id", None)
-            username = getattr(request.user, "username", None)
-            is_system = getattr(request.user, "system", False)
-            # Log a minimal, structured subset of context to avoid exposing PII
+            principal_id = get_kessel_principal_id_for_v2_access(request)
+        if not principal_id:
             logger.warning(
-                "user_id is None after all lookup attempts",
+                "Could not determine principal_id for access check",
                 extra={
-                    "org_id": org_id,
-                    "has_username": bool(username),
-                    "principal_type": type(principal).__name__ if principal is not None else None,
-                    "is_system": is_system,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "has_username": bool(getattr(request.user, "username", None)),
+                    "is_service_account": getattr(request.user, "is_service_account", False),
                     "request_path": request.path,
                     "request_method": request.method,
                 },
             )
-
-        # Format principal ID as required by Inventory API (e.g., "localhost/username")
-        principal_id = Principal.user_id_to_principal_resource_id(user_id)
+            early_reason = "no_principal_id"
+            return False
 
         # Create the Inventory API checker
         checker = WorkspaceInventoryAccessChecker()
