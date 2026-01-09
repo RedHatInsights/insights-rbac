@@ -404,19 +404,35 @@ class V2CursorPaginationTest(TestCase):
         self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz"))
         self.assertIsNone(self.paginator._convert_order_field("unknown.field"))
 
-    def test_get_ordering_with_dot_notation(self):
-        """Test get_ordering converts dot notation fields."""
+    def test_get_ordering_with_group_name(self):
+        """Test get_ordering converts group.name to name."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=group.name"))
         ordering = self.paginator.get_ordering(request, self.queryset, None)
-        # Will fall back to default since 'name' doesn't exist on User model
-        # but the conversion should happen
-        self.assertIsNotNone(ordering)
+        self.assertEqual(ordering, ("name",))
 
-    def test_get_ordering_with_descending_dot_notation(self):
-        """Test get_ordering handles descending dot notation."""
+    def test_get_ordering_with_group_name_descending(self):
+        """Test get_ordering converts -group.name to -name."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=-group.name"))
         ordering = self.paginator.get_ordering(request, self.queryset, None)
-        self.assertIsNotNone(ordering)
+        self.assertEqual(ordering, ("-name",))
+
+    def test_get_ordering_with_group_user_count(self):
+        """Test get_ordering converts group.user_count to principalCount."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=group.user_count"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("principalCount",))
+
+    def test_get_ordering_with_role_name(self):
+        """Test get_ordering converts role.name to ORM path."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=role.name"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("role_binding_entries__binding__role__name",))
+
+    def test_get_ordering_with_role_name_descending(self):
+        """Test get_ordering converts -role.name to descending ORM path."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=-role.name"))
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("-role_binding_entries__binding__role__name",))
 
     def test_get_ordering_accepts_comma_separated_fields(self):
         """Test get_ordering accepts comma-separated fields."""
