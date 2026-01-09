@@ -37,7 +37,9 @@ from management.models import (
     Role,
     Workspace,
 )
-from management.permissions.workspace_access import TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+from management.permissions.workspace_access import (
+    TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE,
+)
 from management.workspace.service import WorkspaceService
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -436,11 +438,16 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_access_denied(self, mock_flag, mock_channel):
-        """Test workspace access is denied when Inventory API returns not allowed."""
-        # Mock Inventory API to return not allowed
+        """Test workspace access is denied when Inventory API returns not allowed.
+
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
+        """
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access denied
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -461,8 +468,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should be denied access
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            # Should return 404 (not 403) to prevent existence leakage
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -799,11 +809,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_update_with_inventory_access_check(self, mock_flag, mock_channel):
-        """Test workspace update (PUT) with Inventory API access check."""
-        # Mock Inventory API
+        """Test workspace update (PUT) with Inventory API access check via FilterBackend."""
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access allowed
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -817,7 +828,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
-            # Setup edit access
+            # Setup edit access (for V1 fallback compatibility)
             self._setup_access_for_principal(
                 self.user_data["username"],
                 "inventory:groups:write",
@@ -840,8 +851,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data["name"], "Updated Workspace Name")
 
-            # Verify CheckForUpdate was called for strongly consistent access check
-            mock_stub.CheckForUpdate.assert_called_once()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -849,11 +860,16 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_update_access_denied(self, mock_flag, mock_channel):
-        """Test workspace update is denied when Inventory API returns not allowed."""
-        # Mock Inventory API to return not allowed
+        """Test workspace update is denied when Inventory API returns not allowed.
+
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
+        """
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access denied
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -879,11 +895,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.put(url, updated_data, format="json", **headers)
 
-            # Should be denied access
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            # Should return 404 (not 403) to prevent existence leakage
+            # User cannot tell if workspace doesn't exist or they lack access
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify CheckForUpdate was called for strongly consistent access check
-            mock_stub.CheckForUpdate.assert_called_once()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -892,10 +909,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_update_with_invalid_data(self, mock_flag, mock_channel):
         """Test workspace update (PUT) with invalid data to ensure validation errors are handled."""
-        # Mock Inventory API
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access allowed
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -909,7 +927,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
-            # Setup edit access
+            # Setup edit access (for V1 fallback compatibility)
             self._setup_access_for_principal(
                 self.user_data["username"],
                 "inventory:groups:write",
@@ -939,11 +957,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_patch_with_inventory_access_check(self, mock_flag, mock_channel):
-        """Test workspace partial update (PATCH) with Inventory API access check."""
-        # Mock Inventory API
+        """Test workspace partial update (PATCH) with Inventory API access check via FilterBackend."""
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access allowed
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -957,7 +976,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
-            # Setup edit access
+            # Setup edit access (for V1 fallback compatibility)
             self._setup_access_for_principal(
                 self.user_data["username"],
                 "inventory:groups:write",
@@ -977,8 +996,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data["description"], "Patched description")
 
-            # Verify CheckForUpdate was called for strongly consistent access check
-            mock_stub.CheckForUpdate.assert_called_once()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -986,11 +1005,16 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_patch_access_denied(self, mock_flag, mock_channel):
-        """Test workspace partial update (PATCH) is denied when user lacks permissions."""
-        # Mock Inventory API to return not allowed
+        """Test workspace partial update (PATCH) is denied when user lacks permissions.
+
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
+        """
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access denied
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -1013,11 +1037,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.patch(url, updated_data, format="json", **headers)
 
-            # Should be denied access
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            # Should return 404 (not 403) to prevent existence leakage
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify CheckForUpdate was called for strongly consistent access check
-            mock_stub.CheckForUpdate.assert_called_once()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1025,11 +1049,22 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_delete_with_inventory_access_check(self, mock_flag, mock_channel):
-        """Test workspace deletion with Inventory API access check."""
-        # Mock Inventory API
+        """Test workspace deletion with Inventory API access check via FilterBackend."""
+        # Create a temporary workspace for deletion BEFORE setting up mocks
+        temp_workspace = self.service.create(
+            {
+                "name": "Temp Workspace for Deletion",
+                "description": "Will be deleted",
+                "parent_id": self.standard_workspace.id,
+            },
+            self.tenant,
+        )
+
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access allowed
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -1039,21 +1074,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             return_value=mock_stub,
         ):
 
-            # Create a temporary workspace for deletion
-            temp_workspace = self.service.create(
-                {
-                    "name": "Temp Workspace for Deletion",
-                    "description": "Will be deleted",
-                    "parent_id": self.standard_workspace.id,
-                },
-                self.tenant,
-            )
-
             # Create request context for non-org admin user
             request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
-            # Setup delete access
+            # Setup delete access (for V1 fallback compatibility)
             self._setup_access_for_principal(
                 self.user_data["username"],
                 "inventory:groups:write",
@@ -1067,8 +1092,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should be able to delete workspace
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-            # Verify CheckForUpdate was called for strongly consistent access check
-            mock_stub.CheckForUpdate.assert_called_once()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1076,11 +1101,16 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_delete_access_denied(self, mock_flag, mock_channel):
-        """Test workspace deletion is denied when user lacks permissions."""
-        # Mock Inventory API to return not allowed
+        """Test workspace deletion is denied when user lacks permissions.
+
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
+        """
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access denied
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -1101,11 +1131,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.delete(url, format="json", **headers)
 
-            # Should be denied
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            # Should return 404 (not 403) to prevent existence leakage
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify CheckForUpdate was called for strongly consistent access check
-            mock_stub.CheckForUpdate.assert_called_once()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1114,10 +1144,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_delete_non_existent(self, mock_flag, mock_channel):
         """Test deleting a non-existent workspace returns 404."""
-        # Mock Inventory API
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
+        # Mock CheckForUpdate to return access allowed (doesn't matter - workspace doesn't exist)
         mock_response = MagicMock()
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
         mock_stub.CheckForUpdate.return_value = mock_response
@@ -1134,7 +1165,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Use a non-existent workspace ID
             non_existent_workspace_id = str(uuid4())
 
-            # Setup delete access
+            # Setup delete access (for V1 fallback compatibility)
             self._setup_access_for_principal(
                 self.user_data["username"],
                 "inventory:groups:write",
@@ -1151,8 +1182,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should return 404 NOT FOUND
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # Verify CheckForUpdate was called for strongly consistent access check
-            mock_stub.CheckForUpdate.assert_called_once()
+            # Verify CheckForUpdate was called for detail action
+            mock_stub.CheckForUpdate.assert_called()
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1802,19 +1833,19 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_move_uses_create_permission_for_target_in_v2(self, mock_flag, mock_channel, send_kafka_message):
         """Test that workspace move operation uses 'create' permission for target workspace in V2 mode.
 
-        When V2 access check is enabled, the _check_target_workspace_access method should
-        check for 'create' permission on the target workspace (not 'write', which doesn't exist
-        in the SpiceDB schema for rbac/workspace).
+        With the FilterBackend architecture:
+        - Source workspace access is checked via FilterBackend (CheckForUpdate since move is a detail action)
+        - Target workspace access is checked via permission class (CheckForUpdate with 'create' relation)
         """
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # Track (workspace_id, relation) tuples for precise assertions
-        check_calls = []
-
         source_workspace_id = str(self.standard_sub_workspace.id)
         target_workspace_id = str(self.default_workspace.id)
+
+        # Track (workspace_id, relation) tuples for precise assertions on target check
+        check_calls = []
 
         def check_side_effect(request):
             # Capture both workspace ID and relation being checked
@@ -1834,7 +1865,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
             headers = request_context["request"].META
 
-            # Setup access for the user
+            # Setup access for the user (for V1 fallback compatibility)
             self._setup_access_for_principal(
                 self.user_data["username"],
                 "inventory:groups:write",
@@ -1856,15 +1887,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             # Should succeed
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            # For the /move POST endpoint, permission_from_request returns 'create' (POST -> create)
-            # Both source and target workspaces are checked with 'create' permission
-            # Verify that 'create' permission was checked on source workspace
-            self.assertTrue(
-                any(ws_id == source_workspace_id and rel == "create" for ws_id, rel in check_calls),
-                f"Expected 'create' permission check for source workspace {source_workspace_id}, got: {check_calls}",
-            )
+            # Verify CheckForUpdate was called (for both source and target workspace checks)
+            mock_stub.CheckForUpdate.assert_called()
 
-            # Verify that 'create' permission was checked on target workspace
+            # Verify that 'create' permission was checked on target workspace via CheckForUpdate
             self.assertTrue(
                 any(ws_id == target_workspace_id and rel == "create" for ws_id, rel in check_calls),
                 f"Expected 'create' permission check for target workspace {target_workspace_id}, got: {check_calls}",

@@ -18,6 +18,7 @@
 """Workspace access checker using Inventory API."""
 
 import logging
+import time
 from typing import Optional, Set
 
 import grpc
@@ -118,6 +119,45 @@ class WorkspaceInventoryAccessChecker:
             logger.error(f"Inventory API connectivity error: {type(e).__name__}: {e}")
             return default
 
+    def check_resource_access(
+        self,
+        resource_type: str,
+        resource_id: str,
+        principal_id: str,
+        relation: str,
+    ) -> bool:
+        """
+        Check if a principal has access to a specific resource using Inventory API CheckForUpdate.
+
+        This method uses strongly consistent reads to ensure the most up-to-date permission
+        state is used for all resource access checks.
+
+        Args:
+            resource_type: Type of resource to check (e.g., "workspace")
+            resource_id: UUID of the resource to check
+            principal_id: Principal identifier (e.g., "localhost/username")
+            relation: The relation to check
+
+        Returns:
+            bool: True if principal has access, False otherwise
+        """
+        check_request = CheckForUpdateRequest(
+            object=make_resource_ref(resource_type, resource_id),
+            relation=relation,
+            subject=make_subject_ref(principal_id),
+        )
+
+        def rpc(stub):
+            response = stub.CheckForUpdate(check_request)
+            return self._log_and_return_allowed(
+                response.allowed,
+                resource_id,
+                principal_id,
+                relation,
+            )
+
+        return self._call_inventory(rpc, False)
+
     def check_workspace_access(
         self,
         workspace_id: str,
@@ -127,8 +167,7 @@ class WorkspaceInventoryAccessChecker:
         """
         Check if a principal has access to a specific workspace using Inventory API CheckForUpdate.
 
-        This method uses strongly consistent reads to ensure the most up-to-date permission
-        state is used for all workspace access checks.
+        This is a convenience method that calls check_resource_access with resource_type="workspace".
 
         Args:
             workspace_id: UUID of the workspace to check
@@ -138,22 +177,12 @@ class WorkspaceInventoryAccessChecker:
         Returns:
             bool: True if principal has access, False otherwise
         """
-        check_request = CheckForUpdateRequest(
-            object=make_resource_ref("workspace", workspace_id),
+        return self.check_resource_access(
+            resource_type="workspace",
+            resource_id=workspace_id,
+            principal_id=principal_id,
             relation=relation,
-            subject=make_subject_ref(principal_id),
         )
-
-        def rpc(stub):
-            response = stub.CheckForUpdate(check_request)
-            return self._log_and_return_allowed(
-                response.allowed,
-                workspace_id,
-                principal_id,
-                relation,
-            )
-
-        return self._call_inventory(rpc, False)
 
     def _build_streamed_request(
         self,
@@ -191,7 +220,9 @@ class WorkspaceInventoryAccessChecker:
         token = getattr(pagination, "continuation_token", None)
         return token or None
 
-    def lookup_accessible_workspaces(self, principal_id: str, relation: str) -> Set[str]:
+    def lookup_accessible_workspaces(
+        self, principal_id: str, relation: str, request_id: Optional[str] = None
+    ) -> Set[str]:
         """
         Lookup which workspaces are accessible to the principal using Inventory API StreamedListObjects.
 
@@ -202,6 +233,7 @@ class WorkspaceInventoryAccessChecker:
         Args:
             principal_id: Principal identifier (e.g., "localhost/username")
             relation: The relation to check
+            request_id: Optional request ID for logging/tracing
 
         Returns:
             Set[str]: Set of workspace IDs that the principal has access to
@@ -211,14 +243,22 @@ class WorkspaceInventoryAccessChecker:
             accessible_workspaces = set()
             continuation_token = None
             page_count = 0
+            # Time spent establishing gRPC streaming iterators (stub method invocation)
+            iterator_setup_seconds = 0.0
+            # Time spent iterating over gRPC stream responses
+            stream_iteration_seconds = 0.0
 
             while page_count < self.MAX_PAGES:
                 page_count += 1
 
                 request_data = self._build_streamed_request(principal_id, relation, continuation_token)
+
+                t0 = time.perf_counter()
                 responses = stub.StreamedListObjects(request_data)
+                iterator_setup_seconds += time.perf_counter() - t0
 
                 last_token = None
+                t0 = time.perf_counter()
                 for response in responses:
                     workspace_id = self._extract_workspace_id(response)
                     if workspace_id:
@@ -232,6 +272,7 @@ class WorkspaceInventoryAccessChecker:
                     token = self._extract_continuation_token(response)
                     if token:
                         last_token = token
+                stream_iteration_seconds += time.perf_counter() - t0
 
                 if not last_token:
                     break
@@ -255,6 +296,22 @@ class WorkspaceInventoryAccessChecker:
                 f"Accessible workspaces for principal={principal_id}: "
                 f"{len(accessible_workspaces)} found via StreamedListObjects"
             )
+
+            if settings.WORKSPACE_ACCESS_TIMING_ENABLED:
+                logger.info(
+                    "lookup_accessible_workspaces timing: %s",
+                    {
+                        "request_id": request_id,
+                        "principal_id": principal_id,
+                        "relation": relation,
+                        "workspace_count": len(accessible_workspaces),
+                        "page_count": page_count,
+                        "max_pages": self.MAX_PAGES,
+                        "iterator_setup_ms": round(iterator_setup_seconds * 1000, 2),
+                        "stream_iteration_ms": round(stream_iteration_seconds * 1000, 2),
+                        "hit_max_pages": page_count >= self.MAX_PAGES,
+                    },
+                )
 
             return accessible_workspaces
 

@@ -31,6 +31,7 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
+from management.role.v2_model import CustomRoleV2, RoleBinding
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -105,13 +106,109 @@ class BindingScopeMigrationAPITest(TestCase):
         # Should return HTTP 202 Accepted
         self.assertEqual(response.status_code, 202)
 
-        # Should trigger celery task
-        mock_task.assert_called_once()
+        # Should trigger celery task with default write_relationships=True
+        mock_task.assert_called_once_with(write_relationships="True")
 
         # Response should be JSON with correct message
         data = response.json()
         self.assertIn("message", data)
         self.assertIn("Binding scope migration is running in a background worker", data["message"])
+        self.assertEqual(data.get("write_relationships"), "True")
+
+    @patch("internal.views.migrate_binding_scope_in_worker.delay")
+    def test_api_endpoint_with_write_relationships_false(self, mock_task):
+        """Test that write_relationships=False is passed correctly to the worker."""
+        self.client.force_login(self.user)
+
+        response = self.client.post(f"{self.url}?write_relationships=False")
+
+        # API might require special auth - if 403, skip detailed checks
+        if response.status_code == 403:
+            self.skipTest("API requires special authentication not available in test")
+
+        # Should return HTTP 202 Accepted
+        self.assertEqual(response.status_code, 202)
+
+        # Should trigger celery task with write_relationships=False
+        mock_task.assert_called_once_with(write_relationships="False")
+
+        # Response should show write_relationships=False
+        data = response.json()
+        self.assertEqual(data.get("write_relationships"), "False")
+
+
+class BindingScopeMigrationReplicatorTest(TestCase):
+    """Tests that verify migration uses the provided replicator correctly."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.tenant = Tenant.objects.create(tenant_name="noop_test_tenant", account_id="noop123", org_id="noop456")
+
+        # Get or create workspaces
+        self.root_workspace, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant, type=Workspace.Types.ROOT, defaults={"name": "Root Workspace"}
+        )
+
+        self.default_workspace, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "Default Workspace", "parent": self.root_workspace},
+        )
+
+        # Create permission
+        self.permission = Permission.objects.create(
+            tenant=self.tenant,
+            application="inventory",
+            resource_type="hosts",
+            verb="read",
+            permission="inventory:hosts:read",
+        )
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+    @patch.object(OutboxReplicator, "replicate")
+    def test_migration_sends_tuples_to_provided_replicator(self, mock_outbox_replicate):
+        """
+        Test that migration sends all tuples to the provided replicator, not the default OutboxReplicator.
+
+        This verifies that:
+        - V2 models (CustomRoleV2, RoleBinding, BindingMapping) are created
+        - All expected tuples are sent to the provided replicator
+        - OutboxReplicator.replicate is NOT accidentally called
+        """
+        # Create a custom role with access and a group assignment
+        role = Role.objects.create(tenant=self.tenant, name="Provided Replicator Test Role", system=False)
+        Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+
+        # Create a group and assign the role via policy
+        group = Group.objects.create(name="Provided Replicator Test Group", tenant=self.tenant)
+        policy = Policy.objects.create(name="Provided Replicator Test Policy", tenant=self.tenant, group=group)
+        policy.roles.add(role)
+
+        # Verify initial state: no V2 models
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 0)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 0)
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 0)
+
+        # Use InMemoryTuples to track what gets replicated
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+
+        # Perform migration with our provided replicator
+        result = migrate_custom_role_bindings(role, replicator)
+
+        # Should return 1 (migrated)
+        self.assertEqual(result, 1)
+
+        # V2 models SHOULD be created
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 1, "CustomRoleV2 should be created")
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 1, "RoleBinding should be created")
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1, "BindingMapping should be created")
+
+        # Verify tuples were sent to our provided replicator
+        self.assertGreater(len(tuples), 0, "Tuples should be sent to the provided replicator")
+
+        # Verify OutboxReplicator.replicate was NOT called (we should use the provided replicator, not default)
+        mock_outbox_replicate.assert_not_called()
 
 
 class BindingScopeMigrationTupleVerificationTest(TestCase):
@@ -270,6 +367,43 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
                 all_of(resource("rbac", "role_binding", remaining_binding.mappings["id"]))
             )
             self.assertGreater(len(binding_tuples), 0)
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+    def test_role_without_policy_is_migrated(self):
+        """Test that custom role without any policy (not assigned to any group) is still migrated."""
+        # Create custom role with access but NO policy (not assigned to any group)
+        role = Role.objects.create(tenant=self.tenant, name="Role Without Policy", system=False)
+        Access.objects.create(role=role, permission=self.default_permission, tenant=self.tenant)
+
+        # Verify: NO policy exists for this role
+        self.assertFalse(role.policies.exists(), "Role should have no policies")
+
+        # Verify initial state: no V2 models
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 0)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 0)
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 0)
+
+        # Perform migration using migrate_all_role_bindings
+        replicator = InMemoryRelationReplicator(self.tuples)
+        checked, migrated = migrate_all_role_bindings(replicator=replicator, tenant=self.tenant)
+
+        # Should have checked and migrated at least one role
+        self.assertGreaterEqual(checked, 1, "Should have checked at least one role")
+        self.assertGreaterEqual(migrated, 1, "Should have migrated at least one role")
+
+        # V2 models SHOULD be created even without policy
+        self.assertEqual(CustomRoleV2.objects.filter(v1_source=role).count(), 1, "CustomRoleV2 should be created")
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 1, "RoleBinding should be created")
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1, "BindingMapping should be created")
+
+        # Verify the binding has empty groups (since no policy/group is assigned)
+        binding = BindingMapping.objects.filter(role=role).first()
+        self.assertEqual(binding.mappings.get("groups", []), [], "Binding should have no groups")
+
+        # Verify tuples were created
+        binding_id = binding.mappings["id"]
+        binding_tuples = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
+        self.assertGreater(len(binding_tuples), 0, "Should have tuples for the binding")
 
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
     def test_role_migration_is_idempotent(self):

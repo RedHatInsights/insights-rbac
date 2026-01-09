@@ -127,14 +127,16 @@ def migrate_all_role_bindings(
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
 
     # Part 1: Migrate custom role bindings
-    # Include custom roles with policies (assigned to groups), even if they have no bindings yet
-    # Roles without policies don't need bindings since bindings would have empty groups
-    custom_roles = Role.objects.filter(system=False, policies__isnull=False).distinct().order_by("pk")
+    # Include all custom roles with access (permissions), even if they have no policies (groups) assigned yet.
+    # This ensures v2 roles and bindings are created at the correct scope for roles that were created
+    # before replication was enabled or before scope configuration was corrected.
+    # Roles without access won't have any v2 models created (nothing to migrate).
+    custom_roles = Role.objects.filter(system=False).distinct().order_by("pk")
     if tenant:
         custom_roles = custom_roles.filter(tenant=tenant)
 
     total_custom_roles = custom_roles.count()
-    logger.info(f"Found {total_custom_roles} custom roles with policies to migrate")
+    logger.info(f"Found {total_custom_roles} custom roles to migrate")
 
     custom_roles_checked = 0
     custom_roles_migrated = 0

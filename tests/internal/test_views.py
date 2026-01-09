@@ -1295,6 +1295,81 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_force_admin_only_bootstrap(self, replicate):
+        """Test force_admin_only=true for bootstrap_tenant endpoint.
+
+        Admin default bindings are NOT customizable, so force_admin_only is safe
+        even when replication is enabled (unlike force=true).
+        """
+        from management.group.definer import seed_group
+
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+
+        # Seed the platform/admin default groups so GlobalPolicyIdService can find them
+        seed_group()
+
+        # Test 1: Non-existent tenant returns error
+        payload = {"org_ids": ["nonexistent_org"]}
+        response = self.client.post(
+            "/_private/api/utils/bootstrap_tenant/?force_admin_only=true",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result = response.json()["results"][0]
+        self.assertEqual(result["org_id"], "nonexistent_org")
+        self.assertIn("error", result)
+
+        # Test 2: Unbootstrapped tenant (no TenantMapping) returns error
+        new_tenant = Tenant.objects.create(org_id="unbootstrapped_org")
+        payload = {"org_ids": [new_tenant.org_id]}
+        response = self.client.post(
+            "/_private/api/utils/bootstrap_tenant/?force_admin_only=true",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result = response.json()["results"][0]
+        self.assertIn("error", result)
+        self.assertIn("TenantMapping not found", result["error"])
+        new_tenant.delete()
+
+        # Test 3: Bootstrapped tenant - should succeed and replicate admin bindings
+        bootstrap_service = V2TenantBootstrapService(replicator)
+        bootstrapped = bootstrap_service.bootstrap_tenant(self.tenant)
+        tenant_mapping = self.tenant.tenant_mapping
+        tuples.clear()
+
+        payload = {"org_ids": [self.tenant.org_id]}
+        response = self.client.post(
+            "/_private/api/utils/bootstrap_tenant/?force_admin_only=true",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result = response.json()["results"][0]
+        self.assertEqual(result["org_id"], self.tenant.org_id)
+        self.assertIn("admin_bindings_replicated", result)
+        self.assertGreater(result["admin_bindings_replicated"], 0)
+        self.assertGreater(len(tuples), 0)
+
+        # Verify tuples include admin group bindings (subject relation with admin group UUID)
+        admin_group_uuid = str(tenant_mapping.default_admin_group_uuid)
+        found_admin_binding = False
+        for t in tuples:
+            # RelationTuple has: relation, subject_type_name, subject_id
+            if t.relation == "subject" and t.subject_type_name == "group" and admin_group_uuid in t.subject_id:
+                found_admin_binding = True
+                break
+        self.assertTrue(found_admin_binding, f"No admin binding found for group {admin_group_uuid}")
+
     def test_listing_migration_resources(self):
         """Test that we can list migration resources."""
         org_id = "12345678"
@@ -4695,9 +4770,8 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     @patch(
         "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenants"
     )
-    @patch("internal.views.check_bootstrapped_tenants")
     def test_inventory_bootstrapped_tenants(
-        self, mock_bootstrapped_view, mock_check_bootstrapped_tenants, mock_create_channel, mock_get_token
+        self, mock_check_bootstrapped_tenants, mock_create_channel, mock_get_token
     ):
         """Test a request to check bootstrapped tenants on inventory returns correct response."""
         # Create the required objects for this test
@@ -4714,30 +4788,27 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
             description="Default Description",
             parent_id=self.root_workspace.id,
         )
-        mock_stub = MagicMock()
-        mock_stub.Check.return_value = {"allowed": True}
 
-        mock_check_bootstrapped_tenants.return_value = mock_stub.Check.return_value
-        mock_bootstrapped_view.return_value = {
-            "org_id": self.tenant.org_id,
-            "bootstrapped_correct": mock_check_bootstrapped_tenants,
-        }
-        with patch(
-            "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub",
-            return_value=mock_stub,
-        ):
-            response = self.client.get(
-                f"/_private/api/inventory/bootstrap_tenants/{self.tenant.org_id}/",
-                format="json",
-                **self.request.META,
-            )
+        # Mock returns tuple of (bool, list of check strings)
+        mock_relations_checked = [
+            "rbac/workspace:ws-123/parent#rbac/workspace:ws-456",
+            "rbac/workspace:ws-456/binding#rbac/role_binding:rb-789",
+        ]
+        mock_check_bootstrapped_tenants.return_value = (True, mock_relations_checked)
+
+        response = self.client.get(
+            f"/_private/api/inventory/bootstrap_tenants/{self.tenant.org_id}/",
+            format="json",
+            **self.request.META,
+        )
 
         # Parse and validate response
         self.assertEqual(response.status_code, 200)
         response_body = response.json()
         self.assertEqual(response_body["org_id"], str(self.tenant.org_id))
-        self.assertIn("allowed", response_body["bootstrapped_correct"])
-        self.assertTrue(response_body["bootstrapped_correct"]["allowed"])
+        self.assertTrue(response_body["bootstrapped_correct"])
+        self.assertIn("relations_checked", response_body)
+        self.assertEqual(response_body["relations_checked"], mock_relations_checked)
 
     @patch(
         "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenants",

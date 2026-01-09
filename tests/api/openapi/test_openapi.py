@@ -226,6 +226,12 @@ class OpenAPIV2ViewTest(IdentityRequest):
 class OpenAPIV2DisabledTest(IdentityRequest):
     """Test V2 OpenAPI endpoint when V2 APIs are disabled."""
 
+    def setUp(self):
+        """Set up the test."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+
     def test_openapi_v2_endpoint_not_available_when_disabled(self):
         """Test that V2 openapi endpoint is not available when V2_APIS_ENABLED is False."""
         # When V2_APIS_ENABLED is False, the v2_api namespace doesn't exist
