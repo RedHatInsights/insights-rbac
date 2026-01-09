@@ -893,4 +893,35 @@ namespace RoleBindings {
 @tag("Roles")
 @doc("Operations about roles")
 namespace Roles {
+
+    @example(#{
+        id: "550e8400-e29b-41d4-a716-446655440002",
+        name: "Workspace Admin",
+        editable: false,
+    })
+    @example(#{
+        id: "550e8400-e29b-41d4-a716-446655440002",
+        name: "Workspace Admin",
+        description: "description",
+        permissions_count: 4,
+        editable: false,
+        created: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
+    model Role {
+        @doc("Role identifier")
+        @key id: UUID;
+        @doc("Role name")
+        name: string;
+        @doc("Role description")
+        description?: string;
+        @doc("Number of permissions assigned to this role")
+        permissions_count?: int32;
+        @doc("Whether this role can be edited or deleted")
+        editable: boolean;
+        @doc("Creation timestamp")
+        created?: offsetDateTime;
+        @doc("Last modification timestamp")
+        modified?: offsetDateTime;
+    }
 }
