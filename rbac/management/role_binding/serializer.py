@@ -225,6 +225,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
     subject = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
+    inherited_from = serializers.SerializerMethodField()
 
     def _get_field_selection(self):
         """Get field selection from context."""
@@ -246,6 +247,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             "subject": ret.get("subject"),
             "roles": ret.get("roles"),
             "resource": ret.get("resource"),
+            "inherited_from": ret.get("inherited_from"),
         }
 
         # Include last_modified only if explicitly requested
@@ -387,6 +389,55 @@ class RoleBindingOutputSerializer(serializers.Serializer):
                         resource_data[field_name] = value
 
         return resource_data
+
+    def get_inherited_from(self, obj):
+        """
+        Return parent resources from which this subject inherits role bindings.
+
+        This is only populated when the view has enabled inherited mode
+        (request.include_inherited == True). Otherwise it returns None.
+        """
+        request = self.context.get("request")
+        if not request or not getattr(request, "include_inherited", False):
+            return None
+
+        requested_resource_id = str(self.context.get("resource_id") or "")
+        requested_resource_type = str(self.context.get("resource_type") or "")
+
+        # This serializer is designed around Group objects annotated/prefetched by the service layer.
+        if not isinstance(obj, Group) or not hasattr(obj, "filtered_bindings"):
+            return None
+
+        parents = []
+        seen = set()
+
+        for binding_group in obj.filtered_bindings:
+            binding = getattr(binding_group, "binding", None)
+            if not binding:
+                continue
+
+            binding_resource_id = str(getattr(binding, "resource_id", "") or "")
+            binding_resource_type = str(getattr(binding, "resource_type", "") or "")
+
+            # Skip direct bindings on the requested resource.
+            if binding_resource_id == requested_resource_id and binding_resource_type == requested_resource_type:
+                continue
+
+            key = f"{binding_resource_type}:{binding_resource_id}"
+            if key in seen:
+                continue
+            seen.add(key)
+
+            parents.append(
+                {
+                    "type": binding_resource_type,
+                    "id": binding_resource_id,
+                    # Name resolution is optional and may require DB lookups; keep None by default.
+                    "name": None,
+                }
+            )
+
+        return parents or None
 
 
 # Backward compatibility alias

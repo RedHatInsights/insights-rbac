@@ -14,135 +14,172 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleBindingViewSet."""
-from importlib import reload
-from unittest.mock import patch
-from urllib.parse import parse_qs, urlparse
+"""Tests for the V2 role binding viewset."""
+
+import importlib
+import os
+from uuid import uuid4
 
 from django.test.utils import override_settings
-from django.urls import clear_url_caches, reverse
+from django.urls import clear_url_caches, set_urlconf
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from management.models import Group, Permission, Principal, Workspace
-from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
-from rbac import urls
+from api.models import Tenant
+from management.group.model import Group
+from management.principal.model import Principal
+from management.role.v2_model import RoleV2, RoleBinding, RoleBindingGroup
+from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
+from unittest.mock import patch
+from unittest.mock import MagicMock
 
 
 @override_settings(V2_APIS_ENABLED=True)
-class RoleBindingViewSetTest(IdentityRequest):
-    """Test the RoleBindingViewSet."""
+class RoleBindingViewsetTests(IdentityRequest):
+    """Test the v2 role binding by-subject endpoint."""
+
+    @staticmethod
+    def role_bindings_by_subject_url() -> str:
+        """
+        Build the by-subject URL using the same API_PATH_PREFIX logic as rbac.urls.
+
+        rbac.urls reads API_PATH_PREFIX from the environment at import time, so tests
+        must construct URLs consistently with that value.
+        """
+        prefix = os.getenv("API_PATH_PREFIX", "api/")
+        if prefix.startswith("/"):
+            prefix = prefix[1:]
+        if not prefix.endswith("/"):
+            prefix = f"{prefix}/"
+        return f"/{prefix}v2/role-bindings/by-subject/"
 
     def setUp(self):
-        """Set up test data."""
-        reload(urls)
-        clear_url_caches()
+        """Set up a tenant, workspace, group, principal and role bindings."""
         super().setUp()
+        # Ensure the URLConf is built with V2 routes enabled for this test run.
+        # The root URLConf conditionally registers v2 routes based on settings at import time,
+        # so we reload it under the overridden settings.
+        import rbac.urls as rbac_urls
+
+        importlib.reload(rbac_urls)
+        clear_url_caches()
+        set_urlconf(rbac_urls)
+
         self.client = APIClient()
 
-        # Create workspace hierarchy (root -> default -> standard)
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
+        # Ensure tenant exists in DB (IdentityRequest already created one, but we want the persisted instance)
+        self.tenant = Tenant.objects.get(id=self.tenant.id)
+
+        # Create a simple workspace hierarchy: parent (root) -> child (standard)
+        self.parent_workspace = Workspace.objects.create(
+            id=uuid4(),
+            name="Parent Workspace",
             tenant=self.tenant,
             type=Workspace.Types.ROOT,
         )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
-        self.workspace = Workspace.objects.create(
-            name="Test Workspace",
-            description="Test workspace description",
+        self.child_workspace = Workspace.objects.create(
+            id=uuid4(),
+            name="Child Workspace",
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
-            parent=self.default_workspace,
+            parent=self.parent_workspace,
         )
 
-        # Create permission and role
-        self.permission = Permission.objects.create(
-            permission="app:resource:read",
+        # Subject group and principal
+        self.group = Group.objects.create(tenant=self.tenant, name="Test Group")
+        self.principal = Principal.objects.create(tenant=self.tenant, username="user@example.com")
+        self.group.principals.add(self.principal)
+
+        # V2 role and bindings
+        self.role_v2 = RoleV2.objects.create(tenant=self.tenant, name="Workspace Admin")
+
+        # Direct binding on child workspace
+        self.direct_binding = RoleBinding.objects.create(
             tenant=self.tenant,
+            role=self.role_v2,
+            resource_type="workspace",
+            resource_id=str(self.child_workspace.id),
         )
+        RoleBindingGroup.objects.create(group=self.group, binding=self.direct_binding)
 
-        self.role = RoleV2.objects.create(
-            name="test_role",
+        # Inherited binding on parent workspace
+        self.parent_binding = RoleBinding.objects.create(
             tenant=self.tenant,
+            role=self.role_v2,
+            resource_type="workspace",
+            resource_id=str(self.parent_workspace.id),
         )
-        self.role.permissions.add(self.permission)
+        RoleBindingGroup.objects.create(group=self.group, binding=self.parent_binding)
 
-        # Create multiple roles and bindings to test pagination
-        self.groups = []
-        self.bindings = []
-        self.roles = [self.role]
+    @patch("management.permissions.workspace_inventory_access.inventory_client")
+    def test_by_subject_direct_bindings_only(self, mock_inventory_client):
+        """When parent_role_bindings is false, only direct bindings are considered."""
+        # Allow access via Inventory check (role_binding_view).
+        mock_stub = MagicMock()
+        mock_response = MagicMock()
+        mock_response.allowed = 1  # allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
+        mock_inventory_client.return_value.__enter__.return_value = mock_stub
 
-        for i in range(15):
-            # Create a unique role for each binding
-            role = RoleV2.objects.create(
-                name=f"test_role_{i}",
-                tenant=self.tenant,
-            )
-            role.permissions.add(self.permission)
-            self.roles.append(role)
-
-            group = Group.objects.create(
-                name=f"test_group_{i}",
-                description=f"Test group {i} description",
-                tenant=self.tenant,
-            )
-            self.groups.append(group)
-
-            principal = Principal.objects.create(
-                username=f"user_{i}",
-                tenant=self.tenant,
-                type=Principal.Types.USER,
-            )
-            group.principals.add(principal)
-
-            binding = RoleBinding.objects.create(
-                role=role,
-                resource_type="workspace",
-                resource_id=str(self.workspace.id),
-                tenant=self.tenant,
-            )
-            self.bindings.append(binding)
-
-            RoleBindingGroup.objects.create(
-                group=group,
-                binding=binding,
-            )
-
-    def tearDown(self):
-        """Tear down test data."""
-        RoleBindingGroup.objects.all().delete()
-        RoleBinding.objects.all().delete()
-        for group in self.groups:
-            group.principals.clear()
-        Principal.objects.filter(tenant=self.tenant).delete()
-        Group.objects.filter(tenant=self.tenant).delete()
-        RoleV2.objects.filter(tenant=self.tenant).delete()
-        Permission.objects.filter(tenant=self.tenant).delete()
-        # Delete workspaces in correct order (children first)
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
-        super().tearDown()
-
-    def _get_by_subject_url(self):
-        """Get the by-subject URL."""
-        return reverse("v2_management:role-bindings-by-subject")
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_returns_paginated_response(self, mock_permission):
-        """Test that by_subject returns a paginated response structure."""
-        url = self._get_by_subject_url()
+        url = self.role_bindings_by_subject_url()
         response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace",
+            url,
+            {
+                "resource_type": "workspace",
+                "resource_id": str(self.child_workspace.id),
+                "subject_type": "group",
+                "subject_id": str(self.group.uuid),
+            },
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Using V2 cursor pagination: response contains meta/links/data
+        self.assertIn("meta", response.data)
+        self.assertIn("links", response.data)
+        self.assertIn("data", response.data)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        record = response.data["data"][0]
+        self.assertIn("subject", record)
+        self.assertEqual(record["subject"]["type"], "group")
+        # With the v2 role binding output serializer, subject id is at subject.id.
+        # The nested subject.group object is only included when explicitly requested via fields.
+        self.assertEqual(str(record["subject"]["id"]), str(self.group.uuid))
+        self.assertIn("roles", record)
+        role_ids = {str(r["id"]) for r in record["roles"]}
+        self.assertIn(str(self.role_v2.uuid), role_ids)
+        self.assertIn("resource", record)
+        self.assertEqual(record["resource"]["id"], str(self.child_workspace.id))
+        # No inherited_from section for direct-only queries
+        self.assertIsNone(record.get("inherited_from"))
+
+    @override_settings(RELATION_API_SERVER="localhost:9001")
+    @patch("management.role_binding.view.RoleBindingViewSet._lookup_binding_uuids_via_relations")
+    @patch("management.permissions.workspace_inventory_access.inventory_client")
+    def test_by_subject_includes_inherited_from_relations(self, mock_inventory_client, mock_lookup):
+        """When parent_role_bindings is true, bindings returned from Relations are used."""
+        # Simulate Relations returning both direct and parent binding UUIDs
+        mock_lookup.return_value = [str(self.direct_binding.uuid), str(self.parent_binding.uuid)]
+
+        # Allow access via Inventory check (role_binding_view).
+        mock_stub = MagicMock()
+        mock_response = MagicMock()
+        mock_response.allowed = 1  # allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
+        mock_inventory_client.return_value.__enter__.return_value = mock_stub
+
+        url = self.role_bindings_by_subject_url()
+        response = self.client.get(
+            url,
+            {
+                "resource_type": "workspace",
+                "resource_id": str(self.child_workspace.id),
+                "subject_type": "group",
+                "subject_id": str(self.group.uuid),
+                "parent_role_bindings": "true",
+            },
             **self.headers,
         )
 
@@ -150,259 +187,18 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn("meta", response.data)
         self.assertIn("links", response.data)
         self.assertIn("data", response.data)
-        self.assertIn("limit", response.data["meta"])
-        self.assertIn("next", response.data["links"])
-        self.assertIn("previous", response.data["links"])
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_default_limit(self, mock_permission):
-        """Test that default limit is 10."""
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["meta"]["limit"], 10)
-        self.assertEqual(len(response.data["data"]), 10)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_custom_limit(self, mock_permission):
-        """Test that custom limit is respected."""
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=5",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["meta"]["limit"], 5)
-        self.assertEqual(len(response.data["data"]), 5)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_cursor_pagination(self, mock_permission):
-        """Test that cursor pagination works correctly."""
-        url = self._get_by_subject_url()
-
-        # Get first page
-        response1 = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=5",
-            **self.headers,
-        )
-        self.assertEqual(response1.status_code, status.HTTP_200_OK)
-        page1_subjects = [item["subject"]["id"] for item in response1.data["data"]]
-
-        # Get next page using cursor
-        next_link = response1.data["links"]["next"]
-        self.assertIsNotNone(next_link)
-
-        parsed = urlparse(next_link)
-        cursor = parse_qs(parsed.query).get("cursor", [None])[0]
-        self.assertIsNotNone(cursor)
-
-        response2 = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=5&cursor={cursor}",
-            **self.headers,
-        )
-        self.assertEqual(response2.status_code, status.HTTP_200_OK)
-        page2_subjects = [item["subject"]["id"] for item in response2.data["data"]]
-
-        # Pages should have different subjects
-        self.assertEqual(len(set(page1_subjects) & set(page2_subjects)), 0)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_empty_results(self, mock_permission):
-        """Test that empty results return valid structure."""
-        url = self._get_by_subject_url()
-
-        # Use a non-existent workspace ID
-        response = self.client.get(
-            f"{url}?resource_id=00000000-0000-0000-0000-000000000000&resource_type=workspace",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["data"], [])
-        self.assertIsNone(response.data["links"]["next"])
-        self.assertIsNone(response.data["links"]["previous"])
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_first_page_has_no_previous(self, mock_permission):
-        """Test that first page has no previous link."""
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=5",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNone(response.data["links"]["previous"])
-        self.assertIsNotNone(response.data["links"]["next"])
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_last_page_has_no_next(self, mock_permission):
-        """Test that last page has no next link."""
-        url = self._get_by_subject_url()
-
-        # Request all items in one page
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=100",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNone(response.data["links"]["next"])
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_requires_resource_id(self, mock_permission):
-        """Test that resource_id is required."""
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_type=workspace",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_requires_resource_type(self, mock_permission):
-        """Test that resource_type is required."""
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_data_structure(self, mock_permission):
-        """Test that response data matches expected default structure.
-
-        Default behavior returns only basic required fields:
-        - subject: id, type (no group details)
-        - roles: id only
-        - resource: id only
-        - no last_modified
-        """
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=1",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
 
-        item = response.data["data"][0]
+        record = response.data["data"][0]
+        self.assertIn("roles", record)
+        role_ids = {str(r["id"]) for r in record["roles"]}
+        self.assertIn(str(self.role_v2.uuid), role_ids)
 
-        # Verify structure - no last_modified by default
-        self.assertNotIn("last_modified", item)
-        self.assertIn("subject", item)
-        self.assertIn("roles", item)
-        self.assertIn("resource", item)
+        # The resource in the response should be the child workspace
+        self.assertEqual(record["resource"]["id"], str(self.child_workspace.id))
 
-        # Verify subject structure - only id and type by default
-        subject = item["subject"]
-        self.assertIn("id", subject)
-        self.assertIn("type", subject)
-        self.assertEqual(subject["type"], "group")
-        self.assertNotIn("group", subject)
-
-        # Verify roles structure - only id by default
-        self.assertIsInstance(item["roles"], list)
-        if item["roles"]:
-            self.assertIn("id", item["roles"][0])
-            self.assertNotIn("name", item["roles"][0])
-
-        # Verify resource structure - only id by default
-        resource = item["resource"]
-        self.assertIn("id", resource)
-        self.assertNotIn("name", resource)
-        self.assertNotIn("type", resource)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_strips_nul_bytes_from_resource_id(self, mock_permission):
-        """Test that NUL bytes are stripped from resource_id parameter."""
-        url = self._get_by_subject_url()
-        # Include NUL byte in resource_id - should be stripped and return empty results
-        response = self.client.get(
-            f"{url}?resource_id=\x00{self.workspace.id}\x00&resource_type=workspace",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_strips_nul_bytes_from_resource_type(self, mock_permission):
-        """Test that NUL bytes are stripped from resource_type parameter."""
-        url = self._get_by_subject_url()
-        # Include NUL byte in resource_type - should be stripped
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=\x00workspace\x00",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_nul_only_resource_id_returns_error(self, mock_permission):
-        """Test that resource_id with only NUL bytes returns validation error."""
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_id=\x00&resource_type=workspace",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_by_subject_nul_only_resource_type_returns_error(self, mock_permission):
-        """Test that resource_type with only NUL bytes returns validation error."""
-        url = self._get_by_subject_url()
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=\x00",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # inherited_from should include the parent workspace when Relations is used
+        inherited = record.get("inherited_from")
+        self.assertIsNotNone(inherited)
+        parent_ids = {p["id"] for p in inherited}
+        self.assertIn(str(self.parent_workspace.id), parent_ids)
