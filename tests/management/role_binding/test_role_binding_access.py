@@ -20,20 +20,20 @@ from importlib import reload
 from unittest.mock import MagicMock, Mock, patch
 
 import requests
-from django.test import TestCase, TransactionTestCase
+from django.test import TransactionTestCase
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
 from kessel.inventory.v1beta2 import allowed_pb2
-from rest_framework import status
-from rest_framework.test import APIClient
-
 from management.models import Workspace
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
-from rbac import urls
+from rest_framework import status
+from rest_framework.test import APIClient
 from tests.identity_request import BaseIdentityRequest
+
+from rbac import urls
 
 
 class TransactionIdentityRequest(BaseIdentityRequest, TransactionTestCase):
@@ -382,7 +382,7 @@ class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, Transacti
 class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionIdentityRequest):
     """Unit tests for RoleBindingKesselAccessPermission checker integration."""
 
-    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
     def test_kessel_permission_calls_checker_with_correct_relation(self, mock_checker_class, mock_get_principal_id):
         """Kessel permission should call checker with role_binding_view relation."""
@@ -414,7 +414,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         self.assertEqual(call_kwargs["resource_type"], "workspace")
         self.assertEqual(call_kwargs["principal_id"], mock_get_principal_id.return_value)
 
-    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
     def test_kessel_permission_denies_when_checker_returns_false(self, mock_checker_class, mock_get_principal_id):
         """Kessel permission should deny when checker returns False."""
@@ -440,7 +440,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
 
         self.assertFalse(result)
 
-    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
     def test_kessel_permission_allows_when_checker_returns_true(self, mock_checker_class, mock_get_principal_id):
         """Kessel permission should allow when checker returns True."""
@@ -466,7 +466,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
 
         self.assertTrue(result)
 
-    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
     def test_kessel_permission_denies_unknown_resource_type(self, mock_checker_class, mock_get_principal_id):
         """Kessel permission should deny access for unknown resource types."""
@@ -489,7 +489,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         mock_get_principal_id.assert_not_called()
         mock_checker_class.assert_not_called()
 
-    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
     def test_kessel_permission_normalizes_resource_type_to_lowercase(self, mock_checker_class, mock_get_principal_id):
         """Kessel permission should normalize resource_type to lowercase."""
@@ -789,7 +789,7 @@ class RoleBindingServiceAccountTests(RoleBindingAccessTestMixin, TransactionIden
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
     def test_service_account_permission_uses_kessel_checker(self, mock_checker_class, mock_get_principal_id):
         """Test that service account permission check uses WorkspaceInventoryAccessChecker."""
@@ -821,7 +821,7 @@ class RoleBindingServiceAccountTests(RoleBindingAccessTestMixin, TransactionIden
         self.assertEqual(call_kwargs["relation"], "role_binding_view")
         self.assertEqual(call_kwargs["principal_id"], "localhost/sa-user-123")
 
-    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
     def test_service_account_denied_when_principal_id_not_found(self, mock_checker_class, mock_get_principal_id):
         """Test that service account is denied when principal_id cannot be determined."""
@@ -845,3 +845,113 @@ class RoleBindingServiceAccountTests(RoleBindingAccessTestMixin, TransactionIden
 
         self.assertFalse(result)
         mock_checker_class.assert_not_called()
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class RoleBindingBearerTokenTests(RoleBindingAccessTestMixin, TransactionIdentityRequest):
+    """Tests for bearer token authentication flow in role binding access."""
+
+    @patch("management.authorization.token_validator.ITSSOTokenValidator")
+    @patch("management.permissions.kessel_principal_utils.get_kessel_principal_id")
+    @patch("management.permissions.workspace_inventory_access.inventory_client")
+    def test_service_account_uses_bearer_token_when_standard_lookup_fails(
+        self, mock_inventory_client, mock_get_principal_id, mock_validator_class
+    ):
+        """Test that service account falls back to bearer token when standard lookup fails."""
+        # Standard lookup returns None
+        mock_get_principal_id.return_value = None
+
+        # Bearer token extraction succeeds
+        mock_user = Mock()
+        mock_user.user_id = "bearer-token-user-123"
+        mock_validator = MagicMock()
+        mock_validator.get_user_from_bearer_token.return_value = mock_user
+        mock_validator_class.return_value = mock_validator
+
+        # Kessel allows access
+        self._setup_kessel_mock(mock_inventory_client)
+
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.user.is_service_account = True
+        mock_request.user.username = "service-account-12345678-1234-1234-1234-123456789012"
+        mock_request.query_params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertTrue(result)
+        mock_validator.get_user_from_bearer_token.assert_called_once_with(mock_request)
+
+    @patch("management.authorization.token_validator.ITSSOTokenValidator")
+    @patch("management.permissions.kessel_principal_utils.get_kessel_principal_id")
+    def test_service_account_denied_when_bearer_token_extraction_fails(
+        self, mock_get_principal_id, mock_validator_class
+    ):
+        """Test that service account is denied when both standard lookup and bearer token fail."""
+        from management.authorization.invalid_token import InvalidTokenError
+
+        # Standard lookup returns None
+        mock_get_principal_id.return_value = None
+
+        # Bearer token extraction fails
+        mock_validator = MagicMock()
+        mock_validator.get_user_from_bearer_token.side_effect = InvalidTokenError("Invalid token")
+        mock_validator_class.return_value = mock_validator
+
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.user.is_service_account = True
+        mock_request.user.username = "service-account-12345678-1234-1234-1234-123456789012"
+        mock_request.user.org_id = "test-org"
+        mock_request.query_params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertFalse(result)
+
+    @patch("management.permissions.role_binding_access.logger")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id_for_v2_access")
+    def test_logs_warning_when_principal_id_missing(self, mock_get_principal_id, mock_logger):
+        """Test that warning is logged when principal_id cannot be determined."""
+        mock_get_principal_id.return_value = None
+
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.user.is_service_account = True
+        mock_request.user.org_id = "test-org-123"
+        mock_request.user.username = "service-account-user"
+        mock_request.query_params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertFalse(result)
+        mock_logger.warning.assert_called_once()
+        call_args = mock_logger.warning.call_args
+        self.assertIn("Could not determine principal_id for role binding access check", call_args[0][0])
+        self.assertEqual(call_args[1]["extra"]["org_id"], "test-org-123")
+        self.assertEqual(call_args[1]["extra"]["is_service_account"], True)
+        self.assertEqual(call_args[1]["extra"]["resource_type"], "workspace")

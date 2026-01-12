@@ -1384,9 +1384,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
     @patch("management.inventory_client.create_client_channel_inventory")
-    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.principal.proxy.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.utils.get_principal_from_request",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_fallback_to_it_service(
@@ -1424,6 +1424,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_request.user.org_id = "test-org-123"
             mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
             mock_request.user.system = False  # Not a system user
+            mock_request.user.is_service_account = False  # Not a service account
             mock_request.tenant = self.tenant
 
             # Call is_user_allowed_v2 directly
@@ -1443,9 +1444,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             call_args = mock_stub.CheckForUpdate.call_args
             self.assertIn(expected_principal_id, str(call_args))
 
-    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.principal.proxy.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.utils.get_principal_from_request",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_it_service_failure(self, mock_get_principal, mock_proxy_class):
@@ -1466,24 +1467,25 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request.user.org_id = "test-org-123"
         mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
         mock_request.user.system = False  # Not a system user
+        mock_request.user.is_service_account = False  # Not a service account
         mock_request.tenant = self.tenant
 
-        with patch("management.workspace.utils.access.logger") as mock_logger:
+        with patch("management.principal.proxy.LOGGER") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
             result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once_with(
+            # Verify debug was logged (logging happens in proxy.py now)
+            mock_logger.debug.assert_any_call(
                 "Failed to retrieve user_id from IT service for username: %s",
                 "testuser",
             )
 
-    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.principal.proxy.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.utils.get_principal_from_request",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_it_service_empty_response(
@@ -1506,23 +1508,24 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request.user.org_id = "test-org-123"
         mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
         mock_request.user.system = False  # Not a system user
+        mock_request.user.is_service_account = False  # Not a service account
         mock_request.tenant = self.tenant
 
-        with patch("management.workspace.utils.access.logger") as mock_logger:
+        with patch("management.principal.proxy.LOGGER") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
             result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once_with(
+            # Verify debug was logged (logging happens in proxy.py now)
+            mock_logger.debug.assert_any_call(
                 "Failed to retrieve user_id from IT service for username: %s",
                 "testuser",
             )
 
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.utils.get_principal_from_request",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_and_no_username(self, mock_get_principal):
@@ -1534,20 +1537,21 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request.user.username = None
         mock_request.user.user_id = None  # Explicitly set to None to trigger fallback
         mock_request.user.system = False  # Not a system user
+        mock_request.user.is_service_account = False  # Not a service account
         mock_request.tenant = self.tenant
 
-        with patch("management.workspace.utils.access.logger") as mock_logger:
+        with patch("management.principal.proxy.LOGGER") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
             result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once_with("No username available from request.user, denying access")
+            # Verify debug was logged (logging happens in proxy.py now)
+            mock_logger.debug.assert_any_call("No username available from request.user for user_id lookup")
 
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.utils.get_principal_from_request",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_and_no_org_id(self, mock_get_principal):
@@ -1560,22 +1564,23 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_request.user.org_id = None
         mock_request.user.user_id = None  # Explicitly set to None to trigger fallback
         mock_request.user.system = False  # Not a system user
+        mock_request.user.is_service_account = False  # Not a service account
         mock_request.tenant = self.tenant
 
-        with patch("management.workspace.utils.access.logger") as mock_logger:
+        with patch("management.principal.proxy.LOGGER") as mock_logger:
             # Call is_user_allowed_v2 directly - should return False
             result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
             # Verify the function returns False (access denied)
             self.assertFalse(result)
 
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once_with("No org_id available from request.user, denying access")
+            # Verify debug was logged (logging happens in proxy.py now)
+            mock_logger.debug.assert_any_call("No org_id available from request.user for user_id lookup")
 
     @patch("management.inventory_client.create_client_channel_inventory")
-    @patch("management.workspace.utils.access.PrincipalProxy")
+    @patch("management.principal.proxy.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.utils.get_principal_from_request",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_logs_debug_for_it_service(
@@ -1611,14 +1616,15 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_request.user.org_id = "test-org-123"
             mock_request.user.user_id = None  # Explicitly set to None to trigger IT service fallback
             mock_request.user.system = False  # Not a system user
+            mock_request.user.is_service_account = False  # Not a service account
             mock_request.tenant = self.tenant
 
-            with patch("management.workspace.utils.access.logger") as mock_logger:
+            with patch("management.principal.proxy.LOGGER") as mock_logger:
                 # Call the function
                 result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
 
                 # Verify debug logging for IT service lookup
-                mock_logger.debug.assert_called_once_with("Retrieved user_id from IT service via PrincipalProxy")
+                mock_logger.debug.assert_any_call("Retrieved user_id from IT service via PrincipalProxy")
 
                 # Result depends on Inventory API response, which we mocked as ALLOWED_TRUE
                 self.assertTrue(result)
@@ -2484,3 +2490,118 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_workspace_objects.filter.assert_called_once_with(id=nonexistent_workspace_id, tenant=self.tenant)
         # Permission message should be set
         self.assertEqual(permission.message, TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
+
+
+@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=10)
+@override_settings(WORKSPACE_ACCESS_CHECK_V2_ENABLED=True)
+class WorkspaceBearerTokenTests(TransactionIdentityRequest):
+    """Tests for bearer token authentication flow in workspace access."""
+
+    def setUp(self):
+        """Set up the workspace access tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.tenant.save()
+
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            description="Default Description",
+            parent_id=self.root_workspace.id,
+        )
+        self.standard_workspace = Workspace.objects.create(
+            name="Standard Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+    def tearDown(self):
+        """Tear down workspace tests."""
+        Workspace.objects.update(parent=None)
+        Workspace.objects.all().delete()
+
+    @patch("management.workspace.utils.access.WorkspaceInventoryAccessChecker")
+    @patch("management.workspace.utils.access.get_kessel_principal_id_for_v2_access")
+    def test_service_account_uses_principal_id_from_v2_access_utility(self, mock_get_principal_id, mock_checker_class):
+        """Test that service account principal_id from v2 access utility is used for access checks."""
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Mock principal_id returned from v2 access utility (simulates bearer token success)
+        mock_get_principal_id.return_value = "localhost/bearer-token-user-456"
+
+        # Mock workspace access checker
+        mock_checker = MagicMock()
+        mock_checker.check_workspace_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.user.is_service_account = True
+        mock_request.user.username = "service-account-12345678-1234-1234-1234-123456789012"
+        mock_request.tenant = self.tenant
+
+        result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+        self.assertTrue(result)
+        mock_get_principal_id.assert_called_once_with(mock_request)
+        mock_checker.check_workspace_access.assert_called_once()
+        call_kwargs = mock_checker.check_workspace_access.call_args[1]
+        self.assertEqual(call_kwargs["principal_id"], "localhost/bearer-token-user-456")
+
+    @patch("management.workspace.utils.access.get_kessel_principal_id_for_v2_access")
+    def test_service_account_denied_when_principal_id_not_found(self, mock_get_principal_id):
+        """Test that service account is denied when principal_id cannot be determined."""
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        # Mock principal_id not found (simulates both standard lookup and bearer token failure)
+        mock_get_principal_id.return_value = None
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.user.is_service_account = True
+        mock_request.user.username = "service-account-12345678-1234-1234-1234-123456789012"
+        mock_request.user.org_id = "test-org"
+        mock_request.tenant = self.tenant
+        mock_request.path = "/api/v2/workspaces/"
+        mock_request.method = "GET"
+
+        result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+        self.assertFalse(result)
+
+    @patch("management.workspace.utils.access.logger")
+    @patch("management.workspace.utils.access.get_kessel_principal_id_for_v2_access")
+    def test_logs_warning_when_principal_id_missing(self, mock_get_principal_id, mock_logger):
+        """Test that warning is logged when principal_id cannot be determined."""
+        from management.workspace.utils.access import is_user_allowed_v2
+
+        mock_get_principal_id.return_value = None
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.user.is_service_account = True
+        mock_request.user.org_id = "test-org-123"
+        mock_request.user.username = "service-account-user"
+        mock_request.tenant = self.tenant
+        mock_request.path = "/api/v2/workspaces/"
+        mock_request.method = "GET"
+
+        result = is_user_allowed_v2(mock_request, "view", str(self.standard_workspace.id))
+
+        self.assertFalse(result)
+        mock_logger.warning.assert_called_once()
+        call_args = mock_logger.warning.call_args
+        self.assertIn("Could not determine principal_id for access check", call_args[0][0])
+        self.assertEqual(call_args[1]["extra"]["org_id"], "test-org-123")
+        self.assertEqual(call_args[1]["extra"]["is_service_account"], True)
