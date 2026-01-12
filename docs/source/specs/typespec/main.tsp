@@ -938,4 +938,44 @@ namespace Roles {
         last_modified?: offsetDateTime;
     }
 
+    @example(#{
+        name: "Host Inventory Admin",
+        description: "Custom role for host inventory management",
+        permissions: #[
+            #{ application: "host_inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "host_inventory", resource_type: "hosts", operation: "write" }
+        ]
+    })
+    model CreateRoleRequest {
+        @doc("Role name")
+        name: string;
+        @doc("Role description")
+        description: string;
+        @doc("List of permissions to assign to this role")
+        permissions: Permission[];
+    }
+
+    model CreateRoleResponse {
+        @statusCode statusCode: 201;
+    }
+
+    @doc("Create a custom role in tenant")
+    @summary("Create a custom role in tenant")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                name: "Custom Inventory Admin",
+                description: "Custom role for inventory management",
+                permissions: #[
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" }
+                ]
+            }
+        },
+        returnType: #{
+            statusCode: 201
+        }
+    })
+    @post op create(@body body: CreateRoleRequest): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
+
 }
