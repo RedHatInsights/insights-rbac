@@ -284,7 +284,6 @@
       }
     },
     "/roles/": {
-<<<<<<< HEAD
       "post": {
         "operationId": "Roles_create",
         "summary": "Create a custom role in tenant",
@@ -298,67 +297,11 @@
             "schema": {
               "type": "string",
               "default": "id,name,description,permissions,last_modified"
-=======
-      "get": {
-        "operationId": "Roles_list",
-        "summary": "List the roles for a tenant",
-        "description": "List the roles for a tenant",
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "default": 10
-            },
-            "explode": false
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "description": "Cursor for cursor-based pagination.",
-            "schema": {
-              "type": "string"
-            },
-            "explode": false
-          },
-          {
-            "name": "name",
-            "in": "query",
-            "required": false,
-            "description": "Filter by role name using string contains search.",
-            "schema": {
-              "type": "string"
-            },
-            "explode": false
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: id, name, description\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Required fields (id, name, description) are always included even if not specified.\n\n**Syntax:**\n- Use comma to separate multiple fields: `description,permissions_count,last_modified`\n\n**Available Fields:**\n\n**Required fields (always included):**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n\n**Optional fields:**\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - full list of permissions assigned to this role\n- last_modified (datetime) - last modification timestamp\n\n**Example:**\n- `permissions` - Include full permissions array in addition to default fields\n- `permissions_count,permissions,last_modified` - Include permissions count, permissions array, and last modification timestamp",
-            "schema": {
-              "type": "string"
-            },
-            "explode": false
-          },
-          {
-            "name": "ordering",
-            "in": "query",
-            "required": false,
-            "description": "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.",
-            "schema": {
-              "type": "string"
->>>>>>> 451a585e (Add spec for roles/ list endpoint)
             },
             "explode": false
           }
         ],
         "responses": {
-<<<<<<< HEAD
           "201": {
             "description": "The request has succeeded and a new resource has been created as a result.",
             "content": {
@@ -393,66 +336,6 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problems.Problem400"
-=======
-          "200": {
-            "description": "The request has succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Roles.RoleListResponse"
-                },
-                "examples": {
-                  "example0": {
-                    "value": {
-                      "meta": {
-                        "limit": 10
-                      },
-                      "links": {
-                        "next": "/api/rbac/v2/roles/?limit=10&fields=permissions_count,permissions,last_modified&cursor=eyJpZCI6IjEyMyJ9",
-                        "previous": null
-                      },
-                      "data": [
-                        {
-                          "id": "550e8400-e29b-41d4-a716-446655440002",
-                          "name": "Workspace Admin",
-                          "description": "description",
-                          "permissions_count": 2,
-                          "last_modified": "2024-08-04T12:00:00Z",
-                          "permissions": [
-                            {
-                              "application": "inventory",
-                              "resource_type": "hosts",
-                              "operation": "read"
-                            },
-                            {
-                              "application": "inventory",
-                              "resource_type": "hosts",
-                              "operation": "write"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "example1": {
-                    "value": {
-                      "meta": {
-                        "limit": 10
-                      },
-                      "links": {
-                        "next": "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
-                        "previous": null
-                      },
-                      "data": [
-                        {
-                          "id": "550e8400-e29b-41d4-a716-446655440002",
-                          "name": "Workspace Admin",
-                          "description": "description"
-                        }
-                      ]
-                    }
-                  }
->>>>>>> 451a585e (Add spec for roles/ list endpoint)
                 }
               }
             }
@@ -532,7 +415,6 @@
         },
         "tags": [
           "Roles"
-<<<<<<< HEAD
         ],
         "requestBody": {
           "required": true,
@@ -560,9 +442,203 @@
             }
           }
         }
-=======
+      },
+      "get": {
+        "operationId": "Roles_list",
+        "summary": "List the roles for a tenant",
+        "description": "List the roles for a tenant",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 10
+            },
+            "explode": false
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor for cursor-based pagination.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Filter by role name using string contains search.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: id, name, description\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Required fields (id, name, description) are always included even if not specified.\n\n**Syntax:**\n- Use comma to separate multiple fields: `description,permissions_count,last_modified`\n\n**Available Fields:**\n\n**Required fields (always included):**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n\n**Optional fields:**\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - full list of permissions assigned to this role\n- last_modified (datetime) - last modification timestamp\n\n**Example:**\n- `permissions` - Include full permissions array in addition to default fields\n- `permissions_count,permissions,last_modified` - Include permissions count, permissions array, and last modification timestamp",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "ordering",
+            "in": "query",
+            "required": false,
+            "description": "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.RoleListResponse"
+                },
+                "examples": {
+                  "example0": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "/api/rbac/v2/roles/?limit=10&fields=permissions_count,permissions,last_modified&cursor=eyJpZCI6IjEyMyJ9",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "id": "550e8400-e29b-41d4-a716-446655440002",
+                          "name": "Workspace Admin",
+                          "description": "description",
+                          "permissions_count": 2,
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "permissions": [
+                            {
+                              "application": "inventory",
+                              "resource_type": "hosts",
+                              "operation": "read"
+                            },
+                            {
+                              "application": "inventory",
+                              "resource_type": "hosts",
+                              "operation": "write"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "example1": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "id": "550e8400-e29b-41d4-a716-446655440002",
+                          "name": "Workspace Admin",
+                          "description": "description"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Roles"
         ]
->>>>>>> 451a585e (Add spec for roles/ list endpoint)
       }
     },
     "/workspaces/": {
@@ -2206,46 +2282,6 @@
           "last_modified": "2024-08-04T12:00:00Z"
         }
       },
-<<<<<<< HEAD
-      "Roles.WriteRole": {
-        "type": "object",
-        "required": [
-          "name",
-          "description",
-          "permissions"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
-          },
-          "description": {
-            "type": "string",
-            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Roles.Permission"
-            },
-            "description": "List of permissions to assign to this role"
-          }
-        },
-        "description": "Role data for create operations",
-        "example": {
-          "name": "Host Inventory Admin",
-          "description": "Custom role for host inventory management",
-          "permissions": [
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "read"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "write"
-=======
       "Roles.RoleListResponse": {
         "type": "object",
         "required": [
@@ -2289,8 +2325,50 @@
           "data": [
             {
               "id": "550e8400-e29b-41d4-a716-446655440002",
-              "name": "Workspace Admin"
->>>>>>> 451a585e (Add spec for roles/ list endpoint)
+              "name": "Workspace Admin",
+              "description": "description"
+            }
+          ]
+        }
+      },
+      "Roles.WriteRole": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "permissions"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A human readable name for the role. Does not need to be unique."
+          },
+          "description": {
+            "type": "string",
+            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Roles.Permission"
+            },
+            "description": "List of permissions to assign to this role"
+          }
+        },
+        "description": "Role data for create operations",
+        "example": {
+          "name": "Host Inventory Admin",
+          "description": "Custom role for host inventory management",
+          "permissions": [
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "read"
+            },
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "write"
             }
           ]
         }

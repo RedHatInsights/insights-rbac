@@ -240,38 +240,10 @@ paths:
       summary: Create a custom role in tenant
       description: Create a custom role in tenant
       parameters:
-    get:
-      operationId: Roles_list
-      summary: List the roles for a tenant
-      description: List the roles for a tenant
-      parameters:
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int64
-            default: 10
-          explode: false
-        - name: cursor
-          in: query
-          required: false
-          description: Cursor for cursor-based pagination.
-          schema:
-            type: string
-          explode: false
-        - name: name
-          in: query
-          required: false
-          description: Filter by role name using string contains search.
-          schema:
-            type: string
-          explode: false
         - name: fields
           in: query
           required: false
           description: |-
-<<<<<<< HEAD
             Control which fields are included in the response to optimize payload size.
 
             **When fields parameter is provided:**
@@ -309,7 +281,101 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem400'
-=======
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Roles.CreateRoleRequest'
+            example:
+              name: Custom Inventory Admin
+              description: Custom role for inventory management
+              permissions:
+                - application: inventory
+                  resource_type: hosts
+                  operation: read
+                - application: inventory
+                  resource_type: hosts
+                  operation: write
+    get:
+      operationId: Roles_list
+      summary: List the roles for a tenant
+      description: List the roles for a tenant
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 10
+          explode: false
+        - name: cursor
+          in: query
+          required: false
+          description: Cursor for cursor-based pagination.
+          schema:
+            type: string
+          explode: false
+        - name: name
+          in: query
+          required: false
+          description: Filter by role name using string contains search.
+          schema:
+            type: string
+          explode: false
+        - name: fields
+          in: query
+          required: false
+          description: |-
             Control which fields are included in the response to optimize payload size and improve performance.
 
             **Default Behavior (no fields parameter):**
@@ -385,12 +451,6 @@ paths:
                       - id: 550e8400-e29b-41d4-a716-446655440002
                         name: Workspace Admin
                         description: description
-<<<<<<< HEAD
-                        permissions_count: 2
-                        last_modified: '2024-08-04T12:00:00Z'
->>>>>>> 451a585e (Add spec for roles/ list endpoint)
-=======
->>>>>>> 202b984a (Default id, name, description)
         '401':
           description: Access is unauthorized.
           content:
@@ -439,25 +499,6 @@ paths:
                     format: uri
       tags:
         - Roles
-<<<<<<< HEAD
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Roles.CreateRoleRequest'
-            example:
-              name: Custom Inventory Admin
-              description: Custom role for inventory management
-              permissions:
-                - application: inventory
-                  resource_type: hosts
-                  operation: read
-                - application: inventory
-                  resource_type: hosts
-                  operation: write
-=======
->>>>>>> 451a585e (Add spec for roles/ list endpoint)
   /workspaces/:
     get:
       operationId: Workspaces_list
@@ -1537,37 +1578,6 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
-<<<<<<< HEAD
-    Roles.WriteRole:
-      type: object
-      required:
-        - name
-        - description
-        - permissions
-      properties:
-        name:
-          type: string
-          description: A human readable name for the role. Does not need to be unique.
-        description:
-          type: string
-          description: A description of the role to help clarify its purpose. Does not need to be unique.
-        permissions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Roles.Permission'
-          description: List of permissions to assign to this role
-      description: Role data for create operations
-      example:
-        name: Host Inventory Admin
-        description: Custom role for host inventory management
-        permissions:
-          - application: inventory
-            resource_type: hosts
-            operation: read
-          - application: inventory
-            resource_type: hosts
-            operation: write
-=======
     Roles.RoleListResponse:
       type: object
       required:
@@ -1597,7 +1607,36 @@ components:
         data:
           - id: 550e8400-e29b-41d4-a716-446655440002
             name: Workspace Admin
->>>>>>> 451a585e (Add spec for roles/ list endpoint)
+            description: description
+    Roles.WriteRole:
+      type: object
+      required:
+        - name
+        - description
+        - permissions
+      properties:
+        name:
+          type: string
+          description: A human readable name for the role. Does not need to be unique.
+        description:
+          type: string
+          description: A description of the role to help clarify its purpose. Does not need to be unique.
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Roles.Permission'
+          description: List of permissions to assign to this role
+      description: Role data for create operations
+      example:
+        name: Host Inventory Admin
+        description: Custom role for host inventory management
+        permissions:
+          - application: inventory
+            resource_type: hosts
+            operation: read
+          - application: inventory
+            resource_type: hosts
+            operation: write
     Timestamps:
       type: object
       required:
