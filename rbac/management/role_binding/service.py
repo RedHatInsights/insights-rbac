@@ -20,9 +20,12 @@ from typing import Optional
 
 from django.db.models import Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
+from internal.utils import read_tuples_from_kessel
 from management.group.model import Group
+from management.permission.scope_service import Scope
 from management.principal.model import Principal
-from management.role.v2_model import RoleBinding, RoleBindingGroup
+from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.workspace.model import Workspace
 
 from api.models import Tenant
@@ -41,6 +44,8 @@ class RoleBindingService:
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject (group) from a dictionary of parameters.
 
+        Includes both database role bindings and virtual role bindings from Relations API.
+
         Args:
             params: Dictionary of validated query parameters (from input serializer)
 
@@ -53,6 +58,9 @@ class RoleBindingService:
         """
         # Build base queryset for the specified resource
         queryset = self._build_base_queryset(params["resource_id"], params["resource_type"])
+
+        # Ensure groups with virtual bindings are included in queryset
+        queryset = self._add_virtual_bindings(queryset, params["resource_id"], params["resource_type"])
 
         # Apply subject filters
         queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
@@ -175,5 +183,205 @@ class RoleBindingService:
 
         if subject_id:
             queryset = queryset.filter(uuid=subject_id)
+
+        return queryset
+
+    def get_virtual_bindings(self, resource_id: str, resource_type: str) -> dict:
+        """Get virtual role bindings from Relations API.
+
+        Virtual bindings are default role bindings that exist only in Relations API,
+        not in the database. These occur when a tenant doesn't have a custom default group.
+
+        Args:
+            resource_id: The resource identifier
+            resource_type: The type of resource
+
+        Returns:
+            Dict mapping group_uuid to list of (binding_id, role) tuples
+        """
+        virtual_groups_map = {}
+
+        try:
+            tenant_mapping = self.tenant.tenant_mapping
+        except TenantMapping.DoesNotExist:
+            # Tenant not bootstrapped, no virtual bindings
+            return virtual_groups_map
+
+        # Check if tenant has custom default group
+        has_custom_default_group = Group.platform_default_set().filter(tenant=self.tenant).exists()
+
+        if has_custom_default_group:
+            # Virtual bindings don't exist if custom default group exists
+            return virtual_groups_map
+
+        # Determine scope for the resource
+        scope = None
+        if resource_type == "workspace":
+            try:
+                workspace = Workspace.objects.get(id=resource_id, tenant=self.tenant)
+                if workspace.type == Workspace.Types.DEFAULT:
+                    scope = Scope.DEFAULT
+                elif workspace.type == Workspace.Types.ROOT:
+                    scope = Scope.ROOT
+                # Standard workspaces don't have virtual bindings
+            except Workspace.DoesNotExist:
+                return virtual_groups_map
+        elif resource_type == "tenant":
+            scope = Scope.TENANT
+        else:
+            # Unknown resource type, no virtual bindings
+            return virtual_groups_map
+
+        if scope is None:
+            return virtual_groups_map
+
+        # Get default role binding UUIDs for this scope from TenantMapping
+        # Track access_type along with binding_uuid so we can get group UUID directly
+        binding_info = []
+        for access_type in DefaultAccessType:
+            try:
+                binding_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type, scope))
+                group_uuid = str(tenant_mapping.group_uuid_for(access_type))
+                binding_info.append((binding_uuid, group_uuid, access_type))
+            except Exception:
+                continue
+
+        if not binding_info:
+            return virtual_groups_map
+
+        # Query Relations API for each builtin binding UUID to avoid reading all bindings
+        virtual_bindings = []
+        for binding_uuid, group_uuid, access_type in binding_info:
+            try:
+                binding_tuples = read_tuples_from_kessel(
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    relation="binding",
+                    subject_type="role_binding",
+                    subject_id=binding_uuid,
+                )
+                # If tuple exists, this binding is attached to the resource
+                if binding_tuples:
+                    virtual_bindings.append((binding_uuid, group_uuid))
+            except Exception as e:
+                logger.warning(f"Failed to read virtual binding {binding_uuid} from Relations API: {e}")
+                continue
+
+        if not virtual_bindings:
+            return virtual_groups_map
+
+        # For each virtual binding, get its role (group is already known from TenantMapping)
+        for binding_id, group_id in virtual_bindings:
+            try:
+                # Get role from binding
+                # TODO: can cache this to improve performance
+                role_tuples = read_tuples_from_kessel(
+                    resource_type="role_binding",
+                    resource_id=binding_id,
+                    relation="role",
+                    subject_type="role",
+                    subject_id="",
+                )
+                if not role_tuples:
+                    continue
+
+                role_id = role_tuples[0].get("tuple", {}).get("subject", {}).get("subject", {}).get("id")
+                if not role_id:
+                    continue
+
+                # Get role object
+                try:
+                    role = RoleV2.objects.get(uuid=role_id)
+                except RoleV2.DoesNotExist:
+                    logger.warning(f"Virtual binding references non-existent role: {role_id}")
+                    continue
+
+                # Add to map
+                if group_id not in virtual_groups_map:
+                    virtual_groups_map[group_id] = []
+                virtual_groups_map[group_id].append((binding_id, role))
+
+            except Exception as e:
+                logger.warning(f"Error processing virtual binding {binding_id}: {e}")
+                continue
+
+        return virtual_groups_map
+
+    def _add_virtual_bindings(self, queryset: QuerySet, resource_id: str, resource_type: str) -> QuerySet:
+        """Ensure groups with virtual bindings are included in queryset.
+
+        Args:
+            queryset: Base queryset from database
+            resource_id: The resource identifier
+            resource_type: The type of resource
+
+        Returns:
+            QuerySet that includes groups with virtual bindings
+        """
+        virtual_groups_map = self.get_virtual_bindings(resource_id, resource_type)
+
+        if not virtual_groups_map:
+            return queryset
+
+        # Get group UUIDs that have virtual bindings but aren't in queryset
+        group_uuids_in_queryset = set(queryset.values_list("uuid", flat=True))
+        virtual_group_uuids = set(virtual_groups_map.keys())
+        missing_group_uuids = virtual_group_uuids - group_uuids_in_queryset
+
+        if missing_group_uuids:
+            # Instead of union (which doesn't work with prefetch_related),
+            # filter the base queryset to include missing groups using Q objects
+
+            # Build a filter for missing groups
+            missing_filter = Q(uuid__in=list(missing_group_uuids))
+
+            # Rebuild queryset with expanded filter
+            # Start fresh with groups that have bindings OR are in virtual bindings
+            queryset = (
+                Group.objects.filter(
+                    tenant=self.tenant,
+                )
+                .filter(
+                    Q(
+                        role_binding_entries__binding__resource_type=resource_type,
+                        role_binding_entries__binding__resource_id=resource_id,
+                    )
+                    | missing_filter
+                )
+                .distinct()
+            )
+
+            # Re-apply annotations
+            queryset = queryset.annotate(
+                principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True)
+            )
+
+            # Re-apply prefetch for bindings
+            binding_queryset = RoleBinding.objects.filter(
+                resource_type=resource_type, resource_id=resource_id
+            ).select_related("role")
+
+            rolebinding_group_queryset = RoleBindingGroup.objects.filter(
+                binding__resource_type=resource_type, binding__resource_id=resource_id
+            ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
+
+            queryset = queryset.prefetch_related(
+                Prefetch(
+                    "role_binding_entries",
+                    queryset=rolebinding_group_queryset,
+                    to_attr="filtered_bindings",
+                )
+            )
+
+            # Re-apply latest_modified annotation
+            queryset = queryset.annotate(
+                latest_modified=Max(
+                    "role_binding_entries__binding__role__modified",
+                    filter=Q(
+                        role_binding_entries__binding__resource_type=resource_type,
+                        role_binding_entries__binding__resource_id=resource_id,
+                    ),
+                )
+            )
 
         return queryset

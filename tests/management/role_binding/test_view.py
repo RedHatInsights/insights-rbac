@@ -26,6 +26,7 @@ from rest_framework.test import APIClient
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
+from management.tenant_mapping.model import TenantMapping
 from rbac import urls
 from tests.identity_request import IdentityRequest
 
@@ -406,3 +407,117 @@ class RoleBindingViewSetTest(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.read_tuples_from_kessel")
+    def test_by_subject_includes_virtual_bindings(self, mock_read_tuples, mock_permission):
+        """Test that virtual bindings are included in the API response."""
+        # Create TenantMapping
+        tenant_mapping = TenantMapping.objects.create(tenant=self.tenant)
+
+        # Create platform default group (not custom)
+        platform_group = Group.objects.create(
+            name="Platform Default Group",
+            tenant=self.tenant,
+            platform_default=False,
+        )
+
+        # Create a role for virtual bindings
+        virtual_role = RoleV2.objects.create(
+            name="virtual_role",
+            tenant=self.tenant,
+        )
+
+        binding_id = str(tenant_mapping.default_role_binding_uuid)
+        group_id = str(platform_group.uuid)
+        role_id = str(virtual_role.uuid)
+
+        # Mock Relations API responses
+        def read_tuples_fn(resource_type, resource_id, relation, subject_type, subject_id=""):
+            if relation == "binding" and resource_type == "workspace":
+                return [
+                    {
+                        "tuple": {
+                            "resource": {
+                                "type": {"namespace": "rbac", "name": "workspace"},
+                                "id": str(self.default_workspace.id),
+                            },
+                            "relation": "binding",
+                            "subject": {
+                                "subject": {
+                                    "type": {"namespace": "rbac", "name": "role_binding"},
+                                    "id": binding_id,
+                                },
+                            },
+                        }
+                    }
+                ]
+            elif relation == "subject" and resource_type == "role_binding":
+                return [
+                    {
+                        "tuple": {
+                            "resource": {
+                                "type": {"namespace": "rbac", "name": "role_binding"},
+                                "id": binding_id,
+                            },
+                            "relation": "subject",
+                            "subject": {
+                                "subject": {
+                                    "type": {"namespace": "rbac", "name": "group"},
+                                    "id": group_id,
+                                },
+                            },
+                        }
+                    }
+                ]
+            elif relation == "role" and resource_type == "role_binding":
+                return [
+                    {
+                        "tuple": {
+                            "resource": {
+                                "type": {"namespace": "rbac", "name": "role_binding"},
+                                "id": binding_id,
+                            },
+                            "relation": "role",
+                            "subject": {
+                                "subject": {
+                                    "type": {"namespace": "rbac", "name": "role"},
+                                    "id": role_id,
+                                },
+                            },
+                        }
+                    }
+                ]
+            return []
+
+        mock_read_tuples.side_effect = read_tuples_fn
+
+        # Make API request
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.default_workspace.id}&resource_type=workspace",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("data", response.data)
+
+        # Check that platform group is in results (even though it has no database bindings)
+        group_ids = [item["subject"]["id"] for item in response.data["data"]]
+        self.assertIn(platform_group.uuid, group_ids)
+
+        # Find the group in results and check it has the virtual role
+        platform_group_data = next(
+            item for item in response.data["data"] if item["subject"]["id"] == platform_group.uuid
+        )
+        role_ids = [role["id"] for role in platform_group_data["roles"]]
+        self.assertIn(virtual_role.uuid, role_ids)
+
+        # Cleanup
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        platform_group.delete()
+        virtual_role.delete()

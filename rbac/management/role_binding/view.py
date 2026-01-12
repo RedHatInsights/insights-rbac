@@ -79,12 +79,57 @@ class RoleBindingViewSet(BaseV2ViewSet):
         # Get role bindings queryset using validated parameters
         queryset = service.get_role_bindings_by_subject(validated_params)
 
+        # Get virtual bindings and attach them to groups
+        virtual_groups_map = service.get_virtual_bindings(
+            validated_params["resource_id"], validated_params["resource_type"]
+        )
+
         # Build context for output serializer
         context = {
             "request": request,
+            "virtual_groups_map": virtual_groups_map,
             **service.build_context(validated_params),
         }
 
         page = self.paginate_queryset(queryset)
+
+        # Attach virtual bindings to groups in the paginated results
+        if virtual_groups_map and page:
+            for group in page:
+                group_uuid = str(group.uuid)
+                if group_uuid in virtual_groups_map:
+                    # Ensure filtered_bindings exists
+                    if not hasattr(group, "filtered_bindings"):
+                        group.filtered_bindings = []
+
+                    # Create synthetic RoleBindingGroup-like objects for virtual bindings
+                    for binding_id, role in virtual_groups_map[group_uuid]:
+                        mock_binding_group = type(
+                            "MockRoleBindingGroup",
+                            (),
+                            {
+                                "binding": type(
+                                    "MockRoleBinding",
+                                    (),
+                                    {
+                                        "uuid": binding_id,
+                                        "role": role,
+                                        "resource_type": validated_params["resource_type"],
+                                        "resource_id": validated_params["resource_id"],
+                                    },
+                                )(),
+                            },
+                        )()
+                        group.filtered_bindings.append(mock_binding_group)
+
+                    # Update latest_modified if needed
+                    virtual_role_dates = [
+                        r.modified for _, r in virtual_groups_map[group_uuid] if hasattr(r, "modified")
+                    ]
+                    if virtual_role_dates:
+                        current_latest = getattr(group, "latest_modified", None)
+                        if current_latest is None or max(virtual_role_dates) > current_latest:
+                            group.latest_modified = max(virtual_role_dates)
+
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)

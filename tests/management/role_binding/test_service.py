@@ -15,12 +15,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Tests for the RoleBindingService and Serializer."""
-from django.test import TestCase
+from unittest.mock import patch
+from django.test import TestCase, override_settings
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
 from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
 from management.role_binding.service import RoleBindingService
+from management.tenant_mapping.model import TenantMapping, DefaultAccessType
+from management.permission.scope_service import Scope
 from tests.identity_request import IdentityRequest
 
 
@@ -602,3 +605,412 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         # Check last_modified
         self.assertIn("last_modified", data)
+
+
+class VirtualBindingsTests(IdentityRequest):
+    """Tests for virtual role bindings from Relations API."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+
+        # Create TenantMapping for tenant
+        self.tenant_mapping = TenantMapping.objects.create(tenant=self.tenant)
+
+        # Create workspace hierarchy
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
+
+        # Create platform default group (not custom)
+        self.platform_default_group = Group.objects.create(
+            name="Platform Default Group",
+            tenant=self.tenant,
+            platform_default=False,  # Not a custom default group
+        )
+
+        # Create Group objects for default groups from TenantMapping (needed for virtual bindings)
+        # These groups exist in TenantMapping but need to be in the database for queryset filtering
+        Group.objects.get_or_create(
+            uuid=self.tenant_mapping.default_group_uuid,
+            defaults={"name": "Default Group", "tenant": self.tenant},
+        )
+        Group.objects.get_or_create(
+            uuid=self.tenant_mapping.default_admin_group_uuid,
+            defaults={"name": "Default Admin Group", "tenant": self.tenant},
+        )
+
+        # Create a role for virtual bindings
+        self.virtual_role = RoleV2.objects.create(
+            name="virtual_role",
+            tenant=self.tenant,
+        )
+
+        self.service = RoleBindingService(tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down test data."""
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    def _create_mock_read_tuples(self, binding_tuples, group_tuples, role_tuples):
+        """Create a mock function for read_tuples_from_kessel."""
+        call_count = {"binding": 0, "group": 0, "role": 0}
+
+        def read_tuples_fn(resource_type, resource_id, relation, subject_type, subject_id=""):
+            """Mock function to return tuples based on relation type."""
+            if relation == "binding":
+                call_count["binding"] += 1
+                return binding_tuples
+            elif relation == "subject":
+                call_count["group"] += 1
+                return group_tuples
+            elif relation == "role":
+                call_count["role"] += 1
+                return role_tuples
+            return []
+
+        return read_tuples_fn
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.read_tuples_from_kessel")
+    def test_get_virtual_bindings_includes_bindings_when_no_custom_default_group(self, mock_read_tuples):
+        """Test that virtual bindings are returned when tenant has no custom default group."""
+        # Create virtual binding data
+        binding_id = str(self.tenant_mapping.default_role_binding_uuid)
+        # Use group UUID from TenantMapping (not platform_default_group)
+        group_id = str(self.tenant_mapping.group_uuid_for(DefaultAccessType.USER))
+        role_id = str(self.virtual_role.uuid)
+
+        binding_tuples = [
+            {
+                "tuple": {
+                    "resource": {
+                        "type": {"namespace": "rbac", "name": "workspace"},
+                        "id": str(self.default_workspace.id),
+                    },
+                    "relation": "binding",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    },
+                }
+            }
+        ]
+
+        group_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    "relation": "subject",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "group"}, "id": group_id},
+                    },
+                }
+            }
+        ]
+
+        role_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    "relation": "role",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role"}, "id": role_id},
+                    },
+                }
+            }
+        ]
+
+        # Set up mock to return different tuples based on relation and subject_id
+        def read_tuples_fn(resource_type, resource_id, relation, subject_type, subject_id=""):
+            if relation == "binding":
+                # Only return tuples if subject_id matches or is empty (for backward compatibility)
+                if subject_id == "" or subject_id == binding_id:
+                    return binding_tuples
+                return []
+            elif relation == "subject":
+                return group_tuples
+            elif relation == "role":
+                return role_tuples
+            return []
+
+        mock_read_tuples.side_effect = read_tuples_fn
+
+        # Get virtual bindings
+        virtual_groups_map = self.service.get_virtual_bindings(str(self.default_workspace.id), "workspace")
+
+        # Should have virtual bindings
+        self.assertIn(group_id, virtual_groups_map)
+        self.assertEqual(len(virtual_groups_map[group_id]), 1)
+        binding_id_returned, role_returned = virtual_groups_map[group_id][0]
+        self.assertEqual(binding_id_returned, binding_id)
+        self.assertEqual(role_returned.uuid, self.virtual_role.uuid)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_get_virtual_bindings_excludes_bindings_when_custom_default_group_exists(self):
+        """Test that virtual bindings are NOT returned when tenant has custom default group."""
+        # Create custom default group
+        custom_group = Group.objects.create(
+            name="Custom Default Group",
+            tenant=self.tenant,
+            platform_default=True,  # This is a custom default group
+        )
+
+        # Get virtual bindings - should return empty
+        virtual_groups_map = self.service.get_virtual_bindings(str(self.default_workspace.id), "workspace")
+
+        # Should be empty because custom default group exists
+        self.assertEqual(len(virtual_groups_map), 0)
+
+        # Cleanup
+        custom_group.delete()
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
+    def test_get_virtual_bindings_returns_empty_when_replication_disabled(self):
+        """Test that virtual bindings are not returned when replication is disabled."""
+        virtual_groups_map = self.service.get_virtual_bindings(str(self.default_workspace.id), "workspace")
+
+        self.assertEqual(len(virtual_groups_map), 0)
+
+    def test_get_virtual_bindings_returns_empty_when_no_tenant_mapping(self):
+        """Test that virtual bindings are not returned when tenant has no TenantMapping."""
+        # Delete TenantMapping
+        self.tenant_mapping.delete()
+
+        virtual_groups_map = self.service.get_virtual_bindings(str(self.default_workspace.id), "workspace")
+
+        self.assertEqual(len(virtual_groups_map), 0)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.read_tuples_from_kessel")
+    def test_get_virtual_bindings_for_root_workspace(self, mock_read_tuples):
+        """Test that virtual bindings work for root workspace scope."""
+        binding_id = str(self.tenant_mapping.root_scope_default_role_binding_uuid)
+        # Use group UUID from TenantMapping (not platform_default_group)
+        group_id = str(self.tenant_mapping.group_uuid_for(DefaultAccessType.USER))
+        role_id = str(self.virtual_role.uuid)
+
+        binding_tuples = [
+            {
+                "tuple": {
+                    "resource": {
+                        "type": {"namespace": "rbac", "name": "workspace"},
+                        "id": str(self.root_workspace.id),
+                    },
+                    "relation": "binding",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    },
+                }
+            }
+        ]
+
+        group_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    "relation": "subject",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "group"}, "id": group_id},
+                    },
+                }
+            }
+        ]
+
+        role_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    "relation": "role",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role"}, "id": role_id},
+                    },
+                }
+            }
+        ]
+
+        def read_tuples_fn(resource_type, resource_id, relation, subject_type, subject_id=""):
+            if relation == "binding":
+                # Only return tuples if subject_id matches or is empty (for backward compatibility)
+                if subject_id == "" or subject_id == binding_id:
+                    return binding_tuples
+                return []
+            elif relation == "subject":
+                return group_tuples
+            elif relation == "role":
+                return role_tuples
+            return []
+
+        mock_read_tuples.side_effect = read_tuples_fn
+
+        virtual_groups_map = self.service.get_virtual_bindings(str(self.root_workspace.id), "workspace")
+
+        self.assertIn(group_id, virtual_groups_map)
+        self.assertEqual(len(virtual_groups_map[group_id]), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.read_tuples_from_kessel")
+    def test_get_virtual_bindings_for_tenant_scope(self, mock_read_tuples):
+        """Test that virtual bindings work for tenant scope."""
+        binding_id = str(self.tenant_mapping.tenant_scope_default_role_binding_uuid)
+        # Use group UUID from TenantMapping (not platform_default_group)
+        group_id = str(self.tenant_mapping.group_uuid_for(DefaultAccessType.USER))
+        role_id = str(self.virtual_role.uuid)
+        tenant_resource_id = f"tenant:{self.tenant.org_id}"
+
+        binding_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "tenant"}, "id": tenant_resource_id},
+                    "relation": "binding",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    },
+                }
+            }
+        ]
+
+        group_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    "relation": "subject",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "group"}, "id": group_id},
+                    },
+                }
+            }
+        ]
+
+        role_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    "relation": "role",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role"}, "id": role_id},
+                    },
+                }
+            }
+        ]
+
+        def read_tuples_fn(resource_type, resource_id, relation, subject_type, subject_id=""):
+            if relation == "binding":
+                # Only return tuples if subject_id matches or is empty (for backward compatibility)
+                if subject_id == "" or subject_id == binding_id:
+                    return binding_tuples
+                return []
+            elif relation == "subject":
+                return group_tuples
+            elif relation == "role":
+                return role_tuples
+            return []
+
+        mock_read_tuples.side_effect = read_tuples_fn
+
+        virtual_groups_map = self.service.get_virtual_bindings(tenant_resource_id, "tenant")
+
+        self.assertIn(group_id, virtual_groups_map)
+        self.assertEqual(len(virtual_groups_map[group_id]), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.read_tuples_from_kessel")
+    def test_add_virtual_bindings_includes_missing_groups(self, mock_read_tuples):
+        """Test that _add_virtual_bindings includes groups that only have virtual bindings."""
+        binding_id = str(self.tenant_mapping.default_role_binding_uuid)
+        # Use group UUID from TenantMapping (not platform_default_group)
+        group_id = str(self.tenant_mapping.group_uuid_for(DefaultAccessType.USER))
+        role_id = str(self.virtual_role.uuid)
+
+        binding_tuples = [
+            {
+                "tuple": {
+                    "resource": {
+                        "type": {"namespace": "rbac", "name": "workspace"},
+                        "id": str(self.default_workspace.id),
+                    },
+                    "relation": "binding",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    },
+                }
+            }
+        ]
+
+        role_tuples = [
+            {
+                "tuple": {
+                    "resource": {"type": {"namespace": "rbac", "name": "role_binding"}, "id": binding_id},
+                    "relation": "role",
+                    "subject": {
+                        "subject": {"type": {"namespace": "rbac", "name": "role"}, "id": role_id},
+                    },
+                }
+            }
+        ]
+
+        def read_tuples_fn(resource_type, resource_id, relation, subject_type, subject_id=""):
+            if relation == "binding":
+                # Only return tuples if subject_id matches or is empty (for backward compatibility)
+                if subject_id == "" or subject_id == binding_id:
+                    return binding_tuples
+                return []
+            elif relation == "role":
+                return role_tuples
+            return []
+
+        mock_read_tuples.side_effect = read_tuples_fn
+
+        # Get queryset - should include the group with virtual bindings
+        params = {
+            "resource_id": str(self.default_workspace.id),
+            "resource_type": "workspace",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Group should be in queryset even though it has no database bindings
+        # Use group UUID from TenantMapping (not platform_default_group)
+        expected_group_uuid = self.tenant_mapping.group_uuid_for(DefaultAccessType.USER)
+        group_uuids = list(queryset.values_list("uuid", flat=True))
+        self.assertIn(expected_group_uuid, group_uuids)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.read_tuples_from_kessel")
+    def test_get_virtual_bindings_skips_standard_workspace(self, mock_read_tuples):
+        """Test that virtual bindings are NOT returned for standard workspaces."""
+        # Create a standard workspace
+        standard_workspace = Workspace.objects.create(
+            name="Standard Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        # Mock should not be called for standard workspaces since we return early
+        # But let's set it up anyway to verify it's not used
+        mock_read_tuples.return_value = []
+
+        # Get virtual bindings for standard workspace
+        virtual_groups_map = self.service.get_virtual_bindings(str(standard_workspace.id), "workspace")
+
+        # Should return empty - standard workspaces don't have virtual bindings
+        self.assertEqual(len(virtual_groups_map), 0)
+
+        # Verify read_tuples_from_kessel was not called (we return early when scope is None)
+        # Actually, it might be called but the scope check happens first, so let's verify
+        # the result is empty regardless
+
+        # Cleanup
+        standard_workspace.delete()
