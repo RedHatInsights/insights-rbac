@@ -1008,4 +1008,124 @@ namespace Roles {
         @query fields?: string = DefaultRoleFieldMask;
     ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
 
+    @example(#{
+        meta: #{
+            limit: 10
+        },
+        links: #{
+            next: "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
+            previous: null
+        },
+        data: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                name: "Workspace Admin"
+            }
+        ]
+    })
+    model RoleListResponse {
+        @doc("Pagination metadata")
+        meta: CursorPaginationMeta;
+        @doc("Pagination links")
+        links: CursorPaginationLinks;
+        @doc("List of roles")
+        data: Role[];
+    }
+
+    @doc("List the roles for a tenant")
+    @summary("List the roles for a tenant")
+    @opExample(#{
+        parameters: #{
+            limit: 10
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
+                previous: null
+            },
+            data: #[
+                #{
+                    id: "550e8400-e29b-41d4-a716-446655440002",
+                    name: "Workspace Admin",
+                    description: "description",
+                    permissions_count: 2,
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                }
+            ]
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            fields: "permissions"
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "/api/rbac/v2/roles/?limit=10&fields=permissions&cursor=eyJpZCI6IjEyMyJ9",
+                previous: null
+            },
+            data: #[
+                #{
+                    id: "550e8400-e29b-41d4-a716-446655440002",
+                    name: "Workspace Admin",
+                    description: "description",
+                    permissions_count: 2,
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                    permissions: #[
+                        #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                        #{ application: "inventory", resource_type: "hosts", operation: "write" }
+                    ]
+                }
+            ]
+        }
+    })
+    @get op list(
+        @query limit?: int64 = 10;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: string;
+
+        @doc("Filter by role name using string contains search.")
+        @query name?: string;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size and improve performance.
+
+        **Default Behavior (no fields parameter):**
+        Basic required fields are always included: id, name, description, permissions_count, last_modified
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are included in the response. Required fields (id, name, description, permissions_count, last_modified) are always included even if not specified.
+
+        **Syntax:**
+        - Use comma to separate multiple fields: `description,permissions_count,last_modified`
+
+        **Available Fields:**
+
+        **Required fields (always included):**
+        - id (UUID) - role identifier
+        - name (string) - role name
+        - description (string) - role description
+        - permissions_count (integer) - number of permissions assigned to this role
+        - last_modified (datetime) - last modification timestamp
+
+        **Optional fields:**
+        - permissions (array) - full list of permissions assigned to this role
+
+        **Example:**
+        - `permissions` - Include full permissions array in addition to default fields
+        """)
+        @example("permissions")
+        @query fields?: string;
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.")
+        @example("-last_modified,name")
+        @query ordering?: string;
+    ): RoleListResponse | Problems.CommonProblems;
 }

@@ -235,15 +235,46 @@ paths:
       tags:
         - Role Bindings
   /roles/:
+<<<<<<< HEAD
     post:
       operationId: Roles_create
       summary: Create a custom role in tenant
       description: Create a custom role in tenant
       parameters:
+=======
+    get:
+      operationId: Roles_list
+      summary: List the roles for a tenant
+      description: List the roles for a tenant
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 10
+          explode: false
+        - name: cursor
+          in: query
+          required: false
+          description: Cursor for cursor-based pagination.
+          schema:
+            type: string
+          explode: false
+        - name: name
+          in: query
+          required: false
+          description: Filter by role name using string contains search.
+          schema:
+            type: string
+          explode: false
+>>>>>>> 451a585e (Add spec for roles/ list endpoint)
         - name: fields
           in: query
           required: false
           description: |-
+<<<<<<< HEAD
             Control which fields are included in the response to optimize payload size.
 
             **When fields parameter is provided:**
@@ -281,6 +312,84 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem400'
+=======
+            Control which fields are included in the response to optimize payload size and improve performance.
+
+            **Default Behavior (no fields parameter):**
+            Basic required fields are always included: id, name, description, permissions_count, last_modified
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are included in the response. Required fields (id, name, description, permissions_count, last_modified) are always included even if not specified.
+
+            **Syntax:**
+            - Use comma to separate multiple fields: `description,permissions_count,last_modified`
+
+            **Available Fields:**
+
+            **Required fields (always included):**
+            - id (UUID) - role identifier
+            - name (string) - role name
+            - description (string) - role description
+            - permissions_count (integer) - number of permissions assigned to this role
+            - last_modified (datetime) - last modification timestamp
+
+            **Optional fields:**
+            - permissions (array) - full list of permissions assigned to this role
+
+            **Example:**
+            - `permissions` - Include full permissions array in addition to default fields
+          schema:
+            type: string
+          explode: false
+        - name: ordering
+          in: query
+          required: false
+          description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified."
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Roles.RoleListResponse'
+              examples:
+                example0:
+                  value:
+                    meta:
+                      limit: 10
+                    links:
+                      next: /api/rbac/v2/roles/?limit=10&fields=permissions&cursor=eyJpZCI6IjEyMyJ9
+                      previous: null
+                    data:
+                      - id: 550e8400-e29b-41d4-a716-446655440002
+                        name: Workspace Admin
+                        description: description
+                        permissions_count: 2
+                        last_modified: '2024-08-04T12:00:00Z'
+                        permissions:
+                          - application: inventory
+                            resource_type: hosts
+                            operation: read
+                          - application: inventory
+                            resource_type: hosts
+                            operation: write
+                example1:
+                  value:
+                    meta:
+                      limit: 10
+                    links:
+                      next: /api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9
+                      previous: null
+                    data:
+                      - id: 550e8400-e29b-41d4-a716-446655440002
+                        name: Workspace Admin
+                        description: description
+                        permissions_count: 2
+                        last_modified: '2024-08-04T12:00:00Z'
+>>>>>>> 451a585e (Add spec for roles/ list endpoint)
         '401':
           description: Access is unauthorized.
           content:
@@ -329,6 +438,7 @@ paths:
                     format: uri
       tags:
         - Roles
+<<<<<<< HEAD
       requestBody:
         required: true
         content:
@@ -345,6 +455,8 @@ paths:
                 - application: inventory
                   resource_type: hosts
                   operation: write
+=======
+>>>>>>> 451a585e (Add spec for roles/ list endpoint)
   /workspaces/:
     get:
       operationId: Workspaces_list
@@ -1424,6 +1536,7 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
+<<<<<<< HEAD
     Roles.WriteRole:
       type: object
       required:
@@ -1453,6 +1566,37 @@ components:
           - application: inventory
             resource_type: hosts
             operation: write
+=======
+    Roles.RoleListResponse:
+      type: object
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/CursorPaginationMeta'
+          description: Pagination metadata
+        links:
+          allOf:
+            - $ref: '#/components/schemas/CursorPaginationLinks'
+          description: Pagination links
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Roles.Role'
+          description: List of roles
+      example:
+        meta:
+          limit: 10
+        links:
+          next: /api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9
+          previous: null
+        data:
+          - id: 550e8400-e29b-41d4-a716-446655440002
+            name: Workspace Admin
+>>>>>>> 451a585e (Add spec for roles/ list endpoint)
     Timestamps:
       type: object
       required:
