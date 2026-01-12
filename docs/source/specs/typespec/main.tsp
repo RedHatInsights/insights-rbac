@@ -1126,6 +1126,6 @@ namespace Roles {
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.")
         @example("-last_modified,name")
-        @query ordering?: string;
+        @query order_by?: string;
     ): RoleListResponse | Problems.CommonProblems;
 }

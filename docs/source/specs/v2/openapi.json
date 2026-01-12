@@ -490,7 +490,7 @@
             "explode": false
           },
           {
-            "name": "ordering",
+            "name": "order_by",
             "in": "query",
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.",
