@@ -313,6 +313,100 @@ paths:
                 - application: inventory
                   resource_type: hosts
                   operation: write
+  /roles/{id}/:
+    put:
+      operationId: Roles_update
+      summary: Update a custom role
+      description: Update a custom role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identification
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem404'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Roles.UpdateRoleRequest'
+            example:
+              name: Updated Host Inventory Admin
+              description: Updated role description
+              permissions:
+                - application: host_inventory
+                  resource_type: hosts
+                  operation: read
+                - application: host_inventory
+                  resource_type: hosts
+                  operation: write
+                - application: host_inventory
+                  resource_type: hosts
+                  operation: delete
   /workspaces/:
     get:
       operationId: Workspaces_list
@@ -1334,13 +1428,13 @@ components:
             $ref: '#/components/schemas/Roles.Permission'
           description: List of permissions to assign to this role
       example:
-        name: Custom Inventory Admin
-        description: Custom role for inventory management
+        name: Host Inventory Admin
+        description: Custom role for host inventory management
         permissions:
-          - application: inventory
+          - application: host_inventory
             resource_type: hosts
             operation: read
-          - application: inventory
+          - application: host_inventory
             resource_type: hosts
             operation: write
     Roles.Permission:
@@ -1405,6 +1499,37 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
+    Roles.UpdateRoleRequest:
+      type: object
+      required:
+        - name
+        - description
+        - permissions
+      properties:
+        name:
+          type: string
+          description: Role name
+        description:
+          type: string
+          description: Role description
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Roles.Permission'
+          description: List of permissions to assign to this role
+      example:
+        name: Updated Host Inventory Admin
+        description: Updated role description
+        permissions:
+          - application: host_inventory
+            resource_type: hosts
+            operation: read
+          - application: host_inventory
+            resource_type: hosts
+            operation: write
+          - application: host_inventory
+            resource_type: hosts
+            operation: delete
     Timestamps:
       type: object
       required:

@@ -978,4 +978,52 @@ namespace Roles {
     })
     @post op create(@body body: CreateRoleRequest): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
 
+    @example(#{
+        name: "Updated Host Inventory Admin Role",
+        description: "Updated role description and/or name and/or permissions",
+        permissions: #[
+            #{ application: "host_inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "host_inventory", resource_type: "hosts", operation: "write" },
+            #{ application: "host_inventory", resource_type: "hosts", operation: "delete" }
+        ]
+    })
+    model UpdateRoleRequest {
+        @doc("Role name")
+        name: string;
+        @doc("Role description")
+        description: string;
+        @doc("List of permissions to assign to this role")
+        permissions: Permission[];
+    }
+
+    model UpdateRoleResponse {
+        @statusCode statusCode: 204;
+    }
+
+    @doc("Update a custom role")
+    @summary("Update a custom role")
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            body: #{
+                name: "Updated Host Inventory Admin",
+                description: "Updated role description",
+                permissions: #[
+                    #{ application: "host_inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "host_inventory", resource_type: "hosts", operation: "write" },
+                    #{ application: "host_inventory", resource_type: "hosts", operation: "delete" }
+                ]
+            }
+        },
+        returnType: #{
+            statusCode: 204
+        }
+    })
+    @put op update(
+        @doc("Unique identification")
+        @path id: UUID;
+        @body body: UpdateRoleRequest
+    ): UpdateRoleResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+
 }
