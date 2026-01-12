@@ -1240,7 +1240,7 @@ components:
       required:
         - application
         - resource_type
-        - verb
+        - operation
       properties:
         application:
           type: string
@@ -1248,13 +1248,13 @@ components:
         resource_type:
           type: string
           description: Resource type within the application
-        verb:
+        operation:
           type: string
-          description: Verb for this permission
+          description: Operation for this permission
       example:
         application: inventory
         resource_type: hosts
-        verb: read
+        operation: read
     Roles.Role:
       type: object
       required:
@@ -1292,10 +1292,10 @@ components:
         permissions:
           - application: inventory
             resource_type: hosts
-            verb: read
+            operation: read
           - application: inventory
             resource_type: hosts
-            verb: write
+            operation: write
         last_modified: '2024-08-04T12:00:00Z'
     Timestamps:
       type: object

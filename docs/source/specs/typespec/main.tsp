@@ -897,15 +897,15 @@ namespace Roles {
     @example(#{
         application: "inventory",
         resource_type: "hosts",
-        verb: "read"
+        operation: "read"
     })
     model Permission {
         @doc("Application name")
         application: string;
         @doc("Resource type within the application")
         resource_type: string;
-        @doc("Verb for this permission")
-        verb: string;
+        @doc("Operation for this permission")
+        operation: string;
     }
 
     @example(#{
@@ -918,8 +918,8 @@ namespace Roles {
         description: "description",
         permissions_count: 2,
         permissions: #[
-            #{ application: "inventory", resource_type: "hosts", verb: "read" },
-            #{ application: "inventory", resource_type: "hosts", verb: "write" }
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" }
         ],
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
     })
