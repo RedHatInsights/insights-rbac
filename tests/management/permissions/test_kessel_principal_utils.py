@@ -106,15 +106,13 @@ class GetKesselPrincipalIdForV2AccessTests(TestCase):
 class GetUserIdFromBearerTokenTests(TestCase):
     """Tests for _get_user_id_from_bearer_token function."""
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
-    def test_returns_user_id_from_bearer_token(self, mock_validator_class):
+    @patch("management.permissions.kessel_principal_utils._token_validator")
+    def test_returns_user_id_from_bearer_token(self, mock_validator):
         """Test that user_id is extracted from bearer token successfully."""
         mock_user = Mock()
         mock_user.user_id = "bearer-user-789"
 
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.return_value = mock_user
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
 
@@ -123,12 +121,10 @@ class GetUserIdFromBearerTokenTests(TestCase):
         self.assertEqual(result, "bearer-user-789")
         mock_validator.get_user_from_bearer_token.assert_called_once_with(mock_request)
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
-    def test_returns_none_when_user_is_none(self, mock_validator_class):
+    @patch("management.permissions.kessel_principal_utils._token_validator")
+    def test_returns_none_when_user_is_none(self, mock_validator):
         """Test that None is returned when token validator returns no user."""
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.return_value = None
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
 
@@ -136,15 +132,13 @@ class GetUserIdFromBearerTokenTests(TestCase):
 
         self.assertIsNone(result)
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
-    def test_returns_none_when_user_id_is_none(self, mock_validator_class):
+    @patch("management.permissions.kessel_principal_utils._token_validator")
+    def test_returns_none_when_user_id_is_none(self, mock_validator):
         """Test that None is returned when user has no user_id."""
         mock_user = Mock()
         mock_user.user_id = None
 
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.return_value = mock_user
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
 
@@ -152,12 +146,10 @@ class GetUserIdFromBearerTokenTests(TestCase):
 
         self.assertIsNone(result)
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
-    def test_returns_none_on_invalid_token_error(self, mock_validator_class):
+    @patch("management.permissions.kessel_principal_utils._token_validator")
+    def test_returns_none_on_invalid_token_error(self, mock_validator):
         """Test that None is returned when InvalidTokenError is raised."""
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.side_effect = InvalidTokenError("Invalid token")
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
 
@@ -165,12 +157,10 @@ class GetUserIdFromBearerTokenTests(TestCase):
 
         self.assertIsNone(result)
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
-    def test_returns_none_on_missing_authorization_error(self, mock_validator_class):
+    @patch("management.permissions.kessel_principal_utils._token_validator")
+    def test_returns_none_on_missing_authorization_error(self, mock_validator):
         """Test that None is returned when MissingAuthorizationError is raised."""
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.side_effect = MissingAuthorizationError("Missing auth")
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
 
@@ -179,12 +169,10 @@ class GetUserIdFromBearerTokenTests(TestCase):
         self.assertIsNone(result)
 
     @patch("management.permissions.kessel_principal_utils.logger")
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
-    def test_logs_warning_on_unexpected_exception(self, mock_validator_class, mock_logger):
+    @patch("management.permissions.kessel_principal_utils._token_validator")
+    def test_logs_warning_on_unexpected_exception(self, mock_validator, mock_logger):
         """Test that unexpected exceptions are logged with exc_info=True."""
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.side_effect = RuntimeError("Unexpected error")
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
 
@@ -198,38 +186,36 @@ class GetUserIdFromBearerTokenTests(TestCase):
         self.assertEqual(call_args[1]["exc_info"], True)
 
     @patch("management.permissions.kessel_principal_utils.logger")
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
-    def test_logs_debug_on_successful_extraction(self, mock_validator_class, mock_logger):
+    @patch("management.permissions.kessel_principal_utils._token_validator")
+    def test_logs_debug_on_successful_extraction(self, mock_validator, mock_logger):
         """Test that debug message is logged on successful user_id extraction."""
         mock_user = Mock()
         mock_user.user_id = "success-user-123"
 
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.return_value = mock_user
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
 
         result = _get_user_id_from_bearer_token(mock_request)
 
         self.assertEqual(result, "success-user-123")
-        mock_logger.debug.assert_called_with("Retrieved user_id from bearer token via ITSSOTokenValidator")
+        mock_logger.debug.assert_called_with(
+            "Retrieved user_id from bearer token via ITSSOTokenValidator: %s", "success-user-123"
+        )
 
 
 class ServiceAccountIntegrationTests(TestCase):
     """Integration tests for service account flow through get_kessel_principal_id_for_v2_access."""
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
+    @patch("management.permissions.kessel_principal_utils._token_validator")
     @patch("management.permissions.kessel_principal_utils.get_kessel_principal_id")
-    def test_full_service_account_flow_success(self, mock_get_principal_id, mock_validator_class):
+    def test_full_service_account_flow_success(self, mock_get_principal_id, mock_validator):
         """Test full service account flow when standard lookup fails but bearer token succeeds."""
         mock_get_principal_id.return_value = None
 
         mock_user = Mock()
         mock_user.user_id = "sa-bearer-user-999"
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.return_value = mock_user
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
         mock_request.user.is_service_account = True
@@ -239,15 +225,13 @@ class ServiceAccountIntegrationTests(TestCase):
         expected_principal_id = Principal.user_id_to_principal_resource_id("sa-bearer-user-999")
         self.assertEqual(result, expected_principal_id)
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
+    @patch("management.permissions.kessel_principal_utils._token_validator")
     @patch("management.permissions.kessel_principal_utils.get_kessel_principal_id")
-    def test_full_service_account_flow_both_fail(self, mock_get_principal_id, mock_validator_class):
+    def test_full_service_account_flow_both_fail(self, mock_get_principal_id, mock_validator):
         """Test that None is returned when both standard lookup and bearer token fail."""
         mock_get_principal_id.return_value = None
 
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.side_effect = InvalidTokenError("Bad token")
-        mock_validator_class.return_value = mock_validator
 
         mock_request = Mock()
         mock_request.user.is_service_account = True

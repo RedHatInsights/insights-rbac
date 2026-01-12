@@ -19,10 +19,16 @@
 
 import logging
 
+from management.authorization.invalid_token import InvalidTokenError
+from management.authorization.missing_authorization import MissingAuthorizationError
+from management.authorization.token_validator import ITSSOTokenValidator
 from management.principal.model import Principal
 from management.principal.proxy import get_kessel_principal_id
 
 logger = logging.getLogger(__name__)
+
+# Module-level token validator instance to avoid re-initialization on each request
+_token_validator = ITSSOTokenValidator()
 
 
 def get_kessel_principal_id_for_v2_access(request) -> str | None:
@@ -72,15 +78,10 @@ def _get_user_id_from_bearer_token(request) -> str | None:
     Returns:
         str: The user_id from the JWT "sub" claim, or None if extraction fails
     """
-    from management.authorization.token_validator import ITSSOTokenValidator
-    from management.authorization.invalid_token import InvalidTokenError
-    from management.authorization.missing_authorization import MissingAuthorizationError
-
     try:
-        token_validator = ITSSOTokenValidator()
-        user = token_validator.get_user_from_bearer_token(request)
+        user = _token_validator.get_user_from_bearer_token(request)
         if user and user.user_id:
-            logger.debug("Retrieved user_id from bearer token via ITSSOTokenValidator")
+            logger.debug("Retrieved user_id from bearer token via ITSSOTokenValidator: %s", user.user_id)
             return user.user_id
     except (InvalidTokenError, MissingAuthorizationError) as e:
         logger.debug("Failed to extract user_id from bearer token: %s", e)

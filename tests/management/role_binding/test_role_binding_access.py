@@ -851,11 +851,11 @@ class RoleBindingServiceAccountTests(RoleBindingAccessTestMixin, TransactionIden
 class RoleBindingBearerTokenTests(RoleBindingAccessTestMixin, TransactionIdentityRequest):
     """Tests for bearer token authentication flow in role binding access."""
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
+    @patch("management.permissions.kessel_principal_utils._token_validator")
     @patch("management.permissions.kessel_principal_utils.get_kessel_principal_id")
     @patch("management.permissions.workspace_inventory_access.inventory_client")
     def test_service_account_uses_bearer_token_when_standard_lookup_fails(
-        self, mock_inventory_client, mock_get_principal_id, mock_validator_class
+        self, mock_inventory_client, mock_get_principal_id, mock_validator
     ):
         """Test that service account falls back to bearer token when standard lookup fails."""
         # Standard lookup returns None
@@ -864,9 +864,7 @@ class RoleBindingBearerTokenTests(RoleBindingAccessTestMixin, TransactionIdentit
         # Bearer token extraction succeeds
         mock_user = Mock()
         mock_user.user_id = "bearer-token-user-123"
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.return_value = mock_user
-        mock_validator_class.return_value = mock_validator
 
         # Kessel allows access
         self._setup_kessel_mock(mock_inventory_client)
@@ -890,11 +888,9 @@ class RoleBindingBearerTokenTests(RoleBindingAccessTestMixin, TransactionIdentit
         self.assertTrue(result)
         mock_validator.get_user_from_bearer_token.assert_called_once_with(mock_request)
 
-    @patch("management.authorization.token_validator.ITSSOTokenValidator")
+    @patch("management.permissions.kessel_principal_utils._token_validator")
     @patch("management.permissions.kessel_principal_utils.get_kessel_principal_id")
-    def test_service_account_denied_when_bearer_token_extraction_fails(
-        self, mock_get_principal_id, mock_validator_class
-    ):
+    def test_service_account_denied_when_bearer_token_extraction_fails(self, mock_get_principal_id, mock_validator):
         """Test that service account is denied when both standard lookup and bearer token fail."""
         from management.authorization.invalid_token import InvalidTokenError
 
@@ -902,9 +898,7 @@ class RoleBindingBearerTokenTests(RoleBindingAccessTestMixin, TransactionIdentit
         mock_get_principal_id.return_value = None
 
         # Bearer token extraction fails
-        mock_validator = MagicMock()
         mock_validator.get_user_from_bearer_token.side_effect = InvalidTokenError("Invalid token")
-        mock_validator_class.return_value = mock_validator
 
         permission = RoleBindingKesselAccessPermission()
 
