@@ -16,7 +16,7 @@
 #
 """Service layer for role binding management."""
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from django.db.models import Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
@@ -26,6 +26,8 @@ from management.role.v2_model import RoleBinding, RoleBindingGroup
 from management.workspace.model import Workspace
 
 from api.models import Tenant
+
+SubjectType = Literal["group", "user"]
 
 
 logger = logging.getLogger(__name__)
@@ -39,23 +41,32 @@ class RoleBindingService:
         self.tenant = tenant
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
-        """Get role bindings grouped by subject (group) from a dictionary of parameters.
+        """Get role bindings grouped by subject from a dictionary of parameters.
 
         Args:
             params: Dictionary of validated query parameters (from input serializer)
 
         Returns:
-            QuerySet of Group objects annotated with role binding information
+            QuerySet of Group or Principal objects annotated with role binding information,
+            depending on subject_type parameter.
 
         Note:
             Ordering is handled by V2CursorPagination.get_ordering() to ensure
             cursor pagination works correctly with the requested order_by parameter.
         """
-        # Build base queryset for the specified resource
-        queryset = self._build_base_queryset(params["resource_id"], params["resource_type"])
+        subject_type = params.get("subject_type")
+        resource_id = params["resource_id"]
+        resource_type = params["resource_type"]
+        subject_id = params.get("subject_id")
 
-        # Apply subject filters
-        queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
+        if subject_type == "user":
+            # Build user queryset
+            queryset = self._build_user_queryset(resource_id, resource_type)
+            queryset = self._apply_user_filters(queryset, subject_id)
+        else:
+            # Default to group queryset (includes when subject_type is None or "group")
+            queryset = self._build_base_queryset(resource_id, resource_type)
+            queryset = self._apply_subject_filters(queryset, subject_type, subject_id)
 
         return queryset
 
@@ -96,6 +107,7 @@ class RoleBindingService:
             "resource_type": resource_type,
             "resource_name": self.get_resource_name(resource_id, resource_type),
             "field_selection": params.get("fields"),
+            "subject_type": params.get("subject_type"),
         }
 
     def _build_base_queryset(self, resource_id: str, resource_type: str) -> QuerySet:
@@ -157,22 +169,99 @@ class RoleBindingService:
         subject_type: Optional[str],
         subject_id: Optional[str],
     ) -> QuerySet:
-        """Apply subject type and ID filters to queryset.
+        """Apply subject type and ID filters to group queryset.
 
         Args:
-            queryset: Base queryset to filter
-            subject_type: Optional subject type filter (e.g., 'group', 'user')
+            queryset: Base queryset to filter (Group objects)
+            subject_type: Optional subject type filter (e.g., 'group')
             subject_id: Optional subject ID filter
 
         Returns:
             Filtered queryset
         """
         if subject_type:
-            # Currently only 'group' subject type is supported
+            # For group queryset, only 'group' subject type is valid
+            # 'user' type is handled separately in _build_user_queryset
             if subject_type != "group":
                 # Filter out all results for unsupported subject types
                 return queryset.none()
 
+        if subject_id:
+            queryset = queryset.filter(uuid=subject_id)
+
+        return queryset
+
+    def _build_user_queryset(self, resource_id: str, resource_type: str) -> QuerySet:
+        """Build queryset of users (principals) with role bindings for a resource.
+
+        Users are queried through their group memberships to groups that have
+        role bindings to the specified resource.
+
+        Args:
+            resource_id: The resource identifier
+            resource_type: The type of resource
+
+        Returns:
+            Annotated QuerySet of Principal objects (users only)
+        """
+        # Get users who are members of groups that have bindings to the specified resource
+        queryset = Principal.objects.filter(
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+            group__role_binding_entries__binding__resource_type=resource_type,
+            group__role_binding_entries__binding__resource_id=resource_id,
+        ).distinct()
+
+        # Prefetch role bindings for this resource through groups
+        binding_queryset = RoleBinding.objects.filter(
+            resource_type=resource_type, resource_id=resource_id
+        ).select_related("role")
+
+        rolebinding_group_queryset = RoleBindingGroup.objects.filter(
+            binding__resource_type=resource_type, binding__resource_id=resource_id
+        ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
+
+        # Prefetch groups with their filtered role bindings
+        group_queryset = Group.objects.filter(
+            role_binding_entries__binding__resource_type=resource_type,
+            role_binding_entries__binding__resource_id=resource_id,
+        ).prefetch_related(
+            Prefetch(
+                "role_binding_entries",
+                queryset=rolebinding_group_queryset,
+                to_attr="filtered_bindings",
+            )
+        )
+
+        queryset = queryset.prefetch_related(Prefetch("group", queryset=group_queryset, to_attr="filtered_groups"))
+
+        # Annotate with latest modified timestamp from roles
+        queryset = queryset.annotate(
+            latest_modified=Max(
+                "group__role_binding_entries__binding__role__modified",
+                filter=Q(
+                    group__role_binding_entries__binding__resource_type=resource_type,
+                    group__role_binding_entries__binding__resource_id=resource_id,
+                ),
+            )
+        )
+
+        return queryset
+
+    def _apply_user_filters(
+        self,
+        queryset: QuerySet,
+        subject_id: Optional[str],
+    ) -> QuerySet:
+        """Apply filters to user queryset.
+
+        Args:
+            queryset: Base queryset to filter (Principal objects)
+            subject_id: Optional subject ID filter (UUID)
+
+        Returns:
+            Filtered queryset
+        """
         if subject_id:
             queryset = queryset.filter(uuid=subject_id)
 

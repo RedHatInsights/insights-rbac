@@ -743,3 +743,274 @@ class RoleBindingViewSetTest(IdentityRequest):
         role_created_map = {str(r.uuid): r.created for r in roles}
         created_times = [role_created_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
         self.assertEqual(created_times, sorted(created_times))
+
+    # User subject type tests
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_returns_users(self, mock_permission):
+        """Test that subject_type=user returns users (principals)."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Should return users (we have 15 groups with 1 user each)
+        self.assertEqual(len(data), 15)
+
+        # Verify all subjects are type="user"
+        for item in data:
+            self.assertEqual(item["subject"]["type"], "user")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_data_structure(self, mock_permission):
+        """Test that user subject type response has correct structure."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user&limit=1",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        item = response.data["data"][0]
+
+        # Verify structure - no last_modified by default
+        self.assertNotIn("last_modified", item)
+        self.assertIn("subject", item)
+        self.assertIn("roles", item)
+        self.assertIn("resource", item)
+
+        # Verify subject structure - id and type, no user details by default
+        subject = item["subject"]
+        self.assertIn("id", subject)
+        self.assertIn("type", subject)
+        self.assertEqual(subject["type"], "user")
+        self.assertNotIn("user", subject)
+
+        # Verify roles structure - only id by default
+        self.assertIsInstance(item["roles"], list)
+        if item["roles"]:
+            self.assertIn("id", item["roles"][0])
+            self.assertNotIn("name", item["roles"][0])
+
+        # Verify resource structure - only id by default
+        resource = item["resource"]
+        self.assertIn("id", resource)
+        self.assertNotIn("name", resource)
+        self.assertNotIn("type", resource)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_with_fields_parameter(self, mock_permission):
+        """Test that user subject type works with fields parameter."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user"
+            "&fields=subject(user.username),role(name),resource(type)&limit=1",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        item = response.data["data"][0]
+
+        # Verify subject includes user.username
+        subject = item["subject"]
+        self.assertEqual(subject["type"], "user")
+        self.assertIn("user", subject)
+        self.assertIn("username", subject["user"])
+
+        # Verify roles include name
+        if item["roles"]:
+            self.assertIn("name", item["roles"][0])
+
+        # Verify resource includes type
+        self.assertIn("type", item["resource"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_pagination(self, mock_permission):
+        """Test that user subject type supports pagination."""
+        url = self._get_by_subject_url()
+
+        # Get first page
+        response1 = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user&limit=5",
+            **self.headers,
+        )
+        self.assertEqual(response1.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response1.data["data"]), 5)
+        page1_subjects = [item["subject"]["id"] for item in response1.data["data"]]
+
+        # Get next page
+        next_link = response1.data["links"]["next"]
+        self.assertIsNotNone(next_link)
+
+        parsed = urlparse(next_link)
+        cursor = parse_qs(parsed.query).get("cursor", [None])[0]
+        self.assertIsNotNone(cursor)
+
+        response2 = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user&limit=5&cursor={cursor}",
+            **self.headers,
+        )
+        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        page2_subjects = [item["subject"]["id"] for item in response2.data["data"]]
+
+        # Pages should have different subjects
+        self.assertEqual(len(set(page1_subjects) & set(page2_subjects)), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_order_by_username(self, mock_permission):
+        """Test ordering by user.username ascending."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user"
+            "&order_by=user.username&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Extract usernames and verify ascending order
+        user_uuids = [item["subject"]["id"] for item in data]
+        principals = Principal.objects.filter(uuid__in=user_uuids)
+        username_map = {str(p.uuid): p.username for p in principals}
+        usernames = [username_map[str(item["subject"]["id"])] for item in data]
+        self.assertEqual(usernames, sorted(usernames))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_order_by_username_descending(self, mock_permission):
+        """Test ordering by user.username descending."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user"
+            "&order_by=-user.username&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Extract usernames and verify descending order
+        user_uuids = [item["subject"]["id"] for item in data]
+        principals = Principal.objects.filter(uuid__in=user_uuids)
+        username_map = {str(p.uuid): p.username for p in principals}
+        usernames = [username_map[str(item["subject"]["id"])] for item in data]
+        self.assertEqual(usernames, sorted(usernames, reverse=True))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_rejects_group_ordering_fields(self, mock_permission):
+        """Test that group ordering fields are rejected for user subject type."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user" "&order_by=group.name",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Invalid ordering field", str(response.data))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_group_type_rejects_user_ordering_fields(self, mock_permission):
+        """Test that user ordering fields are rejected for group subject type."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=group"
+            "&order_by=user.username",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Invalid ordering field", str(response.data))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_order_by_user_uuid(self, mock_permission):
+        """Test ordering by user.uuid ascending."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user"
+            "&order_by=user.uuid&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Verify uuid ordering
+        uuids = [str(item["subject"]["id"]) for item in data]
+        self.assertEqual(uuids, sorted(uuids))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_empty_results(self, mock_permission):
+        """Test that non-existent resource returns empty results for user type."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id=00000000-0000-0000-0000-000000000000&resource_type=workspace&subject_type=user",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_user_type_filter_by_subject_id(self, mock_permission):
+        """Test filtering by subject_id with user type."""
+        # Get a specific user's UUID
+        first_principal = Principal.objects.filter(
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+            username__startswith="user_",
+        ).first()
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user"
+            f"&subject_id={first_principal.uuid}",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(str(response.data["data"][0]["subject"]["id"]), str(first_principal.uuid))

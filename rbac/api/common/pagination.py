@@ -125,14 +125,18 @@ class V2CursorPagination(CursorPagination):
     and better performance for large datasets.
 
     Supports dynamic ordering via the order_by query parameter.
-    Ordering REQUIRES dot notation (e.g., group.name, role.name).
+    Ordering REQUIRES dot notation (e.g., group.name, role.name, user.username).
     Direct field names without dot notation are not allowed.
     Multiple fields can be specified via comma-separated values
     or multiple order_by parameters.
 
-    Available ordering fields:
+    Available ordering fields (for subject_type=group):
     - group.name, group.description, group.user_count, group.uuid,
       group.created, group.modified
+    - role.name, role.uuid, role.created, role.modified
+
+    Available ordering fields (for subject_type=user):
+    - user.username, user.uuid
     - role.name, role.uuid, role.created, role.modified
     """
 
@@ -142,9 +146,8 @@ class V2CursorPagination(CursorPagination):
     ordering = "-modified"
     cursor_query_param = "cursor"
 
-    # Mapping of dot notation fields to Django ORM fields
-    # For role binding by-subject endpoint, the queryset is on Group model
-    FIELD_MAPPING = {
+    # Mapping of dot notation fields to Django ORM fields for Group queryset
+    GROUP_FIELD_MAPPING = {
         # Group fields
         "group.name": "name",
         "group.description": "description",
@@ -152,21 +155,56 @@ class V2CursorPagination(CursorPagination):
         "group.uuid": "uuid",
         "group.created": "created",
         "group.modified": "modified",
-        # Role fields (accessed via related path)
+        # Role fields (accessed via related path from Group)
         "role.name": "role_binding_entries__binding__role__name",
         "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
     }
 
-    def _convert_order_field(self, field: str) -> str | None:
+    # Mapping of dot notation fields to Django ORM fields for Principal (user) queryset
+    # Note: Principal model doesn't have created/modified fields directly
+    USER_FIELD_MAPPING = {
+        # User (Principal) fields
+        "user.username": "username",
+        "user.uuid": "uuid",
+        # Role fields (accessed via related path from Principal through groups)
+        "role.name": "group__role_binding_entries__binding__role__name",
+        "role.uuid": "group__role_binding_entries__binding__role__uuid",
+        "role.modified": "group__role_binding_entries__binding__role__modified",
+        "role.created": "group__role_binding_entries__binding__role__created",
+    }
+
+    # Default ordering for each subject type
+    GROUP_DEFAULT_ORDERING = "-modified"
+    USER_DEFAULT_ORDERING = "username"
+
+    # Combined mapping for backward compatibility (defaults to group)
+    FIELD_MAPPING = GROUP_FIELD_MAPPING
+
+    def _get_field_mapping(self, request) -> dict:
+        """Get the appropriate field mapping based on subject_type.
+
+        Args:
+            request: The HTTP request object
+
+        Returns:
+            Field mapping dict appropriate for the subject_type
+        """
+        subject_type = request.query_params.get("subject_type")
+        if subject_type == "user":
+            return self.USER_FIELD_MAPPING
+        return self.GROUP_FIELD_MAPPING
+
+    def _convert_order_field(self, field: str, field_mapping: dict) -> str | None:
         """Convert dot notation field to Django ORM field.
 
-        Only accepts fields using dot notation (e.g., group.name, role.name).
+        Only accepts fields using dot notation (e.g., group.name, role.name, user.username).
         Direct field names without dot notation are rejected.
 
         Args:
             field: The field name, must use dot notation (e.g., group.name, -role.modified)
+            field_mapping: The field mapping dict to use for conversion
 
         Returns:
             The Django ORM field name, or None if the field is invalid
@@ -180,26 +218,47 @@ class V2CursorPagination(CursorPagination):
             return None
 
         # Check if it's a known mapping
-        if field_name in self.FIELD_MAPPING:
-            orm_field = self.FIELD_MAPPING[field_name]
+        if field_name in field_mapping:
+            orm_field = field_mapping[field_name]
             return f"-{orm_field}" if descending else orm_field
 
         # Unknown dot notation field - reject it
         return None
 
+    def _get_default_ordering(self, request) -> str:
+        """Get the appropriate default ordering based on subject_type.
+
+        Args:
+            request: The HTTP request object
+
+        Returns:
+            Default ordering field for the subject_type
+        """
+        subject_type = request.query_params.get("subject_type")
+        if subject_type == "user":
+            return self.USER_DEFAULT_ORDERING
+        return self.GROUP_DEFAULT_ORDERING
+
     def get_ordering(self, request, queryset, view):
         """Get ordering from order_by query parameter or use default.
 
-        Requires dot notation for ordering fields (e.g., group.name, role.name).
+        Requires dot notation for ordering fields (e.g., group.name, role.name, user.username).
         Direct field names are not allowed. Multiple fields can be specified
         via comma-separated values or multiple order_by parameters.
         Raises ValidationError if invalid ordering is provided.
+
+        Uses the appropriate field mapping based on subject_type:
+        - subject_type=user: user.*, role.* fields
+        - subject_type=group (or default): group.*, role.* fields
         """
         order_by_list = request.query_params.getlist("order_by")
 
+        # Get the default ordering based on subject_type
+        default_ordering = self._get_default_ordering(request)
+
         # No order_by provided, use default
         if not order_by_list:
-            return (self.ordering,)
+            return (default_ordering,)
 
         # Collect all fields from all order_by parameters (supports both comma-separated and multiple params)
         order_fields = []
@@ -207,14 +266,17 @@ class V2CursorPagination(CursorPagination):
             order_fields.extend([f.strip() for f in order_by.split(",") if f.strip()])
 
         if not order_fields:
-            return (self.ordering,)
+            return (default_ordering,)
+
+        # Get the appropriate field mapping based on subject_type
+        field_mapping = self._get_field_mapping(request)
 
         # Convert dot notation to Django ORM fields
         converted_fields = []
         for field in order_fields:
-            converted_field = self._convert_order_field(field)
+            converted_field = self._convert_order_field(field, field_mapping)
             if converted_field is None:
-                valid_fields = ", ".join(sorted(self.FIELD_MAPPING.keys()))
+                valid_fields = ", ".join(sorted(field_mapping.keys()))
                 raise ValidationError({"order_by": f"Invalid ordering field '{field}'. Valid fields: {valid_fields}"})
             converted_fields.append(converted_field)
 
