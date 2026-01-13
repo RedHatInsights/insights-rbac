@@ -1281,6 +1281,20 @@ objects:
               cpu: 50m
               memory: 512Mi
           env: *workspace_job_env_vars
+      - name: populate-default-role-bindings
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - populate_default_role_bindings
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *workspace_job_env_vars
 
 - apiVersion: v1
   kind: ConfigMap

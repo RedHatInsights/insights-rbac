@@ -19,6 +19,7 @@ from unittest.mock import ANY, call, patch
 from api.models import Tenant
 
 from django.conf import settings
+from django.test import override_settings
 from management.group.definer import (
     seed_group,
     add_roles,
@@ -26,10 +27,15 @@ from management.group.definer import (
     remove_roles,
     _roles_by_query_or_ids,
 )
+from management.models import Group, Role, Policy, RoleBinding, RoleBindingGroup
+from management.permission.scope_service import Scope
 from management.role.definer import seed_roles
+from management.tenant_mapping.model import DefaultAccessType
+from management.tenant_service.v2 import V2TenantBootstrapService
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from tests.identity_request import IdentityRequest
 from tests.core.test_kafka import copy_call_args
-from management.models import Group, Role, Policy
+from tests.management.role.test_dual_write import InMemoryRelationReplicator, InMemoryTuples
 
 
 class GroupDefinerTests(IdentityRequest):
@@ -183,8 +189,21 @@ class GroupDefinerTests(IdentityRequest):
             self.assertTrue(role.admin_default)
             self.assertEqual(role.tenant, self.public_tenant)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True, REPLICATION_TO_RELATION_ENABLED=True)
     def test_clone_default_group_in_public_schema(self):
-        """Test that the custom default group contains only public tenant roles by default."""
+        """Test that the custom default group contains only public tenant roles by default and deletes RoleBindings."""
+        # Bootstrap tenant to create RoleBindings
+        tuples = InMemoryTuples()
+        bootstrap_service = V2TenantBootstrapService(InMemoryRelationReplicator(tuples))
+        bootstrapped = bootstrap_service.bootstrap_tenant(self.tenant)
+
+        # Verify RoleBindings were created
+        role_bindings_before = RoleBinding.objects.filter(tenant=self.tenant)
+        self.assertGreater(role_bindings_before.count(), 0, "RoleBindings should exist after bootstrap")
+
+        role_binding_groups_before = RoleBindingGroup.objects.filter(binding__tenant=self.tenant)
+        self.assertGreater(role_binding_groups_before.count(), 0, "RoleBindingGroups should exist after bootstrap")
+
         invalid_role = Role.objects.create(
             platform_default=True, system=True, tenant=self.tenant, name="INVALID SYSTEM ROLE ON TENANT"
         )
@@ -195,6 +214,39 @@ class GroupDefinerTests(IdentityRequest):
         self.assertEqual(Group.objects.filter(platform_default=True, tenant=self.tenant).count(), 1)
         custom_default_group = Group.objects.filter(platform_default=True, tenant=self.tenant).last()
         self.assertTrue(invalid_role not in list(custom_default_group.roles()))
+
+        # Verify RoleBindings for USER access type were deleted
+        mapping = bootstrapped.mapping
+        default_role_binding_uuids = [
+            mapping.default_role_binding_uuid_for(DefaultAccessType.USER, scope) for scope in Scope
+        ]
+
+        remaining_role_bindings = RoleBinding.objects.filter(uuid__in=default_role_binding_uuids, tenant=self.tenant)
+        self.assertEqual(
+            remaining_role_bindings.count(),
+            0,
+            "Default RoleBindings for USER access type should be deleted when custom default group is created",
+        )
+
+        remaining_role_binding_groups = RoleBindingGroup.objects.filter(
+            binding__uuid__in=default_role_binding_uuids, binding__tenant=self.tenant
+        )
+        self.assertEqual(
+            remaining_role_binding_groups.count(),
+            0,
+            "RoleBindingGroups for default RoleBindings should be deleted when custom default group is created",
+        )
+
+        # Verify ADMIN RoleBindings still exist (they are not customizable)
+        admin_role_binding_uuids = [
+            mapping.default_role_binding_uuid_for(DefaultAccessType.ADMIN, scope) for scope in Scope
+        ]
+        admin_role_bindings = RoleBinding.objects.filter(uuid__in=admin_role_binding_uuids, tenant=self.tenant)
+        self.assertEqual(
+            admin_role_bindings.count(),
+            3,
+            "ADMIN RoleBindings should not be deleted (ADMIN access type is not customizable)",
+        )
 
     def test_roles_by_query_or_ids_with_tenant_filtering(self):
         """Test that _roles_by_query_or_ids properly filters roles by tenant."""

@@ -8,7 +8,7 @@ from django.db.models import Prefetch, Q, QuerySet
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.permission.scope_service import TenantScopeResources
+from management.permission.scope_service import Scope, TenantScopeResources
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
     PartitionKey,
@@ -16,6 +16,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.role.platform import platform_v2_role_uuid_for
+from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
 from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
@@ -794,6 +796,7 @@ class V2TenantBootstrapService:
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
+        Also creates RoleBinding database records.
         """
         tuples_to_add: List[Relationship] = []
 
@@ -817,6 +820,13 @@ class V2TenantBootstrapService:
                         policy_service=self._policy_service,
                     )
                 )
+                # Create RoleBinding database records
+                self._create_default_role_bindings(
+                    tenant=tenant,
+                    mapping=mapping,
+                    scope_resources=scope_resources,
+                    access_type=DefaultAccessType.USER,
+                )
             except DefaultGroupNotAvailableError:
                 logger.warning("No platform default role found for public tenant. Default access will not be set up.")
         else:
@@ -834,10 +844,397 @@ class V2TenantBootstrapService:
                     policy_service=self._policy_service,
                 )
             )
+            # Create RoleBinding database records
+            self._create_default_role_bindings(
+                tenant=tenant,
+                mapping=mapping,
+                scope_resources=scope_resources,
+                access_type=DefaultAccessType.ADMIN,
+            )
         except DefaultGroupNotAvailableError:
             logger.warning("No admin default role found for public tenant. Default access will not be set up.")
 
         return tuples_to_add
+
+    def _create_default_role_bindings(
+        self,
+        tenant: Tenant,
+        mapping: TenantMapping,
+        scope_resources: TenantScopeResources,
+        access_type: DefaultAccessType,
+    ):
+        """Create RoleBinding database records for default access."""
+        public_tenant = Tenant._get_public_tenant()
+        default_group_uuid = mapping.group_uuid_for(access_type)
+
+        # Get the default group - first check tenant's custom default group, then fall back to public tenant's default group
+        try:
+            default_group = Group.platform_default_set().get(tenant=tenant)
+        except Group.DoesNotExist:
+            # If no custom default group exists, use the public tenant's default group
+            try:
+                if access_type == DefaultAccessType.USER:
+                    default_group = Group.platform_default_set().get(tenant=public_tenant)
+                else:
+                    default_group = Group.admin_default_set().get(tenant=public_tenant)
+            except Group.DoesNotExist:
+                logger.warning(
+                    f"Default group {default_group_uuid} not found for tenant {tenant.org_id} "
+                    f"and public tenant default group not found. Skipping RoleBinding creation."
+                )
+                return
+
+        # Collect all RoleBindings to create
+        role_bindings_to_create = []
+        role_binding_uuids = []
+        role_binding_data = {}  # uuid -> (platform_role, resource_type, resource_id)
+
+        # Prepare all RoleBindings first
+        for scope in Scope:
+            try:
+                role_binding_uuid = mapping.default_role_binding_uuid_for(access_type, scope)
+                platform_role_uuid = platform_v2_role_uuid_for(access_type, scope, self._policy_service)
+
+                # Get the PlatformRoleV2
+                try:
+                    platform_role = PlatformRoleV2.objects.get(uuid=platform_role_uuid, tenant=public_tenant)
+                except PlatformRoleV2.DoesNotExist:
+                    logger.warning(
+                        f"Platform role {platform_role_uuid} not found for scope {scope.name}. "
+                        "Skipping RoleBinding creation."
+                    )
+                    continue
+
+                # Get resource info
+                resource = scope_resources.resource_for(scope)
+                # resource_type is a tuple (namespace, name), we need just the name
+                resource_type = (
+                    resource.resource_type[1] if isinstance(resource.resource_type, tuple) else resource.resource_type
+                )
+                resource_id = resource.resource_id
+
+                role_binding_uuids.append(role_binding_uuid)
+                role_binding_data[role_binding_uuid] = (platform_role, resource_type, resource_id)
+
+            except Exception as e:
+                logger.warning(
+                    f"Failed to prepare RoleBinding for tenant {tenant.org_id}, "
+                    f"scope {scope.name}, access_type {access_type.value}: {e}"
+                )
+
+        if not role_binding_uuids:
+            return
+
+        # Check which RoleBindings already exist
+        existing_bindings = {
+            str(binding.uuid): binding
+            for binding in RoleBinding.objects.filter(uuid__in=role_binding_uuids).select_related("role")
+        }
+
+        # Prepare new RoleBindings to create and existing ones to update
+        bindings_to_update = []
+        for role_binding_uuid in role_binding_uuids:
+            platform_role, resource_type, resource_id = role_binding_data[role_binding_uuid]
+
+            if str(role_binding_uuid) in existing_bindings:
+                # Update existing binding
+                binding = existing_bindings[str(role_binding_uuid)]
+                binding.tenant = tenant
+                binding.role = platform_role
+                binding.resource_type = resource_type
+                binding.resource_id = resource_id
+                bindings_to_update.append(binding)
+            else:
+                # Create new binding
+                role_bindings_to_create.append(
+                    RoleBinding(
+                        uuid=role_binding_uuid,
+                        tenant=tenant,
+                        role=platform_role,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                    )
+                )
+
+        # Bulk create new RoleBindings
+        if role_bindings_to_create:
+            RoleBinding.objects.bulk_create(role_bindings_to_create, ignore_conflicts=True)
+            logger.info(
+                f"Bulk created {len(role_bindings_to_create)} RoleBindings for tenant {tenant.org_id}, "
+                f"access_type {access_type.value}"
+            )
+
+        # Bulk update existing RoleBindings
+        if bindings_to_update:
+            RoleBinding.objects.bulk_update(
+                bindings_to_update, fields=["tenant", "role", "resource_type", "resource_id"]
+            )
+            logger.info(
+                f"Bulk updated {len(bindings_to_update)} RoleBindings for tenant {tenant.org_id}, "
+                f"access_type {access_type.value}"
+            )
+
+        # Re-fetch all bindings (newly created + existing) for RoleBindingGroup creation
+        # This ensures we have the actual database instances with IDs
+        all_bindings = {
+            str(binding.uuid): binding for binding in RoleBinding.objects.filter(uuid__in=role_binding_uuids)
+        }
+
+        # Check which RoleBindingGroups already exist
+        existing_binding_groups = set(
+            RoleBindingGroup.objects.filter(binding__uuid__in=role_binding_uuids, group=default_group).values_list(
+                "binding__uuid", flat=True
+            )
+        )
+
+        # Prepare RoleBindingGroups to create
+        binding_groups_to_create = []
+        for role_binding_uuid in role_binding_uuids:
+            if str(role_binding_uuid) not in existing_binding_groups:
+                binding = all_bindings.get(str(role_binding_uuid))
+                if binding:
+                    binding_groups_to_create.append(RoleBindingGroup(binding=binding, group=default_group))
+
+        # Bulk create RoleBindingGroups
+        if binding_groups_to_create:
+            RoleBindingGroup.objects.bulk_create(binding_groups_to_create, ignore_conflicts=True)
+            logger.info(
+                f"Bulk created {len(binding_groups_to_create)} RoleBindingGroups for tenant {tenant.org_id}, "
+                f"access_type {access_type.value}"
+            )
+
+    def _bulk_create_default_role_bindings(
+        self,
+        tenants_with_mappings: list[tuple[Tenant, TenantMapping]],
+    ):
+        """Bulk create RoleBinding database records for multiple tenants.
+
+        Args:
+            tenants_with_mappings: List of (tenant, mapping) tuples to process
+        """
+        if not tenants_with_mappings:
+            return
+
+        public_tenant = Tenant.objects.get(tenant_name="public")
+
+        # Collect all tenant data upfront
+        tenant_data = []
+        all_role_binding_uuids = []
+
+        # Get all workspaces for all tenants
+        tenant_ids = [t.id for t, _ in tenants_with_mappings]
+        workspaces_by_tenant = {}
+        for workspace in Workspace.objects.filter(
+            tenant_id__in=tenant_ids, type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]
+        ).select_related("tenant"):
+            if workspace.tenant_id not in workspaces_by_tenant:
+                workspaces_by_tenant[workspace.tenant_id] = {}
+            workspaces_by_tenant[workspace.tenant_id][workspace.type] = workspace
+
+        # Prepare data for each tenant
+        for tenant, mapping in tenants_with_mappings:
+            tenant_workspaces = workspaces_by_tenant.get(tenant.id, {})
+            root_workspace = tenant_workspaces.get(Workspace.Types.ROOT)
+            default_workspace = tenant_workspaces.get(Workspace.Types.DEFAULT)
+
+            if not root_workspace or not default_workspace:
+                logger.warning(
+                    f"Missing workspaces for tenant {tenant.org_id}. "
+                    f"Has root: {bool(root_workspace)}, has default: {bool(default_workspace)}"
+                )
+                continue
+
+            scope_resources = TenantScopeResources.for_models(
+                tenant=tenant, root_workspace=root_workspace, default_workspace=default_workspace
+            )
+
+            # Get default groups for both access types
+            user_group_uuid = mapping.group_uuid_for(DefaultAccessType.USER)
+            admin_group_uuid = mapping.group_uuid_for(DefaultAccessType.ADMIN)
+
+            tenant_data.append(
+                {
+                    "tenant": tenant,
+                    "mapping": mapping,
+                    "scope_resources": scope_resources,
+                    "user_group_uuid": user_group_uuid,
+                    "admin_group_uuid": admin_group_uuid,
+                }
+            )
+
+        # Get all groups upfront
+        all_group_uuids = set()
+        for data in tenant_data:
+            all_group_uuids.add(data["user_group_uuid"])
+            all_group_uuids.add(data["admin_group_uuid"])
+
+        groups_by_uuid = {
+            str(g.uuid): g for g in Group.objects.filter(uuid__in=all_group_uuids, tenant_id__in=tenant_ids)
+        }
+
+        # Collect all RoleBindings to create/update
+        role_bindings_to_create = []
+        bindings_to_update = []
+        all_binding_data = (
+            {}
+        )  # (tenant_id, access_type, scope) -> (uuid, role, resource_type, resource_id, group_uuid)
+
+        # Get all platform roles upfront
+        platform_role_uuids = set()
+        for access_type in DefaultAccessType:
+            for scope in Scope:
+                platform_role_uuids.add(platform_v2_role_uuid_for(access_type, scope, self._policy_service))
+
+        platform_roles_by_uuid = {
+            str(r.uuid): r for r in PlatformRoleV2.objects.filter(uuid__in=platform_role_uuids, tenant=public_tenant)
+        }
+
+        # Prepare RoleBindings for all tenants
+        for data in tenant_data:
+            tenant = data["tenant"]
+            mapping = data["mapping"]
+            scope_resources = data["scope_resources"]
+
+            for access_type in DefaultAccessType:
+                group_uuid = (
+                    data["user_group_uuid"] if access_type == DefaultAccessType.USER else data["admin_group_uuid"]
+                )
+                default_group = groups_by_uuid.get(str(group_uuid))
+
+                if not default_group:
+                    logger.warning(
+                        f"Default group {group_uuid} not found for tenant {tenant.org_id}, "
+                        f"access_type {access_type.value}. Skipping."
+                    )
+                    continue
+
+                for scope in Scope:
+                    try:
+                        role_binding_uuid = mapping.default_role_binding_uuid_for(access_type, scope)
+                        platform_role_uuid = platform_v2_role_uuid_for(access_type, scope, self._policy_service)
+                        platform_role = platform_roles_by_uuid.get(str(platform_role_uuid))
+
+                        if not platform_role:
+                            logger.warning(
+                                f"Platform role {platform_role_uuid} not found for scope {scope.name}. Skipping."
+                            )
+                            continue
+
+                        resource = scope_resources.resource_for(scope)
+                        resource_type = (
+                            resource.resource_type[1]
+                            if isinstance(resource.resource_type, tuple)
+                            else resource.resource_type
+                        )
+                        resource_id = resource.resource_id
+
+                        all_role_binding_uuids.append(role_binding_uuid)
+                        all_binding_data[(tenant.id, access_type, scope)] = (
+                            role_binding_uuid,
+                            platform_role,
+                            resource_type,
+                            resource_id,
+                            default_group,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to prepare RoleBinding for tenant {tenant.org_id}, "
+                            f"scope {scope.name}, access_type {access_type.value}: {e}"
+                        )
+
+        if not all_role_binding_uuids:
+            return
+
+        # Check which RoleBindings already exist
+        existing_bindings = {
+            str(binding.uuid): binding
+            for binding in RoleBinding.objects.filter(uuid__in=all_role_binding_uuids).select_related("role")
+        }
+
+        # Prepare RoleBindings to create and update
+        for (tenant_id, access_type, scope), (
+            role_binding_uuid,
+            platform_role,
+            resource_type,
+            resource_id,
+            default_group,
+        ) in all_binding_data.items():
+            tenant = next(t for t, _ in tenants_with_mappings if t.id == tenant_id)
+
+            if str(role_binding_uuid) in existing_bindings:
+                # Update existing binding
+                binding = existing_bindings[str(role_binding_uuid)]
+                binding.tenant = tenant
+                binding.role = platform_role
+                binding.resource_type = resource_type
+                binding.resource_id = resource_id
+                bindings_to_update.append(binding)
+            else:
+                # Create new binding
+                role_bindings_to_create.append(
+                    RoleBinding(
+                        uuid=role_binding_uuid,
+                        tenant=tenant,
+                        role=platform_role,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                    )
+                )
+
+        # Bulk create new RoleBindings
+        if role_bindings_to_create:
+            RoleBinding.objects.bulk_create(role_bindings_to_create, ignore_conflicts=True)
+            logger.info(
+                f"Bulk created {len(role_bindings_to_create)} RoleBindings "
+                f"for {len(tenants_with_mappings)} tenants"
+            )
+
+        # Bulk update existing RoleBindings
+        if bindings_to_update:
+            RoleBinding.objects.bulk_update(
+                bindings_to_update, fields=["tenant", "role", "resource_type", "resource_id"]
+            )
+            logger.info(
+                f"Bulk updated {len(bindings_to_update)} RoleBindings for {len(tenants_with_mappings)} tenants"
+            )
+
+        # Re-fetch all bindings for RoleBindingGroup creation
+        all_bindings = {
+            str(binding.uuid): binding for binding in RoleBinding.objects.filter(uuid__in=all_role_binding_uuids)
+        }
+
+        # Check which RoleBindingGroups already exist
+        existing_binding_groups = set(
+            RoleBindingGroup.objects.filter(binding__uuid__in=all_role_binding_uuids).values_list(
+                "binding__uuid", "group__uuid", flat=False
+            )
+        )
+        existing_binding_groups_set = {
+            (str(binding_uuid), str(group_uuid)) for binding_uuid, group_uuid in existing_binding_groups
+        }
+
+        # Prepare RoleBindingGroups to create
+        binding_groups_to_create = []
+        for (tenant_id, access_type, scope), (
+            role_binding_uuid,
+            platform_role,
+            resource_type,
+            resource_id,
+            default_group,
+        ) in all_binding_data.items():
+            binding = all_bindings.get(str(role_binding_uuid))
+            if binding:
+                key = (str(role_binding_uuid), str(default_group.uuid))
+                if key not in existing_binding_groups_set:
+                    binding_groups_to_create.append(RoleBindingGroup(binding=binding, group=default_group))
+
+        # Bulk create RoleBindingGroups
+        if binding_groups_to_create:
+            RoleBindingGroup.objects.bulk_create(binding_groups_to_create, ignore_conflicts=True)
+            logger.info(
+                f"Bulk created {len(binding_groups_to_create)} RoleBindingGroups "
+                f"for {len(tenants_with_mappings)} tenants"
+            )
 
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
         relationships = []

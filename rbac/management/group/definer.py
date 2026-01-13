@@ -31,14 +31,17 @@ from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
 )
+from management.models import RoleBinding
 from management.notifications.notification_handlers import (
     group_flag_change_notification_handler,
     group_role_change_notification_handler,
 )
+from management.permission.scope_service import Scope
 from management.policy.model import Policy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Role
+from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_service.v2 import V2TenantBootstrapService, lock_tenant_for_bootstrap
 from management.utils import clear_pk
 from rest_framework import serializers
@@ -141,6 +144,26 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     tenant_default_policy.roles.set(public_default_roles)
 
     if bootstrapped_tenant:
+        # When a custom default group is created, we need to remove any existing default RoleBindings
+        # that were created for the USER access type (ADMIN is not customizable).
+        # These RoleBindings represent the "virtual" default access pattern, which is replaced
+        # by the custom default group's policy/roles.
+        mapping = bootstrapped_tenant.mapping
+        default_role_binding_uuids = [
+            mapping.default_role_binding_uuid_for(DefaultAccessType.USER, scope) for scope in Scope
+        ]
+
+        # Delete RoleBindings (RoleBindingGroups will be automatically deleted via CASCADE)
+        deleted_bindings_count = RoleBinding.objects.filter(
+            uuid__in=default_role_binding_uuids, tenant=tenant
+        ).delete()[0]
+
+        if deleted_bindings_count > 0:
+            logger.info(
+                f"Deleted {deleted_bindings_count} default RoleBindings "
+                f"for tenant {tenant.org_id} when creating custom default group."
+            )
+
         dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.CUSTOMIZE_DEFAULT_GROUP)
         dual_write_handler.generate_relations_reset_roles(
             public_default_roles, remove_default_access_from=bootstrapped_tenant.mapping
