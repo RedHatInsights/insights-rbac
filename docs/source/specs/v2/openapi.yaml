@@ -1235,6 +1235,68 @@ components:
           description: User details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
+    Roles.Permission:
+      type: object
+      required:
+        - application
+        - resource_type
+        - operation
+      properties:
+        application:
+          type: string
+          description: Application name
+        resource_type:
+          type: string
+          description: Resource type within the application
+        operation:
+          type: string
+          description: Operation for this permission
+      example:
+        application: inventory
+        resource_type: hosts
+        operation: read
+    Roles.Role:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          description: Role identifier
+        name:
+          type: string
+          description: Role name
+        description:
+          type: string
+          description: Role description
+        permissions_count:
+          type: integer
+          format: int32
+          description: Number of permissions assigned to this role
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Roles.Permission'
+          description: List of permissions assigned to this role
+        last_modified:
+          type: string
+          format: date-time
+          description: Last modification timestamp
+      example:
+        id: 550e8400-e29b-41d4-a716-446655440002
+        name: Workspace Admin
+        description: description
+        permissions_count: 2
+        permissions:
+          - application: inventory
+            resource_type: hosts
+            operation: read
+          - application: inventory
+            resource_type: hosts
+            operation: write
+        last_modified: '2024-08-04T12:00:00Z'
     Timestamps:
       type: object
       required:
