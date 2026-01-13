@@ -471,6 +471,13 @@ class RoleBindingViewSetTest(IdentityRequest):
         data = response.data["data"]
         self.assertGreater(len(data), 1)
 
+        # Extract role UUIDs and look up names from database to verify ascending order
+        role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
+        roles = RoleV2.objects.filter(uuid__in=role_uuids)
+        role_name_map = {str(r.uuid): r.name for r in roles}
+        role_names = [role_name_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        self.assertEqual(role_names, sorted(role_names))
+
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
@@ -487,12 +494,19 @@ class RoleBindingViewSetTest(IdentityRequest):
         data = response.data["data"]
         self.assertGreater(len(data), 1)
 
+        # Extract role UUIDs and look up names from database to verify descending order
+        role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
+        roles = RoleV2.objects.filter(uuid__in=role_uuids)
+        role_name_map = {str(r.uuid): r.name for r in roles}
+        role_names = [role_name_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        self.assertEqual(role_names, sorted(role_names, reverse=True))
+
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
     def test_by_subject_order_by_group_modified(self, mock_permission):
-        """Test ordering by group.modified."""
+        """Test ordering by group.modified descending."""
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=-group.modified&limit=100",
@@ -502,6 +516,36 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
         self.assertGreater(len(data), 1)
+
+        # Extract group modified timestamps and verify descending order
+        group_uuids = [item["subject"]["id"] for item in data]
+        groups = Group.objects.filter(uuid__in=group_uuids)
+        group_modified_map = {str(g.uuid): g.modified for g in groups}
+        modified_times = [group_modified_map[str(item["subject"]["id"])] for item in data]
+        self.assertEqual(modified_times, sorted(modified_times, reverse=True))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_order_by_group_created(self, mock_permission):
+        """Test ordering by group.created ascending."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=group.created&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Extract group created timestamps and verify ascending order
+        group_uuids = [item["subject"]["id"] for item in data]
+        groups = Group.objects.filter(uuid__in=group_uuids)
+        group_created_map = {str(g.uuid): g.created for g in groups}
+        created_times = [group_created_map[str(item["subject"]["id"])] for item in data]
+        self.assertEqual(created_times, sorted(created_times))
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -549,6 +593,13 @@ class RoleBindingViewSetTest(IdentityRequest):
         data = response.data["data"]
         self.assertGreater(len(data), 1)
 
+        # Verify primary ordering by group.name ascending
+        group_uuids = [item["subject"]["id"] for item in data]
+        groups = Group.objects.filter(uuid__in=group_uuids)
+        group_name_map = {str(g.uuid): g.name for g in groups}
+        names = [group_name_map[str(item["subject"]["id"])] for item in data]
+        self.assertEqual(names, sorted(names))
+
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
@@ -564,6 +615,13 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
         self.assertGreater(len(data), 1)
+
+        # Verify primary ordering by group.name ascending
+        group_uuids = [item["subject"]["id"] for item in data]
+        groups = Group.objects.filter(uuid__in=group_uuids)
+        group_name_map = {str(g.uuid): g.name for g in groups}
+        names = [group_name_map[str(item["subject"]["id"])] for item in data]
+        self.assertEqual(names, sorted(names))
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -585,7 +643,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         return_value=True,
     )
     def test_by_subject_order_by_group_uuid(self, mock_permission):
-        """Test ordering by group.uuid."""
+        """Test ordering by group.uuid ascending."""
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=group.uuid&limit=100",
@@ -596,16 +654,56 @@ class RoleBindingViewSetTest(IdentityRequest):
         data = response.data["data"]
         self.assertGreater(len(data), 1)
 
-        # Verify uuid ordering
-        uuids = [item["subject"]["id"] for item in data]
+        # Verify uuid ordering (convert to strings for consistent comparison)
+        uuids = [str(item["subject"]["id"]) for item in data]
         self.assertEqual(uuids, sorted(uuids))
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
+    def test_by_subject_order_by_group_uuid_descending(self, mock_permission):
+        """Test ordering by group.uuid descending."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=-group.uuid&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Verify uuid ordering descending (convert to strings for consistent comparison)
+        uuids = [str(item["subject"]["id"]) for item in data]
+        self.assertEqual(uuids, sorted(uuids, reverse=True))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_order_by_role_uuid(self, mock_permission):
+        """Test ordering by role.uuid ascending."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=role.uuid&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Extract role UUIDs and verify ascending order
+        role_uuids = [str(item["roles"][0]["id"]) for item in data if item["roles"]]
+        self.assertEqual(role_uuids, sorted(role_uuids))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_order_by_role_modified(self, mock_permission):
-        """Test ordering by role.modified."""
+        """Test ordering by role.modified descending."""
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=-role.modified&limit=100",
@@ -616,12 +714,19 @@ class RoleBindingViewSetTest(IdentityRequest):
         data = response.data["data"]
         self.assertGreater(len(data), 1)
 
+        # Extract role UUIDs and verify modified times are in descending order
+        role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
+        roles = RoleV2.objects.filter(uuid__in=role_uuids)
+        role_modified_map = {str(r.uuid): r.modified for r in roles}
+        modified_times = [role_modified_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        self.assertEqual(modified_times, sorted(modified_times, reverse=True))
+
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
     def test_by_subject_order_by_role_created(self, mock_permission):
-        """Test ordering by role.created."""
+        """Test ordering by role.created ascending."""
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=role.created&limit=100",
@@ -631,3 +736,10 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
         self.assertGreater(len(data), 1)
+
+        # Extract role UUIDs and verify created times are in ascending order
+        role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
+        roles = RoleV2.objects.filter(uuid__in=role_uuids)
+        role_created_map = {str(r.uuid): r.created for r in roles}
+        created_times = [role_created_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        self.assertEqual(created_times, sorted(created_times))
