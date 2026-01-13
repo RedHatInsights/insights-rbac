@@ -264,6 +264,12 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             return obj.get("modified") or obj.get("latest_modified")
         return getattr(obj, "latest_modified", None)
 
+    # Field name mapping for special cases (e.g., API field name -> model attribute)
+    SUBJECT_FIELD_MAPPING = {
+        "group": {"user_count": "principalCount"},
+        "user": {},
+    }
+
     def get_subject(self, obj):
         """Extract subject information from the Group or Principal.
 
@@ -272,19 +278,20 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         (including id) are only included if explicitly requested.
         """
         if isinstance(obj, Principal):
-            return self._get_user_subject(obj)
+            return self._build_subject(obj, "user")
         elif isinstance(obj, Group):
-            return self._get_group_subject(obj)
+            return self._build_subject(obj, "group")
         return None
 
-    def _get_group_subject(self, obj: Group):
-        """Extract subject information for a Group.
+    def _build_subject(self, obj, subject_type: str):
+        """Build subject dict for a Group or Principal.
 
         Args:
-            obj: Group object
+            obj: Group or Principal object
+            subject_type: The subject type string ("group" or "user")
 
         Returns:
-            Subject dict with type="group"
+            Subject dict with type and requested fields
         """
         field_selection = self._get_field_selection()
 
@@ -292,80 +299,37 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         if field_selection is None:
             return {
                 "id": obj.uuid,
-                "type": "group",
+                "type": subject_type,
             }
 
         # With fields param: type is always included
-        subject = {"type": "group"}
+        subject = {"type": subject_type}
 
         # Check if id is explicitly requested
         if "id" in field_selection.subject_fields:
             subject["id"] = obj.uuid
 
-        # Extract field names from "group.X" paths
+        # Extract field names from "{subject_type}.X" paths
+        prefix = f"{subject_type}."
+        prefix_len = len(prefix)
         fields_to_include = set()
         for field_path in field_selection.subject_fields:
-            if field_path.startswith("group."):
-                fields_to_include.add(field_path[6:])  # Remove "group." prefix
+            if field_path.startswith(prefix):
+                fields_to_include.add(field_path[prefix_len:])
 
         # Dynamically extract requested fields from the object
         if fields_to_include:
-            group_details = {}
+            field_mapping = self.SUBJECT_FIELD_MAPPING.get(subject_type, {})
+            details = {}
             for field_name in fields_to_include:
-                # Handle special case for user_count -> principalCount
-                if field_name == "user_count":
-                    group_details[field_name] = getattr(obj, "principalCount", 0)
-                else:
-                    value = getattr(obj, field_name, None)
-                    if value is not None:
-                        group_details[field_name] = value
-
-            if group_details:
-                subject["group"] = group_details
-
-        return subject
-
-    def _get_user_subject(self, obj: Principal):
-        """Extract subject information for a Principal (user).
-
-        Args:
-            obj: Principal object
-
-        Returns:
-            Subject dict with type="user"
-        """
-        field_selection = self._get_field_selection()
-
-        # Default behavior: only basic fields
-        if field_selection is None:
-            return {
-                "id": obj.uuid,
-                "type": "user",
-            }
-
-        # With fields param: type is always included
-        subject = {"type": "user"}
-
-        # Check if id is explicitly requested
-        if "id" in field_selection.subject_fields:
-            subject["id"] = obj.uuid
-
-        # Extract field names from "user.X" paths
-        fields_to_include = set()
-        for field_path in field_selection.subject_fields:
-            if field_path.startswith("user."):
-                fields_to_include.add(field_path[5:])  # Remove "user." prefix
-
-        # Dynamically extract requested fields from the object
-        if fields_to_include:
-            user_details = {}
-            for field_name in fields_to_include:
-                value = getattr(obj, field_name, None)
+                # Map API field name to model attribute if needed
+                model_attr = field_mapping.get(field_name, field_name)
+                value = getattr(obj, model_attr, None)
                 if value is not None:
-                    user_details[field_name] = value
+                    details[field_name] = value
 
-            if user_details:
-                subject["user"] = user_details
+            if details:
+                subject[subject_type] = details
 
         return subject
 
