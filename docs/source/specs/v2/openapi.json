@@ -483,7 +483,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: id, name, description\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Required fields (id, name, description) are always included even if not specified.\n\n**Syntax:**\n- Use comma to separate multiple fields: `description,permissions_count,last_modified`\n\n**Available Fields:**\n\n**Required fields (always included):**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n\n**Optional fields:**\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - full list of permissions assigned to this role\n- last_modified (datetime) - last modification timestamp\n\n**Example:**\n- `permissions` - Include full permissions array in addition to default fields\n- `permissions_count,permissions,last_modified` - Include permissions count, permissions array, and last modification timestamp",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nOnly the required field is included: id\n\n**When fields parameter is provided:**\nThe required field (id) plus explicitly specified optional fields are included in the response.\n\n**Syntax:**\n- Use comma to separate multiple fields: `name,description,permissions_count,last_modified`\n\n**Available Fields:**\n\n**Required field (always included):**\n- id (UUID) - role identifier\n\n**Optional fields:**\n- name (string) - role name\n- description (string) - role description\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - full list of permissions assigned to this role\n- last_modified (datetime) - last modification timestamp\n\n**Example:**\n- `name,description` - Include name and description in addition to id\n- `name,description,permissions_count,last_modified` - Include name, description, permissions count, and last modification timestamp in addition to id",
             "schema": {
               "type": "string"
             },
@@ -515,7 +515,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "/api/rbac/v2/roles/?limit=10&fields=permissions_count,permissions,last_modified&cursor=eyJpZCI6IjEyMyJ9",
+                        "next": "/api/rbac/v2/roles/?limit=10&fields=name,description,permissions_count,permissions,last_modified&cursor=eyJpZCI6IjEyMyJ9",
                         "previous": null
                       },
                       "data": [
@@ -552,9 +552,7 @@
                       },
                       "data": [
                         {
-                          "id": "550e8400-e29b-41d4-a716-446655440002",
-                          "name": "Workspace Admin",
-                          "description": "description"
+                          "id": "550e8400-e29b-41d4-a716-446655440002"
                         }
                       ]
                     }
@@ -2324,9 +2322,7 @@
           },
           "data": [
             {
-              "id": "550e8400-e29b-41d4-a716-446655440002",
-              "name": "Workspace Admin",
-              "description": "description"
+              "id": "550e8400-e29b-41d4-a716-446655440002"
             }
           ]
         }
