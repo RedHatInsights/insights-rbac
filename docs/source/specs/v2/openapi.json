@@ -535,17 +535,17 @@
                 "description": "Updated role description",
                 "permissions": [
                   {
-                    "application": "host_inventory",
+                    "application": "inventory",
                     "resource_type": "hosts",
                     "operation": "read"
                   },
                   {
-                    "application": "host_inventory",
+                    "application": "inventory",
                     "resource_type": "hosts",
                     "operation": "write"
                   },
                   {
-                    "application": "host_inventory",
+                    "application": "inventory",
                     "resource_type": "hosts",
                     "operation": "delete"
                   }
@@ -2117,12 +2117,12 @@
           "description": "Custom role for host inventory management",
           "permissions": [
             {
-              "application": "host_inventory",
+              "application": "inventory",
               "resource_type": "hosts",
               "operation": "read"
             },
             {
-              "application": "host_inventory",
+              "application": "inventory",
               "resource_type": "hosts",
               "operation": "write"
             }
@@ -2246,17 +2246,17 @@
           "description": "Updated role description and/or name and/or permissions",
           "permissions": [
             {
-              "application": "host_inventory",
+              "application": "inventory",
               "resource_type": "hosts",
               "operation": "read"
             },
             {
-              "application": "host_inventory",
+              "application": "inventory",
               "resource_type": "hosts",
               "operation": "write"
             },
             {
-              "application": "host_inventory",
+              "application": "inventory",
               "resource_type": "hosts",
               "operation": "delete"
             }

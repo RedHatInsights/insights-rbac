@@ -398,13 +398,13 @@ paths:
               name: Updated Host Inventory Admin
               description: Updated role description
               permissions:
-                - application: host_inventory
+                - application: inventory
                   resource_type: hosts
                   operation: read
-                - application: host_inventory
+                - application: inventory
                   resource_type: hosts
                   operation: write
-                - application: host_inventory
+                - application: inventory
                   resource_type: hosts
                   operation: delete
   /workspaces/:
@@ -1431,10 +1431,10 @@ components:
         name: Host Inventory Admin
         description: Custom role for host inventory management
         permissions:
-          - application: host_inventory
+          - application: inventory
             resource_type: hosts
             operation: read
-          - application: host_inventory
+          - application: inventory
             resource_type: hosts
             operation: write
     Roles.Permission:
@@ -1521,13 +1521,13 @@ components:
         name: Updated Host Inventory Admin Role
         description: Updated role description and/or name and/or permissions
         permissions:
-          - application: host_inventory
+          - application: inventory
             resource_type: hosts
             operation: read
-          - application: host_inventory
+          - application: inventory
             resource_type: hosts
             operation: write
-          - application: host_inventory
+          - application: inventory
             resource_type: hosts
             operation: delete
     Timestamps:

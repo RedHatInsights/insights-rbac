@@ -1026,26 +1026,4 @@ namespace Roles {
         @body body: UpdateRoleRequest
     ): UpdateRoleResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
-    @example(#{ statusCode: 204 })
-    model DeleteRoleResponse {
-        @statusCode
-        statusCode: 204,
-    }
-
-    @doc("Delete a custom role")
-    @summary("Delete a custom role")
-    @route("{id}/")
-    @opExample(#{
-        parameters: #{
-            id: "550e8400-e29b-41d4-a716-446655440002"
-        },
-        returnType: #{
-            statusCode: 204
-        }
-    })
-    @delete op delete(
-        @doc("Unique identification")
-        @path id: UUID;
-    ): DeleteRoleResponse | Problems.CommonProblems | Problems.Problem404;
-
 }
