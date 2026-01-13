@@ -942,8 +942,8 @@ namespace Roles {
         name: "Host Inventory Admin",
         description: "Custom role for host inventory management",
         permissions: #[
-            #{ application: "host_inventory", resource_type: "hosts", operation: "read" },
-            #{ application: "host_inventory", resource_type: "hosts", operation: "write" }
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" }
         ]
     })
     model CreateRoleRequest {
