@@ -342,30 +342,43 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         if isinstance(obj, dict):
             return obj.get("roles", [])
 
-        if isinstance(obj, Principal):
-            return self._get_roles_from_user(obj)
-        elif isinstance(obj, Group):
-            return self._get_roles_from_group(obj)
-        return []
+        # Collect all binding_groups from Group or Principal
+        binding_groups = self._get_binding_groups(obj)
+        return self._extract_roles_from_bindings(binding_groups)
 
-    def _get_roles_from_group(self, obj: Group):
-        """Extract roles from a Group's prefetched role bindings.
+    def _get_binding_groups(self, obj):
+        """Get all binding groups from a Group or Principal.
 
         Args:
-            obj: Group object with filtered_bindings prefetch
+            obj: Group or Principal object with prefetched bindings
 
         Returns:
-            List of role dicts
+            Iterable of RoleBindingGroup objects
         """
-        if not hasattr(obj, "filtered_bindings"):
-            return []
+        if isinstance(obj, Group):
+            return getattr(obj, "filtered_bindings", [])
+        elif isinstance(obj, Principal):
+            # Collect bindings from all of user's groups
+            binding_groups = []
+            for group in getattr(obj, "filtered_groups", []):
+                binding_groups.extend(getattr(group, "filtered_bindings", []))
+            return binding_groups
+        return []
 
+    def _extract_roles_from_bindings(self, binding_groups):
+        """Extract deduplicated roles from binding groups.
+
+        Args:
+            binding_groups: Iterable of RoleBindingGroup objects
+
+        Returns:
+            List of role dicts with id and requested fields
+        """
         field_selection = self._get_field_selection()
-
         roles = []
         seen_role_ids = set()
 
-        for binding_group in obj.filtered_bindings:
+        for binding_group in binding_groups:
             if not hasattr(binding_group, "binding") or not binding_group.binding:
                 continue
 
@@ -386,52 +399,6 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
             roles.append(role_data)
             seen_role_ids.add(role.uuid)
-
-        return roles
-
-    def _get_roles_from_user(self, obj: Principal):
-        """Extract roles from a Principal's groups' prefetched role bindings.
-
-        Args:
-            obj: Principal object with filtered_groups prefetch
-
-        Returns:
-            List of role dicts
-        """
-        if not hasattr(obj, "filtered_groups"):
-            return []
-
-        field_selection = self._get_field_selection()
-
-        roles = []
-        seen_role_ids = set()
-
-        # Iterate through user's groups to get roles
-        for group in obj.filtered_groups:
-            if not hasattr(group, "filtered_bindings"):
-                continue
-
-            for binding_group in group.filtered_bindings:
-                if not hasattr(binding_group, "binding") or not binding_group.binding:
-                    continue
-
-                role = binding_group.binding.role
-                if not role or role.uuid in seen_role_ids:
-                    continue
-
-                # id is always included
-                role_data = {"id": role.uuid}
-
-                if field_selection is not None:
-                    # Add explicitly requested fields
-                    for field_name in field_selection.role_fields:
-                        if field_name != "id":
-                            value = getattr(role, field_name, None)
-                            if value is not None:
-                                role_data[field_name] = value
-
-                roles.append(role_data)
-                seen_role_ids.add(role.uuid)
 
         return roles
 
