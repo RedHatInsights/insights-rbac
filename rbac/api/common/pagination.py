@@ -232,12 +232,16 @@ class V2CursorPagination(CursorPagination):
             request: The HTTP request object
 
         Returns:
-            Default ordering field for the subject_type
+            Default ordering field for the subject_type, or self.ordering if
+            subject_type is not specified (for backwards compatibility)
         """
         subject_type = request.query_params.get("subject_type")
         if subject_type == "user":
             return self.USER_DEFAULT_ORDERING
-        return self.GROUP_DEFAULT_ORDERING
+        elif subject_type == "group":
+            return self.GROUP_DEFAULT_ORDERING
+        # Fall back to instance ordering for backwards compatibility
+        return self.ordering
 
     def get_ordering(self, request, queryset, view):
         """Get ordering from order_by query parameter or use default.
