@@ -303,7 +303,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             }
 
         # With fields param: type is always included
-        subject = {"type": subject_type}
+        subject: dict = {"type": subject_type}
 
         # Check if id is explicitly requested
         if "id" in field_selection.subject_fields:
