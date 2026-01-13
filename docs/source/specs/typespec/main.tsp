@@ -942,8 +942,8 @@ namespace Roles {
         name: "Host Inventory Admin",
         description: "Custom role for host inventory management",
         permissions: #[
-            #{ application: "host_inventory", resource_type: "hosts", operation: "read" },
-            #{ application: "host_inventory", resource_type: "hosts", operation: "write" }
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" }
         ]
     })
     model CreateRoleRequest {
@@ -982,9 +982,9 @@ namespace Roles {
         name: "Updated Host Inventory Admin Role",
         description: "Updated role description and/or name and/or permissions",
         permissions: #[
-            #{ application: "host_inventory", resource_type: "hosts", operation: "read" },
-            #{ application: "host_inventory", resource_type: "hosts", operation: "write" },
-            #{ application: "host_inventory", resource_type: "hosts", operation: "delete" }
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" },
+            #{ application: "inventory", resource_type: "hosts", operation: "delete" }
         ]
     })
     model UpdateRoleRequest {
@@ -1010,9 +1010,9 @@ namespace Roles {
                 name: "Updated Host Inventory Admin",
                 description: "Updated role description",
                 permissions: #[
-                    #{ application: "host_inventory", resource_type: "hosts", operation: "read" },
-                    #{ application: "host_inventory", resource_type: "hosts", operation: "write" },
-                    #{ application: "host_inventory", resource_type: "hosts", operation: "delete" }
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "delete" }
                 ]
             }
         },
@@ -1025,5 +1025,27 @@ namespace Roles {
         @path id: UUID;
         @body body: UpdateRoleRequest
     ): UpdateRoleResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+
+    @example(#{ statusCode: 204 })
+    model DeleteRoleResponse {
+        @statusCode
+        statusCode: 204,
+    }
+
+    @doc("Delete a custom role")
+    @summary("Delete a custom role")
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002"
+        },
+        returnType: #{
+            statusCode: 204
+        }
+    })
+    @delete op delete(
+        @doc("Unique identification")
+        @path id: UUID;
+    ): DeleteRoleResponse | Problems.CommonProblems | Problems.Problem404;
 
 }
