@@ -2242,8 +2242,8 @@
           }
         },
         "example": {
-          "name": "Updated Host Inventory Admin",
-          "description": "Updated role description",
+          "name": "Updated Host Inventory Admin Role",
+          "description": "Updated role description and/or name and/or permissions",
           "permissions": [
             {
               "application": "host_inventory",

@@ -1518,8 +1518,8 @@ components:
             $ref: '#/components/schemas/Roles.Permission'
           description: List of permissions to assign to this role
       example:
-        name: Updated Host Inventory Admin
-        description: Updated role description
+        name: Updated Host Inventory Admin Role
+        description: Updated role description and/or name and/or permissions
         permissions:
           - application: host_inventory
             resource_type: hosts
