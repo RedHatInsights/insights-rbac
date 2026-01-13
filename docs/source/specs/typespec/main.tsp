@@ -888,3 +888,54 @@ namespace RoleBindings {
 
     ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
 }
+
+@route("/roles/")
+@tag("Roles")
+@doc("Operations about roles")
+namespace Roles {
+
+    @example(#{
+        application: "inventory",
+        resource_type: "hosts",
+        operation: "read"
+    })
+    model Permission {
+        @doc("Application name")
+        application: string;
+        @doc("Resource type within the application")
+        resource_type: string;
+        @doc("Operation for this permission")
+        operation: string;
+    }
+
+    @example(#{
+        id: "550e8400-e29b-41d4-a716-446655440002",
+        name: "Workspace Admin",
+    })
+    @example(#{
+        id: "550e8400-e29b-41d4-a716-446655440002",
+        name: "Workspace Admin",
+        description: "description",
+        permissions_count: 2,
+        permissions: #[
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" }
+        ],
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
+    model Role {
+        @doc("Role identifier")
+        @key id: UUID;
+        @doc("Role name")
+        name: string;
+        @doc("Role description")
+        description?: string;
+        @doc("Number of permissions assigned to this role")
+        permissions_count?: int32;
+        @doc("List of permissions assigned to this role")
+        permissions?: Permission[];
+        @doc("Last modification timestamp")
+        last_modified?: offsetDateTime;
+    }
+
+}
