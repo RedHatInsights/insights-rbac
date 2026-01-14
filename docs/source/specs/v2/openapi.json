@@ -13,6 +13,349 @@
     }
   ],
   "paths": {
+    "/role-bindings/by-role/": {
+      "get": {
+        "operationId": "RoleBindings_listByRole",
+        "summary": "List role bindings grouped by role",
+        "description": "List role bindings grouped by role",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 10
+            },
+            "explode": false
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor for cursor-based pagination.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": true,
+            "description": "Filter by resource ID",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": true,
+            "description": "Filter by resource type",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "role_id",
+            "in": "query",
+            "required": true,
+            "description": "Filter by role ID",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "role_type",
+            "in": "query",
+            "required": false,
+            "description": "Filter by role type",
+            "schema": {
+              "$ref": "#/components/schemas/RoleBindings.RoleTypeQueryParam"
+            },
+            "explode": false
+          },
+          {
+            "name": "system",
+            "in": "query",
+            "required": false,
+            "description": "Filter by system roles (true) or custom roles (false)",
+            "schema": {
+              "type": "boolean"
+            },
+            "explode": false
+          },
+          {
+            "name": "platform_default",
+            "in": "query",
+            "required": false,
+            "description": "Filter by platform default roles",
+            "schema": {
+              "type": "boolean"
+            },
+            "explode": false
+          },
+          {
+            "name": "admin_default",
+            "in": "query",
+            "required": false,
+            "description": "Filter by admin default roles",
+            "schema": {
+              "type": "boolean"
+            },
+            "explode": false
+          },
+          {
+            "name": "permission",
+            "in": "query",
+            "required": false,
+            "description": "Filter roles containing specific permission pattern",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "parent_role_bindings",
+            "in": "query",
+            "required": false,
+            "description": "Include role bindings inherited from parent resources",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "explode": false
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: role.id, resource.id, subjects[].id, subjects[].type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `role(name,type),resource(name),subject_count`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role name\n- display_name (string) - human-readable display name\n- description (string) - role description\n- type (string) - custom, seeded, or platform\n- system (boolean) - whether system-defined\n- platform_default (boolean) - default for all users\n- admin_default (boolean) - default for org admins\n- permissions_count (integer) - number of permissions\n- permissions (array) - full permission list (application, resource_type, operation)\n- applications (array) - list of applications\n- external_role_id (string) - external tenant role ID\n- external_tenant (string) - external tenant name\n- last_modified (datetime) - role modification timestamp\n\n**groups array:**\n- id (UUID) - always included\n- type (string) - always included (\"group\")\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- last_modified (datetime) - binding modification timestamp\n- subject_count (integer) - count of subjects (useful when not fetching full subject details)\n- inherited_from (object) - resource from which this role binding is inherited\n\n**Examples:**\n- `role(name,type,system)` - Role name, type, and system flag\n- `role(permissions)` - Include full permissions list\n- `role(applications,permissions_count)` - Apps and permission count\n- `groups(group.name,group.user_count)` - Group names and user counts\n- `subject_count` - Just the count without full group details\n- `role(name,type),groups(group.name),resource(name)` - Combined fields\n- `role(name,display_name,admin_default),subject_count,resource(name,type)` - Role details with subject count\n- `inherited_from(name,type)` - Include inherited resource details",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "description": "Sort by specified field(s), prefix with '-' for descending order",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleBindings.RoleBindingByRoleListResponse"
+                },
+                "examples": {
+                  "example0": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "role": {
+                            "id": "550e8400-e29b-41d4-a716-446655440002",
+                            "name": "Workspace Admin",
+                            "display_name": "Workspace Administrator",
+                            "type": "seeded",
+                            "system": true,
+                            "admin_default": true,
+                            "permissions_count": 2,
+                            "permissions": [
+                              {
+                                "application": "rbac",
+                                "resource_type": "workspace",
+                                "operation": "read"
+                              },
+                              {
+                                "application": "rbac",
+                                "resource_type": "workspace",
+                                "operation": "write"
+                              }
+                            ]
+                          },
+                          "groups": [
+                            {
+                              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                              "type": "group",
+                              "group": {
+                                "name": "Engineering Team",
+                                "description": "Development and engineering team",
+                                "user_count": 25
+                              }
+                            }
+                          ],
+                          "subject_count": 1,
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440003",
+                            "name": "Child Workspace",
+                            "type": "workspace"
+                          },
+                          "inherited_from": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Parent Workspace",
+                            "type": "workspace"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "example1": {
+                    "value": {
+                      "meta": {
+                        "limit": 10
+                      },
+                      "links": {
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?cursor=cD0yMDI1LTA4LTE1",
+                        "previous": null
+                      },
+                      "data": [
+                        {
+                          "last_modified": "2024-08-04T12:00:00Z",
+                          "role": {
+                            "id": "550e8400-e29b-41d4-a716-446655440002",
+                            "name": "Workspace Admin",
+                            "type": "seeded",
+                            "system": true,
+                            "permissions_count": 2,
+                            "permissions": [
+                              {
+                                "application": "rbac",
+                                "resource_type": "workspace",
+                                "operation": "read"
+                              },
+                              {
+                                "application": "rbac",
+                                "resource_type": "workspace",
+                                "operation": "write"
+                              }
+                            ],
+                            "applications": [
+                              "rbac"
+                            ]
+                          },
+                          "groups": [
+                            {
+                              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                              "type": "group",
+                              "group": {
+                                "name": "Engineering Team",
+                                "user_count": 25
+                              }
+                            }
+                          ],
+                          "subject_count": 1,
+                          "resource": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Engineering Workspace",
+                            "type": "workspace"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Role Bindings"
+        ]
+      }
+    },
     "/role-bindings/by-subject/": {
       "get": {
         "operationId": "RoleBindings_listBySubject",
@@ -1670,6 +2013,128 @@
           }
         }
       },
+      "RoleBindings.RoleBindingByRole": {
+        "type": "object",
+        "properties": {
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of last modification"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.RoleDetails"
+              }
+            ],
+            "description": "Role details"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+            },
+            "description": "Groups assigned this role on the resource"
+          },
+          "subject_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Count of subjects bound to this role"
+          },
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource the role applies to"
+          },
+          "inherited_from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
+          }
+        },
+        "example": {
+          "last_modified": "2024-08-04T12:00:00Z",
+          "role": {
+            "id": "550e8400-e29b-41d4-a716-446655440002",
+            "name": "Workspace Admin",
+            "type": "seeded",
+            "system": true,
+            "permissions_count": 2,
+            "permissions": [
+              {
+                "application": "rbac",
+                "resource_type": "workspace",
+                "operation": "read"
+              },
+              {
+                "application": "rbac",
+                "resource_type": "workspace",
+                "operation": "write"
+              }
+            ]
+          },
+          "groups": [
+            {
+              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+              "type": "group",
+              "group": {
+                "name": "Engineering Team",
+                "user_count": 25
+              }
+            }
+          ],
+          "subject_count": 1,
+          "resource": {
+            "id": "550e8400-e29b-41d4-a716-446655440003",
+            "name": "Child Workspace",
+            "type": "workspace"
+          },
+          "inherited_from": {
+            "id": "550e8400-e29b-41d4-a716-446655440001",
+            "name": "Parent Workspace",
+            "type": "workspace"
+          }
+        }
+      },
+      "RoleBindings.RoleBindingByRoleListResponse": {
+        "type": "object",
+        "required": [
+          "meta",
+          "links",
+          "data"
+        ],
+        "properties": {
+          "meta": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CursorPaginationMeta"
+              }
+            ],
+            "description": "Pagination metadata"
+          },
+          "links": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CursorPaginationLinks"
+              }
+            ],
+            "description": "Pagination links"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.RoleBindingByRole"
+            },
+            "description": "List of role bindings grouped by role"
+          }
+        }
+      },
       "RoleBindings.RoleBindingBySubject": {
         "type": "object",
         "properties": {
@@ -1774,6 +2239,100 @@
             "description": "List of role bindings grouped by subject"
           }
         }
+      },
+      "RoleBindings.RoleDetails": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Role identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Role name"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Role display name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Role description"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.RoleType"
+              }
+            ],
+            "description": "Role type: custom, seeded, or platform"
+          },
+          "system": {
+            "type": "boolean",
+            "description": "Whether this is a system-defined role (not editable)"
+          },
+          "platform_default": {
+            "type": "boolean",
+            "description": "Whether this role is assigned by default to all users"
+          },
+          "admin_default": {
+            "type": "boolean",
+            "description": "Whether this role is assigned by default to org admins"
+          },
+          "permissions_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of permissions in this role"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Roles.Permission"
+            },
+            "description": "List of permissions (when requested via fields param)"
+          },
+          "applications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Applications this role grants access to"
+          },
+          "external_role_id": {
+            "type": "string",
+            "description": "External role ID if from external tenant"
+          },
+          "external_tenant": {
+            "type": "string",
+            "description": "External tenant name if from external tenant"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last modification timestamp"
+          }
+        }
+      },
+      "RoleBindings.RoleType": {
+        "type": "string",
+        "enum": [
+          "custom",
+          "seeded",
+          "platform"
+        ]
+      },
+      "RoleBindings.RoleTypeQueryParam": {
+        "type": "string",
+        "enum": [
+          "all",
+          "custom",
+          "seeded",
+          "platform"
+        ]
       },
       "RoleBindings.UserDetails": {
         "type": "object",

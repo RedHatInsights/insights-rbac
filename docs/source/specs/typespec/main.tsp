@@ -887,6 +887,390 @@ namespace RoleBindings {
         @query order_by?: string;
 
     ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
+
+    enum RoleType {
+        @doc("Custom role created by tenant")
+        custom,
+        @doc("Seeded role from configuration")
+        seeded,
+        @doc("Platform-level role")
+        platform
+    }
+
+    enum RoleTypeQueryParam {
+        @doc("All role types")
+        all,
+        ...RoleType
+    }
+
+    model RoleDetails {
+        @doc("Role identifier")
+        id?: UUID;
+        @doc("Role name")
+        name?: string;
+        @doc("Role display name")
+        display_name?: string;
+        @doc("Role description")
+        description?: string;
+        @doc("Role type: custom, seeded, or platform")
+        type?: RoleType;
+        @doc("Whether this is a system-defined role (not editable)")
+        system?: boolean;
+        @doc("Whether this role is assigned by default to all users")
+        platform_default?: boolean;
+        @doc("Whether this role is assigned by default to org admins")
+        admin_default?: boolean;
+        @doc("Number of permissions in this role")
+        permissions_count?: int32;
+        @doc("List of permissions (when requested via fields param)")
+        permissions?: Roles.Permission[];
+        @doc("Applications this role grants access to")
+        applications?: string[];
+        @doc("External role ID if from external tenant")
+        external_role_id?: string;
+        @doc("External tenant name if from external tenant")
+        external_tenant?: string;
+        @doc("Last modification timestamp")
+        last_modified?: offsetDateTime;
+    }
+
+    @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        role: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            display_name: "Workspace Administrator",
+            description: "Full administrative access to workspace",
+            type: RoleType.seeded,
+            system: true,
+            platform_default: false,
+            admin_default: true,
+            permissions_count: 2,
+            permissions: #[
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "read"
+                },
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "write"
+                }
+            ],
+            applications: #["rbac"]
+        },
+        groups: #[
+            #{
+                id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                type: "group",
+                group: #{
+                    name: "Engineering Team",
+                    description: "Development and engineering team",
+                    user_count: 25
+                }
+            }
+        ],
+        subject_count: 1,
+        resource: #{
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            name: "Engineering Workspace",
+            type: "workspace"
+        }
+    })
+    @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        role: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            type: RoleType.seeded,
+            system: true,
+            permissions_count: 2,
+            permissions: #[
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "read"
+                },
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "write"
+                }
+            ]
+        },
+        groups: #[
+            #{
+                id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                type: "group",
+                group: #{
+                    name: "Engineering Team",
+                    user_count: 25
+                }
+            }
+        ],
+        subject_count: 1,
+        resource: #{
+            id: "550e8400-e29b-41d4-a716-446655440003",
+            name: "Child Workspace",
+            type: "workspace"
+        },
+        inherited_from: #{
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            name: "Parent Workspace",
+            type: "workspace"
+        }
+    })
+    model RoleBindingByRole {
+        @doc("Timestamp of last modification")
+        last_modified?: offsetDateTime;
+        @doc("Role details")
+        role?: RoleDetails;
+        @doc("Groups assigned this role on the resource")
+        groups?: GroupSubject[];
+        @doc("Count of subjects bound to this role")
+        subject_count?: int64;
+        @doc("Resource the role applies to")
+        resource?: Resource;
+        @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
+        inherited_from?: Resource;
+    }
+
+    model RoleBindingByRoleListResponse {
+        @doc("Pagination metadata")
+        meta: CursorPaginationMeta;
+        @doc("Pagination links")
+        links: CursorPaginationLinks;
+        @doc("List of role bindings grouped by role")
+        data: RoleBindingByRole[];
+    }
+
+    @doc("List role bindings grouped by role")
+    @summary("List role bindings grouped by role")
+    @route("by-role/")
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace"
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?cursor=cD0yMDI1LTA4LTE1",
+                previous: null
+            },
+            data: #[
+                #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                    role: #{
+                        id: "550e8400-e29b-41d4-a716-446655440002",
+                        name: "Workspace Admin",
+                        type: RoleType.seeded,
+                        system: true,
+                        permissions_count: 2,
+                        permissions: #[
+                            #{
+                                application: "rbac",
+                                resource_type: "workspace",
+                                operation: "read"
+                            },
+                            #{
+                                application: "rbac",
+                                resource_type: "workspace",
+                                operation: "write"
+                            }
+                        ],
+                        applications: #["rbac"]
+                    },
+                    groups: #[
+                        #{
+                            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            type: "group",
+                            group: #{
+                                name: "Engineering Team",
+                                user_count: 25
+                            }
+                        }
+                    ],
+                    subject_count: 1,
+                    resource: #{
+                        id: "550e8400-e29b-41d4-a716-446655440001",
+                        name: "Engineering Workspace",
+                        type: "workspace"
+                    }
+                }
+            ]
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            parent_role_bindings: true,
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace",
+            role_type: RoleTypeQueryParam.seeded
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&parent_role_bindings=true&cursor=xyz",
+                previous: null
+            },
+            data: #[
+                #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                    role: #{
+                        id: "550e8400-e29b-41d4-a716-446655440002",
+                        name: "Workspace Admin",
+                        display_name: "Workspace Administrator",
+                        type: RoleType.seeded,
+                        system: true,
+                        admin_default: true,
+                        permissions_count: 2,
+                        permissions: #[
+                            #{
+                                application: "rbac",
+                                resource_type: "workspace",
+                                operation: "read"
+                            },
+                            #{
+                                application: "rbac",
+                                resource_type: "workspace",
+                                operation: "write"
+                            }
+                        ]
+                    },
+                    groups: #[
+                        #{
+                            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            type: "group",
+                            group: #{
+                                name: "Engineering Team",
+                                description: "Development and engineering team",
+                                user_count: 25
+                            }
+                        }
+                    ],
+                    subject_count: 1,
+                    resource: #{
+                        id: "550e8400-e29b-41d4-a716-446655440003",
+                        name: "Child Workspace",
+                        type: "workspace"
+                    },
+                    inherited_from: #{
+                        id: "550e8400-e29b-41d4-a716-446655440001",
+                        name: "Parent Workspace",
+                        type: "workspace"
+                    }
+                }
+            ]
+        }
+    })
+    @get op listByRole(
+        @query limit?: int64 = 10;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: string;
+
+        @doc("Filter by resource ID")
+        @example("550e8400-e29b-41d4-a716-446655440001")
+        @query resource_id: string;
+
+        @doc("Filter by resource type")
+        @example("workspace")
+        @query resource_type: string;
+
+        @doc("Filter by role type")
+        @query role_type?: RoleTypeQueryParam;
+
+        @doc("Filter by system roles (true) or custom roles (false)")
+        @query system?: boolean;
+
+        @doc("Filter by platform default roles")
+        @query platform_default?: boolean;
+
+        @doc("Filter by admin default roles")
+        @query admin_default?: boolean;
+
+        @doc("Filter roles containing specific permission pattern")
+        @example("inventory:hosts:read")
+        @query permission?: string;
+
+        @doc("Include role bindings inherited from parent resources")
+        @query parent_role_bindings?: boolean = false;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size and improve performance.
+
+        **Default Behavior (no fields parameter):**
+        Basic required fields are always included: role.id, resource.id, subjects[].id, subjects[].type
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are included in the response.
+
+        **Syntax:**
+        - Use parentheses to specify fields for nested objects: `object(field1,field2)`
+        - Use comma to separate multiple field specifications: `role(name,type),resource(name),subject_count`
+        - Fields not in parentheses apply to the root level
+
+        **Available Fields:**
+
+        **role object:**
+        - id (UUID) - always included
+        - name (string) - role name
+        - display_name (string) - human-readable display name
+        - description (string) - role description
+        - type (string) - custom, seeded, or platform
+        - system (boolean) - whether system-defined
+        - platform_default (boolean) - default for all users
+        - admin_default (boolean) - default for org admins
+        - permissions_count (integer) - number of permissions
+        - permissions (array) - full permission list (application, resource_type, operation)
+        - applications (array) - list of applications
+        - external_role_id (string) - external tenant role ID
+        - external_tenant (string) - external tenant name
+        - last_modified (datetime) - role modification timestamp
+
+        **groups array:**
+        - id (UUID) - always included
+        - type (string) - always included ("group")
+        - group.name (string) - name of the group
+        - group.description (string) - description of the group
+        - group.user_count (integer) - number of users in the group
+
+        **resource object:**
+        - id (UUID) - always included
+        - name (string) - resource name
+        - type (string) - resource type
+
+        **root level:**
+        - last_modified (datetime) - binding modification timestamp
+        - subject_count (integer) - count of subjects
+        - inherited_from (object) - resource from which this role binding is inherited
+
+        **Examples:**
+        - `role(name,type,system)` - Role name, type, and system flag
+        - `role(permissions)` - Include full permissions list
+        - `role(applications,permissions_count)` - Apps and permission count
+        - `groups(group.name,group.user_count)` - Group names and user counts
+        - `subject_count` - Just the count without full group details
+        - `role(name,type),groups(group.name),resource(name)` - Combined fields
+        - `role(name,display_name,admin_default),subject_count,resource(name,type)` - Role details with subject count
+        - `inherited_from(name,type)` - Include inherited resource details
+        """)
+        @example("role(name,type,permissions_count,permissions),groups(group.name),resource(name,type)")
+        @query fields?: string;
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order")
+        @example("role_name,-subject_count")
+        @query order_by?: string;
+
+    ): RoleBindingByRoleListResponse | Problems.CommonProblems;
 }
 
 @route("/roles/")
