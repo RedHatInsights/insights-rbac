@@ -116,7 +116,7 @@ class BindingMappingTests(IdentityRequest):
         self.v2role = V2role(id="v2role", is_system=False, permissions=frozenset(["perm1", "perm2"]))
         self.resource = V2boundresource(resource_type=("namespace", "type"), resource_id="resource_id")
         self.v2rolebinding = V2rolebinding(
-            id="v2rolebinding", role=self.v2role, resource=self.resource, groups=frozenset(), users=frozenset()
+            id="v2rolebinding", role=self.v2role, resource=self.resource, groups=frozenset(), users={}
         )
         self.binding_mapping = BindingMapping.for_role_binding(self.v2rolebinding, self.role)
         self.user_id_1 = "user1"
