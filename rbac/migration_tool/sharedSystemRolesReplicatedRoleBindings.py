@@ -98,14 +98,14 @@ class MigrateCustomRoleResult:
     role_bindings: tuple[RoleBinding, ...]
 
     def __post_init__(self):
-        """Check tha tthis object is in a valid state."""
+        """Check that this object is in a valid state."""
         if len(self.binding_mappings) != len(self.role_bindings):
             raise ValueError("BindingMappings and RoleBindings must be one-to-one")
 
         if {str(r.uuid) for r in self.role_bindings} != {m.mappings["id"] for m in self.binding_mappings}:
             raise ValueError("BindingMapping and RoleBinding UUIDs must match")
 
-        if not {r.id for r in self.v2_roles}.issubset(b.role_id for b in self.role_bindings):
+        if not {r.id for r in self.v2_roles}.issuperset(b.role_id for b in self.role_bindings):
             raise ValueError("All V2 roles referenced by RoleBindings must be included in v2_roles")
 
 
