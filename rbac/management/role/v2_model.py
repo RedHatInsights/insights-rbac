@@ -23,7 +23,7 @@ import uuid_utils.compat as uuid
 from django.db import models
 from django.db.models import QuerySet, signals
 from django.utils import timezone
-from management.models import Group, Permission, Role
+from management.models import Group, Permission, Principal, Role
 from management.rbac_fields import AutoDateTimeField
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from rest_framework import serializers
@@ -224,6 +224,21 @@ class RoleBindingGroup(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["group", "binding"], name="unique group binding pair")]
+
+
+class RoleBindingPrincipal(models.Model):
+    """The relationship between a RoleBinding and one of its principal subjects."""
+
+    principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
+    binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
+    source = models.CharField(max_length=128, default=None, null=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["principal", "binding", "source"], name="unique principal binding source triple"
+            )
+        ]
 
 
 def validate_role_children_on_m2m_change(sender, instance, action, pk_set, **kwargs):
