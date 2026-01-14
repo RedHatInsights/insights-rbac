@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from management.models import Group
+from management.principal.model import Principal
 from rest_framework import serializers
 
 
@@ -37,8 +38,10 @@ class FieldSelection:
     """Data class representing parsed field selections from the fields parameter."""
 
     # Valid fields for each object type
-    # subject: id and type are always included; group.* fields available when type="group"
-    VALID_SUBJECT_FIELDS = {"id", "type", "group.name", "group.description", "group.user_count"}
+    # subject: id and type are always included
+    # group.* fields available when type="group"
+    # user.* fields available when type="user"
+    VALID_SUBJECT_FIELDS = {"id", "type", "group.name", "group.description", "group.user_count", "user.username"}
     VALID_ROLE_FIELDS = {"id", "name"}
     VALID_RESOURCE_FIELDS = {"id", "name", "type"}
     VALID_ROOT_FIELDS = {"last_modified"}
@@ -206,16 +209,17 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
 
 class RoleBindingOutputSerializer(serializers.Serializer):
-    """Serializer for role bindings by group.
+    """Serializer for role bindings by subject (group or user).
 
-    This serializer formats Group objects that have been annotated with
+    This serializer formats Group or Principal objects that have been annotated with
     role binding information via the service layer.
 
     Supports dynamic field selection through the 'field_selection' context parameter.
     Fields are accessed directly on the model using dot notation from the query parameter.
 
     Field selection syntax:
-    - subject(group.name, group.description) - accesses obj.name, obj.description
+    - subject(group.name, group.description) - accesses group fields when type="group"
+    - subject(user.username) - accesses user fields when type="user"
     - role(name, description) - accesses role.name, role.description
     - resource(name, type) - accesses resource name and type from context
     - last_modified - include root-level field
@@ -260,52 +264,72 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             return obj.get("modified") or obj.get("latest_modified")
         return getattr(obj, "latest_modified", None)
 
+    # Field name mapping for special cases (e.g., API field name -> model attribute)
+    SUBJECT_FIELD_MAPPING = {
+        "group": {"user_count": "principalCount"},
+        "user": {},
+    }
+
     def get_subject(self, obj):
-        """Extract subject information from the Group.
+        """Extract subject information from the Group or Principal.
 
         Default (no fields param): Returns only id and type.
         With fields param: Only type is always included. Other fields
         (including id) are only included if explicitly requested.
         """
-        if not isinstance(obj, Group):
-            return None
+        if isinstance(obj, Principal):
+            return self._build_subject(obj, "user")
+        elif isinstance(obj, Group):
+            return self._build_subject(obj, "group")
+        return None
 
+    def _build_subject(self, obj, subject_type: str):
+        """Build subject dict for a Group or Principal.
+
+        Args:
+            obj: Group or Principal object
+            subject_type: The subject type string ("group" or "user")
+
+        Returns:
+            Subject dict with type and requested fields
+        """
         field_selection = self._get_field_selection()
 
         # Default behavior: only basic fields
         if field_selection is None:
             return {
                 "id": obj.uuid,
-                "type": "group",
+                "type": subject_type,
             }
 
         # With fields param: type is always included
-        subject = {"type": "group"}
+        subject: dict = {"type": subject_type}
 
         # Check if id is explicitly requested
         if "id" in field_selection.subject_fields:
             subject["id"] = obj.uuid
 
-        # Extract field names from "group.X" paths
+        # Extract field names from "{subject_type}.X" paths
+        prefix = f"{subject_type}."
+        prefix_len = len(prefix)
         fields_to_include = set()
         for field_path in field_selection.subject_fields:
-            if field_path.startswith("group."):
-                fields_to_include.add(field_path[6:])  # Remove "group." prefix
+            if field_path.startswith(prefix):
+                fields_to_include.add(field_path[prefix_len:])
 
         # Dynamically extract requested fields from the object
         if fields_to_include:
-            group_details = {}
+            field_mapping = self.SUBJECT_FIELD_MAPPING.get(subject_type, {})
+            details = {}
             for field_name in fields_to_include:
-                # Handle special case for user_count -> principalCount
-                if field_name == "user_count":
-                    group_details[field_name] = getattr(obj, "principalCount", 0)
-                else:
-                    value = getattr(obj, field_name, None)
-                    if value is not None:
-                        group_details[field_name] = value
+                # Map API field name to model attribute if needed
+                model_attr = field_mapping.get(field_name, field_name)
+                value = getattr(obj, model_attr, None)
+                if value is not None:
+                    details[field_name] = value
 
-            if group_details:
-                subject["group"] = group_details
+            if details:
+                subject[subject_type] = details
 
         return subject
 
@@ -318,15 +342,43 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         if isinstance(obj, dict):
             return obj.get("roles", [])
 
-        if not isinstance(obj, Group) or not hasattr(obj, "filtered_bindings"):
-            return []
+        # Collect all binding_groups from Group or Principal
+        binding_groups = self._get_binding_groups(obj)
+        return self._extract_roles_from_bindings(binding_groups)
 
+    def _get_binding_groups(self, obj):
+        """Get all binding groups from a Group or Principal.
+
+        Args:
+            obj: Group or Principal object with prefetched bindings
+
+        Returns:
+            Iterable of RoleBindingGroup objects
+        """
+        if isinstance(obj, Group):
+            return getattr(obj, "filtered_bindings", [])
+        elif isinstance(obj, Principal):
+            # Collect bindings from all of user's groups
+            binding_groups = []
+            for group in getattr(obj, "filtered_groups", []):
+                binding_groups.extend(getattr(group, "filtered_bindings", []))
+            return binding_groups
+        return []
+
+    def _extract_roles_from_bindings(self, binding_groups):
+        """Extract deduplicated roles from binding groups.
+
+        Args:
+            binding_groups: Iterable of RoleBindingGroup objects
+
+        Returns:
+            List of role dicts with id and requested fields
+        """
         field_selection = self._get_field_selection()
-
         roles = []
         seen_role_ids = set()
 
-        for binding_group in obj.filtered_bindings:
+        for binding_group in binding_groups:
             if not hasattr(binding_group, "binding") or not binding_group.binding:
                 continue
 
