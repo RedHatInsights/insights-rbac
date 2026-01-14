@@ -60,8 +60,15 @@ RUN python3.12 -m venv /pipenv-venv
 ENV PATH="/pipenv-venv/bin:$PATH"
 # Install pipenv into the virtual env
 RUN \
-    pip install --upgrade pip && \
-    pip install pipenv
+    pip install --upgrade "pip>=23.3" && \
+    pip install pipenv && \
+    pip install "jaraco-context>=6.1.0" && \
+    # Patch vendored jaraco.context inside setuptools (CVE GHSA-58pv-8j8x-9vj2)
+    SETUPTOOLS_VENDOR=$(python3.12 -c "import setuptools; import os; print(os.path.join(os.path.dirname(setuptools.__file__), '_vendor'))") && \
+    JARACO_SOURCE=$(python3.12 -c "import jaraco.context; import os; print(os.path.dirname(jaraco.context.__file__))") && \
+    rm -rf "${SETUPTOOLS_VENDOR}/jaraco/context.py" && \
+    cp -r "${JARACO_SOURCE}"/* "${SETUPTOOLS_VENDOR}/jaraco/" && \
+    rm -rf "${SETUPTOOLS_VENDOR}/jaraco.context-"*.dist-info
 
 WORKDIR ${APP_ROOT}
 
@@ -73,7 +80,14 @@ RUN \
     # install the dependencies into the working dir (i.e. ${APP_ROOT}/.venv)
     pipenv install --deploy && \
     # delete the pipenv cache
-    pipenv --clear
+    pipenv --clear && \
+    # Patch vendored jaraco.context inside setuptools (CVE GHSA-58pv-8j8x-9vj2)
+    # Use jaraco.context from pipenv-venv as the source
+    SETUPTOOLS_VENDOR=$(.venv/bin/python -c "import setuptools; import os; print(os.path.join(os.path.dirname(setuptools.__file__), '_vendor'))") && \
+    JARACO_SOURCE=$(python3.12 -c "import jaraco.context; import os; print(os.path.dirname(jaraco.context.__file__))") && \
+    rm -rf "${SETUPTOOLS_VENDOR}/jaraco/context.py" && \
+    cp -r "${JARACO_SOURCE}"/* "${SETUPTOOLS_VENDOR}/jaraco/" && \
+    rm -rf "${SETUPTOOLS_VENDOR}/jaraco.context-"*.dist-info
 
 
 # Runtime env variables:
