@@ -21,6 +21,7 @@ import time
 from contextlib import contextmanager
 from uuid import UUID
 
+from django.db import connection
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
@@ -123,6 +124,9 @@ def filter_top_level_workspaces(queryset):
     - For each workspace w in S, check its ancestors
     - If none of w's ancestors are in S, then w is top-level
 
+    Uses a single recursive CTE query to fetch all ancestors at once,
+    avoiding N+1 query problem.
+
     Args:
         queryset: QuerySet of workspaces to filter
 
@@ -130,18 +134,45 @@ def filter_top_level_workspaces(queryset):
         QuerySet: Filtered queryset containing only top-level workspaces
     """
     accessible_workspaces = list(queryset)
-    accessible_ids_set = {str(ws.id) for ws in accessible_workspaces}
-    top_level_workspaces = []
+    if not accessible_workspaces:
+        return queryset.none()
 
-    for workspace in accessible_workspaces:
-        # Check if any of this workspace's ancestors are in the accessible set
-        ancestor_ids = {str(ancestor.id) for ancestor in workspace.ancestors()}
-        # If none of the ancestors are in accessible set, this is a top-level workspace
-        if not (ancestor_ids & accessible_ids_set):
-            top_level_workspaces.append(workspace)
+    accessible_ids_set = {ws.id for ws in accessible_workspaces}
+    accessible_ids_list = list(accessible_ids_set)
 
-    # Return a filtered queryset containing only top-level workspaces
-    top_level_ids = [ws.id for ws in top_level_workspaces]
+    # Single recursive CTE to get all (workspace_id, ancestor_id) pairs
+    # for all accessible workspaces at once
+    sql = """
+        WITH RECURSIVE workspace_ancestors AS (
+            -- Base case: start with all accessible workspaces and their direct parents
+            SELECT id AS workspace_id, parent_id AS ancestor_id
+            FROM management_workspace
+            WHERE id = ANY(%s) AND parent_id IS NOT NULL
+
+            UNION
+
+            -- Recursive case: get ancestors of ancestors
+            SELECT wa.workspace_id, w.parent_id AS ancestor_id
+            FROM workspace_ancestors wa
+            JOIN management_workspace w ON w.id = wa.ancestor_id
+            WHERE w.parent_id IS NOT NULL
+        )
+        SELECT workspace_id, ancestor_id FROM workspace_ancestors
+    """
+
+    # Execute single query to get all ancestor relationships
+    workspace_ancestors_map = {ws_id: set() for ws_id in accessible_ids_set}
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [accessible_ids_list])
+        for workspace_id, ancestor_id in cursor.fetchall():
+            if workspace_id in workspace_ancestors_map:
+                workspace_ancestors_map[workspace_id].add(ancestor_id)
+
+    # Find top-level workspaces: those with no ancestors in the accessible set
+    top_level_ids = [
+        ws_id for ws_id, ancestors in workspace_ancestors_map.items() if not (ancestors & accessible_ids_set)
+    ]
+
     return queryset.filter(id__in=top_level_ids)
 
 
