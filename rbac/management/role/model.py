@@ -174,6 +174,15 @@ class BindingMapping(models.Model):
     resource_type_name = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
 
+    def save(self, *args, **kwargs):
+        """Validate and save this BindingMapping."""
+        users = self.mappings.get("users", None)
+
+        if (users is not None) and not isinstance(users, dict):
+            raise TypeError("users must be a dict. Support for representing users as a list has been removed.")
+
+        super().save(*args, **kwargs)
+
     @classmethod
     def for_role_binding(cls, role_binding: V2rolebinding, v1_role: Union[Role, str]):
         """Create a new BindingMapping for a V2rolebinding."""
@@ -200,7 +209,7 @@ class BindingMapping(models.Model):
 
     def is_unassigned(self):
         """Return true if mapping is not assigned to any groups or users."""
-        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
+        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", {})) == 0
 
     def unassign_group(self, group_uuid) -> Optional[Relationship]:
         """
