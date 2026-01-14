@@ -5,6 +5,7 @@ info:
 tags:
   - name: Workspaces
   - name: Role Bindings
+  - name: Roles
 paths:
   /role-bindings/by-subject/:
     get:
@@ -875,6 +876,125 @@ paths:
               $ref: '#/components/schemas/Workspaces.MoveWorkspaceRequest'
             example:
               parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
+  /roles/{id}/:
+    get:
+      operationId: Roles_read
+      summary: Get a role
+      description: Get a role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identification
+          schema:
+            type: string
+            format: uuid
+          explode: false
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response to optimize payload size and improve performance.
+
+            **Default Behavior (no fields parameter):**
+            When no fields parameter is provided, returns default fields: id, name
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are included in the response. The id field is always required and included even if not specified.
+
+            **Syntax:**
+            - Use comma to separate field names: `field1,field2,field3`
+
+            **Available Fields:**
+            - id (UUID) - always included, cannot be excluded
+            - name (string) - role name
+            - description (string) - role description
+            - permissions_count (integer) - number of permissions assigned to this role
+            - permissions (array) - list of permissions assigned to this role (includes application, resource_type, operation)
+            - last_modified (datetime) - timestamp of last modification
+
+            **Examples:**
+            - `name,description` - Include name and description
+            - `name,permissions_count` - Include name and permission count
+            - `name,description,permissions` - Include name, description, and full permission list
+            - `name,description,permissions_count,last_modified` - Include all fields except permissions array
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Roles.ReadRoleResponse'
+              examples:
+                example1:
+                  value:
+                    id: 550e8400-e29b-41d4-a716-446655440002
+                    name: Workspace Admin
+                example2:
+                  value:
+                    id: 550e8400-e29b-41d4-a716-446655440002
+                    name: Workspace Admin
+                    description: Full administrative access to workspace resources
+                    permissions:
+                      - application: inventory
+                        resource_type: hosts
+                        operation: read
+                      - application: inventory
+                        resource_type: hosts
+                        operation: write
+                    last_modified: '2024-08-04T12:00:00Z'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  type:
+                    $ref: '#/components/schemas/ProblemType'
+                  status:
+                    type: integer
+                    enum:
+                      - 404
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        default:
+          description: An unexpected error response.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  type:
+                    $ref: '#/components/schemas/ProblemType'
+                  status:
+                    type: integer
+                    enum:
+                      - 400
+                      - 401
+                      - 403
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
 components:
   schemas:
     CursorPaginationLinks:
@@ -1297,6 +1417,10 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
+    Roles.ReadRoleResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Roles.Role'
     Timestamps:
       type: object
       required:
