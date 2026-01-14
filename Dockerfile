@@ -61,7 +61,8 @@ ENV PATH="/pipenv-venv/bin:$PATH"
 # Install pipenv into the virtual env
 RUN \
     pip install --upgrade "pip>=23.3" && \
-    pip install pipenv
+    pip install pipenv && \
+    pip install "jaraco-context>=6.1.0"
 
 WORKDIR ${APP_ROOT}
 
