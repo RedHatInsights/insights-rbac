@@ -952,24 +952,25 @@ namespace Roles {
         returnType: #{
             _: 200,
             id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Workspace Admin"
-        }
-    })
-    @opExample(#{
-        parameters: #{
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            fields: "name,description,permissions,last_modified"
-        },
-        returnType: #{
-            _: 200,
-            id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
             description: "Full administrative access to workspace resources",
+            permissions_count: 15,
             permissions: #[
                 #{ application: "inventory", resource_type: "hosts", operation: "read" },
                 #{ application: "inventory", resource_type: "hosts", operation: "write" }
             ],
             last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            fields: "name"
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin"
         }
     })
     @get op read(
@@ -980,7 +981,7 @@ namespace Roles {
         Control which fields are included in the response to optimize payload size and improve performance.
 
         **Default Behavior (no fields parameter):**
-        When no fields parameter is provided, returns default fields: id, name
+        When no fields parameter is provided, returns the full model with all fields.
 
         **When fields parameter is provided:**
         Only explicitly specified fields are included in the response. The id field is always required and included even if not specified.
@@ -997,9 +998,10 @@ namespace Roles {
         - last_modified (datetime) - timestamp of last modification
 
         **Examples:**
-        - `name,description` - Include name and description
-        - `name,permissions_count` - Include name and permission count
-        - `name,description,permissions` - Include name, description, and full permission list
+        - `name` - Include only id and name
+        - `name,description` - Include id, name, and description
+        - `name,permissions_count` - Include id, name, and permission count
+        - `name,description,permissions` - Include id, name, description, and full permission list
         - `name,description,permissions_count,last_modified` - Include all fields except permissions array
         """)
         @example("name,description,permissions,last_modified")
