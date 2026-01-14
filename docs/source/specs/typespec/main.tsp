@@ -938,4 +938,73 @@ namespace Roles {
         last_modified?: offsetDateTime;
     }
 
+    model ReadRoleResponse extends Role {
+        @statusCode _: 200;
+    }
+
+    @doc("Get a role")
+    @summary("Get a role")
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002"
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin"
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            fields: "name,description,permissions,last_modified"
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            description: "Full administrative access to workspace resources",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @get op read(
+        @doc("Unique identification")
+        @path id: UUID;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size and improve performance.
+
+        **Default Behavior (no fields parameter):**
+        When no fields parameter is provided, returns default fields: id, name
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are included in the response. The id field is always required and included even if not specified.
+
+        **Syntax:**
+        - Use comma to separate field names: `field1,field2,field3`
+
+        **Available Fields:**
+        - id (UUID) - always included, cannot be excluded
+        - name (string) - role name
+        - description (string) - role description
+        - permissions_count (integer) - number of permissions assigned to this role
+        - permissions (array) - list of permissions assigned to this role (includes application, resource_type, operation)
+        - last_modified (datetime) - timestamp of last modification
+
+        **Examples:**
+        - `name,description` - Include name and description
+        - `name,permissions_count` - Include name and permission count
+        - `name,description,permissions` - Include name, description, and full permission list
+        - `name,description,permissions_count,last_modified` - Include all fields except permissions array
+        """)
+        @example("name,description,permissions,last_modified")
+        @query fields?: string;
+
+    ): ReadRoleResponse | Problems.CommonProblems | Problems.Problem404;
+
 }
