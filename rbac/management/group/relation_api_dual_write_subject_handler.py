@@ -57,6 +57,9 @@ def _update_binding_for_custom_role(
     if _key_attrs_for(binding_mapping) != prior_key:
         raise ValueError("Expected ID, role, and resource of role binding not to be updated.")
 
+    if len(binding_mapping.mappings["users"]) > 0:
+        raise ValueError("Principal bindings are not supported for custom roles.")
+
     binding_mapping.save(force_update=True)
 
     new_groups = Group.objects.filter(uuid__in=binding_mapping.mappings["groups"])
