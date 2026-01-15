@@ -127,7 +127,6 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         user_id = str(self.cross_account_request.user_id)
 
         def add_principal_to_binding(mapping: BindingMapping):
-            mapping.update_data_format_for_user(self.relations_to_remove)
             self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
 
         for role in roles:
