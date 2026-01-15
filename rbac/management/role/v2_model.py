@@ -19,7 +19,6 @@
 
 from typing import Iterable, Optional
 
-import uuid_utils.compat as uuid
 from django.db import models
 from django.db.models import QuerySet, signals
 from django.utils import timezone
@@ -27,6 +26,7 @@ from management.models import Group, Permission, Principal, Role
 from management.rbac_fields import AutoDateTimeField
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from rest_framework import serializers
+from uuid_utils.compat import UUID, uuid7
 
 from api.models import TenantAwareModel
 
@@ -39,7 +39,7 @@ class RoleV2(TenantAwareModel):
         SEEDED = "seeded"
         PLATFORM = "platform"
 
-    uuid = models.UUIDField(default=uuid.uuid7, editable=False, unique=True, null=False)
+    uuid = models.UUIDField(default=uuid7, editable=False, unique=True, null=False)
     name = models.CharField(max_length=175, null=False, blank=False)
     description = models.TextField(null=True, blank=True)
     type = models.CharField(
@@ -168,7 +168,7 @@ class PlatformRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 class RoleBinding(TenantAwareModel):
     """A role binding."""
 
-    uuid = models.UUIDField(default=uuid.uuid7, editable=False, unique=True, null=False)
+    uuid = models.UUIDField(default=uuid7, editable=False, unique=True, null=False)
     role = models.ForeignKey(RoleV2, on_delete=models.CASCADE, related_name="bindings")
 
     resource_type = models.CharField(max_length=256, null=False)
@@ -182,6 +182,24 @@ class RoleBinding(TenantAwareModel):
         """Update the groups bound to this RoleBinding."""
         self.group_entries.all().delete()
         RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
+
+    def update_groups_by_uuid(self, uuids: Iterable[UUID | str]):
+        """
+        Update the groups bound to this RoleBinding by UUID.
+
+        Raises a ValueError if one of the UUIDs cannot be found.
+        """
+        uuids = set(str(u) for u in uuids)
+
+        groups = Group.objects.filter(uuid__in=uuids).only("id", "uuid")
+        found_uuids = {str(g.uuid) for g in groups}
+
+        if found_uuids != uuids:
+            missing_uuids = uuids.difference(found_uuids)
+            raise ValueError(f"Not all expected groups could be found. Missing UUIDs: {missing_uuids}")
+
+        assert len(groups) == len(uuids)
+        self.update_groups(groups)
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
         """

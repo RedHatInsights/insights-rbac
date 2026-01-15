@@ -768,3 +768,41 @@ class RoleBindingModelTests(IdentityRequest):
 
         binding.update_groups([])
         self.assertCountEqual([], binding.bound_groups())
+
+    def test_update_groups_by_uuid(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding.update_groups_by_uuid([self.group1.uuid])
+        self.assertCountEqual([self.group1], binding.bound_groups())
+
+        binding.update_groups_by_uuid([self.group2.uuid])
+        self.assertCountEqual([self.group2], binding.bound_groups())
+
+        binding.update_groups_by_uuid([self.group1.uuid, self.group2.uuid])
+        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
+
+        binding.update_groups_by_uuid([])
+        self.assertCountEqual([], binding.bound_groups())
+
+    def test_update_groups_by_uuid_invalid(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding.update_groups_by_uuid([self.group1.uuid, self.group2.uuid])
+        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
+
+        with self.assertRaises(ValueError):
+            # Attempt to pass a non-existent group UUID.
+            binding.update_groups_by_uuid([self.group1.uuid, uuid.uuid4()])
+
+        # The set of groups should not change after a failed attempt to set the groups.
+        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
