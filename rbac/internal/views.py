@@ -1098,7 +1098,7 @@ def clean_binding_mapping(request, binding_id):
     field = request.GET.get("field")
     if not field or field not in ("groups"):
         return HttpResponse(
-            'The "field" paramater must be "groups".',
+            'The "field" parameter must be "groups".',
             status=400,
         )
 
