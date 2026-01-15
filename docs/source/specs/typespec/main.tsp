@@ -905,31 +905,17 @@ namespace RoleBindings {
 
     model RoleDetails {
         @doc("Role identifier")
-        id?: UUID;
+        id: UUID;
         @doc("Role name")
-        name?: string;
-        @doc("Role display name")
-        display_name?: string;
+        name: string;
+        @doc("Role type: custom, seeded, or platform")
+        type: RoleType;
         @doc("Role description")
         description?: string;
-        @doc("Role type: custom, seeded, or platform")
-        type?: RoleType;
-        @doc("Whether this is a system-defined role (not editable)")
-        system?: boolean;
-        @doc("Whether this role is assigned by default to all users")
-        platform_default?: boolean;
-        @doc("Whether this role is assigned by default to org admins")
-        admin_default?: boolean;
-        @doc("Number of permissions in this role")
+        @doc("Number of permissions assigned to this role")
         permissions_count?: int32;
-        @doc("List of permissions (when requested via fields param)")
+        @doc("List of permissions assigned to this role")
         permissions?: Roles.Permission[];
-        @doc("Applications this role grants access to")
-        applications?: string[];
-        @doc("External role ID if from external tenant")
-        external_role_id?: string;
-        @doc("External tenant name if from external tenant")
-        external_tenant?: string;
         @doc("Last modification timestamp")
         last_modified: offsetDateTime;
     }
@@ -938,12 +924,8 @@ namespace RoleBindings {
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
-            display_name: "Workspace Administrator",
-            description: "Full administrative access to workspace",
             type: RoleType.seeded,
-            system: true,
-            platform_default: false,
-            admin_default: true,
+            description: "Full administrative access to workspace",
             permissions_count: 2,
             permissions: #[
                 #{
@@ -957,7 +939,6 @@ namespace RoleBindings {
                     operation: "write"
                 }
             ],
-            applications: #["rbac"],
             last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
         },
         groups: #[
@@ -983,7 +964,6 @@ namespace RoleBindings {
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
             type: RoleType.seeded,
-            system: true,
             permissions_count: 2,
             permissions: #[
                 #{
@@ -1066,7 +1046,6 @@ namespace RoleBindings {
                         id: "550e8400-e29b-41d4-a716-446655440002",
                         name: "Workspace Admin",
                         type: RoleType.seeded,
-                        system: true,
                         permissions_count: 2,
                         permissions: #[
                             #{
@@ -1080,7 +1059,6 @@ namespace RoleBindings {
                                 operation: "write"
                             }
                         ],
-                        applications: #["rbac"],
                         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
                     },
                     groups: #[
@@ -1124,10 +1102,8 @@ namespace RoleBindings {
                     role: #{
                         id: "550e8400-e29b-41d4-a716-446655440002",
                         name: "Workspace Admin",
-                        display_name: "Workspace Administrator",
                         type: RoleType.seeded,
-                        system: true,
-                        admin_default: true,
+                        description: "Full administrative access to workspace",
                         permissions_count: 2,
                         permissions: #[
                             #{
@@ -1206,33 +1182,26 @@ namespace RoleBindings {
         Control which fields are included in the response to optimize payload size and improve performance.
 
         **Default Behavior (no fields parameter):**
-        Basic required fields are always included: role.id, role.last_modified, resource.id, groups[].id, groups[].type
+        Basic required fields are always included: role.id, role.name, role.type, role.last_modified, resource.id, groups[].id, groups[].type
 
         **When fields parameter is provided:**
         Only explicitly specified fields are included in the response.
 
         **Syntax:**
         - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-        - Use comma to separate multiple field specifications: `role(name,type),resource(name),subject_count`
+        - Use comma to separate multiple field specifications: `role(description),resource(name),subject_count`
         - Fields not in parentheses apply to the root level
 
         **Available Fields:**
 
         **role object:**
         - id (UUID) - always included
+        - name (string) - always included, role name
+        - type (string) - always included, role type (custom, seeded, or platform)
         - last_modified (datetime) - always included, role modification timestamp
-        - name (string) - role name
-        - display_name (string) - human-readable display name
         - description (string) - role description
-        - type (string) - custom, seeded, or platform
-        - system (boolean) - whether system-defined
-        - platform_default (boolean) - default for all users
-        - admin_default (boolean) - default for org admins
         - permissions_count (integer) - number of permissions
         - permissions (array) - full permission list (application, resource_type, operation)
-        - applications (array) - list of applications
-        - external_role_id (string) - external tenant role ID
-        - external_tenant (string) - external tenant name
 
         **groups array:**
         - id (UUID) - always included
@@ -1251,16 +1220,16 @@ namespace RoleBindings {
         - inherited_from (object) - resource from which this role binding is inherited
 
         **Examples:**
-        - `role(name,type,system)` - Role name, type, and system flag
+        - `role(description)` - Role description
         - `role(permissions)` - Include full permissions list
-        - `role(applications,permissions_count)` - Apps and permission count
+        - `role(permissions_count)` - Permission count
         - `groups(group.name,group.user_count)` - Group names and user counts
         - `subject_count` - Just the count without full group details
-        - `role(name,type),groups(group.name),resource(name)` - Combined fields
-        - `role(name,display_name,admin_default),subject_count,resource(name,type)` - Role details with subject count
+        - `role(description),groups(group.name),resource(name)` - Combined fields
+        - `role(description,permissions_count),subject_count,resource(name,type)` - Role details with subject count
         - `inherited_from(name,type)` - Include inherited resource details
         """)
-        @example("role(name,type,permissions_count,permissions),groups(group.name),resource(name,type)")
+        @example("role(description,permissions_count,permissions),groups(group.name),resource(name,type)")
         @query fields?: string;
 
         @doc("Sort by specified field(s), prefix with '-' for descending order")

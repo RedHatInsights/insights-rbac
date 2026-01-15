@@ -125,7 +125,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: role.id, role.last_modified, resource.id, groups[].id, groups[].type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `role(name,type),resource(name),subject_count`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**role object:**\n- id (UUID) - always included\n- last_modified (datetime) - always included, role modification timestamp\n- name (string) - role name\n- display_name (string) - human-readable display name\n- description (string) - role description\n- type (string) - custom, seeded, or platform\n- system (boolean) - whether system-defined\n- platform_default (boolean) - default for all users\n- admin_default (boolean) - default for org admins\n- permissions_count (integer) - number of permissions\n- permissions (array) - full permission list (application, resource_type, operation)\n- applications (array) - list of applications\n- external_role_id (string) - external tenant role ID\n- external_tenant (string) - external tenant name\n\n**groups array:**\n- id (UUID) - always included\n- type (string) - always included (\"group\")\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- subject_count (integer) - count of subjects\n- inherited_from (object) - resource from which this role binding is inherited\n\n**Examples:**\n- `role(name,type,system)` - Role name, type, and system flag\n- `role(permissions)` - Include full permissions list\n- `role(applications,permissions_count)` - Apps and permission count\n- `groups(group.name,group.user_count)` - Group names and user counts\n- `subject_count` - Just the count without full group details\n- `role(name,type),groups(group.name),resource(name)` - Combined fields\n- `role(name,display_name,admin_default),subject_count,resource(name,type)` - Role details with subject count\n- `inherited_from(name,type)` - Include inherited resource details",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: role.id, role.name, role.type, role.last_modified, resource.id, groups[].id, groups[].type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `role(description),resource(name),subject_count`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**role object:**\n- id (UUID) - always included\n- name (string) - always included, role name\n- type (string) - always included, role type (custom, seeded, or platform)\n- last_modified (datetime) - always included, role modification timestamp\n- description (string) - role description\n- permissions_count (integer) - number of permissions\n- permissions (array) - full permission list (application, resource_type, operation)\n\n**groups array:**\n- id (UUID) - always included\n- type (string) - always included (\"group\")\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- subject_count (integer) - count of subjects\n- inherited_from (object) - resource from which this role binding is inherited\n\n**Examples:**\n- `role(description)` - Role description\n- `role(permissions)` - Include full permissions list\n- `role(permissions_count)` - Permission count\n- `groups(group.name,group.user_count)` - Group names and user counts\n- `subject_count` - Just the count without full group details\n- `role(description),groups(group.name),resource(name)` - Combined fields\n- `role(description,permissions_count),subject_count,resource(name,type)` - Role details with subject count\n- `inherited_from(name,type)` - Include inherited resource details",
             "schema": {
               "type": "string"
             },
@@ -165,10 +165,8 @@
                           "role": {
                             "id": "550e8400-e29b-41d4-a716-446655440002",
                             "name": "Workspace Admin",
-                            "display_name": "Workspace Administrator",
                             "type": "seeded",
-                            "system": true,
-                            "admin_default": true,
+                            "description": "Full administrative access to workspace",
                             "permissions_count": 2,
                             "permissions": [
                               {
@@ -225,7 +223,6 @@
                             "id": "550e8400-e29b-41d4-a716-446655440002",
                             "name": "Workspace Admin",
                             "type": "seeded",
-                            "system": true,
                             "permissions_count": 2,
                             "permissions": [
                               {
@@ -238,9 +235,6 @@
                                 "resource_type": "workspace",
                                 "operation": "write"
                               }
-                            ],
-                            "applications": [
-                              "rbac"
                             ],
                             "last_modified": "2024-08-04T12:00:00Z"
                           },
@@ -2048,7 +2042,6 @@
             "id": "550e8400-e29b-41d4-a716-446655440002",
             "name": "Workspace Admin",
             "type": "seeded",
-            "system": true,
             "permissions_count": 2,
             "permissions": [
               {
@@ -2228,6 +2221,9 @@
       "RoleBindings.RoleDetails": {
         "type": "object",
         "required": [
+          "id",
+          "name",
+          "type",
           "last_modified"
         ],
         "properties": {
@@ -2243,14 +2239,6 @@
             "type": "string",
             "description": "Role name"
           },
-          "display_name": {
-            "type": "string",
-            "description": "Role display name"
-          },
-          "description": {
-            "type": "string",
-            "description": "Role description"
-          },
           "type": {
             "allOf": [
               {
@@ -2259,44 +2247,21 @@
             ],
             "description": "Role type: custom, seeded, or platform"
           },
-          "system": {
-            "type": "boolean",
-            "description": "Whether this is a system-defined role (not editable)"
-          },
-          "platform_default": {
-            "type": "boolean",
-            "description": "Whether this role is assigned by default to all users"
-          },
-          "admin_default": {
-            "type": "boolean",
-            "description": "Whether this role is assigned by default to org admins"
+          "description": {
+            "type": "string",
+            "description": "Role description"
           },
           "permissions_count": {
             "type": "integer",
             "format": "int32",
-            "description": "Number of permissions in this role"
+            "description": "Number of permissions assigned to this role"
           },
           "permissions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Roles.Permission"
             },
-            "description": "List of permissions (when requested via fields param)"
-          },
-          "applications": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Applications this role grants access to"
-          },
-          "external_role_id": {
-            "type": "string",
-            "description": "External role ID if from external tenant"
-          },
-          "external_tenant": {
-            "type": "string",
-            "description": "External tenant name if from external tenant"
+            "description": "List of permissions assigned to this role"
           },
           "last_modified": {
             "type": "string",
