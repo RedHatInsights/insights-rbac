@@ -1018,7 +1018,9 @@ namespace Roles {
         },
         data: #[
             #{
-                id: "550e8400-e29b-41d4-a716-446655440002"
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                name: "Workspace Admin",
+                description: "description"
             }
         ]
     })
@@ -1047,7 +1049,9 @@ namespace Roles {
             },
             data: #[
                 #{
-                    id: "550e8400-e29b-41d4-a716-446655440002"
+                    id: "550e8400-e29b-41d4-a716-446655440002",
+                    name: "Workspace Admin",
+                    description: "description"
                 }
             ]
         }
@@ -1055,27 +1059,21 @@ namespace Roles {
     @opExample(#{
         parameters: #{
             limit: 10,
-            fields: "name,description,permissions_count,permissions,last_modified"
+            fields: "id,name,permissions_count"
         },
         returnType: #{
             meta: #{
                 limit: 10
             },
             links: #{
-                next: "/api/rbac/v2/roles/?limit=10&fields=name,description,permissions_count,permissions,last_modified&cursor=eyJpZCI6IjEyMyJ9",
+                next: "/api/rbac/v2/roles/?limit=10&fields=id,name,permissions_count&cursor=eyJpZCI6IjEyMyJ9",
                 previous: null
             },
             data: #[
                 #{
                     id: "550e8400-e29b-41d4-a716-446655440002",
                     name: "Workspace Admin",
-                    description: "description",
-                    permissions_count: 2,
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-                    permissions: #[
-                        #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                        #{ application: "inventory", resource_type: "hosts", operation: "write" }
-                    ]
+                    permissions_count: 2
                 }
             ]
         }
@@ -1090,34 +1088,31 @@ namespace Roles {
         @query name?: string;
 
         @doc("""
-        Control which fields are included in the response to optimize payload size and improve performance.
+        Control which fields are included in the response. Works as a field mask.
 
         **Default Behavior (no fields parameter):**
-        Only the required field is included: id
+        Returns id, name, and description.
 
         **When fields parameter is provided:**
-        The required field (id) plus explicitly specified optional fields are included in the response.
+        Returns exactly the specified fields.
 
         **Syntax:**
-        - Use comma to separate multiple fields: `name,description,permissions_count,last_modified`
+        - Use comma to separate multiple fields: `id,name,permissions_count`
 
         **Available Fields:**
-
-        **Required field (always included):**
         - id (UUID) - role identifier
-
-        **Optional fields:**
         - name (string) - role name
         - description (string) - role description
         - permissions_count (integer) - number of permissions assigned to this role
         - permissions (array) - full list of permissions assigned to this role
         - last_modified (datetime) - last modification timestamp
 
-        **Example:**
-        - `name,description` - Include name and description in addition to id
-        - `name,description,permissions_count,last_modified` - Include name, description, permissions count, and last modification timestamp in addition to id
+        **Examples:**
+        - `id,name` - Returns only id and name
+        - `permissions` - Returns only permissions
+        - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
         """)
-        @example("name,description,permissions_count,last_modified")
+        @example("id,name,permissions_count")
         @query fields?: string;
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.")

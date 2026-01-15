@@ -483,7 +483,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nOnly the required field is included: id\n\n**When fields parameter is provided:**\nThe required field (id) plus explicitly specified optional fields are included in the response.\n\n**Syntax:**\n- Use comma to separate multiple fields: `name,description,permissions_count,last_modified`\n\n**Available Fields:**\n\n**Required field (always included):**\n- id (UUID) - role identifier\n\n**Optional fields:**\n- name (string) - role name\n- description (string) - role description\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - full list of permissions assigned to this role\n- last_modified (datetime) - last modification timestamp\n\n**Example:**\n- `name,description` - Include name and description in addition to id\n- `name,description,permissions_count,last_modified` - Include name, description, permissions count, and last modification timestamp in addition to id",
+            "description": "Control which fields are included in the response. Works as a field mask.\n\n**Default Behavior (no fields parameter):**\nReturns id, name, and description.\n\n**When fields parameter is provided:**\nReturns exactly the specified fields.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,permissions_count`\n\n**Available Fields:**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - full list of permissions assigned to this role\n- last_modified (datetime) - last modification timestamp\n\n**Examples:**\n- `id,name` - Returns only id and name\n- `permissions` - Returns only permissions\n- `id,name,description,permissions_count,last_modified` - Returns all fields except permissions",
             "schema": {
               "type": "string"
             },
@@ -515,28 +515,14 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "/api/rbac/v2/roles/?limit=10&fields=name,description,permissions_count,permissions,last_modified&cursor=eyJpZCI6IjEyMyJ9",
+                        "next": "/api/rbac/v2/roles/?limit=10&fields=id,name,permissions_count&cursor=eyJpZCI6IjEyMyJ9",
                         "previous": null
                       },
                       "data": [
                         {
                           "id": "550e8400-e29b-41d4-a716-446655440002",
                           "name": "Workspace Admin",
-                          "description": "description",
-                          "permissions_count": 2,
-                          "last_modified": "2024-08-04T12:00:00Z",
-                          "permissions": [
-                            {
-                              "application": "inventory",
-                              "resource_type": "hosts",
-                              "operation": "read"
-                            },
-                            {
-                              "application": "inventory",
-                              "resource_type": "hosts",
-                              "operation": "write"
-                            }
-                          ]
+                          "permissions_count": 2
                         }
                       ]
                     }
@@ -552,7 +538,9 @@
                       },
                       "data": [
                         {
-                          "id": "550e8400-e29b-41d4-a716-446655440002"
+                          "id": "550e8400-e29b-41d4-a716-446655440002",
+                          "name": "Workspace Admin",
+                          "description": "description"
                         }
                       ]
                     }
@@ -2322,7 +2310,9 @@
           },
           "data": [
             {
-              "id": "550e8400-e29b-41d4-a716-446655440002"
+              "id": "550e8400-e29b-41d4-a716-446655440002",
+              "name": "Workspace Admin",
+              "description": "description"
             }
           ]
         }
