@@ -43,11 +43,12 @@ from management.models import BindingMapping, Group, Permission, Policy, Role, W
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import Access, ResourceDefinition, SourceKey
+from management.role.model import Access, ResourceDefinition
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.role.user_source import SourceKey
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService

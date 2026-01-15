@@ -29,6 +29,7 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
+from management.role.user_source import SourceKey
 from migration_tool.models import (
     V2boundresource,
     V2role,
@@ -144,24 +145,6 @@ class ExtRoleRelation(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["ext_tenant", "ext_id"], name="unique external id per external tenant")
         ]
-
-
-class SourceKey:
-    """Key for a source."""
-
-    key: str
-
-    def __init__(self, source, source_id: str):
-        """Init method."""
-        self.key = f"{source.__class__.__name__}/{source_id}"
-
-    def __hash__(self):
-        """Hash value for the SourceKey instance."""
-        return hash(self.key)
-
-    def __str__(self):
-        """Return the string representation of the SourceKey instance."""
-        return f"{self.key}"
 
 
 class BindingMapping(models.Model):

@@ -2444,8 +2444,8 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         self.assertEqual(
             mappings["users"],
             {
-                str(SourceKey(car_1, car_1.source_pk())): user_id,
-                str(SourceKey(car_2, car_2.source_pk())): user_id,
+                str(car_1.source_key()): user_id,
+                str(car_2.source_key()): user_id,
             },
         )
 
