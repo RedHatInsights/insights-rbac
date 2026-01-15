@@ -249,7 +249,7 @@ class BindingMapping(models.Model):
     def unassign_user_from_bindings(self, user_id: str, source: SourceKey) -> Optional[Relationship]:
         """Unassign user from mappings."""
         self._require_source(source)
-        self._remove_value_from_mappings("users", user_id, source)
+        self.mappings["users"].pop(str(source), None)
         users_list = (
             self.mappings["users"] if isinstance(self.mappings["users"], list) else self.mappings["users"].values()
         )
@@ -264,7 +264,7 @@ class BindingMapping(models.Model):
     def assign_user_to_bindings(self, user_id: str, source: SourceKey) -> Relationship:
         """Assign user to mappings."""
         self._require_source(source)
-        self._add_value_to_mappings("users", user_id, source)
+        self.mappings["users"][str(source)] = user_id
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
@@ -296,20 +296,6 @@ class BindingMapping(models.Model):
             permissions=frozenset(args["role"]["permissions"]),
         )
         return V2rolebinding(**args)
-
-    def _remove_value_from_mappings(self, field, value, source):
-        """Update mappings by removing value."""
-        if isinstance(self.mappings[field], dict):
-            self.mappings[field].pop(str(source), None)
-        else:
-            self.mappings[field].remove(value)
-
-    def _add_value_to_mappings(self, field, value, source):
-        """Update mappings by adding value."""
-        if isinstance(self.mappings[field], dict):
-            self.mappings[field].update({str(source): value})
-        else:
-            self.mappings[field].append(value)
 
     @staticmethod
     def _require_source(source) -> SourceKey:
