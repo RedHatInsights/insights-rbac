@@ -105,6 +105,7 @@ paths:
 
             **role object:**
             - id (UUID) - always included
+            - last_modified (datetime) - always included, role modification timestamp
             - name (string) - role name
             - display_name (string) - human-readable display name
             - description (string) - role description
@@ -117,7 +118,6 @@ paths:
             - applications (array) - list of applications
             - external_role_id (string) - external tenant role ID
             - external_tenant (string) - external tenant name
-            - last_modified (datetime) - role modification timestamp
 
             **groups array:**
             - id (UUID) - always included
@@ -132,8 +132,7 @@ paths:
             - type (string) - resource type
 
             **root level:**
-            - last_modified (datetime) - binding modification timestamp
-            - subject_count (integer) - count of subjects (useful when not fetching full subject details)
+            - subject_count (integer) - count of subjects
             - inherited_from (object) - resource from which this role binding is inherited
 
             **Examples:**
@@ -171,8 +170,7 @@ paths:
                       next: http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&parent_role_bindings=true&cursor=xyz
                       previous: null
                     data:
-                      - last_modified: '2024-08-04T12:00:00Z'
-                        role:
+                      - role:
                           id: 550e8400-e29b-41d4-a716-446655440002
                           name: Workspace Admin
                           display_name: Workspace Administrator
@@ -187,6 +185,7 @@ paths:
                             - application: rbac
                               resource_type: workspace
                               operation: write
+                          last_modified: '2024-08-04T12:00:00Z'
                         groups:
                           - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
                             type: group
@@ -211,8 +210,7 @@ paths:
                       next: http://localhost:8000/api/rbac/v2/role-bindings/by-role/?cursor=cD0yMDI1LTA4LTE1
                       previous: null
                     data:
-                      - last_modified: '2024-08-04T12:00:00Z'
-                        role:
+                      - role:
                           id: 550e8400-e29b-41d4-a716-446655440002
                           name: Workspace Admin
                           type: seeded
@@ -227,6 +225,7 @@ paths:
                               operation: write
                           applications:
                             - rbac
+                          last_modified: '2024-08-04T12:00:00Z'
                         groups:
                           - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
                             type: group
@@ -1431,10 +1430,6 @@ components:
     RoleBindings.RoleBindingByRole:
       type: object
       properties:
-        last_modified:
-          type: string
-          format: date-time
-          description: Timestamp of last modification
         role:
           allOf:
             - $ref: '#/components/schemas/RoleBindings.RoleDetails'
@@ -1457,7 +1452,6 @@ components:
             - $ref: '#/components/schemas/RoleBindings.Resource'
           description: Resource from which this role binding is inherited (only present when parent_role_bindings=true)
       example:
-        last_modified: '2024-08-04T12:00:00Z'
         role:
           id: 550e8400-e29b-41d4-a716-446655440002
           name: Workspace Admin
@@ -1471,6 +1465,7 @@ components:
             - application: rbac
               resource_type: workspace
               operation: write
+          last_modified: '2024-08-04T12:00:00Z'
         groups:
           - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
             type: group
@@ -1573,6 +1568,8 @@ components:
           description: List of role bindings grouped by subject
     RoleBindings.RoleDetails:
       type: object
+      required:
+        - last_modified
       properties:
         id:
           allOf:

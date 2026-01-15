@@ -931,11 +931,10 @@ namespace RoleBindings {
         @doc("External tenant name if from external tenant")
         external_tenant?: string;
         @doc("Last modification timestamp")
-        last_modified?: offsetDateTime;
+        last_modified: offsetDateTime;
     }
 
     @example(#{
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
@@ -958,7 +957,8 @@ namespace RoleBindings {
                     operation: "write"
                 }
             ],
-            applications: #["rbac"]
+            applications: #["rbac"],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
         },
         groups: #[
             #{
@@ -979,7 +979,6 @@ namespace RoleBindings {
         }
     })
     @example(#{
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
@@ -997,7 +996,8 @@ namespace RoleBindings {
                     resource_type: "workspace",
                     operation: "write"
                 }
-            ]
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
         },
         groups: #[
             #{
@@ -1022,8 +1022,6 @@ namespace RoleBindings {
         }
     })
     model RoleBindingByRole {
-        @doc("Timestamp of last modification")
-        last_modified?: offsetDateTime;
         @doc("Role details")
         role?: RoleDetails;
         @doc("Groups assigned this role on the resource")
@@ -1064,7 +1062,6 @@ namespace RoleBindings {
             },
             data: #[
                 #{
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
                         id: "550e8400-e29b-41d4-a716-446655440002",
                         name: "Workspace Admin",
@@ -1083,7 +1080,8 @@ namespace RoleBindings {
                                 operation: "write"
                             }
                         ],
-                        applications: #["rbac"]
+                        applications: #["rbac"],
+                        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
                     },
                     groups: #[
                         #{
@@ -1123,7 +1121,6 @@ namespace RoleBindings {
             },
             data: #[
                 #{
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
                         id: "550e8400-e29b-41d4-a716-446655440002",
                         name: "Workspace Admin",
@@ -1143,7 +1140,8 @@ namespace RoleBindings {
                                 resource_type: "workspace",
                                 operation: "write"
                             }
-                        ]
+                        ],
+                        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
                     },
                     groups: #[
                         #{
@@ -1222,6 +1220,7 @@ namespace RoleBindings {
 
         **role object:**
         - id (UUID) - always included
+        - last_modified (datetime) - always included, role modification timestamp
         - name (string) - role name
         - display_name (string) - human-readable display name
         - description (string) - role description
@@ -1234,7 +1233,6 @@ namespace RoleBindings {
         - applications (array) - list of applications
         - external_role_id (string) - external tenant role ID
         - external_tenant (string) - external tenant name
-        - last_modified (datetime) - role modification timestamp
 
         **groups array:**
         - id (UUID) - always included
@@ -1249,7 +1247,6 @@ namespace RoleBindings {
         - type (string) - resource type
 
         **root level:**
-        - last_modified (datetime) - binding modification timestamp
         - subject_count (integer) - count of subjects
         - inherited_from (object) - resource from which this role binding is inherited
 
