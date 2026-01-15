@@ -16,19 +16,30 @@
 #
 """Service layer for role binding management."""
 import logging
-from typing import Optional
+from typing import Iterable, Optional, Sequence
 
+from django.conf import settings
 from django.db.models import Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
+from google.protobuf import json_format
+from internal.jwt_utils import JWTManager, JWTProvider
+from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
+from management.cache import JWTCache
 from management.group.model import Group
 from management.principal.model import Principal
 from management.role.v2_model import RoleBinding, RoleBindingGroup
+from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
 
 from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)
+
+# Lazily instantiate the JWT helpers once so all requests reuse the same objects.
+_jwt_cache = JWTCache()
+_jwt_provider = JWTProvider()
+_jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 
 
 class RoleBindingService:
@@ -51,8 +62,17 @@ class RoleBindingService:
             Ordering is handled by V2CursorPagination.get_ordering() to ensure
             cursor pagination works correctly with the requested order_by parameter.
         """
+        resource_id = params["resource_id"]
+        resource_type = params["resource_type"]
+        include_inherited = params.get("parent_role_bindings", False)
+
+        # If parent_role_bindings is requested, lookup inherited binding UUIDs via Relations API
+        binding_uuids = None
+        if include_inherited:
+            binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
+
         # Build base queryset for the specified resource
-        queryset = self._build_base_queryset(params["resource_id"], params["resource_type"])
+        queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids)
 
         # Apply subject filters
         queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
@@ -98,22 +118,35 @@ class RoleBindingService:
             "field_selection": params.get("fields"),
         }
 
-    def _build_base_queryset(self, resource_id: str, resource_type: str) -> QuerySet:
+    def _build_base_queryset(
+        self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None
+    ) -> QuerySet:
         """Build base queryset of groups with role bindings for a resource.
 
         Args:
             resource_id: The resource identifier
             resource_type: The type of resource
+            binding_uuids: Optional list of binding UUIDs to include (for inherited bindings)
 
         Returns:
             Annotated QuerySet of Group objects
         """
-        # Start with groups that have bindings to the specified resource
-        queryset = Group.objects.filter(
-            tenant=self.tenant,
-            role_binding_entries__binding__resource_type=resource_type,
-            role_binding_entries__binding__resource_id=resource_id,
-        ).distinct()
+        # Build filter for bindings - either by resource or by explicit UUIDs
+        if binding_uuids is not None:
+            # Include both direct bindings and inherited bindings by UUID
+            binding_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        else:
+            # Only direct bindings for the specified resource
+            binding_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            )
+
+        # Start with groups that have bindings matching our filter
+        queryset = Group.objects.filter(tenant=self.tenant).filter(binding_filter).distinct()
 
         # Annotate with principal count
         queryset = queryset.annotate(
@@ -177,3 +210,84 @@ class RoleBindingService:
             queryset = queryset.filter(uuid=subject_id)
 
         return queryset
+
+    def _parse_resource_type(self, resource_type: str) -> tuple[str, str]:
+        """Parse resource type into namespace and name.
+
+        Args:
+            resource_type: Resource type string, optionally prefixed with namespace
+                          (e.g., "workspace" or "rbac/workspace")
+
+        Returns:
+            Tuple of (namespace, name)
+        """
+        if "/" in resource_type:
+            parts = resource_type.split("/", 1)
+            return (parts[0], parts[1])
+        return ("rbac", resource_type)  # Default namespace
+
+    def _lookup_binding_uuids_via_relations(self, resource_type: str, resource_id: str) -> Optional[list[str]]:
+        """Use the Relations API to resolve binding UUIDs that affect the given resource."""
+        if not settings.RELATION_API_SERVER:
+            logger.warning("RELATION_API_SERVER is not configured; skipping inheritance lookup.")
+            return None
+
+        try:
+            logger.info(
+                "Calling _lookup_binding_uuids_via_relations for resource_type=%s, resource_id=%s",
+                resource_type,
+                resource_id,
+            )
+            resource_ns, resource_name = self._parse_resource_type(resource_type)
+            token = _jwt_manager.get_jwt_from_redis()
+            metadata = [("authorization", f"Bearer {token}")] if token else []
+            binding_ids = set()
+
+            with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
+                stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+                # Build request in a way that is compatible with multiple proto versions.
+                request_kwargs = {
+                    # Mirrors: zed permission lookup-subjects rbac/workspace <id> user_grant rbac/role_binding
+                    "resource": common_pb2.ObjectReference(
+                        type=common_pb2.ObjectType(namespace=resource_ns, name=resource_name),
+                        id=str(resource_id),
+                    ),
+                    "subject_type": common_pb2.ObjectType(namespace="rbac", name="role_binding"),
+                }
+
+                # Newer API versions use a 'permission' field; older ones may use 'relation'.
+                # In the current schema, the permission is `user_grant` on rbac/workspace.
+                request_fields = lookup_pb2.LookupSubjectsRequest.DESCRIPTOR.fields_by_name
+                if "permission" in request_fields:
+                    request_kwargs["permission"] = "user_grant"
+                elif "relation" in request_fields:
+                    request_kwargs["relation"] = "user_grant"
+
+                request = lookup_pb2.LookupSubjectsRequest(**request_kwargs)
+                logger.info("LookupSubjects request payload: %s", request)
+
+                responses: Iterable[lookup_pb2.LookupSubjectsResponse] = stub.LookupSubjects(
+                    request, metadata=metadata
+                )
+                for idx, response in enumerate(responses, start=1):
+                    payload = json_format.MessageToDict(response)
+                    logger.info("LookupSubjects response #%s: %s", idx, payload)
+                    subject = payload.get("subject", {})
+                    subject_id = subject.get("id") or subject.get("subject", {}).get("id")
+                    if subject_id:
+                        logger.info("Adding binding subject_id from Relations: %s", subject_id)
+                        binding_ids.add(subject_id)
+
+            result = list(binding_ids)
+            logger.info(
+                "Resolved %d binding UUID(s) via Relations for resource_type=%s, resource_id=%s: %s",
+                len(result),
+                resource_type,
+                resource_id,
+                result,
+            )
+            return result
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to lookup inherited bindings through Relations")
+            return None
