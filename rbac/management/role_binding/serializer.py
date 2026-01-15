@@ -162,7 +162,7 @@ class RoleBindingInputSerializer(serializers.Serializer):
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
     parent_role_bindings = serializers.BooleanField(
-        required=False, allow_blank=True, help_text="Include role bindings inherited from parent resources"
+        required=False, allow_null=True, help_text="Include role bindings inherited from parent resources"
     )
 
     def to_internal_value(self, data):
