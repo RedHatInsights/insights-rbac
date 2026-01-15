@@ -250,9 +250,7 @@ class BindingMapping(models.Model):
         """Unassign user from mappings."""
         self._require_source(source)
         self.mappings["users"].pop(str(source), None)
-        users_list = (
-            self.mappings["users"] if isinstance(self.mappings["users"], list) else self.mappings["users"].values()
-        )
+        users_list = self.mappings["users"].values()
         if user_id in users_list:
             logging.info(
                 f"[Dual Write] user {user_id} still in mappings of bindingmapping {self.pk}, "
