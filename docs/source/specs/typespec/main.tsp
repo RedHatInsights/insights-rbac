@@ -907,7 +907,7 @@ namespace RoleBindings {
         @doc("Role identifier")
         id: UUID;
         @doc("Role name")
-        name: string;
+        name?: string;
         @doc("Role type: custom, seeded, or platform")
         type: RoleType;
         @doc("Role description")
@@ -1182,7 +1182,7 @@ namespace RoleBindings {
         Control which fields are included in the response to optimize payload size and improve performance.
 
         **Default Behavior (no fields parameter):**
-        Basic required fields are always included: role.id, role.name, role.type, role.last_modified, resource.id, groups[].id, groups[].type
+        Basic required fields are always included: role.id, role.type, role.last_modified, resource.id, groups[].id, groups[].type
 
         **When fields parameter is provided:**
         Only explicitly specified fields are included in the response.
@@ -1196,9 +1196,9 @@ namespace RoleBindings {
 
         **role object:**
         - id (UUID) - always included
-        - name (string) - always included, role name
         - type (string) - always included, role type (custom, seeded, or platform)
         - last_modified (datetime) - always included, role modification timestamp
+        - name (string) - role name
         - description (string) - role description
         - permissions_count (integer) - number of permissions
         - permissions (array) - full permission list (application, resource_type, operation)
