@@ -1206,7 +1206,7 @@ namespace RoleBindings {
         Control which fields are included in the response to optimize payload size and improve performance.
 
         **Default Behavior (no fields parameter):**
-        Basic required fields are always included: role.id, resource.id, subjects[].id, subjects[].type
+        Basic required fields are always included: role.id, role.last_modified, resource.id, groups[].id, groups[].type
 
         **When fields parameter is provided:**
         Only explicitly specified fields are included in the response.
