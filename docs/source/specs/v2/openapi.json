@@ -291,7 +291,32 @@
         "parameters": [],
         "responses": {
           "201": {
-            "description": "The request has succeeded and a new resource has been created as a result."
+            "description": "The request has succeeded and a new resource has been created as a result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.CreateRoleResponse"
+                },
+                "example": {
+                  "id": "550e8400-e29b-41d4-a716-446655440002",
+                  "name": "Custom Inventory Admin",
+                  "description": "Custom role for inventory management",
+                  "permissions": [
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "read"
+                    },
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "write"
+                    }
+                  ],
+                  "last_modified": "2024-08-04T12:00:00Z"
+                }
+              }
+            }
           },
           "400": {
             "description": "The server could not understand the request due to invalid syntax.",
@@ -1939,6 +1964,36 @@
           }
         ]
       },
+      "Roles.BasicRole": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Role identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Role name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Role description"
+          }
+        },
+        "example": {
+          "id": "550e8400-e29b-41d4-a716-446655440002",
+          "name": "Workspace Admin",
+          "description": "Administrator role for workspace"
+        }
+      },
       "Roles.CreateRoleRequest": {
         "type": "object",
         "required": [
@@ -1964,6 +2019,63 @@
           }
         },
         "example": {
+          "name": "Host Inventory Admin",
+          "description": "Custom role for host inventory management",
+          "permissions": [
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "read"
+            },
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "write"
+            }
+          ]
+        }
+      },
+      "Roles.CreateRoleResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "permissions",
+          "last_modified"
+        ],
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "Role identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Role name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Role description"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Roles.Permission"
+            },
+            "description": "List of permissions assigned to this role"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last modification timestamp"
+          }
+        },
+        "example": {
+          "_": 201,
+          "id": "550e8400-e29b-41d4-a716-446655440002",
           "name": "Custom Inventory Admin",
           "description": "Custom role for inventory management",
           "permissions": [
@@ -1977,7 +2089,8 @@
               "resource_type": "hosts",
               "operation": "write"
             }
-          ]
+          ],
+          "last_modified": "2024-08-04T12:00:00Z"
         }
       },
       "Roles.Permission": {
@@ -2066,6 +2179,28 @@
             }
           ],
           "last_modified": "2024-08-04T12:00:00Z"
+        }
+      },
+      "Roles.RoleDetails": {
+        "type": "object",
+        "properties": {
+          "permissions_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of permissions assigned to this role"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Roles.Permission"
+            },
+            "description": "List of permissions assigned to this role"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last modification timestamp"
+          }
         }
       },
       "Timestamps": {

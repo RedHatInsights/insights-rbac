@@ -911,6 +911,29 @@ namespace Roles {
     @example(#{
         id: "550e8400-e29b-41d4-a716-446655440002",
         name: "Workspace Admin",
+        description: "Administrator role for workspace"
+    })
+    model BasicRole {
+        @doc("Role identifier")
+        @key id: UUID;
+        @doc("Role name")
+        name: string;
+        @doc("Role description")
+        description?: string;
+    }
+
+    model RoleDetails {
+        @doc("Number of permissions assigned to this role")
+        permissions_count?: int32;
+        @doc("List of permissions assigned to this role")
+        permissions?: Permission[];
+        @doc("Last modification timestamp")
+        last_modified?: offsetDateTime;
+    }
+
+    @example(#{
+        id: "550e8400-e29b-41d4-a716-446655440002",
+        name: "Workspace Admin",
     })
     @example(#{
         id: "550e8400-e29b-41d4-a716-446655440002",
@@ -924,18 +947,8 @@ namespace Roles {
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
     })
     model Role {
-        @doc("Role identifier")
-        @key id: UUID;
-        @doc("Role name")
-        name: string;
-        @doc("Role description")
-        description?: string;
-        @doc("Number of permissions assigned to this role")
-        permissions_count?: int32;
-        @doc("List of permissions assigned to this role")
-        permissions?: Permission[];
-        @doc("Last modification timestamp")
-        last_modified?: offsetDateTime;
+        ...BasicRole;
+        ...RoleDetails;
     }
 
     @example(#{
@@ -955,8 +968,24 @@ namespace Roles {
         permissions: Permission[];
     }
 
+    @example(#{
+        _: 201,
+        id: "550e8400-e29b-41d4-a716-446655440002",
+        name: "Custom Inventory Admin",
+        description: "Custom role for inventory management",
+        permissions: #[
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" }
+        ],
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+    })
     model CreateRoleResponse {
-        @statusCode statusCode: 201;
+        @statusCode _: 201;
+        ...BasicRole;
+        @doc("List of permissions assigned to this role")
+        permissions: Permission[];
+        @doc("Last modification timestamp")
+        last_modified: offsetDateTime;
     }
 
     @doc("Create a custom role in tenant")
@@ -973,7 +1002,15 @@ namespace Roles {
             }
         },
         returnType: #{
-            statusCode: 201
+            _: 201,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Custom Inventory Admin",
+            description: "Custom role for inventory management",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
         }
     })
     @post op create(@body body: CreateRoleRequest): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
