@@ -72,13 +72,9 @@ class CrossAccountRequest(models.Model):
 
         super(CrossAccountRequest, self).save(*args, **kwargs)
 
-    def source_pk(self) -> str:
-        """Return the string id of this cross-account request for use with a BindingMapping's SourceKey."""
-        return str(self.request_id)
-
     def source_key(self) -> SourceKey:
         """Return the SourceKey for this cross-account request, for use with a BindingMapping."""
-        return SourceKey(self, self.source_pk())
+        return SourceKey(self, str(self.request_id))
 
 
 class RequestsRoles(models.Model):
