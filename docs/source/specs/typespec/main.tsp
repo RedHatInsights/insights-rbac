@@ -1162,15 +1162,6 @@ namespace RoleBindings {
         @doc("Filter by role type")
         @query role_type?: RoleTypeQueryParam;
 
-        @doc("Filter by system roles (true) or custom roles (false)")
-        @query system?: boolean;
-
-        @doc("Filter by platform default roles")
-        @query platform_default?: boolean;
-
-        @doc("Filter by admin default roles")
-        @query admin_default?: boolean;
-
         @doc("Filter roles containing specific permission pattern")
         @example("inventory:hosts:read")
         @query permission?: string;
