@@ -246,8 +246,9 @@ class BindingMapping(models.Model):
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def unassign_user_from_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Optional[Relationship]:
+    def unassign_user_from_bindings(self, user_id: str, source: SourceKey) -> Optional[Relationship]:
         """Unassign user from mappings."""
+        self._require_source(source)
         self._remove_value_from_mappings("users", user_id, source)
         users_list = (
             self.mappings["users"] if isinstance(self.mappings["users"], list) else self.mappings["users"].values()
@@ -260,8 +261,9 @@ class BindingMapping(models.Model):
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def assign_user_to_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Relationship:
+    def assign_user_to_bindings(self, user_id: str, source: SourceKey) -> Relationship:
         """Assign user to mappings."""
+        self._require_source(source)
         self._add_value_to_mappings("users", user_id, source)
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
@@ -308,6 +310,13 @@ class BindingMapping(models.Model):
             self.mappings[field].update({str(source): value})
         else:
             self.mappings[field].append(value)
+
+    @staticmethod
+    def _require_source(source) -> SourceKey:
+        if not isinstance(source, SourceKey):
+            raise TypeError(f"Expected SourceKey, but got: {source!r}")
+
+        return source
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
