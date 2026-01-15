@@ -921,7 +921,8 @@ namespace Roles {
             #{ application: "inventory", resource_type: "hosts", operation: "read" },
             #{ application: "inventory", resource_type: "hosts", operation: "write" }
         ],
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        editable: true
     })
     model Role {
         @doc("Role identifier")
@@ -936,6 +937,8 @@ namespace Roles {
         permissions?: Permission[];
         @doc("Last modification timestamp")
         last_modified?: offsetDateTime;
+        @doc("Indicates whether the role is editable")
+        editable?: boolean;
     }
 
     model ReadRoleResponse extends Role {
@@ -959,7 +962,8 @@ namespace Roles {
                 #{ application: "inventory", resource_type: "hosts", operation: "read" },
                 #{ application: "inventory", resource_type: "hosts", operation: "write" }
             ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            editable: true
         }
     })
     @opExample(#{
@@ -996,13 +1000,15 @@ namespace Roles {
         - permissions_count (integer) - number of permissions assigned to this role
         - permissions (array) - list of permissions assigned to this role (includes application, resource_type, operation)
         - last_modified (datetime) - timestamp of last modification
+        - editable (boolean) - indicates whether the role is editable
 
         **Examples:**
         - `name` - Include only id and name
         - `name,description` - Include id, name, and description
         - `name,permissions_count` - Include id, name, and permission count
         - `name,description,permissions` - Include id, name, description, and full permission list
-        - `name,description,permissions_count,last_modified` - Include all fields except permissions array
+        - `name,description,permissions_count,last_modified` - Include all fields except permissions array and editable flag
+        - `name,editable` - Include id, name, and editable flag
         """)
         @example("name,description,permissions,last_modified")
         @query fields?: string;
