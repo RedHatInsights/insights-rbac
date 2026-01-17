@@ -288,14 +288,25 @@
         "operationId": "Roles_create",
         "summary": "Create a custom role in tenant",
         "description": "Create a custom role in tenant",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**Default behavior (no fields parameter):**\nReturns: id, name, description, permissions, last_modified\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All fields become optional.\n\n**Available fields:**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n- permissions (array) - list of permissions\n- permissions_count (integer) - number of permissions\n- last_modified (datetime) - last modification timestamp\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          }
+        ],
         "responses": {
           "201": {
             "description": "The request has succeeded and a new resource has been created as a result.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Roles.CreateRoleResponse"
+                  "$ref": "#/components/schemas/Roles.Role"
                 },
                 "example": {
                   "id": "550e8400-e29b-41d4-a716-446655440002",
@@ -1964,36 +1975,6 @@
           }
         ]
       },
-      "Roles.BasicRole": {
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "Role identifier"
-          },
-          "name": {
-            "type": "string",
-            "description": "Role name"
-          },
-          "description": {
-            "type": "string",
-            "description": "Role description"
-          }
-        },
-        "example": {
-          "id": "550e8400-e29b-41d4-a716-446655440002",
-          "name": "Workspace Admin",
-          "description": "Administrator role for workspace"
-        }
-      },
       "Roles.CreateRoleRequest": {
         "type": "object",
         "required": [
@@ -2017,80 +1998,6 @@
             },
             "description": "List of permissions to assign to this role"
           }
-        },
-        "example": {
-          "name": "Host Inventory Admin",
-          "description": "Custom role for host inventory management",
-          "permissions": [
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "read"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "write"
-            }
-          ]
-        }
-      },
-      "Roles.CreateRoleResponse": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "permissions",
-          "last_modified"
-        ],
-        "properties": {
-          "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "Role identifier"
-          },
-          "name": {
-            "type": "string",
-            "description": "Role name"
-          },
-          "description": {
-            "type": "string",
-            "description": "Role description"
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Roles.Permission"
-            },
-            "description": "List of permissions assigned to this role"
-          },
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Last modification timestamp"
-          }
-        },
-        "example": {
-          "_": 201,
-          "id": "550e8400-e29b-41d4-a716-446655440002",
-          "name": "Custom Inventory Admin",
-          "description": "Custom role for inventory management",
-          "permissions": [
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "read"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "write"
-            }
-          ],
-          "last_modified": "2024-08-04T12:00:00Z"
         }
       },
       "Roles.Permission": {
@@ -2122,10 +2029,6 @@
       },
       "Roles.Role": {
         "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
         "properties": {
           "id": {
             "allOf": [
@@ -2143,11 +2046,6 @@
             "type": "string",
             "description": "Role description"
           },
-          "permissions_count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of permissions assigned to this role"
-          },
           "permissions": {
             "type": "array",
             "items": {
@@ -2155,17 +2053,22 @@
             },
             "description": "List of permissions assigned to this role"
           },
+          "permissions_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of permissions assigned to this role"
+          },
           "last_modified": {
             "type": "string",
             "format": "date-time",
             "description": "Last modification timestamp"
           }
         },
+        "description": "Role with optional fields (supports field masking)",
         "example": {
           "id": "550e8400-e29b-41d4-a716-446655440002",
-          "name": "Workspace Admin",
-          "description": "description",
-          "permissions_count": 2,
+          "name": "Custom Inventory Admin",
+          "description": "Custom role for inventory management",
           "permissions": [
             {
               "application": "inventory",
@@ -2181,26 +2084,46 @@
           "last_modified": "2024-08-04T12:00:00Z"
         }
       },
-      "Roles.RoleDetails": {
+      "Roles.WriteRole": {
         "type": "object",
+        "required": [
+          "name",
+          "description",
+          "permissions"
+        ],
         "properties": {
-          "permissions_count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of permissions assigned to this role"
+          "name": {
+            "type": "string",
+            "description": "Role name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Role description"
           },
           "permissions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Roles.Permission"
             },
-            "description": "List of permissions assigned to this role"
-          },
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Last modification timestamp"
+            "description": "List of permissions to assign to this role"
           }
+        },
+        "description": "Role data for create operations",
+        "example": {
+          "name": "Host Inventory Admin",
+          "description": "Custom role for host inventory management",
+          "permissions": [
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "read"
+            },
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "write"
+            }
+          ]
         }
       },
       "Timestamps": {

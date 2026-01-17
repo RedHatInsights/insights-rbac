@@ -239,14 +239,40 @@ paths:
       operationId: Roles_create
       summary: Create a custom role in tenant
       description: Create a custom role in tenant
-      parameters: []
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response to optimize payload size.
+
+            **Default behavior (no fields parameter):**
+            Returns: id, name, description, permissions, last_modified
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are returned. All fields become optional.
+
+            **Available fields:**
+            - id (UUID) - role identifier
+            - name (string) - role name
+            - description (string) - role description
+            - permissions (array) - list of permissions
+            - permissions_count (integer) - number of permissions
+            - last_modified (datetime) - last modification timestamp
+
+            **Examples:**
+            - `?fields=id,name,permissions_count` - Include id, name, and count
+            - `?fields=permissions_count,last_modified` - Include only count and timestamp
+          schema:
+            type: string
+          explode: false
       responses:
         '201':
           description: The request has succeeded and a new resource has been created as a result.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Roles.CreateRoleResponse'
+                $ref: '#/components/schemas/Roles.Role'
               example:
                 id: 550e8400-e29b-41d4-a716-446655440002
                 name: Custom Inventory Admin
@@ -1331,26 +1357,6 @@ components:
           description: User details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
-    Roles.BasicRole:
-      type: object
-      required:
-        - id
-        - name
-      properties:
-        id:
-          allOf:
-            - $ref: '#/components/schemas/UUID'
-          description: Role identifier
-        name:
-          type: string
-          description: Role name
-        description:
-          type: string
-          description: Role description
-      example:
-        id: 550e8400-e29b-41d4-a716-446655440002
-        name: Workspace Admin
-        description: Administrator role for workspace
     Roles.CreateRoleRequest:
       type: object
       required:
@@ -1369,56 +1375,6 @@ components:
           items:
             $ref: '#/components/schemas/Roles.Permission'
           description: List of permissions to assign to this role
-      example:
-        name: Host Inventory Admin
-        description: Custom role for host inventory management
-        permissions:
-          - application: inventory
-            resource_type: hosts
-            operation: read
-          - application: inventory
-            resource_type: hosts
-            operation: write
-    Roles.CreateRoleResponse:
-      type: object
-      required:
-        - id
-        - name
-        - permissions
-        - last_modified
-      properties:
-        id:
-          allOf:
-            - $ref: '#/components/schemas/UUID'
-          description: Role identifier
-        name:
-          type: string
-          description: Role name
-        description:
-          type: string
-          description: Role description
-        permissions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Roles.Permission'
-          description: List of permissions assigned to this role
-        last_modified:
-          type: string
-          format: date-time
-          description: Last modification timestamp
-      example:
-        _: 201
-        id: 550e8400-e29b-41d4-a716-446655440002
-        name: Custom Inventory Admin
-        description: Custom role for inventory management
-        permissions:
-          - application: inventory
-            resource_type: hosts
-            operation: read
-          - application: inventory
-            resource_type: hosts
-            operation: write
-        last_modified: '2024-08-04T12:00:00Z'
     Roles.Permission:
       type: object
       required:
@@ -1441,9 +1397,6 @@ components:
         operation: read
     Roles.Role:
       type: object
-      required:
-        - id
-        - name
       properties:
         id:
           allOf:
@@ -1455,24 +1408,24 @@ components:
         description:
           type: string
           description: Role description
-        permissions_count:
-          type: integer
-          format: int32
-          description: Number of permissions assigned to this role
         permissions:
           type: array
           items:
             $ref: '#/components/schemas/Roles.Permission'
           description: List of permissions assigned to this role
+        permissions_count:
+          type: integer
+          format: int32
+          description: Number of permissions assigned to this role
         last_modified:
           type: string
           format: date-time
           description: Last modification timestamp
+      description: Role with optional fields (supports field masking)
       example:
         id: 550e8400-e29b-41d4-a716-446655440002
-        name: Workspace Admin
-        description: description
-        permissions_count: 2
+        name: Custom Inventory Admin
+        description: Custom role for inventory management
         permissions:
           - application: inventory
             resource_type: hosts
@@ -1481,22 +1434,35 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
-    Roles.RoleDetails:
+    Roles.WriteRole:
       type: object
+      required:
+        - name
+        - description
+        - permissions
       properties:
-        permissions_count:
-          type: integer
-          format: int32
-          description: Number of permissions assigned to this role
+        name:
+          type: string
+          description: Role name
+        description:
+          type: string
+          description: Role description
         permissions:
           type: array
           items:
             $ref: '#/components/schemas/Roles.Permission'
-          description: List of permissions assigned to this role
-        last_modified:
-          type: string
-          format: date-time
-          description: Last modification timestamp
+          description: List of permissions to assign to this role
+      description: Role data for create operations
+      example:
+        name: Host Inventory Admin
+        description: Custom role for host inventory management
+        permissions:
+          - application: inventory
+            resource_type: hosts
+            operation: read
+          - application: inventory
+            resource_type: hosts
+            operation: write
     Timestamps:
       type: object
       required:

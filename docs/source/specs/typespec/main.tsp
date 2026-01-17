@@ -908,49 +908,7 @@ namespace Roles {
         operation: string;
     }
 
-    @example(#{
-        id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Workspace Admin",
-        description: "Administrator role for workspace"
-    })
-    model BasicRole {
-        @doc("Role identifier")
-        @key id: UUID;
-        @doc("Role name")
-        name: string;
-        @doc("Role description")
-        description?: string;
-    }
-
-    model RoleDetails {
-        @doc("Number of permissions assigned to this role")
-        permissions_count?: int32;
-        @doc("List of permissions assigned to this role")
-        permissions?: Permission[];
-        @doc("Last modification timestamp")
-        last_modified?: offsetDateTime;
-    }
-
-    @example(#{
-        id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Workspace Admin",
-    })
-    @example(#{
-        id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Workspace Admin",
-        description: "description",
-        permissions_count: 2,
-        permissions: #[
-            #{ application: "inventory", resource_type: "hosts", operation: "read" },
-            #{ application: "inventory", resource_type: "hosts", operation: "write" }
-        ],
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-    })
-    model Role {
-        ...BasicRole;
-        ...RoleDetails;
-    }
-
+    @doc("Role data for create operations")
     @example(#{
         name: "Host Inventory Admin",
         description: "Custom role for host inventory management",
@@ -959,7 +917,7 @@ namespace Roles {
             #{ application: "inventory", resource_type: "hosts", operation: "write" }
         ]
     })
-    model CreateRoleRequest {
+    model WriteRole {
         @doc("Role name")
         name: string;
         @doc("Role description")
@@ -968,8 +926,8 @@ namespace Roles {
         permissions: Permission[];
     }
 
+    @doc("Role with optional fields (supports field masking)")
     @example(#{
-        _: 201,
         id: "550e8400-e29b-41d4-a716-446655440002",
         name: "Custom Inventory Admin",
         description: "Custom role for inventory management",
@@ -979,13 +937,28 @@ namespace Roles {
         ],
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
     })
+    model Role {
+        @doc("Role identifier")
+        id?: UUID;
+        @doc("Role name")
+        name?: string;
+        @doc("Role description")
+        description?: string;
+        @doc("List of permissions assigned to this role")
+        permissions?: Permission[];
+        @doc("Number of permissions assigned to this role")
+        permissions_count?: int32;
+        @doc("Last modification timestamp")
+        last_modified?: offsetDateTime;
+    }
+
+    model CreateRoleRequest {
+        ...WriteRole;
+    }
+
     model CreateRoleResponse {
         @statusCode _: 201;
-        ...BasicRole;
-        @doc("List of permissions assigned to this role")
-        permissions: Permission[];
-        @doc("Last modification timestamp")
-        last_modified: offsetDateTime;
+        ...Role;
     }
 
     @doc("Create a custom role in tenant")
@@ -1013,6 +986,32 @@ namespace Roles {
             last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
         }
     })
-    @post op create(@body body: CreateRoleRequest): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
+    @post op create(
+        @body body: CreateRoleRequest;
+        
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+        
+        **Default behavior (no fields parameter):**
+        Returns: id, name, description, permissions, last_modified
+        
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All fields become optional.
+        
+        **Available fields:**
+        - id (UUID) - role identifier
+        - name (string) - role name
+        - description (string) - role description
+        - permissions (array) - list of permissions
+        - permissions_count (integer) - number of permissions
+        - last_modified (datetime) - last modification timestamp
+        
+        **Examples:**
+        - `?fields=id,name,permissions_count` - Include id, name, and count
+        - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string;
+    ): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
 
 }
