@@ -988,16 +988,16 @@ namespace Roles {
     })
     @post op create(
         @body body: CreateRoleRequest;
-        
+
         @doc("""
         Control which fields are included in the response to optimize payload size.
-        
+
         **Default behavior (no fields parameter):**
         Returns: id, name, description, permissions, last_modified
-        
+
         **When fields parameter is provided:**
         Only explicitly specified fields are returned. All fields become optional.
-        
+
         **Available fields:**
         - id (UUID) - role identifier
         - name (string) - role name
@@ -1005,7 +1005,7 @@ namespace Roles {
         - permissions (array) - list of permissions
         - permissions_count (integer) - number of permissions
         - last_modified (datetime) - last modification timestamp
-        
+
         **Examples:**
         - `?fields=id,name,permissions_count` - Include id, name, and count
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
