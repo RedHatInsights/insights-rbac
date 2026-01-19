@@ -406,9 +406,10 @@ paths:
         - name: order_by
           in: query
           required: false
-          description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified."
+          description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified."
           schema:
             type: string
+            default: name
           explode: false
       responses:
         '200':

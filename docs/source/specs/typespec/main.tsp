@@ -1117,8 +1117,8 @@ namespace Roles {
         @example("id,name,permissions_count")
         @query fields?: string = "id,name,description,last_modified";
 
-        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.")
-        @example("-last_modified,name")
-        @query order_by?: string;
+        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.")
+        @example("-last_modified")
+        @query order_by?: string = "name";
     ): RoleListResponse | Problems.CommonProblems;
 }
