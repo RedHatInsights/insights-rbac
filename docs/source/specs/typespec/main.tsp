@@ -1025,13 +1025,13 @@ namespace Roles {
             }
         ]
     })
-    model RoleListResponse {
+    model ListResponse<Item> {
         @doc("Pagination metadata")
         meta: CursorPaginationMeta;
         @doc("Pagination links")
         links: CursorPaginationLinks;
-        @doc("List of roles")
-        data: Role[];
+        @doc("List of elements")
+        data: Item[];
     }
 
     @doc("List the roles for a tenant")
@@ -1105,5 +1105,5 @@ namespace Roles {
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.")
         @example("-last_modified")
         @query order_by?: string = "name";
-    ): RoleListResponse | Problems.CommonProblems;
+    ): ListResponse<Role> | Problems.CommonProblems;
 }

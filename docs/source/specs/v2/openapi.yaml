@@ -402,7 +402,36 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Roles.RoleListResponse'
+                type: object
+                required:
+                  - meta
+                  - links
+                  - data
+                properties:
+                  meta:
+                    allOf:
+                      - $ref: '#/components/schemas/CursorPaginationMeta'
+                    description: Pagination metadata
+                  links:
+                    allOf:
+                      - $ref: '#/components/schemas/CursorPaginationLinks'
+                    description: Pagination links
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Roles.Role'
+                    description: List of elements
+                example:
+                  meta:
+                    limit: 10
+                  links:
+                    next: /api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9
+                    previous: null
+                  data:
+                    - id: 550e8400-e29b-41d4-a716-446655440002
+                      name: Workspace Admin
+                      description: description
+                      last_modified: '2024-08-04T12:00:00Z'
               examples:
                 example0:
                   value:
@@ -1554,37 +1583,6 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
-    Roles.RoleListResponse:
-      type: object
-      required:
-        - meta
-        - links
-        - data
-      properties:
-        meta:
-          allOf:
-            - $ref: '#/components/schemas/CursorPaginationMeta'
-          description: Pagination metadata
-        links:
-          allOf:
-            - $ref: '#/components/schemas/CursorPaginationLinks'
-          description: Pagination links
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Roles.Role'
-          description: List of roles
-      example:
-        meta:
-          limit: 10
-        links:
-          next: /api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9
-          previous: null
-        data:
-          - id: 550e8400-e29b-41d4-a716-446655440002
-            name: Workspace Admin
-            description: description
-            last_modified: '2024-08-04T12:00:00Z'
     Roles.WriteRole:
       type: object
       required:
