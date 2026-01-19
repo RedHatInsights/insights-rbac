@@ -18,12 +18,11 @@
 """View for V2 Role management."""
 import logging
 
+from django.core.exceptions import FieldError
 from django.db.models import Count, Prefetch
-from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.models import Permission
 from management.permissions import RoleAccessPermission
-from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
@@ -31,32 +30,6 @@ from .v2_model import RoleV2
 from .v2_serializer import RoleInputSerializer, RoleOutputSerializer
 
 logger = logging.getLogger(__name__)
-
-
-class RoleOrderingFilter(OrderingFilter):
-    """Custom ordering filter that maps API field names to model field names."""
-
-    # Mapping API field names to model field names
-    FIELD_MAPPING = {
-        "last_modified": "modified",
-        "permissions_count": "permissions_count_annotation",
-    }
-
-    def get_ordering(self, request, queryset, view):
-        """Override to map API field names to model field names."""
-        ordering = super().get_ordering(request, queryset, view)
-        if ordering:
-            mapped = []
-            for field in ordering:
-                descending = field.startswith("-")
-                field_name = field.lstrip("-")
-
-                model_field = self.FIELD_MAPPING.get(field_name, field_name)
-
-                # Add back prefix if descending
-                mapped.append(f"-{model_field}" if descending else model_field)
-            return mapped
-        return ordering
 
 
 class RoleV2CursorPagination(V2CursorPagination):
@@ -70,30 +43,36 @@ class RoleV2CursorPagination(V2CursorPagination):
     def get_ordering(self, request, queryset, view):
         """Map API ordering fields to model fields."""
         order_by = request.query_params.get("order_by")
+
+        # Delegate to the base implementation if no explicit ordering is requested.
         if not order_by:
             return super().get_ordering(request, queryset, view)
 
-        order_fields = []
-        for f in order_by.split(","):
-            stripped = f.strip()
-            if stripped:
-                order_fields.append(stripped)
-        if not order_fields:
-            return super().get_ordering(request, queryset, view)
+        # Support comma-separated fields in the query parameter.
+        requested_fields = [field.strip() for field in order_by.split(",") if field.strip()]
 
+        # Map API fields to model fields, preserving descending prefixes.
         mapped_fields = []
-        for field in order_fields:
+        for field in requested_fields:
             descending = field.startswith("-")
             field_name = field.lstrip("-")
-            mapped = self.ORDERING_FIELD_MAPPING.get(field_name, field_name)
-            mapped_fields.append(f"-{mapped}" if descending else mapped)
+            model_field = self.ORDERING_FIELD_MAPPING.get(field_name, field_name)
+            mapped_fields.append(f"-{model_field}" if descending else model_field)
 
         try:
-            ordered = queryset.order_by(*mapped_fields)
-            str(ordered.query)
-            return tuple(mapped_fields)
-        except Exception:
+            # Validate that the mapped fields are valid for this queryset.
+            queryset.order_by(*mapped_fields)
+        except FieldError as exc:
+            logger.warning(
+                "Invalid ordering fields '%s' for queryset %s: %s. Falling back to default ordering.",
+                order_by,
+                queryset.model.__name__ if hasattr(queryset, "model") else type(queryset),
+                exc,
+                exc_info=True,
+            )
             return super().get_ordering(request, queryset, view)
+
+        return mapped_fields
 
 
 class RoleV2ViewSet(BaseV2ViewSet):
@@ -117,11 +96,6 @@ class RoleV2ViewSet(BaseV2ViewSet):
     serializer_class = RoleOutputSerializer
     permission_classes = (RoleAccessPermission,)
     pagination_class = RoleV2CursorPagination
-    filter_backends = (filters.DjangoFilterBackend, RoleOrderingFilter)
-    # Allowed ordering fields
-    ordering_fields = ("name", "description", "permissions_count", "last_modified")
-    ordering = ("name", "-modified")
-    ordering_param = "order_by"
 
     def get_queryset(self):
         """Get queryset filtered by tenant."""
@@ -149,7 +123,7 @@ class RoleV2ViewSet(BaseV2ViewSet):
         input_serializer.is_valid(raise_exception=True)
         validated_data = input_serializer.validated_data
 
-        queryset = self.filter_queryset(self.get_queryset())
+        queryset = self.get_queryset()
 
         # Handle name filter
         name = validated_data.get("name")
