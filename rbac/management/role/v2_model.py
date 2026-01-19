@@ -201,6 +201,61 @@ class RoleBinding(TenantAwareModel):
         assert len(groups) == len(uuids)
         self.update_groups(groups)
 
+    def bound_principals(self) -> QuerySet:
+        """Get a QuerySet for all groups bound to this RoleBinding."""
+        return Principal.objects.filter(role_binding_entries__in=self.principal_entries.all()).distinct()
+
+    def update_principals(self, principals_by_source: Iterable[tuple[str, Principal]]):
+        """
+        Update the principals bound to this RoleBinding.
+
+        principals_by_source is an iterable of pairs of the source string and the principal added from that source.
+        """
+        self.principal_entries.all().delete()
+
+        RoleBindingPrincipal.objects.bulk_create(
+            [RoleBindingPrincipal(binding=self, principal=p, source=s) for s, p in set(principals_by_source)]
+        )
+
+    def update_principals_by_user_id(self, user_ids_by_source: Iterable[tuple[str, str]]):
+        """
+        Update the principals bound to this RoleBinding by user_id.
+
+        principals_by_source is an iterable of pairs of the source string and the user_id of the principal added from
+        that source.
+
+        A ValueError is raised if one of the user IDs cannot be found or if multiple principals are associated with
+        one of the provided user IDs.
+        """
+        user_ids = set(entry[1] for entry in user_ids_by_source)
+
+        if None in user_ids:
+            raise TypeError("None user IDs are not supported.")
+
+        principals = Principal.objects.filter(user_id__in=user_ids)
+        found_user_ids: set[str] = {p.user_id for p in principals}
+
+        if found_user_ids != user_ids:
+            missing_user_ids = user_ids.difference(found_user_ids)
+            raise ValueError(f"Not all expected principals could be found. Missing user IDs: {missing_user_ids}")
+
+        # user_ids are not currently constrained to be unique, so we have to check for duplicates.
+        if len(principals) != len(user_ids):
+            # We have already checked for missing principals, so a duplicate should be the only case that hits this.
+            assert len(principals) > len(user_ids)
+
+            id_counts: dict[str, int] = {}
+
+            for p in principals:
+                id_counts[p.user_id] = id_counts.get(p.user_id, 0) + 1
+
+            raise ValueError(f"Duplicate user IDs: {[user_id for user_id, count in id_counts.items() if count > 1]}")
+
+        principals_by_id = {p.user_id: p for p in principals}
+        assert len(principals_by_id) == len(user_ids)
+
+        self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
+
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
         """
         Return the V2rolebinding equivalent of this role binding.

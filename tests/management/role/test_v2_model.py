@@ -33,6 +33,7 @@ from management.models import (
     RoleV2,
     SeededRoleV2,
 )
+from management.principal.model import Principal
 from management.role.model import Access
 from tests.identity_request import IdentityRequest
 
@@ -443,6 +444,9 @@ class RoleBindingModelTests(IdentityRequest):
         self.group1 = Group.objects.create(name="group1", tenant=self.tenant)
         self.group2 = Group.objects.create(name="group2", tenant=self.tenant)
 
+        self.principal1: Principal = Principal.objects.create(tenant=self.tenant, username="p1", user_id="p1")
+        self.principal2: Principal = Principal.objects.create(tenant=self.tenant, username="p2", user_id="p2")
+
     def tearDown(self):
         """Tear down RoleBinding model tests."""
         RoleBinding.objects.all().delete()
@@ -806,3 +810,102 @@ class RoleBindingModelTests(IdentityRequest):
 
         # The set of groups should not change after a failed attempt to set the groups.
         self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
+
+    def test_update_principals(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        pair1 = ("car/1", self.principal1)
+        pair2 = ("car/2", self.principal2)
+
+        binding.update_principals([pair1])
+        self.assertCountEqual([self.principal1], binding.bound_principals())
+
+        binding.update_principals([pair2])
+        self.assertCountEqual([self.principal2], binding.bound_principals())
+
+        binding.update_principals([pair1, pair2])
+        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
+
+        binding.update_principals([])
+        self.assertCountEqual([], binding.bound_principals())
+
+        # Multiple principals from the same source should work.
+        binding.update_principals([("car", self.principal1), ("car", self.principal2)])
+        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
+
+        # Multiple sources of the same principal should work.
+        binding.update_principals([("car/1", self.principal1), ("car/2", self.principal1)])
+        self.assertCountEqual([self.principal1], binding.bound_principals())
+        self.assertEqual(binding.principal_entries.all().count(), 2)
+
+    def test_update_principals_by_user_id(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        pair1: tuple[str, str] = ("car/1", self.principal1.user_id)
+        pair2: tuple[str, str] = ("car/2", self.principal2.user_id)
+
+        binding.update_principals_by_user_id([pair1])
+        self.assertCountEqual([self.principal1], binding.bound_principals())
+
+        binding.update_principals_by_user_id([pair2])
+        self.assertCountEqual([self.principal2], binding.bound_principals())
+
+        binding.update_principals_by_user_id([pair1, pair2])
+        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
+
+        binding.update_principals_by_user_id([])
+        self.assertCountEqual([], binding.bound_principals())
+
+        # Multiple principals from the same source should work.
+        binding.update_principals_by_user_id([("car", self.principal1.user_id), ("car", self.principal2.user_id)])
+        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
+
+        # Multiple sources of the same principal should work.
+        binding.update_principals_by_user_id([("car/1", self.principal1.user_id), ("car/2", self.principal1.user_id)])
+        self.assertCountEqual([self.principal1], binding.bound_principals())
+        self.assertEqual(binding.principal_entries.all().count(), 2)
+
+    def test_update_principals_by_user_id_duplicate(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        Principal.objects.create(tenant=self.tenant, username="dA", user_id="test_duplicate")
+        Principal.objects.create(tenant=self.tenant, username="dB", user_id="test_duplicate")
+
+        binding.update_principals([("car/1", self.principal1)])
+
+        with self.assertRaisesRegex(ValueError, ".*test_duplicate.*"):
+            binding.update_principals_by_user_id([("car", "test_duplicate")])
+
+        # The existing principals should be unchanged.
+        self.assertCountEqual([self.principal1], binding.bound_principals())
+
+    def test_update_principals_by_user_id_nonexistent(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        binding.update_principals([("car/1", self.principal1)])
+
+        with self.assertRaisesRegex(ValueError, ".*test_nonexistent.*"):
+            binding.update_principals_by_user_id([("car", "test_nonexistent")])
+
+        # The existing principals should be unchanged.
+        self.assertCountEqual([self.principal1], binding.bound_principals())
