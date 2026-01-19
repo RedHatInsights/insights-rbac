@@ -159,7 +159,7 @@ class RoleOutputSerializer(serializers.Serializer):
         """Override to support field selection.
 
         Works as a field mask:
-        - No fields param: Returns id, name, and description.
+        - No fields param: Returns id, name, description, and permissions_count.
         - With fields param: Returns exactly the requested fields.
         """
         ret = super().to_representation(instance)
@@ -167,12 +167,7 @@ class RoleOutputSerializer(serializers.Serializer):
         field_selection = self._get_field_selection()
 
         if field_selection is None:
-            # Default response: id, name, description
-            return {
-                "id": ret.get("id"),
-                "name": ret.get("name"),
-                "description": ret.get("description"),
-            }
+            return {field_name: ret.get(field_name) for field_name in FieldSelection.DEFAULT_FIELDS}
 
         # Field mask: return exactly what was requested
         filtered = {}
