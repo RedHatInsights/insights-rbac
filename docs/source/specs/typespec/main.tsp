@@ -921,8 +921,7 @@ namespace Roles {
             #{ application: "inventory", resource_type: "hosts", operation: "read" },
             #{ application: "inventory", resource_type: "hosts", operation: "write" }
         ],
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-        editable: true
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
     })
     model Role {
         @doc("Role identifier")
@@ -937,8 +936,6 @@ namespace Roles {
         permissions?: Permission[];
         @doc("Last modification timestamp")
         last_modified?: offsetDateTime;
-        @doc("Indicates whether the role is editable")
-        editable?: boolean;
     }
 
     model ReadRoleResponse extends Role {
@@ -957,13 +954,11 @@ namespace Roles {
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
             description: "Full administrative access to workspace resources",
-            permissions_count: 15,
             permissions: #[
                 #{ application: "inventory", resource_type: "hosts", operation: "read" },
                 #{ application: "inventory", resource_type: "hosts", operation: "write" }
             ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-            editable: true
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
         }
     })
     @opExample(#{
@@ -981,37 +976,14 @@ namespace Roles {
         @path id: UUID;
 
         @doc("""
-        Control which fields are included in the response to optimize payload size and improve performance.
+        Comma-separated list of fields to include in the response.
 
-        **Default Behavior (no fields parameter):**
-        When no fields parameter is provided, returns the full model with all fields.
+        Default: id,name,description,permissions,last_modified
 
-        **When fields parameter is provided:**
-        Only the explicitly specified fields are included in the response. All other fields are excluded from the response.
-
-        **Syntax:**
-        - Use comma to separate field names: `field1,field2,field3`
-
-        **Available Fields:**
-        - id (UUID) - role identifier
-        - name (string) - role name
-        - description (string) - role description
-        - permissions_count (integer) - number of permissions assigned to this role
-        - permissions (array) - list of permissions assigned to this role (includes application, resource_type, operation)
-        - last_modified (datetime) - timestamp of last modification
-        - editable (boolean) - indicates whether the role is editable
-
-        **Examples:**
-        - `name` - Returns only name (all other fields excluded, including id)
-        - `id,name` - Returns only id and name (all other fields excluded)
-        - `id,name,description` - Returns only id, name, and description (all other fields excluded)
-        - `id,name,permissions_count` - Returns only id, name, and permission count (all other fields excluded)
-        - `id,name,description,permissions` - Returns only id, name, description, and full permission list (all other fields excluded)
-        - `id,name,description,permissions_count,last_modified,editable` - Returns all fields except permissions array
-        - `name,editable` - Returns only name and editable flag (all other fields excluded, including id)
+        Available fields: id, name, description, permissions_count, permissions, last_modified
         """)
-        @example("id,name,description,permissions,last_modified,editable")
-        @query fields?: string;
+        @example("id,name,description,permissions,last_modified")
+        @query fields?: string = "id,name,description,permissions,last_modified";
 
     ): ReadRoleResponse | Problems.CommonProblems | Problems.Problem404;
 
