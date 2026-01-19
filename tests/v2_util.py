@@ -1,7 +1,8 @@
 from typing import Optional
 from unittest import TestCase
 
-from management.models import BindingMapping, CustomRoleV2, Role, RoleBinding, RoleV2
+from management.models import BindingMapping, CustomRoleV2, Permission, Role, RoleBinding, RoleV2
+from management.role.v2_model import SeededRoleV2
 from migration_tool.in_memory_tuples import (
     resource,
     all_of,
@@ -176,3 +177,25 @@ def assert_v2_custom_roles_consistent(test: TestCase, tuples: Optional[InMemoryT
 
     if tuples is not None:
         _assert_no_phantom_roles(test, tuples)
+
+
+def seed_v2_role_from_v1(role: Role) -> SeededRoleV2:
+    if not role.system:
+        raise ValueError("System role expected.")
+
+    # TODO: Set up the platform-/admin-default parent/child relationships if necessary. This isn't done here yet
+    #  because no code yet cares.
+
+    v2_role, _ = SeededRoleV2.objects.update_or_create(
+        tenant=role.tenant,
+        uuid=role.uuid,
+        v1_source=role,
+        defaults=dict(
+            name=role.name,
+            description=role.description,
+        ),
+    )
+
+    v2_role.permissions.set(Permission.objects.filter(accesses__role=role))
+
+    return v2_role
