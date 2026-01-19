@@ -473,7 +473,7 @@
             "name": "name",
             "in": "query",
             "required": false,
-            "description": "Filter by role name using case insensitive exact match.",
+            "description": "Filter by role name using case sensitive exact match.",
             "schema": {
               "type": "string"
             },

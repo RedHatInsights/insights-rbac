@@ -1086,7 +1086,7 @@ namespace Roles {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: string;
 
-        @doc("Filter by role name using case insensitive exact match.")
+        @doc("Filter by role name using case sensitive exact match.")
         @query name?: string;
 
         @doc("""
