@@ -926,7 +926,7 @@ namespace Roles {
     })
     model Role {
         @doc("Role identifier")
-        @key id?: UUID;
+        id?: UUID;
         @doc("Role name")
         name?: string;
         @doc("Role description")
