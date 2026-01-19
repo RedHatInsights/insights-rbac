@@ -1021,7 +1021,7 @@ namespace Roles {
                 id: "550e8400-e29b-41d4-a716-446655440002",
                 name: "Workspace Admin",
                 description: "description",
-                permissions_count: 2
+                last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
             }
         ]
     })
@@ -1053,7 +1053,7 @@ namespace Roles {
                     id: "550e8400-e29b-41d4-a716-446655440002",
                     name: "Workspace Admin",
                     description: "description",
-                    permissions_count: 2
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
                 }
             ]
         }
@@ -1093,7 +1093,7 @@ namespace Roles {
         Control which fields are included in the response. Works as a field mask.
 
         **Default Behavior (no fields parameter):**
-        Returns id, name, description and permissions_count.
+        Returns id, name, description and last_modified.
 
         **When fields parameter is provided:**
         Returns exactly the specified fields.
@@ -1115,7 +1115,7 @@ namespace Roles {
         - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
         """)
         @example("id,name,permissions_count")
-        @query fields?: string;
+        @query fields?: string = "id,name,description,last_modified";
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, description, permissions_count, last_modified.")
         @example("-last_modified,name")

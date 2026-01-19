@@ -379,7 +379,7 @@ paths:
             Control which fields are included in the response. Works as a field mask.
 
             **Default Behavior (no fields parameter):**
-            Returns id, name, description and permissions_count.
+            Returns id, name, description and last_modified.
 
             **When fields parameter is provided:**
             Returns exactly the specified fields.
@@ -401,6 +401,7 @@ paths:
             - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
           schema:
             type: string
+            default: id,name,description,last_modified
           explode: false
         - name: order_by
           in: query
@@ -439,7 +440,7 @@ paths:
                       - id: 550e8400-e29b-41d4-a716-446655440002
                         name: Workspace Admin
                         description: description
-                        permissions_count: 2
+                        last_modified: '2024-08-04T12:00:00Z'
         '401':
           description: Access is unauthorized.
           content:
@@ -1597,7 +1598,7 @@ components:
           - id: 550e8400-e29b-41d4-a716-446655440002
             name: Workspace Admin
             description: description
-            permissions_count: 2
+            last_modified: '2024-08-04T12:00:00Z'
     Roles.WriteRole:
       type: object
       required:
