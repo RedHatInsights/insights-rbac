@@ -926,9 +926,9 @@ namespace Roles {
     })
     model Role {
         @doc("Role identifier")
-        @key id: UUID;
+        @key id?: UUID;
         @doc("Role name")
-        name: string;
+        name?: string;
         @doc("Role description")
         description?: string;
         @doc("Number of permissions assigned to this role")
@@ -973,7 +973,6 @@ namespace Roles {
         },
         returnType: #{
             _: 200,
-            id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin"
         }
     })
@@ -988,13 +987,13 @@ namespace Roles {
         When no fields parameter is provided, returns the full model with all fields.
 
         **When fields parameter is provided:**
-        Only explicitly specified fields are included in the response. The id field is always required and included even if not specified.
+        Only the explicitly specified fields are included in the response. All other fields are excluded from the response.
 
         **Syntax:**
         - Use comma to separate field names: `field1,field2,field3`
 
         **Available Fields:**
-        - id (UUID) - always included, cannot be excluded
+        - id (UUID) - role identifier
         - name (string) - role name
         - description (string) - role description
         - permissions_count (integer) - number of permissions assigned to this role
@@ -1003,14 +1002,15 @@ namespace Roles {
         - editable (boolean) - indicates whether the role is editable
 
         **Examples:**
-        - `name` - Include only id and name
-        - `name,description` - Include id, name, and description
-        - `name,permissions_count` - Include id, name, and permission count
-        - `name,description,permissions` - Include id, name, description, and full permission list
-        - `name,description,permissions_count,last_modified` - Include all fields except permissions array and editable flag
-        - `name,editable` - Include id, name, and editable flag
+        - `name` - Returns only name (all other fields excluded, including id)
+        - `id,name` - Returns only id and name (all other fields excluded)
+        - `id,name,description` - Returns only id, name, and description (all other fields excluded)
+        - `id,name,permissions_count` - Returns only id, name, and permission count (all other fields excluded)
+        - `id,name,description,permissions` - Returns only id, name, description, and full permission list (all other fields excluded)
+        - `id,name,description,permissions_count,last_modified,editable` - Returns all fields except permissions array
+        - `name,editable` - Returns only name and editable flag (all other fields excluded, including id)
         """)
-        @example("name,description,permissions,last_modified")
+        @example("id,name,description,permissions,last_modified,editable")
         @query fields?: string;
 
     ): ReadRoleResponse | Problems.CommonProblems | Problems.Problem404;

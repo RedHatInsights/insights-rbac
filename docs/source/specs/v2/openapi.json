@@ -1290,7 +1290,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nWhen no fields parameter is provided, returns the full model with all fields.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. The id field is always required and included even if not specified.\n\n**Syntax:**\n- Use comma to separate field names: `field1,field2,field3`\n\n**Available Fields:**\n- id (UUID) - always included, cannot be excluded\n- name (string) - role name\n- description (string) - role description\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - list of permissions assigned to this role (includes application, resource_type, operation)\n- last_modified (datetime) - timestamp of last modification\n\n**Examples:**\n- `name` - Include only id and name\n- `name,description` - Include id, name, and description\n- `name,permissions_count` - Include id, name, and permission count\n- `name,description,permissions` - Include id, name, description, and full permission list\n- `name,description,permissions_count,last_modified` - Include all fields except permissions array",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nWhen no fields parameter is provided, returns the full model with all fields.\n\n**When fields parameter is provided:**\nOnly the explicitly specified fields are included in the response. All other fields are excluded from the response.\n\n**Syntax:**\n- Use comma to separate field names: `field1,field2,field3`\n\n**Available Fields:**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - list of permissions assigned to this role (includes application, resource_type, operation)\n- last_modified (datetime) - timestamp of last modification\n- editable (boolean) - indicates whether the role is editable\n\n**Examples:**\n- `name` - Returns only name (all other fields excluded, including id)\n- `id,name` - Returns only id and name (all other fields excluded)\n- `id,name,description` - Returns only id, name, and description (all other fields excluded)\n- `id,name,permissions_count` - Returns only id, name, and permission count (all other fields excluded)\n- `id,name,description,permissions` - Returns only id, name, description, and full permission list (all other fields excluded)\n- `id,name,description,permissions_count,last_modified,editable` - Returns all fields except permissions array\n- `name,editable` - Returns only name and editable flag (all other fields excluded, including id)",
             "schema": {
               "type": "string"
             },
@@ -1324,12 +1324,12 @@
                           "operation": "write"
                         }
                       ],
-                      "last_modified": "2024-08-04T12:00:00Z"
+                      "last_modified": "2024-08-04T12:00:00Z",
+                      "editable": true
                     }
                   },
                   "example2": {
                     "value": {
-                      "id": "550e8400-e29b-41d4-a716-446655440002",
                       "name": "Workspace Admin"
                     }
                   }
@@ -1989,10 +1989,7 @@
       },
       "Roles.Role": {
         "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
+        "required": [],
         "properties": {
           "id": {
             "allOf": [
@@ -2026,6 +2023,10 @@
             "type": "string",
             "format": "date-time",
             "description": "Last modification timestamp"
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "Indicates whether the role is editable"
           }
         },
         "example": {
@@ -2045,7 +2046,8 @@
               "operation": "write"
             }
           ],
-          "last_modified": "2024-08-04T12:00:00Z"
+          "last_modified": "2024-08-04T12:00:00Z",
+          "editable": true
         }
       },
       "Roles.ReadRoleResponse": {

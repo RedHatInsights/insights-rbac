@@ -900,25 +900,28 @@ paths:
             When no fields parameter is provided, returns the full model with all fields.
 
             **When fields parameter is provided:**
-            Only explicitly specified fields are included in the response. The id field is always required and included even if not specified.
+            Only the explicitly specified fields are included in the response. All other fields are excluded from the response.
 
             **Syntax:**
             - Use comma to separate field names: `field1,field2,field3`
 
             **Available Fields:**
-            - id (UUID) - always included, cannot be excluded
+            - id (UUID) - role identifier
             - name (string) - role name
             - description (string) - role description
             - permissions_count (integer) - number of permissions assigned to this role
             - permissions (array) - list of permissions assigned to this role (includes application, resource_type, operation)
             - last_modified (datetime) - timestamp of last modification
+            - editable (boolean) - indicates whether the role is editable
 
             **Examples:**
-            - `name` - Include only id and name
-            - `name,description` - Include id, name, and description
-            - `name,permissions_count` - Include id, name, and permission count
-            - `name,description,permissions` - Include id, name, description, and full permission list
-            - `name,description,permissions_count,last_modified` - Include all fields except permissions array
+            - `name` - Returns only name (all other fields excluded, including id)
+            - `id,name` - Returns only id and name (all other fields excluded)
+            - `id,name,description` - Returns only id, name, and description (all other fields excluded)
+            - `id,name,permissions_count` - Returns only id, name, and permission count (all other fields excluded)
+            - `id,name,description,permissions` - Returns only id, name, description, and full permission list (all other fields excluded)
+            - `id,name,description,permissions_count,last_modified,editable` - Returns all fields except permissions array
+            - `name,editable` - Returns only name and editable flag (all other fields excluded, including id)
           schema:
             type: string
           explode: false
@@ -944,9 +947,9 @@ paths:
                         resource_type: hosts
                         operation: write
                     last_modified: '2024-08-04T12:00:00Z'
+                    editable: true
                 example2:
                   value:
-                    id: 550e8400-e29b-41d4-a716-446655440002
                     name: Workspace Admin
         '404':
           description: The server cannot find the requested resource.
@@ -1379,9 +1382,7 @@ components:
         operation: read
     Roles.Role:
       type: object
-      required:
-        - id
-        - name
+      required: []
       properties:
         id:
           allOf:
@@ -1406,6 +1407,9 @@ components:
           type: string
           format: date-time
           description: Last modification timestamp
+        editable:
+          type: boolean
+          description: Indicates whether the role is editable
       example:
         id: 550e8400-e29b-41d4-a716-446655440002
         name: Workspace Admin
@@ -1419,6 +1423,7 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
+        editable: true
     Roles.ReadRoleResponse:
       type: object
       allOf:
