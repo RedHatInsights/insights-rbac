@@ -247,7 +247,7 @@ paths:
             Control which fields are included in the response to optimize payload size.
 
             **Default behavior (no fields parameter):**
-            Returns: id, name, description, permissions, last_modified
+            Returns default fields: id, name, description, permissions, last_modified
 
             **When fields parameter is provided:**
             Only explicitly specified fields are returned. All fields become optional.
@@ -261,10 +261,12 @@ paths:
             - last_modified (datetime) - last modification timestamp
 
             **Examples:**
-            - `?fields=id,name,permissions_count` - Include id, name, and count
+            - Default: No fields parameter returns id, name, description, permissions, last_modified
+            - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
             - `?fields=permissions_count,last_modified` - Include only count and timestamp
           schema:
             type: string
+            default: id,name,description,permissions,last_modified
           explode: false
       responses:
         '201':

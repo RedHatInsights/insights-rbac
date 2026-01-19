@@ -293,9 +293,10 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**Default behavior (no fields parameter):**\nReturns: id, name, description, permissions, last_modified\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All fields become optional.\n\n**Available fields:**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n- permissions (array) - list of permissions\n- permissions_count (integer) - number of permissions\n- last_modified (datetime) - last modification timestamp\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**Default behavior (no fields parameter):**\nReturns default fields: id, name, description, permissions, last_modified\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All fields become optional.\n\n**Available fields:**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n- permissions (array) - list of permissions\n- permissions_count (integer) - number of permissions\n- last_modified (datetime) - last modification timestamp\n\n**Examples:**\n- Default: No fields parameter returns id, name, description, permissions, last_modified\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "default": "id,name,description,permissions,last_modified"
             },
             "explode": false
           }

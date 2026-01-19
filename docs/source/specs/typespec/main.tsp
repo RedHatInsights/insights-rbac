@@ -908,6 +908,12 @@ namespace Roles {
         operation: string;
     }
 
+    /**
+     * Default fields returned in role responses when no fields parameter is specified.
+     * Value: "id,name,description,permissions,last_modified"
+     */
+    const DefaultRoleDetail = "id,name,description,permissions,last_modified";
+
     @doc("Role data for create operations")
     @example(#{
         name: "Host Inventory Admin",
@@ -993,7 +999,7 @@ namespace Roles {
         Control which fields are included in the response to optimize payload size.
 
         **Default behavior (no fields parameter):**
-        Returns: id, name, description, permissions, last_modified
+        Returns default fields: id, name, description, permissions, last_modified
 
         **When fields parameter is provided:**
         Only explicitly specified fields are returned. All fields become optional.
@@ -1007,11 +1013,12 @@ namespace Roles {
         - last_modified (datetime) - last modification timestamp
 
         **Examples:**
-        - `?fields=id,name,permissions_count` - Include id, name, and count
+        - Default: No fields parameter returns id, name, description, permissions, last_modified
+        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
         """)
         @example("id,name,permissions_count")
-        @query fields?: string;
+        @query fields?: string = DefaultRoleDetail;
     ): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
 
 }
