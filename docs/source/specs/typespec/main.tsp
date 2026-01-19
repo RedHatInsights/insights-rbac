@@ -1020,7 +1020,8 @@ namespace Roles {
             #{
                 id: "550e8400-e29b-41d4-a716-446655440002",
                 name: "Workspace Admin",
-                description: "description"
+                description: "description",
+                permissions_count: 2
             }
         ]
     })
@@ -1051,7 +1052,8 @@ namespace Roles {
                 #{
                     id: "550e8400-e29b-41d4-a716-446655440002",
                     name: "Workspace Admin",
-                    description: "description"
+                    description: "description",
+                    permissions_count: 2
                 }
             ]
         }
@@ -1084,14 +1086,14 @@ namespace Roles {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: string;
 
-        @doc("Filter by role name using case sensitive exact match.")
+        @doc("Filter by role name using case insensitive exact match.")
         @query name?: string;
 
         @doc("""
         Control which fields are included in the response. Works as a field mask.
 
         **Default Behavior (no fields parameter):**
-        Returns id, name, and description.
+        Returns id, name, description and permissions_count.
 
         **When fields parameter is provided:**
         Returns exactly the specified fields.
