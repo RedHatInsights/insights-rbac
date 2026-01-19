@@ -942,6 +942,8 @@ namespace Roles {
         @statusCode _: 200;
     }
 
+    const DefaultRoleDetail = "id,name,description,permissions,last_modified";
+
     @doc("Get a role")
     @summary("Get a role")
     @route("{id}/")
@@ -978,12 +980,12 @@ namespace Roles {
         @doc("""
         Comma-separated list of fields to include in the response.
 
-        Default: id,name,description,permissions,last_modified
+        Default: DefaultRoleDetail (id,name,description,permissions,last_modified)
 
         Available fields: id, name, description, permissions_count, permissions, last_modified
         """)
-        @example("id,name,description,permissions,last_modified")
-        @query fields?: string = "id,name,description,permissions,last_modified";
+        @example(DefaultRoleDetail)
+        @query fields?: string = DefaultRoleDetail;
 
     ): ReadRoleResponse | Problems.CommonProblems | Problems.Problem404;
 

@@ -896,7 +896,7 @@ paths:
           description: |-
             Comma-separated list of fields to include in the response.
 
-            Default: id,name,description,permissions,last_modified
+            Default: DefaultRoleDetail (id,name,description,permissions,last_modified)
 
             Available fields: id, name, description, permissions_count, permissions, last_modified
           schema:
