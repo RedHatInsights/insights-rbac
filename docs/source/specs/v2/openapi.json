@@ -483,7 +483,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response. Works as a field mask.\n\n**Default Behavior (no fields parameter):**\nReturns id, name, description and last_modified.\n\n**When fields parameter is provided:**\nReturns exactly the specified fields.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,permissions_count`\n\n**Available Fields:**\n- id (UUID) - role identifier\n- name (string) - role name\n- description (string) - role description\n- permissions_count (integer) - number of permissions assigned to this role\n- permissions (array) - full list of permissions assigned to this role\n- last_modified (datetime) - last modification timestamp\n\n**Examples:**\n- `id,name` - Returns only id and name\n- `permissions` - Returns only permissions\n- `id,name,description,permissions_count,last_modified` - Returns all fields except permissions",
+            "description": "Control which fields are included in the response. Works as a field mask.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,permissions_count`\n\n**Examples:**\n- `id,name` - Returns only id and name\n- `id,name,description,permissions_count,last_modified` - Returns all fields except permissions",
             "schema": {
               "type": "string",
               "default": "id,name,description,last_modified"

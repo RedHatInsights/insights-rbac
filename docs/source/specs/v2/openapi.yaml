@@ -378,26 +378,11 @@ paths:
           description: |-
             Control which fields are included in the response. Works as a field mask.
 
-            **Default Behavior (no fields parameter):**
-            Returns id, name, description and last_modified.
-
-            **When fields parameter is provided:**
-            Returns exactly the specified fields.
-
             **Syntax:**
             - Use comma to separate multiple fields: `id,name,permissions_count`
 
-            **Available Fields:**
-            - id (UUID) - role identifier
-            - name (string) - role name
-            - description (string) - role description
-            - permissions_count (integer) - number of permissions assigned to this role
-            - permissions (array) - full list of permissions assigned to this role
-            - last_modified (datetime) - last modification timestamp
-
             **Examples:**
             - `id,name` - Returns only id and name
-            - `permissions` - Returns only permissions
             - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
           schema:
             type: string
