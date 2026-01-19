@@ -53,7 +53,7 @@ from migration_tool.in_memory_tuples import (
 
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from tests.v2_util import assert_v2_custom_roles_consistent
+from tests.v2_util import assert_v2_custom_roles_consistent, assert_v2_system_role_bindings_consistent
 from unittest.mock import ANY, patch, call, Mock
 
 URL = reverse("v1_management:role-list")
@@ -310,6 +310,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def _assert_v2_consistent(self, tuples: Optional[InMemoryTuples] = None):
         assert_v2_custom_roles_consistent(test=self, tuples=tuples)
+        assert_v2_system_role_bindings_consistent(test=self, tuples=tuples)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -2663,6 +2664,7 @@ class RoleViewNonAdminTests(IdentityRequest):
 
     def _assert_v2_consistent(self):
         assert_v2_custom_roles_consistent(test=self, tuples=None)
+        assert_v2_system_role_bindings_consistent(test=self, tuples=None)
 
     @staticmethod
     def _create_group_with_user_access_admin_role(tenant):

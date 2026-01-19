@@ -50,6 +50,7 @@ from migration_tool.migrate import migrate_data, migrate_groups_for_tenant
 
 from management.group.definer import seed_group, clone_default_group_in_public_schema
 from tests.management.role.test_dual_write import RbacFixture
+from tests.v2_util import seed_v2_role_from_v1
 
 
 class MigrateTests(TestCase):
@@ -68,6 +69,10 @@ class MigrateTests(TestCase):
         self.system_role_2 = Role.objects.create(
             name="System Role 2", platform_default=True, system=True, tenant=public_tenant
         )
+
+        seed_v2_role_from_v1(self.system_role_1)
+        seed_v2_role_from_v1(self.system_role_2)
+
         # default group
         default_group, _ = seed_group()
         # permissions
@@ -137,6 +142,9 @@ class MigrateTests(TestCase):
 
         # tenant 2 - org_id=7654321
         another_tenant = Tenant.objects.create(org_id="7654321", ready=True)
+
+        # Create the principal that the cross-account request below will use.
+        Principal.objects.create(tenant=self.tenant, username="1111111", user_id="1111111")
 
         root_workspace_another_tenant = Workspace.objects.create(
             type=Workspace.Types.ROOT, tenant=another_tenant, name="Root Workspace"

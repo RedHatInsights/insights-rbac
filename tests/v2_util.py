@@ -103,6 +103,27 @@ def _assert_binding_tuples_consistent(test: TestCase, tuples: InMemoryTuples, bi
         f"for role ({binding.role.uuid})",
     )
 
+    db_principals = set(p.principal_resource_id() for p in binding.bound_principals())
+    test.assertNotIn(None, db_principals)
+
+    tuple_principals = set(
+        t.subject_id
+        for t in tuples.find_tuples(
+            all_of(
+                resource_predicate,
+                relation("subject"),
+                subject_type("rbac", "principal"),
+            )
+        )
+    )
+
+    test.assertCountEqual(
+        db_principals,
+        tuple_principals,
+        f"Database and relations principals do not match for role binding {binding.uuid} "
+        f"for role ({binding.role.uuid})",
+    )
+
 
 def _assert_binding_mapping_consistent(test: TestCase, binding: RoleBinding, mapping: BindingMapping):
     test.assertEqual(str(binding.uuid), mapping.mappings["id"])
@@ -116,8 +137,10 @@ def _assert_binding_mapping_consistent(test: TestCase, binding: RoleBinding, map
 
     test.assertEqual(v1_groups, v2_groups)
 
-    # Principals cannot currently be represented in RoleBindings (and shouldn't exist for custom groups anyway).
-    test.assertEqual(0, len(mapping.mappings["users"]))
+    v1_entries = mapping.mappings["users"].items()
+    v2_entries = [(e.source, e.principal.user_id) for e in binding.principal_entries.all()]
+
+    test.assertCountEqual(v1_entries, v2_entries)
 
 
 def _assert_v2_names(test: TestCase, v1_role: Role):
@@ -170,13 +193,35 @@ def assert_v2_custom_roles_consistent(test: TestCase, tuples: Optional[InMemoryT
             _assert_role_tuples_consistent(test, tuples, role)
 
     for binding_uuid, binding in role_bindings_by_uuid.items():
-        _assert_binding_mapping_consistent(test, binding, binding_mappings_by_uuid[binding_uuid])
+        mapping = binding_mappings_by_uuid[binding_uuid]
+
+        _assert_binding_mapping_consistent(test, binding, mapping)
+
+        # Principals should not be bound to custom roles.
+        test.assertEqual(0, len(mapping.mappings["users"]))
 
         if tuples is not None:
             _assert_binding_tuples_consistent(test, tuples, binding)
 
     if tuples is not None:
         _assert_no_phantom_roles(test, tuples)
+
+
+def assert_v2_system_role_bindings_consistent(test: TestCase, tuples: Optional[InMemoryTuples]):
+    binding_mappings_by_uuid = {
+        str(m.mappings["id"]): m for m in BindingMapping.objects.filter(role__system=True).prefetch_related("role")
+    }
+
+    role_bindings_by_uuid = {str(b.uuid): b for b in RoleBinding.objects.filter(role__type=RoleV2.Types.SEEDED)}
+
+    # We should have the same UUIDs for both BindingMappings and RoleBindings.
+    test.assertCountEqual(role_bindings_by_uuid.keys(), binding_mappings_by_uuid.keys())
+
+    for binding_uuid, binding in role_bindings_by_uuid.items():
+        _assert_binding_mapping_consistent(test, binding, binding_mappings_by_uuid[binding_uuid])
+
+        if tuples is not None:
+            _assert_binding_tuples_consistent(test, tuples, binding)
 
 
 def seed_v2_role_from_v1(role: Role) -> SeededRoleV2:
