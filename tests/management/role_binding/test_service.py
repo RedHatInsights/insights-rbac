@@ -21,6 +21,8 @@ from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
 from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
 from management.role_binding.service import RoleBindingService
+from management.tenant_mapping.model import TenantMapping
+
 from tests.identity_request import IdentityRequest
 
 
@@ -458,6 +460,26 @@ class RoleBindingServiceTests(IdentityRequest):
         RoleBindingGroup.objects.filter(binding=parent_binding).delete()
         parent_binding.delete()
         parent_group.delete()
+
+    def test_get_role_bindings_works_without_tenant_mapping(self):
+        """Test that role binding queries work when tenant has no TenantMapping.
+
+        This verifies the lazy default binding creation gracefully skips
+        when there's no TenantMapping, allowing existing functionality to work.
+        """
+        # Verify no TenantMapping exists for this tenant
+        self.assertFalse(TenantMapping.objects.filter(tenant=self.tenant).exists())
+
+        # Query should still work and return results
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Should return our manually created group with binding
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "test_group")
 
 
 class RoleBindingSerializerTests(IdentityRequest):
