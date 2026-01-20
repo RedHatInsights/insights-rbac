@@ -154,6 +154,64 @@ Value: Base64-encoded JSON
 | `user.is_org_admin` | Yes (for users) | Admin privileges flag |
 | `service_account.client_id` | Yes (for service accounts) | Service account client ID |
 
+#### Quick Copy Examples (x-rh-identity)
+
+**Admin User** (org_id: 11111, is_org_admin: true):
+```bash
+curl http://localhost:8000/api/rbac/v1/roles/ \
+  -H "x-rh-identity: eyJpZGVudGl0eSI6IHsiYWNjb3VudF9udW1iZXIiOiAiMTAwMDEiLCAib3JnX2lkIjogIjExMTExIiwgInR5cGUiOiAiVXNlciIsICJ1c2VyIjogeyJ1c2VybmFtZSI6ICJhZG1pbl91c2VyIiwgImVtYWlsIjogImFkbWluQGV4YW1wbGUuY29tIiwgImlzX29yZ19hZG1pbiI6IHRydWUsICJpc19pbnRlcm5hbCI6IGZhbHNlLCAidXNlcl9pZCI6ICIxMjM0NSJ9fX0="
+```
+
+<details>
+<summary>Decoded JSON</summary>
+
+```json
+{"identity": {"account_number": "10001", "org_id": "11111", "type": "User", "user": {"username": "admin_user", "email": "admin@example.com", "is_org_admin": true, "is_internal": false, "user_id": "12345"}}}
+```
+</details>
+
+**Regular User** (org_id: 11111, is_org_admin: false):
+```bash
+curl http://localhost:8000/api/rbac/v1/roles/ \
+  -H "x-rh-identity: eyJpZGVudGl0eSI6IHsiYWNjb3VudF9udW1iZXIiOiAiMTAwMDEiLCAib3JnX2lkIjogIjExMTExIiwgInR5cGUiOiAiVXNlciIsICJ1c2VyIjogeyJ1c2VybmFtZSI6ICJyZWd1bGFyX3VzZXIiLCAiZW1haWwiOiAidXNlckBleGFtcGxlLmNvbSIsICJpc19vcmdfYWRtaW4iOiBmYWxzZSwgImlzX2ludGVybmFsIjogZmFsc2UsICJ1c2VyX2lkIjogIjY3ODkwIn19fQ=="
+```
+
+<details>
+<summary>Decoded JSON</summary>
+
+```json
+{"identity": {"account_number": "10001", "org_id": "11111", "type": "User", "user": {"username": "regular_user", "email": "user@example.com", "is_org_admin": false, "is_internal": false, "user_id": "67890"}}}
+```
+</details>
+
+**Service Account** (org_id: 11111, client_id: abc-123-def):
+```bash
+curl http://localhost:8000/api/rbac/v1/roles/ \
+  -H "x-rh-identity: eyJpZGVudGl0eSI6IHsib3JnX2lkIjogIjExMTExIiwgInR5cGUiOiAiU2VydmljZUFjY291bnQiLCAic2VydmljZV9hY2NvdW50IjogeyJ1c2VybmFtZSI6ICJzZXJ2aWNlLWFjY291bnQtMTIzIiwgImNsaWVudF9pZCI6ICJhYmMtMTIzLWRlZiJ9fX0="
+```
+
+<details>
+<summary>Decoded JSON</summary>
+
+```json
+{"identity": {"org_id": "11111", "type": "ServiceAccount", "service_account": {"username": "service-account-123", "client_id": "abc-123-def"}}}
+```
+</details>
+
+**Associate/Internal User** (cross_access to org_id: 22222):
+```bash
+curl http://localhost:8000/api/rbac/v1/roles/ \
+  -H "x-rh-identity: eyJpZGVudGl0eSI6IHsiYWNjb3VudF9udW1iZXIiOiAiMTAwMDEiLCAib3JnX2lkIjogIjExMTExIiwgInR5cGUiOiAiQXNzb2NpYXRlIiwgInVzZXIiOiB7InVzZXJuYW1lIjogImFzc29jaWF0ZV91c2VyIiwgImVtYWlsIjogImFzc29jaWF0ZUByZWRoYXQuY29tIiwgImlzX29yZ19hZG1pbiI6IGZhbHNlLCAiaXNfaW50ZXJuYWwiOiB0cnVlLCAidXNlcl9pZCI6ICI5OTk5OSJ9LCAiaW50ZXJuYWwiOiB7Im9yZ19pZCI6ICIyMjIyMiIsICJjcm9zc19hY2Nlc3MiOiB0cnVlfX19"
+```
+
+<details>
+<summary>Decoded JSON</summary>
+
+```json
+{"identity": {"account_number": "10001", "org_id": "11111", "type": "Associate", "user": {"username": "associate_user", "email": "associate@redhat.com", "is_org_admin": false, "is_internal": true, "user_id": "99999"}, "internal": {"org_id": "22222", "cross_access": true}}}
+```
+</details>
+
 ---
 
 ### 2. Pre-Shared Key (PSK) Authentication
@@ -190,6 +248,30 @@ PSKs are configured via the `SERVICE_PSKS` environment variable:
 }
 ```
 
+#### Quick Copy Examples (PSK)
+
+First, start the server with PSK configured:
+```bash
+SERVICE_PSKS='{"catalog": {"secret": "test-psk-key"}}' make serve
+```
+
+**PSK Authentication** (client: catalog, org_id: 11111):
+```bash
+curl http://localhost:8000/_private/_s2s/workspaces/ungrouped/ \
+  -H "x-rh-rbac-psk: test-psk-key" \
+  -H "x-rh-rbac-org-id: 11111" \
+  -H "x-rh-rbac-client-id: catalog"
+```
+
+**PSK with Account Number** (optional legacy account):
+```bash
+curl http://localhost:8000/_private/_s2s/workspaces/ungrouped/ \
+  -H "x-rh-rbac-psk: test-psk-key" \
+  -H "x-rh-rbac-org-id: 11111" \
+  -H "x-rh-rbac-client-id: catalog" \
+  -H "x-rh-rbac-account: 10001"
+```
+
 ---
 
 ### 3. JWT Token Authentication
@@ -219,6 +301,40 @@ Value: Bearer <JWT_TOKEN>
     "allow_any_org": false
   }
 }
+```
+
+#### Quick Copy Examples (JWT)
+
+First, start the server with system users configured:
+```bash
+SYSTEM_USERS='{"my-service-user": {"admin": true, "is_service_account": true}}' make serve
+```
+
+**JWT Authentication** (requires valid SSO token):
+```bash
+# Get token from SSO first
+TOKEN=$(curl -s -X POST \
+  "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=your-client-id" \
+  -d "client_secret=your-client-secret" \
+  | jq -r '.access_token')
+
+# Use the token
+curl http://localhost:8000/_private/_s2s/workspaces/ungrouped/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "x-rh-rbac-org-id: 11111"
+```
+
+**Bypass Token Validation** (local testing only):
+```bash
+# Start server with validation bypass
+IT_BYPASS_TOKEN_VALIDATION=True make serve
+
+# Use any token value (will not be validated)
+curl http://localhost:8000/_private/_s2s/workspaces/ungrouped/ \
+  -H "Authorization: Bearer fake-token-for-testing" \
+  -H "x-rh-rbac-org-id: 11111"
 ```
 
 ---
