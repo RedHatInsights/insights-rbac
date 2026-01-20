@@ -1096,7 +1096,7 @@ def clean_binding_mapping(request, binding_id):
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     field = request.GET.get("field")
-    if not field or field not in ("groups"):
+    if not field or field != "groups":
         return HttpResponse(
             'The "field" parameter must be "groups".',
             status=400,
