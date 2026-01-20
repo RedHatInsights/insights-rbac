@@ -204,11 +204,11 @@ class RoleBindingService:
             return
 
         # Fast path: check if ADMIN bindings exist (always created regardless of custom group)
-        # If all 3 ADMIN bindings exist, default bindings have been processed for this tenant
+        # If all ADMIN bindings exist, default bindings have been processed for this tenant
         admin_binding_uuids = [mapping.default_role_binding_uuid_for(DefaultAccessType.ADMIN, s) for s in Scope]
         existing_admin_count = RoleBinding.objects.filter(uuid__in=admin_binding_uuids).count()
 
-        if existing_admin_count == 3:
+        if existing_admin_count == len(Scope):
             # All ADMIN bindings exist - default bindings already processed
             return
 
