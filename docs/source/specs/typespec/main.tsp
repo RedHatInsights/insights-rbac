@@ -957,13 +957,13 @@ namespace Roles {
         last_modified?: offsetDateTime;
     }
 
-    model CreateRoleRequest {
-        ...WriteRole;
+    model RoleResponse<StatusCode extends int32> {
+        @statusCode _: StatusCode;
+        ...Role;
     }
 
-    model CreateRoleResponse {
-        @statusCode _: 201;
-        ...Role;
+    model CreateRoleRequest {
+        ...WriteRole;
     }
 
     @doc("Create a custom role in tenant")
@@ -1007,6 +1007,6 @@ namespace Roles {
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;
-    ): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
+    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
 
 }
