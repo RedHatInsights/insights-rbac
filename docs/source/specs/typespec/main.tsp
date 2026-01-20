@@ -916,11 +916,10 @@ namespace RoleBindings {
         permissions_count?: int32;
         @doc("List of permissions assigned to this role")
         permissions?: Roles.Permission[];
-        @doc("Last modification timestamp")
-        last_modified: offsetDateTime;
     }
 
     @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
@@ -938,10 +937,9 @@ namespace RoleBindings {
                     resource_type: "workspace",
                     operation: "write"
                 }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            ]
         },
-        groups: #[
+        subjects: #[
             #{
                 id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                 type: "group",
@@ -960,6 +958,7 @@ namespace RoleBindings {
         }
     })
     @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
@@ -976,10 +975,9 @@ namespace RoleBindings {
                     resource_type: "workspace",
                     operation: "write"
                 }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            ]
         },
-        groups: #[
+        subjects: #[
             #{
                 id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                 type: "group",
@@ -1002,10 +1000,12 @@ namespace RoleBindings {
         }
     })
     model RoleBindingByRole {
+        @doc("Timestamp of last modification")
+        last_modified?: offsetDateTime;
         @doc("Role details")
         role?: RoleDetails;
-        @doc("Groups assigned this role on the resource")
-        groups?: GroupSubject[];
+        @doc("Subjects assigned this role on the resource")
+        subjects?: GroupSubject[];
         @doc("Count of subjects bound to this role")
         subject_count?: int64;
         @doc("Resource the role applies to")
@@ -1042,40 +1042,18 @@ namespace RoleBindings {
             },
             data: #[
                 #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
-                        id: "550e8400-e29b-41d4-a716-446655440002",
-                        name: "Workspace Admin",
-                        type: RoleType.seeded,
-                        permissions_count: 2,
-                        permissions: #[
-                            #{
-                                application: "rbac",
-                                resource_type: "workspace",
-                                operation: "read"
-                            },
-                            #{
-                                application: "rbac",
-                                resource_type: "workspace",
-                                operation: "write"
-                            }
-                        ],
-                        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                        id: "550e8400-e29b-41d4-a716-446655440002"
                     },
-                    groups: #[
+                    subjects: #[
                         #{
                             id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                            type: "group",
-                            group: #{
-                                name: "Engineering Team",
-                                user_count: 25
-                            }
+                            type: "group"
                         }
                     ],
-                    subject_count: 1,
                     resource: #{
-                        id: "550e8400-e29b-41d4-a716-446655440001",
-                        name: "Engineering Workspace",
-                        type: "workspace"
+                        id: "550e8400-e29b-41d4-a716-446655440001"
                     }
                 }
             ]
@@ -1086,8 +1064,7 @@ namespace RoleBindings {
             limit: 10,
             parent_role_bindings: true,
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace",
-            role_type: RoleTypeQueryParam.seeded
+            resource_type: "workspace"
         },
         returnType: #{
             meta: #{
@@ -1099,47 +1076,21 @@ namespace RoleBindings {
             },
             data: #[
                 #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
-                        id: "550e8400-e29b-41d4-a716-446655440002",
-                        name: "Workspace Admin",
-                        type: RoleType.seeded,
-                        description: "Full administrative access to workspace",
-                        permissions_count: 2,
-                        permissions: #[
-                            #{
-                                application: "rbac",
-                                resource_type: "workspace",
-                                operation: "read"
-                            },
-                            #{
-                                application: "rbac",
-                                resource_type: "workspace",
-                                operation: "write"
-                            }
-                        ],
-                        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                        id: "550e8400-e29b-41d4-a716-446655440002"
                     },
-                    groups: #[
+                    subjects: #[
                         #{
                             id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                            type: "group",
-                            group: #{
-                                name: "Engineering Team",
-                                description: "Development and engineering team",
-                                user_count: 25
-                            }
+                            type: "group"
                         }
                     ],
-                    subject_count: 1,
                     resource: #{
-                        id: "550e8400-e29b-41d4-a716-446655440003",
-                        name: "Child Workspace",
-                        type: "workspace"
+                        id: "550e8400-e29b-41d4-a716-446655440003"
                     },
                     inherited_from: #{
-                        id: "550e8400-e29b-41d4-a716-446655440001",
-                        name: "Parent Workspace",
-                        type: "workspace"
+                        id: "550e8400-e29b-41d4-a716-446655440001"
                     }
                 }
             ]
@@ -1159,9 +1110,6 @@ namespace RoleBindings {
         @example("workspace")
         @query resource_type: string;
 
-        @doc("Filter by role type")
-        @query role_type?: RoleTypeQueryParam;
-
         @doc("Filter roles containing specific permission pattern")
         @example("inventory:hosts:read")
         @query permission?: string;
@@ -1172,11 +1120,11 @@ namespace RoleBindings {
         @doc("""
         Control which fields are included in the response to optimize payload size and improve performance.
 
-        **Default Behavior (no fields parameter):**
-        Basic required fields are always included: role.id, role.last_modified, resource.id, groups[].id, groups[].type
+        **Default Behavior:**
+        Required fields are always included: last_modified, role.id, resource.id, subjects[].id, subjects[].type
 
         **When fields parameter is provided:**
-        Only explicitly specified fields are included in the response.
+        Only explicitly specified fields are included in addition to the required fields.
 
         **Syntax:**
         - Use parentheses to specify fields for nested objects: `object(field1,field2)`
@@ -1187,14 +1135,13 @@ namespace RoleBindings {
 
         **role object:**
         - id (UUID) - always included
-        - last_modified (datetime) - always included, role modification timestamp
         - name (string) - role name
         - type (string) - role type (custom, seeded, or platform)
         - description (string) - role description
         - permissions_count (integer) - number of permissions
         - permissions (array) - full permission list (application, resource_type, operation)
 
-        **groups array:**
+        **subjects array:**
         - id (UUID) - always included
         - type (string) - always included ("group")
         - group.name (string) - name of the group
@@ -1207,6 +1154,7 @@ namespace RoleBindings {
         - type (string) - resource type
 
         **root level:**
+        - last_modified (datetime) - always included
         - subject_count (integer) - count of subjects
         - inherited_from (object) - resource from which this role binding is inherited
 
@@ -1214,18 +1162,18 @@ namespace RoleBindings {
         - `role(description)` - Role description
         - `role(permissions)` - Include full permissions list
         - `role(permissions_count)` - Permission count
-        - `groups(group.name,group.user_count)` - Group names and user counts
+        - `subjects(group.name,group.user_count)` - Group names and user counts
         - `subject_count` - Just the count without full group details
-        - `role(description),groups(group.name),resource(name)` - Combined fields
+        - `role(description),subjects(group.name),resource(name)` - Combined fields
         - `role(description,permissions_count),subject_count,resource(name,type)` - Role details with subject count
         - `inherited_from(name,type)` - Include inherited resource details
         """)
-        @example("role(description,permissions_count,permissions),groups(group.name),resource(name,type)")
+        @example("role(description,permissions_count,permissions),subjects(group.name),resource(name,type)")
         @query fields?: string;
 
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("role_name,-subject_count")
-        @query order_by?: string;
+        @query order_by?: string = "role.name";
 
     ): RoleBindingByRoleListResponse | Problems.CommonProblems;
 }
