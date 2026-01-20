@@ -17,7 +17,7 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 from uuid import uuid4
 
 from django.conf import settings
@@ -166,7 +166,7 @@ class RelationApiDualWriteSubjectHandler:
         self,
         system_role: Role,
         resource: V2boundresource,
-        **subject: Iterable[str],
+        **subject,
     ) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
