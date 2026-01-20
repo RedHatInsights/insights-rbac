@@ -923,9 +923,9 @@ namespace Roles {
         ]
     })
     model WriteRole {
-        @doc("Role name")
+        @doc("A human readable name for the role. Does not need to be unique.")
         name: string;
-        @doc("Role description")
+        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description: string;
         @doc("List of permissions to assign to this role")
         permissions: Permission[];
@@ -943,17 +943,17 @@ namespace Roles {
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
     })
     model Role {
-        @doc("Role identifier")
+        @doc("UUID that uniquely identifies the role")
         id?: UUID;
-        @doc("Role name")
+        @doc("A human readable name for the role. Does not need to be unique.")
         name?: string;
-        @doc("Role description")
+        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description?: string;
         @doc("List of permissions assigned to this role")
         permissions?: Permission[];
         @doc("Number of permissions assigned to this role")
         permissions_count?: int32;
-        @doc("Last modification timestamp")
+        @doc("Timestamp of when the role was last modified")
         last_modified?: offsetDateTime;
     }
 

@@ -1357,10 +1357,10 @@ components:
       properties:
         name:
           type: string
-          description: Role name
+          description: A human readable name for the role. Does not need to be unique.
         description:
           type: string
-          description: Role description
+          description: A description of the role to help clarify its purpose. Does not need to be unique.
         permissions:
           type: array
           items:
@@ -1392,13 +1392,13 @@ components:
         id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          description: Role identifier
+          description: UUID that uniquely identifies the role
         name:
           type: string
-          description: Role name
+          description: A human readable name for the role. Does not need to be unique.
         description:
           type: string
-          description: Role description
+          description: A description of the role to help clarify its purpose. Does not need to be unique.
         permissions:
           type: array
           items:
@@ -1411,7 +1411,7 @@ components:
         last_modified:
           type: string
           format: date-time
-          description: Last modification timestamp
+          description: Timestamp of when the role was last modified
       description: Role with optional fields (supports field masking)
       example:
         id: 550e8400-e29b-41d4-a716-446655440002
@@ -1434,10 +1434,10 @@ components:
       properties:
         name:
           type: string
-          description: Role name
+          description: A human readable name for the role. Does not need to be unique.
         description:
           type: string
-          description: Role description
+          description: A description of the role to help clarify its purpose. Does not need to be unique.
         permissions:
           type: array
           items:
