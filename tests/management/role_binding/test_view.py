@@ -15,17 +15,28 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the RoleBindingViewSet."""
+import base64
+import json
 from importlib import reload
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
+from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from api.models import Tenant
+from management.group.definer import seed_group
 from management.models import Group, Permission, Principal, Workspace
+from management.permission.scope_service import Scope
+from management.role.definer import seed_roles
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
+from management.role_binding.service import RoleBindingService
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_service.v2 import V2TenantBootstrapService
+from migration_tool.in_memory_tuples import InMemoryRelationReplicator
 from rbac import urls
 from tests.identity_request import IdentityRequest
 
@@ -743,3 +754,184 @@ class RoleBindingViewSetTest(IdentityRequest):
         role_created_map = {str(r.uuid): r.created for r in roles}
         created_times = [role_created_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
         self.assertEqual(created_times, sorted(created_times))
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class DefaultBindingsAPITests(TestCase):
+    """Test lazy creation of default role bindings via API calls."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up test fixtures once for all tests."""
+        super().setUpClass()
+        # Seed platform roles and default groups (required for default bindings)
+        seed_roles()
+        seed_group()
+
+    def setUp(self):
+        """Set up test data."""
+        reload(urls)
+        clear_url_caches()
+
+        # Use V2 bootstrap to create tenant with TenantMapping
+        self.replicator = InMemoryRelationReplicator()
+        self.bootstrap_service = V2TenantBootstrapService(self.replicator)
+        bootstrapped = self.bootstrap_service.new_bootstrapped_tenant("test-default-bindings-api")
+        self.tenant = bootstrapped.tenant
+        self.mapping = bootstrapped.mapping
+        self.default_workspace = bootstrapped.default_workspace
+
+        # Set up API client with proper headers
+        self.client = APIClient()
+        self.headers = {
+            "HTTP_X_RH_IDENTITY": self._create_identity_header(),
+        }
+
+        self.service = RoleBindingService(tenant=self.tenant)
+
+    def _create_identity_header(self):
+        """Create an identity header for API requests."""
+        identity = {
+            "identity": {
+                "account_number": "12345",
+                "org_id": self.tenant.org_id,
+                "type": "User",
+                "user": {
+                    "username": "test_user",
+                    "email": "test@example.com",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "user_id": "123456",
+                },
+                "internal": {"org_id": self.tenant.org_id},
+            }
+        }
+        return base64.b64encode(json.dumps(identity).encode()).decode()
+
+    def tearDown(self):
+        """Clean up test data."""
+        # Clean up in reverse dependency order
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        # Delete workspaces in order: standard, default, root (child to parent)
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        self.tenant.delete()
+
+    def _get_by_subject_url(self):
+        """Get the by-subject URL."""
+        return reverse("v2_management:role-bindings-by-subject")
+
+    def _count_default_bindings(self, access_type: DefaultAccessType) -> int:
+        """Count existing default bindings for the given access type."""
+        binding_uuids = [self.mapping.default_role_binding_uuid_for(access_type, s) for s in Scope]
+        return RoleBinding.objects.filter(uuid__in=binding_uuids).count()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_default_bindings_created_on_api_call(self, mock_permission):
+        """Test that default bindings are created when API is called."""
+        # Initially, no default bindings should exist
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 0)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 0)
+
+        # Call the API
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.default_workspace.id}&resource_type=workspace",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now all 6 default bindings should exist (3 USER + 3 ADMIN for each scope)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 3)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_user_bindings_skipped_with_custom_default_group(self, mock_permission):
+        """Test that USER bindings are skipped when tenant has a custom default group."""
+        # Create a custom default group for this tenant
+        custom_group = Group.objects.create(
+            name="Custom default access",
+            tenant=self.tenant,
+            platform_default=True,
+            system=False,
+        )
+
+        # Initially no bindings
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 0)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 0)
+
+        # Call the API
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.default_workspace.id}&resource_type=workspace",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # USER bindings should NOT be created (custom group exists)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 0)
+        # ADMIN bindings should still be created
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
+
+        # Cleanup
+        custom_group.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_delete_user_default_bindings(self, mock_permission):
+        """Test that delete_user_default_bindings removes USER bindings."""
+        # First create the default bindings via API
+        url = self._get_by_subject_url()
+        self.client.get(
+            f"{url}?resource_id={self.default_workspace.id}&resource_type=workspace",
+            **self.headers,
+        )
+
+        # Verify bindings exist
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 3)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
+
+        # Delete USER bindings using the service (simulating custom group creation)
+        self.service.delete_user_default_bindings()
+
+        # USER bindings should be deleted, ADMIN bindings should remain
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 0)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_restore_user_default_bindings(self, mock_permission):
+        """Test that restore_user_default_bindings recreates USER bindings."""
+        # First create all default bindings via API
+        url = self._get_by_subject_url()
+        self.client.get(
+            f"{url}?resource_id={self.default_workspace.id}&resource_type=workspace",
+            **self.headers,
+        )
+
+        # Delete USER bindings (simulating custom group creation)
+        self.service.delete_user_default_bindings()
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 0)
+
+        # Restore USER bindings (simulating custom group deletion)
+        self.service.restore_user_default_bindings()
+
+        # USER bindings should be restored
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 3)
+        self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)

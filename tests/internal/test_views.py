@@ -48,6 +48,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
+from management.role.user_source import SourceKey
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -1034,14 +1035,6 @@ class InternalViewsetTests(BaseInternalViewsetTests):
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_clean_bindings(self, replicate):
         """Test that we can clean bindingmapping."""
-        car = CrossAccountRequest.objects.create(
-            target_org="123456",
-            user_id="1111111",
-            start_date=datetime.now(),
-            end_date=datetime.now() + timedelta(10),
-            status="approved",
-        )
-        car.roles.add(self.role)
         replicator = InMemoryRelationReplicator(self._tuples)
         replicate.side_effect = replicator.replicate
         workspace_id = "123456"
@@ -1055,7 +1048,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
             "mappings": {
                 "role": {"is_system": True, "id": str(self.role.uuid), "permissions": []},
                 "groups": [group_id_to_remove, str(self.group.uuid)],
-                "users": [car.user_id, "not_exist_user"],
+                "users": {},
             },
         }
         binding_mapping = BindingMapping.objects.create(
@@ -1083,43 +1076,14 @@ class InternalViewsetTests(BaseInternalViewsetTests):
             create_relationship(
                 ("rbac", "role_binding"),
                 binding_mapping_id,
-                ("rbac", "principal"),
-                f"redhat/{car.user_id}",
-                "subject",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                binding_mapping_id,
                 ("rbac", "group"),
                 group_id_to_remove,
                 "subject",
                 "member",
             ),
         ]
+
         self._tuples.write(relations, [])
-        # Deleting user still related is not allowed
-        response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
-            **self.request.META,
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        car.status = "expired"
-        car.save()
-        response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
-            **self.request.META,
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(
-            0,
-            self._tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", binding_mapping_id),
-                    relation("subject"),
-                    subject("rbac", "principal", f"redhat/{car.user_id}"),
-                )
-            ),
-        )
 
         # All group still exist
         response = self.client.post(
