@@ -227,6 +227,7 @@ class RoleBinding(TenantAwareModel):
         A ValueError is raised if one of the user IDs cannot be found or if multiple principals are associated with
         one of the provided user IDs.
         """
+        user_ids_by_source = set(user_ids_by_source)
         user_ids = set(entry[1] for entry in user_ids_by_source)
 
         if None in user_ids:
