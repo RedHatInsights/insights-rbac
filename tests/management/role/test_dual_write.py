@@ -455,6 +455,14 @@ class DualWriteTestCase(TestCase):
 
         self.assertIn(group_id, mapping.mappings["groups"])
 
+        binding = RoleBinding.objects.get(
+            resource_type=target.resource_type[1],
+            resource_id=target.resource_id,
+            role__uuid=v2_role_id,
+        )
+
+        self.assertTrue(binding.bound_groups().filter(uuid=group_id).exists())
+
     def expect_binding_absent(self, target: V2boundresource, v2_role_id: str, group_id: str):
         """Assert that a role binding (and BindingMapping) do not exist for the given resource, role, and group."""
         self.expect_role_bindings_to_resource(
