@@ -16,7 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from dataclasses import dataclass
-from typing import Iterable, Optional, Tuple, Union
+from typing import Iterable, Optional, Tuple
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.principal.model import Principal
@@ -129,7 +129,7 @@ class V2rolebinding:
     role: V2role
     resource: V2boundresource
     groups: tuple[str, ...]
-    users: Union[list, dict]
+    users: dict[str, str]
 
     def __init__(
         self,
@@ -137,7 +137,7 @@ class V2rolebinding:
         role: V2role,
         resource: V2boundresource,
         groups: Iterable[str] = [],
-        users: Iterable[str] = {},
+        users: dict[str, str] = {},
     ):
         """
         Initialize a V2 role binding.
@@ -151,8 +151,10 @@ class V2rolebinding:
         object.__setattr__(self, "role", role)
         object.__setattr__(self, "resource", resource)
         object.__setattr__(self, "groups", tuple(groups))
+
         if not isinstance(users, dict):
-            users = {} if len(users := list(users)) == 0 else users
+            raise TypeError(f"users must be a dict, but got: {users!r}")
+
         object.__setattr__(self, "users", users)
 
     def as_minimal_dict(self) -> dict:
@@ -177,12 +179,8 @@ class V2rolebinding:
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(role_binding_group_subject_tuple(self.id, group))
 
-        if isinstance(self.users, dict):
-            for user in self.users.values():
-                tuples.append(role_binding_user_subject_tuple(self.id, user))
-        else:
-            for user in set(self.users):
-                tuples.append(role_binding_user_subject_tuple(self.id, user))
+        for user in self.users.values():
+            tuples.append(role_binding_user_subject_tuple(self.id, user))
 
         tuples.append(
             create_relationship(
