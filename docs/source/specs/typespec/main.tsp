@@ -910,9 +910,8 @@ namespace Roles {
 
     /**
      * Default fields returned in role responses when no fields parameter is specified.
-     * Value: "id,name,description,permissions,last_modified"
      */
-    const DefaultRoleDetail = "id,name,description,permissions,last_modified";
+    const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
 
     @doc("Role data for create operations")
     @example(#{
@@ -1007,7 +1006,7 @@ namespace Roles {
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
         """)
         @example("id,name,permissions_count")
-        @query fields?: string = DefaultRoleDetail;
+        @query fields?: string = DefaultRoleFieldMask;
     ): CreateRoleResponse | Problems.CommonProblems | Problems.Problem400;
 
 }
