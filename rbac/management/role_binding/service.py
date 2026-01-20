@@ -224,7 +224,9 @@ class RoleBindingService:
                 f"Platform roles not available, skipping default binding creation for tenant {self.tenant.org_id}"
             )
         except Exception as e:
-            logger.error(f"Failed to create default bindings for tenant {self.tenant.org_id}: {e}")
+            error_msg = f"Failed to create default bindings for tenant {self.tenant.org_id}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def _has_custom_default_group(self) -> bool:
         """Check if the tenant has a custom default group.
