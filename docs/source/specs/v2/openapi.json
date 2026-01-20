@@ -288,10 +288,47 @@
         "operationId": "Roles_create",
         "summary": "Create a custom role in tenant",
         "description": "Create a custom role in tenant",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- Default: No fields parameter returns id, name, description, permissions, last_modified\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "schema": {
+              "type": "string",
+              "default": "id,name,description,permissions,last_modified"
+            },
+            "explode": false
+          }
+        ],
         "responses": {
           "201": {
-            "description": "The request has succeeded and a new resource has been created as a result."
+            "description": "The request has succeeded and a new resource has been created as a result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.Role"
+                },
+                "example": {
+                  "id": "550e8400-e29b-41d4-a716-446655440002",
+                  "name": "Custom Inventory Admin",
+                  "description": "Custom role for inventory management",
+                  "permissions": [
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "read"
+                    },
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "write"
+                    }
+                  ],
+                  "last_modified": "2024-08-04T12:00:00Z"
+                }
+              }
+            }
           },
           "400": {
             "description": "The server could not understand the request due to invalid syntax.",
@@ -421,11 +458,52 @@
             "schema": {
               "$ref": "#/components/schemas/UUID"
             }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- Default: No fields parameter returns id, name, description, permissions, last_modified\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "schema": {
+              "type": "string",
+              "default": "id,name,description,permissions,last_modified"
+            },
+            "explode": false
           }
         ],
         "responses": {
-          "204": {
-            "description": "There is no content to send for this request, but the headers may be useful. "
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.Role"
+                },
+                "example": {
+                  "id": "550e8400-e29b-41d4-a716-446655440002",
+                  "name": "Updated Inventory Admin",
+                  "description": "Updated role for inventory management",
+                  "permissions": [
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "read"
+                    },
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "write"
+                    },
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "delete"
+                    }
+                  ],
+                  "last_modified": "2024-08-04T12:00:00Z"
+                }
+              }
+            }
           },
           "400": {
             "description": "The server could not understand the request due to invalid syntax.",
@@ -528,11 +606,11 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Roles.UpdateRoleRequest"
+                "$ref": "#/components/schemas/Roles.WriteRole"
               },
               "example": {
-                "name": "Updated Host Inventory Admin",
-                "description": "Updated role description",
+                "name": "Updated Inventory Admin",
+                "description": "Updated role for inventory management",
                 "permissions": [
                   {
                     "application": "inventory",
@@ -2111,22 +2189,6 @@
             },
             "description": "List of permissions to assign to this role"
           }
-        },
-        "example": {
-          "name": "Host Inventory Admin",
-          "description": "Custom role for host inventory management",
-          "permissions": [
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "read"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "write"
-            }
-          ]
         }
       },
       "Roles.Permission": {
@@ -2158,10 +2220,6 @@
       },
       "Roles.Role": {
         "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
         "properties": {
           "id": {
             "allOf": [
@@ -2179,11 +2237,6 @@
             "type": "string",
             "description": "Role description"
           },
-          "permissions_count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of permissions assigned to this role"
-          },
           "permissions": {
             "type": "array",
             "items": {
@@ -2191,17 +2244,22 @@
             },
             "description": "List of permissions assigned to this role"
           },
+          "permissions_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of permissions assigned to this role"
+          },
           "last_modified": {
             "type": "string",
             "format": "date-time",
             "description": "Last modification timestamp"
           }
         },
+        "description": "Role with optional fields (supports field masking)",
         "example": {
           "id": "550e8400-e29b-41d4-a716-446655440002",
-          "name": "Workspace Admin",
-          "description": "description",
-          "permissions_count": 2,
+          "name": "Custom Inventory Admin",
+          "description": "Custom role for inventory management",
           "permissions": [
             {
               "application": "inventory",
@@ -2217,7 +2275,7 @@
           "last_modified": "2024-08-04T12:00:00Z"
         }
       },
-      "Roles.UpdateRoleRequest": {
+      "Roles.WriteRole": {
         "type": "object",
         "required": [
           "name",
@@ -2241,9 +2299,10 @@
             "description": "List of permissions to assign to this role"
           }
         },
+        "description": "Role data for create operations",
         "example": {
-          "name": "Updated Host Inventory Admin Role",
-          "description": "Updated role description and/or name and/or permissions",
+          "name": "Host Inventory Admin",
+          "description": "Custom role for host inventory management",
           "permissions": [
             {
               "application": "inventory",
@@ -2254,11 +2313,6 @@
               "application": "inventory",
               "resource_type": "hosts",
               "operation": "write"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "delete"
             }
           ]
         }
