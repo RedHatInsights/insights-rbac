@@ -1290,7 +1290,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Comma-separated list of fields to include in the response.\n\nDefault: DefaultRoleFieldMask (id,name,description,permissions,last_modified)\n\nAvailable fields: id, name, description, permissions_count, permissions, last_modified",
+            "description": "Comma-separated list of fields to include in the response.\n\nDefault: DefaultRoleFieldMask (id,name,description,permissions,last_modified)",
             "schema": {
               "type": "string",
               "default": "id,name,description,permissions,last_modified"

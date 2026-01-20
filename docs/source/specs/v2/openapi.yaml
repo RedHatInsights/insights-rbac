@@ -897,8 +897,6 @@ paths:
             Comma-separated list of fields to include in the response.
 
             Default: DefaultRoleFieldMask (id,name,description,permissions,last_modified)
-
-            Available fields: id, name, description, permissions_count, permissions, last_modified
           schema:
             type: string
             default: id,name,description,permissions,last_modified

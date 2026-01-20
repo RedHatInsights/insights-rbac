@@ -924,17 +924,11 @@ namespace Roles {
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
     })
     model Role {
-        @doc("Role identifier")
         id?: UUID;
-        @doc("Role name")
         name?: string;
-        @doc("Role description")
         description?: string;
-        @doc("List of permissions assigned to this role")
         permissions?: Permission[];
-        @doc("Number of permissions assigned to this role")
         permissions_count?: int32;
-        @doc("Last modification timestamp")
         last_modified?: offsetDateTime;
     }
 
@@ -975,7 +969,6 @@ namespace Roles {
         }
     })
     @get op read(
-        @doc("Unique identification")
         @path id: UUID;
 
         @doc("""
