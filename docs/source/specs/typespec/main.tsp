@@ -1026,11 +1026,8 @@ namespace Roles {
         ]
     })
     model ListResponse<Item> {
-        @doc("Pagination metadata")
         meta: CursorPaginationMeta;
-        @doc("Pagination links")
         links: CursorPaginationLinks;
-        @doc("List of elements")
         data: Item[];
     }
 

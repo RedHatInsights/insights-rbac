@@ -516,27 +516,16 @@
                   ],
                   "properties": {
                     "meta": {
-                      "allOf": [
-                        {
-                          "$ref": "#/components/schemas/CursorPaginationMeta"
-                        }
-                      ],
-                      "description": "Pagination metadata"
+                      "$ref": "#/components/schemas/CursorPaginationMeta"
                     },
                     "links": {
-                      "allOf": [
-                        {
-                          "$ref": "#/components/schemas/CursorPaginationLinks"
-                        }
-                      ],
-                      "description": "Pagination links"
+                      "$ref": "#/components/schemas/CursorPaginationLinks"
                     },
                     "data": {
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/Roles.Role"
-                      },
-                      "description": "List of elements"
+                      }
                     }
                   },
                   "example": {
