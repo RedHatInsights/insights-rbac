@@ -896,7 +896,7 @@ paths:
           description: |-
             Comma-separated list of fields to include in the response.
 
-            Default: DefaultRoleDetail (id,name,description,permissions,last_modified)
+            Default: DefaultRoleFieldMask (id,name,description,permissions,last_modified)
 
             Available fields: id, name, description, permissions_count, permissions, last_modified
           schema:
@@ -1370,15 +1370,15 @@ components:
         description:
           type: string
           description: Role description
-        permissions_count:
-          type: integer
-          format: int32
-          description: Number of permissions assigned to this role
         permissions:
           type: array
           items:
             $ref: '#/components/schemas/Roles.Permission'
           description: List of permissions assigned to this role
+        permissions_count:
+          type: integer
+          format: int32
+          description: Number of permissions assigned to this role
         last_modified:
           type: string
           format: date-time
@@ -1387,7 +1387,6 @@ components:
         id: 550e8400-e29b-41d4-a716-446655440002
         name: Workspace Admin
         description: description
-        permissions_count: 2
         permissions:
           - application: inventory
             resource_type: hosts
@@ -1395,6 +1394,7 @@ components:
           - application: inventory
             resource_type: hosts
             operation: write
+        permissions_count: 2
         last_modified: '2024-08-04T12:00:00Z'
     Roles.ReadRoleResponse:
       type: object

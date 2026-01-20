@@ -930,19 +930,20 @@ namespace Roles {
         name?: string;
         @doc("Role description")
         description?: string;
-        @doc("Number of permissions assigned to this role")
-        permissions_count?: int32;
         @doc("List of permissions assigned to this role")
         permissions?: Permission[];
+        @doc("Number of permissions assigned to this role")
+        permissions_count?: int32;
         @doc("Last modification timestamp")
         last_modified?: offsetDateTime;
     }
 
-    model ReadRoleResponse extends Role {
-        @statusCode _: 200;
+    model RoleResponse<StatusCode extends int32> {
+        @statusCode _: StatusCode;
+        ...Role;
     }
 
-    const DefaultRoleDetail = "id,name,description,permissions,last_modified";
+    const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
 
     @doc("Get a role")
     @summary("Get a role")
@@ -980,13 +981,11 @@ namespace Roles {
         @doc("""
         Comma-separated list of fields to include in the response.
 
-        Default: DefaultRoleDetail (id,name,description,permissions,last_modified)
-
-        Available fields: id, name, description, permissions_count, permissions, last_modified
+        Default: DefaultRoleFieldMask (id,name,description,permissions,last_modified)
         """)
-        @example(DefaultRoleDetail)
-        @query fields?: string = DefaultRoleDetail;
+        @example(DefaultRoleFieldMask)
+        @query fields?: string = DefaultRoleFieldMask;
 
-    ): ReadRoleResponse | Problems.CommonProblems | Problems.Problem404;
+    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
 
 }
