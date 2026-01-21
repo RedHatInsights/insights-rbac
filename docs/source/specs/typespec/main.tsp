@@ -922,7 +922,7 @@ namespace Roles {
             #{ application: "inventory", resource_type: "hosts", operation: "write" }
         ]
     })
-    model WriteRole {
+    model CreateOrUpdateRoleRequest {
         @doc("A human readable name for the role. Does not need to be unique.")
         name: string;
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
@@ -988,7 +988,7 @@ namespace Roles {
         }
     })
     @post op create(
-        @body body: WriteRole;
+        @body body: CreateOrUpdateRoleRequest;
 
         @doc("""
         Control which fields are included in the response to optimize payload size.
@@ -1005,7 +1005,7 @@ namespace Roles {
     ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Update a custom role in tenant")
-    @summary("Update a custom role")
+    @summary("Update a custom role in tenant")
     @route("{id}/")
     @opExample(#{
         parameters: #{
@@ -1034,9 +1034,9 @@ namespace Roles {
         }
     })
     @put op update(
-        @doc("Unique identification")
+        @doc("UUID that uniquely identifies the role")
         @path id: UUID;
-        @body body: WriteRole;
+        @body body: CreateOrUpdateRoleRequest;
 
         @doc("""
         Control which fields are included in the response to optimize payload size.
