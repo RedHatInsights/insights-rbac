@@ -293,7 +293,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- Default: No fields parameter returns id, name, description, permissions, last_modified\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
             "schema": {
               "type": "string",
               "default": "id,name,description,permissions,last_modified"
@@ -2176,11 +2176,11 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Role name"
+            "description": "A human readable name for the role. Does not need to be unique."
           },
           "description": {
             "type": "string",
-            "description": "Role description"
+            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
           },
           "permissions": {
             "type": "array",
@@ -2227,15 +2227,15 @@
                 "$ref": "#/components/schemas/UUID"
               }
             ],
-            "description": "Role identifier"
+            "description": "UUID that uniquely identifies the role"
           },
           "name": {
             "type": "string",
-            "description": "Role name"
+            "description": "A human readable name for the role. Does not need to be unique."
           },
           "description": {
             "type": "string",
-            "description": "Role description"
+            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
           },
           "permissions": {
             "type": "array",
@@ -2252,7 +2252,7 @@
           "last_modified": {
             "type": "string",
             "format": "date-time",
-            "description": "Last modification timestamp"
+            "description": "Timestamp of when the role was last modified"
           }
         },
         "description": "Role with optional fields (supports field masking)",
@@ -2285,11 +2285,11 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Role name"
+            "description": "A human readable name for the role. Does not need to be unique."
           },
           "description": {
             "type": "string",
-            "description": "Role description"
+            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
           },
           "permissions": {
             "type": "array",
