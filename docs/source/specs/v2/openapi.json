@@ -110,7 +110,8 @@
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order",
             "schema": {
-              "$ref": "#/components/schemas/OrderBy"
+              "$ref": "#/components/schemas/OrderBy",
+              "default": "subject_name"
             },
             "explode": false
           }
@@ -683,9 +684,9 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "type": "string",
+              "$ref": "#/components/schemas/FieldMask",
               "default": "id,name,description,permissions,last_modified"
             },
             "explode": false
@@ -729,6 +730,16 @@
               }
             }
           },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem400"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Access is unauthorized.",
             "content": {
@@ -766,16 +777,6 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problems.Problem403"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The server cannot find the requested resource.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problems.Problem404"
                 }
               }
             }

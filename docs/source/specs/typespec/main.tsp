@@ -638,9 +638,6 @@ namespace Workspaces {
 @doc("Operations about role bindings")
 namespace RoleBindings {
 
-    // Default fields returned for role bindings by-subject list operations
-    const DefaultBySubject: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
-
     @discriminator("type")
     model BaseSubject {
         @doc("Subject identifier")
@@ -878,10 +875,10 @@ namespace RoleBindings {
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
         @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
-        @query fields?: FieldMask = DefaultBySubject;
+        @query fields?: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
-        @query order_by?: OrderBy;
+        @query order_by?: OrderBy = "subject_name";
 
     ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 }
@@ -997,20 +994,9 @@ namespace Roles {
     @get op read(
         @path id: UUID;
 
-        @doc("""
-        Control which fields are included in the response to optimize payload size.
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are returned. All response fields become optional.
-
-        **Examples:**
-        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
-        - `?fields=permissions_count,last_modified` - Include only count and timestamp
-        """)
-        @example("id,name,permissions_count")
-        @query fields?: string = DefaultRoleFieldMask;
-
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = DefaultRoleFieldMask;
+    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem400;
 
     @doc("List the roles for a tenant")
     @summary("List the roles for a tenant")
