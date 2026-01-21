@@ -1008,4 +1008,99 @@ namespace Roles {
         @query fields?: string = DefaultRoleFieldMask;
     ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
 
+    @example(#{
+        meta: #{
+            limit: 10
+        },
+        links: #{
+            next: "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
+            previous: null
+        },
+        data: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                name: "Workspace Admin",
+                description: "description",
+                last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            }
+        ]
+    })
+    model ListResponse<Item> {
+        meta: CursorPaginationMeta;
+        links: CursorPaginationLinks;
+        data: Item[];
+    }
+
+    @doc("List the roles for a tenant")
+    @summary("List the roles for a tenant")
+    @opExample(#{
+        parameters: #{
+            limit: 10
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
+                previous: null
+            },
+            data: #[
+                #{
+                    id: "550e8400-e29b-41d4-a716-446655440002",
+                    name: "Workspace Admin",
+                    description: "description",
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                }
+            ]
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            fields: "id,name,permissions_count"
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "/api/rbac/v2/roles/?limit=10&fields=id,name,permissions_count&cursor=eyJpZCI6IjEyMyJ9",
+                previous: null
+            },
+            data: #[
+                #{
+                    id: "550e8400-e29b-41d4-a716-446655440002",
+                    name: "Workspace Admin",
+                    permissions_count: 2
+                }
+            ]
+        }
+    })
+    @get op list(
+        @query limit?: int64 = 10;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: string;
+
+        @doc("Filter by role name using case sensitive exact match.")
+        @query name?: string;
+
+        @doc("""
+        Control which fields are included in the response. Works as a field mask.
+
+        **Syntax:**
+        - Use comma to separate multiple fields: `id,name,permissions_count`
+
+        **Examples:**
+        - `id,name` - Returns only id and name
+        - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string = "id,name,description,last_modified";
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.")
+        @example("-last_modified")
+        @query order_by?: string = "name";
+    ): ListResponse<Role> | Problems.CommonProblems;
 }
