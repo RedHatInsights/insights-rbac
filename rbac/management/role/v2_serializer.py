@@ -38,7 +38,7 @@ class FieldSelection:
     VALID_FIELDS = {"id", "name", "description", "permissions_count", "last_modified", "permissions"}
 
     # Fields returned when no fields param is provided
-    DEFAULT_FIELDS = {"id", "name", "description", "permissions_count"}
+    DEFAULT_FIELDS = {"id", "name", "description", "last_modified"}
 
     selected_fields: set = field(default_factory=set)
 
