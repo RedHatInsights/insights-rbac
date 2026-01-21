@@ -908,15 +908,34 @@ namespace Roles {
         operation: string;
     }
 
+    /**
+     * Default fields returned in role responses when no fields parameter is specified.
+     */
+    const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
+
+    @doc("Role data for create operations")
     @example(#{
-        id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Workspace Admin",
+        name: "Host Inventory Admin",
+        description: "Custom role for host inventory management",
+        permissions: #[
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" }
+        ]
     })
+    model WriteRole {
+        @doc("A human readable name for the role. Does not need to be unique.")
+        name: string;
+        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
+        description: string;
+        @doc("List of permissions to assign to this role")
+        permissions: Permission[];
+    }
+
+    @doc("Role with optional fields (supports field masking)")
     @example(#{
         id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Workspace Admin",
-        description: "description",
-        permissions_count: 2,
+        name: "Custom Inventory Admin",
+        description: "Custom role for inventory management",
         permissions: #[
             #{ application: "inventory", resource_type: "hosts", operation: "read" },
             #{ application: "inventory", resource_type: "hosts", operation: "write" }
@@ -924,18 +943,69 @@ namespace Roles {
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
     })
     model Role {
-        @doc("Role identifier")
-        @key id: UUID;
-        @doc("Role name")
-        name: string;
-        @doc("Role description")
+        @doc("UUID that uniquely identifies the role")
+        id?: UUID;
+        @doc("A human readable name for the role. Does not need to be unique.")
+        name?: string;
+        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description?: string;
-        @doc("Number of permissions assigned to this role")
-        permissions_count?: int32;
         @doc("List of permissions assigned to this role")
         permissions?: Permission[];
-        @doc("Last modification timestamp")
+        @doc("Number of permissions assigned to this role")
+        permissions_count?: int32;
+        @doc("Timestamp of when the role was last modified")
         last_modified?: offsetDateTime;
     }
+
+    model RoleResponse<StatusCode extends int32> {
+        @statusCode _: StatusCode;
+        ...Role;
+    }
+
+    model CreateRoleRequest {
+        ...WriteRole;
+    }
+
+    @doc("Create a custom role in tenant")
+    @summary("Create a custom role in tenant")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                name: "Custom Inventory Admin",
+                description: "Custom role for inventory management",
+                permissions: #[
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 201,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Custom Inventory Admin",
+            description: "Custom role for inventory management",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @post op create(
+        @body body: CreateRoleRequest;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All response fields become optional.
+
+        **Examples:**
+        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+        - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string = DefaultRoleFieldMask;
+    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
 
 }
