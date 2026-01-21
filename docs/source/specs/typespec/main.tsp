@@ -1004,7 +1004,7 @@ namespace Roles {
         @query fields?: string = DefaultRoleFieldMask;
     ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
 
-    @doc("Update a custom role")
+    @doc("Update a custom role in tenant")
     @summary("Update a custom role")
     @route("{id}/")
     @opExample(#{
@@ -1045,7 +1045,6 @@ namespace Roles {
         Only explicitly specified fields are returned. All response fields become optional.
 
         **Examples:**
-
         - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
         """)

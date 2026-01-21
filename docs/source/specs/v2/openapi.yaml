@@ -349,7 +349,7 @@ paths:
     put:
       operationId: Roles_update
       summary: Update a custom role
-      description: Update a custom role
+      description: Update a custom role in tenant
       parameters:
         - name: id
           in: path
@@ -367,7 +367,6 @@ paths:
             Only explicitly specified fields are returned. All response fields become optional.
 
             **Examples:**
-
             - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
             - `?fields=permissions_count,last_modified` - Include only count and timestamp
           schema:
