@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from management.models import Group
+from management.role.v2_model import RoleV2
 from rest_framework import serializers
 
 
@@ -309,11 +310,35 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
         return subject
 
+    def _build_role_data(self, role: RoleV2, field_selection: Optional[FieldSelection]) -> dict:
+        """Build role data dictionary from a role object.
+
+        Args:
+            role: The role to build data for
+            field_selection: Optional field selection to determine which fields to include
+
+        Returns:
+            Dictionary with role data (always includes 'id')
+        """
+        role_data = {"id": role.uuid}
+
+        if field_selection is not None:
+            # Add explicitly requested fields
+            for field_name in field_selection.role_fields:
+                if field_name != "id":
+                    value = getattr(role, field_name, None)
+                    if value is not None:
+                        role_data[field_name] = value
+
+        return role_data
+
     def get_roles(self, obj):
         """Extract roles from the prefetched role bindings.
 
         Default (no fields param): Returns only role id.
         With fields param: id is always included, plus explicitly requested fields.
+
+        For platform roles, returns their children instead of the platform role itself.
         """
         if isinstance(obj, dict):
             return obj.get("roles", [])
@@ -323,7 +348,8 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
         field_selection = self._get_field_selection()
 
-        roles = []
+        # Normalize roles: collect all roles to process (children for platform, role itself for non-platform)
+        roles_to_process = []
         seen_role_ids = set()
 
         for binding_group in obj.filtered_bindings:
@@ -331,20 +357,24 @@ class RoleBindingOutputSerializer(serializers.Serializer):
                 continue
 
             role = binding_group.binding.role
-            if not role or role.uuid in seen_role_ids:
+            if not role:
                 continue
 
-            # id is always included
-            role_data = {"id": role.uuid}
+            # For platform roles, use children; for others, use the role itself
+            # Note: role.children.all() uses prefetched data from service layer's
+            # prefetch_related("role__children"), so this should not cause N+1 queries
+            if role.type == RoleV2.Types.PLATFORM:
+                roles_to_process.extend(role.children.all())
+            else:
+                roles_to_process.append(role)
 
-            if field_selection is not None:
-                # Add explicitly requested fields
-                for field_name in field_selection.role_fields:
-                    if field_name != "id":
-                        value = getattr(role, field_name, None)
-                        if value is not None:
-                            role_data[field_name] = value
+        # Process all normalized roles in a single loop
+        roles = []
+        for role in roles_to_process:
+            if role.uuid in seen_role_ids:
+                continue
 
+            role_data = self._build_role_data(role, field_selection)
             roles.append(role_data)
             seen_role_ids.add(role.uuid)
 
