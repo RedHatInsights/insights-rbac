@@ -1494,7 +1494,7 @@ components:
           items:
             $ref: '#/components/schemas/Roles.Permission'
           description: List of permissions to assign to this role
-      description: Role data for create operations
+      description: Role data for create and update operations
       example:
         name: Host Inventory Admin
         description: Custom role for host inventory management

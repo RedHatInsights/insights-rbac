@@ -913,7 +913,7 @@ namespace Roles {
      */
     const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
 
-    @doc("Role data for create operations")
+    @doc("Role data for create and update operations")
     @example(#{
         name: "Host Inventory Admin",
         description: "Custom role for host inventory management",
