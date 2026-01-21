@@ -27,8 +27,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "format": "int64",
+              "$ref": "#/components/schemas/Limit",
               "default": 10
             },
             "explode": false
@@ -39,7 +38,7 @@
             "required": false,
             "description": "Cursor for cursor-based pagination.",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/Cursor"
             },
             "explode": false
           },
@@ -98,9 +97,10 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior (no fields parameter):**\nBasic required fields are always included: subject.id, subject.type, role.id, resource.id\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**subject object (polymorphic - available fields depend on type):**\n- id (UUID) - always included\n- type (string) - always included, cannot be excluded (determines which additional fields are available)\n\n*When type = \"user\":*\n- user.username (string) - username of the user\n\n*When type = \"group\":*\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role display name\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- last_modified (datetime) - timestamp of last modification\n- inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)\n\n**Examples:**\n- `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)\n- `subject(user.username)` - Include username (only for user subjects)\n- `role(name)` - Include role name\n- `resource(name,type)` - Include resource name and type\n- `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications\n- `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp\n- `last_modified` - Include only modification timestamp (plus required fields)\n- `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields\n- `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/FieldMask",
+              "default": "subject(group.name),role(name),resource(name,type),last_modified"
             },
             "explode": false
           },
@@ -110,7 +110,7 @@
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/OrderBy"
             },
             "explode": false
           }
@@ -121,7 +121,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubjectListResponse"
+                  "type": "object",
+                  "required": [
+                    "meta",
+                    "links",
+                    "data"
+                  ],
+                  "properties": {
+                    "meta": {
+                      "$ref": "#/components/schemas/CursorPaginationMeta"
+                    },
+                    "links": {
+                      "$ref": "#/components/schemas/CursorPaginationLinks"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
+                      }
+                    }
+                  }
                 },
                 "examples": {
                   "example0": {
@@ -294,8 +313,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "format": "int64",
+              "$ref": "#/components/schemas/Limit",
               "default": 10
             },
             "explode": false
@@ -306,7 +324,7 @@
             "required": false,
             "description": "Cursor for cursor-based pagination.",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/Cursor"
             },
             "explode": false
           },
@@ -324,9 +342,9 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response. Works as a field mask.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,permissions_count`\n\n**Examples:**\n- `id,name` - Returns only id and name\n- `id,name,description,permissions_count,last_modified` - Returns all fields except permissions",
+            "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "type": "string",
+              "$ref": "#/components/schemas/FieldMask",
               "default": "id,name,description,last_modified"
             },
             "explode": false
@@ -337,7 +355,7 @@
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.",
             "schema": {
-              "type": "string",
+              "$ref": "#/components/schemas/OrderBy",
               "default": "name"
             },
             "explode": false
@@ -368,23 +386,6 @@
                         "$ref": "#/components/schemas/Roles.Role"
                       }
                     }
-                  },
-                  "example": {
-                    "meta": {
-                      "limit": 10
-                    },
-                    "links": {
-                      "next": "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
-                      "previous": null
-                    },
-                    "data": [
-                      {
-                        "id": "550e8400-e29b-41d4-a716-446655440002",
-                        "name": "Workspace Admin",
-                        "description": "description",
-                        "last_modified": "2024-08-04T12:00:00Z"
-                      }
-                    ]
                   }
                 },
                 "examples": {
@@ -827,8 +828,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "format": "int64",
+              "$ref": "#/components/schemas/Limit",
               "default": 10
             },
             "explode": false
@@ -839,8 +839,7 @@
             "required": false,
             "description": "Offset for offset-based pagination.",
             "schema": {
-              "type": "integer",
-              "format": "int64",
+              "$ref": "#/components/schemas/Offset",
               "default": 0
             },
             "explode": false
@@ -1805,6 +1804,10 @@
   },
   "components": {
     "schemas": {
+      "Cursor": {
+        "type": "string",
+        "description": "Cursor for cursor-based pagination.\nAn opaque string that points to the next/previous page of results."
+      },
       "CursorPaginationLinks": {
         "type": "object",
         "required": [
@@ -1835,13 +1838,30 @@
         ],
         "properties": {
           "limit": {
-            "type": "integer",
-            "format": "int64",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Limit"
+              }
+            ],
             "description": "Limit of returned objects. Use -1 to return all objects.",
             "example": 10,
             "default": 10
           }
         }
+      },
+      "FieldMask": {
+        "type": "string",
+        "description": "Field mask used by the `fields` query parameter to control which fields\nare included in the response.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,description`\n- Use parentheses for nested objects: `subject(id,name),resource(type)`\n\n**Examples:**\n- `id,name`\n- `subject(group.name),role(name)`"
+      },
+      "Limit": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Limit for pagination. Controls the maximum number of items returned.\nUse -1 to return all objects."
+      },
+      "Offset": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Offset for offset-based pagination.\nThe number of items to skip before starting to return results."
       },
       "OffsetPaginationLinks": {
         "type": "object",
@@ -1897,20 +1917,30 @@
             "example": 10
           },
           "limit": {
-            "type": "integer",
-            "format": "int64",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Limit"
+              }
+            ],
             "description": "Limit of returned objects. Use -1 to return all objects.",
             "example": 10,
             "default": 10
           },
           "offset": {
-            "type": "integer",
-            "format": "int64",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Offset"
+              }
+            ],
             "description": "Offset of returned objects",
             "example": 0,
             "default": 0
           }
         }
+      },
+      "OrderBy": {
+        "type": "string",
+        "description": "Sort order specification for list operations.\nUse comma to separate multiple fields, prefix with '-' for descending order.\n\n**Examples:**\n- `name` - Sort by name ascending\n- `-last_modified` - Sort by last_modified descending\n- `name,-created` - Sort by name ascending, then created descending"
       },
       "Problems.Problem400": {
         "type": "object",
@@ -2275,39 +2305,6 @@
             "id": "550e8400-e29b-41d4-a716-446655440001",
             "name": "Parent Workspace",
             "type": "workspace"
-          }
-        }
-      },
-      "RoleBindings.RoleBindingBySubjectListResponse": {
-        "type": "object",
-        "required": [
-          "meta",
-          "links",
-          "data"
-        ],
-        "properties": {
-          "meta": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CursorPaginationMeta"
-              }
-            ],
-            "description": "Pagination metadata"
-          },
-          "links": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CursorPaginationLinks"
-              }
-            ],
-            "description": "Pagination links"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
-            },
-            "description": "List of role bindings grouped by subject"
           }
         }
       },

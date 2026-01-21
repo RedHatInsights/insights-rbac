@@ -17,8 +17,7 @@ paths:
           in: query
           required: false
           schema:
-            type: integer
-            format: int64
+            $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -26,7 +25,7 @@ paths:
           required: false
           description: Cursor for cursor-based pagination.
           schema:
-            type: string
+            $ref: '#/components/schemas/Cursor'
           explode: false
         - name: resource_id
           in: query
@@ -67,66 +66,17 @@ paths:
         - name: fields
           in: query
           required: false
-          description: |-
-            Control which fields are included in the response to optimize payload size and improve performance.
-
-            **Default Behavior (no fields parameter):**
-            Basic required fields are always included: subject.id, subject.type, role.id, resource.id
-
-            **When fields parameter is provided:**
-            Only explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.
-
-            **Syntax:**
-            - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-            - Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`
-            - Fields not in parentheses apply to the root level
-
-            **Available Fields:**
-
-            **subject object (polymorphic - available fields depend on type):**
-            - id (UUID) - always included
-            - type (string) - always included, cannot be excluded (determines which additional fields are available)
-
-            *When type = "user":*
-            - user.username (string) - username of the user
-
-            *When type = "group":*
-            - group.name (string) - name of the group
-            - group.description (string) - description of the group
-            - group.user_count (integer) - number of users in the group
-
-            **role object:**
-            - id (UUID) - always included
-            - name (string) - role display name
-
-            **resource object:**
-            - id (UUID) - always included
-            - name (string) - resource name
-            - type (string) - resource type
-
-            **root level:**
-            - last_modified (datetime) - timestamp of last modification
-            - inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)
-
-            **Examples:**
-            - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
-            - `subject(user.username)` - Include username (only for user subjects)
-            - `role(name)` - Include role name
-            - `resource(name,type)` - Include resource name and type
-            - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
-            - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
-            - `last_modified` - Include only modification timestamp (plus required fields)
-            - `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields
-            - `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)
+          description: Control which fields are included in the response to optimize payload size and improve performance.
           schema:
-            type: string
+            $ref: '#/components/schemas/FieldMask'
+            default: subject(group.name),role(name),resource(name,type),last_modified
           explode: false
         - name: order_by
           in: query
           required: false
           description: Sort by specified field(s), prefix with '-' for descending order
           schema:
-            type: string
+            $ref: '#/components/schemas/OrderBy'
           explode: false
       responses:
         '200':
@@ -134,7 +84,20 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleBindings.RoleBindingBySubjectListResponse'
+                type: object
+                required:
+                  - meta
+                  - links
+                  - data
+                properties:
+                  meta:
+                    $ref: '#/components/schemas/CursorPaginationMeta'
+                  links:
+                    $ref: '#/components/schemas/CursorPaginationLinks'
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RoleBindings.RoleBindingBySubject'
               examples:
                 example0:
                   value:
@@ -244,8 +207,7 @@ paths:
           in: query
           required: false
           schema:
-            type: integer
-            format: int64
+            $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -253,7 +215,7 @@ paths:
           required: false
           description: Cursor for cursor-based pagination.
           schema:
-            type: string
+            $ref: '#/components/schemas/Cursor'
           explode: false
         - name: name
           in: query
@@ -265,17 +227,9 @@ paths:
         - name: fields
           in: query
           required: false
-          description: |-
-            Control which fields are included in the response. Works as a field mask.
-
-            **Syntax:**
-            - Use comma to separate multiple fields: `id,name,permissions_count`
-
-            **Examples:**
-            - `id,name` - Returns only id and name
-            - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
+          description: Control which fields are included in the response to optimize payload size.
           schema:
-            type: string
+            $ref: '#/components/schemas/FieldMask'
             default: id,name,description,last_modified
           explode: false
         - name: order_by
@@ -283,7 +237,7 @@ paths:
           required: false
           description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified."
           schema:
-            type: string
+            $ref: '#/components/schemas/OrderBy'
             default: name
           explode: false
       responses:
@@ -306,17 +260,6 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Roles.Role'
-                example:
-                  meta:
-                    limit: 10
-                  links:
-                    next: /api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9
-                    previous: null
-                  data:
-                    - id: 550e8400-e29b-41d4-a716-446655440002
-                      name: Workspace Admin
-                      description: description
-                      last_modified: '2024-08-04T12:00:00Z'
               examples:
                 example0:
                   value:
@@ -612,8 +555,7 @@ paths:
           in: query
           required: false
           schema:
-            type: integer
-            format: int64
+            $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: offset
@@ -621,8 +563,7 @@ paths:
           required: false
           description: Offset for offset-based pagination.
           schema:
-            type: integer
-            format: int64
+            $ref: '#/components/schemas/Offset'
             default: 0
           explode: false
         - name: type
@@ -1246,6 +1187,11 @@ paths:
               parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
 components:
   schemas:
+    Cursor:
+      type: string
+      description: |-
+        Cursor for cursor-based pagination.
+        An opaque string that points to the next/previous page of results.
     CursorPaginationLinks:
       type: object
       required:
@@ -1270,11 +1216,36 @@ components:
         - limit
       properties:
         limit:
-          type: integer
-          format: int64
+          allOf:
+            - $ref: '#/components/schemas/Limit'
           description: Limit of returned objects. Use -1 to return all objects.
           example: 10
           default: 10
+    FieldMask:
+      type: string
+      description: |-
+        Field mask used by the `fields` query parameter to control which fields
+        are included in the response.
+
+        **Syntax:**
+        - Use comma to separate multiple fields: `id,name,description`
+        - Use parentheses for nested objects: `subject(id,name),resource(type)`
+
+        **Examples:**
+        - `id,name`
+        - `subject(group.name),role(name)`
+    Limit:
+      type: integer
+      format: int64
+      description: |-
+        Limit for pagination. Controls the maximum number of items returned.
+        Use -1 to return all objects.
+    Offset:
+      type: integer
+      format: int64
+      description: |-
+        Offset for offset-based pagination.
+        The number of items to skip before starting to return results.
     OffsetPaginationLinks:
       type: object
       required:
@@ -1320,17 +1291,27 @@ components:
           description: Total count of objects
           example: 10
         limit:
-          type: integer
-          format: int64
+          allOf:
+            - $ref: '#/components/schemas/Limit'
           description: Limit of returned objects. Use -1 to return all objects.
           example: 10
           default: 10
         offset:
-          type: integer
-          format: int64
+          allOf:
+            - $ref: '#/components/schemas/Offset'
           description: Offset of returned objects
           example: 0
           default: 0
+    OrderBy:
+      type: string
+      description: |-
+        Sort order specification for list operations.
+        Use comma to separate multiple fields, prefix with '-' for descending order.
+
+        **Examples:**
+        - `name` - Sort by name ascending
+        - `-last_modified` - Sort by last_modified descending
+        - `name,-created` - Sort by name ascending, then created descending
     Problems.Problem400:
       type: object
       required:
@@ -1562,26 +1543,6 @@ components:
           id: 550e8400-e29b-41d4-a716-446655440001
           name: Parent Workspace
           type: workspace
-    RoleBindings.RoleBindingBySubjectListResponse:
-      type: object
-      required:
-        - meta
-        - links
-        - data
-      properties:
-        meta:
-          allOf:
-            - $ref: '#/components/schemas/CursorPaginationMeta'
-          description: Pagination metadata
-        links:
-          allOf:
-            - $ref: '#/components/schemas/CursorPaginationLinks'
-          description: Pagination links
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/RoleBindings.RoleBindingBySubject'
-          description: List of role bindings grouped by subject
     RoleBindings.UserDetails:
       type: object
       properties:
