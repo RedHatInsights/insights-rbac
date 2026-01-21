@@ -163,10 +163,6 @@ class IdentityHeaderMiddleware:
                     # This would happen if between the time we first check for a tenant,
                     # and when we went to create one, another request or the listener job created one.
                     tenant = Tenant.objects.get(org_id=request.user.org_id)
-                    # Update account_id if missing and user has it (fixes regression from Phase 0 to Phase 1)
-                    if tenant.account_id is None and request.user.account:
-                        tenant.account_id = request.user.account
-                        tenant.save(update_fields=["account_id"])
             TENANTS.save_tenant(tenant)
         return tenant
 
