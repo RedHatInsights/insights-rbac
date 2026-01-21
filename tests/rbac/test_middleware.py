@@ -378,9 +378,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
     def test_process_preserves_existing_account_id(self, mock_resolve):
         """If a tenant exists with an account_id, it should not be overwritten."""
         existing_account_id = "existing_account_123"
-        tenant = Tenant.objects.create(
-            tenant_name="test_user", org_id=self.org_id, account_id=existing_account_id
-        )
+        tenant = Tenant.objects.create(tenant_name="test_user", org_id=self.org_id, account_id=existing_account_id)
         tenant.ready = True
         tenant.save()
 
