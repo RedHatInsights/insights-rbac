@@ -598,3 +598,67 @@ class SystemUserFromTokenTests(IdentityRequest):
         result_user = build_system_user_from_token(request, token_validator)
 
         self._assert_system_user_fields(result_user, existing_username)
+
+
+class IsSecureInventoryEnvironmentTests(IdentityRequest):
+    """Test the _is_secure_inventory_environment function."""
+
+    def test_development_mode_returns_false(self):
+        """Test that development mode returns False (insecure)."""
+        from management.utils import _is_secure_inventory_environment
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "true", "ENV_NAME": "prod"}):
+            with override_settings(DEVELOPMENT=True):
+                self.assertFalse(_is_secure_inventory_environment())
+
+    def test_clowder_disabled_returns_false(self):
+        """Test that non-Clowder environment returns False (insecure)."""
+        from management.utils import _is_secure_inventory_environment
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "false", "ENV_NAME": "prod"}):
+            with override_settings(DEVELOPMENT=False):
+                self.assertFalse(_is_secure_inventory_environment())
+
+    def test_clowder_enabled_prod_returns_true(self):
+        """Test that Clowder enabled with prod ENV_NAME returns True (secure)."""
+        from management.utils import _is_secure_inventory_environment
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "true", "ENV_NAME": "prod"}):
+            with override_settings(DEVELOPMENT=False):
+                self.assertTrue(_is_secure_inventory_environment())
+
+    def test_clowder_enabled_stage_returns_true(self):
+        """Test that Clowder enabled with stage ENV_NAME returns True (secure)."""
+        from management.utils import _is_secure_inventory_environment
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "true", "ENV_NAME": "stage"}):
+            with override_settings(DEVELOPMENT=False):
+                self.assertTrue(_is_secure_inventory_environment())
+
+    def test_clowder_enabled_ephemeral_returns_false(self):
+        """Test that Clowder enabled with ephemeral ENV_NAME returns False (insecure)."""
+        from management.utils import _is_secure_inventory_environment
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "true", "ENV_NAME": "ephemeral-xyz"}):
+            with override_settings(DEVELOPMENT=False):
+                self.assertFalse(_is_secure_inventory_environment())
+
+    def test_clowder_enabled_other_env_returns_false(self):
+        """Test that Clowder enabled with non-prod/stage ENV_NAME returns False (insecure)."""
+        from management.utils import _is_secure_inventory_environment
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "true", "ENV_NAME": "test"}):
+            with override_settings(DEVELOPMENT=False):
+                self.assertFalse(_is_secure_inventory_environment())
+
+    def test_clowder_enabled_case_insensitive(self):
+        """Test that ENV_NAME comparison is case insensitive."""
+        from management.utils import _is_secure_inventory_environment
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "true", "ENV_NAME": "PROD"}):
+            with override_settings(DEVELOPMENT=False):
+                self.assertTrue(_is_secure_inventory_environment())
+
+        with mock.patch.dict("os.environ", {"CLOWDER_ENABLED": "true", "ENV_NAME": "STAGE"}):
+            with override_settings(DEVELOPMENT=False):
+                self.assertTrue(_is_secure_inventory_environment())
