@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 class RoleV2CursorPagination(V2CursorPagination):
     """Cursor pagination for roles."""
 
+    # Default ordering when no order_by parameter is provided
+    ordering = "name"
+
     ORDERING_FIELD_MAPPING = {
         "last_modified": "modified",
         "permissions_count": "permissions_count_annotation",
