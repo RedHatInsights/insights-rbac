@@ -334,7 +334,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Roles.CreateRoleRequest'
+              $ref: '#/components/schemas/Roles.WriteRole'
             example:
               name: Custom Inventory Admin
               description: Custom role for inventory management
@@ -367,7 +367,7 @@ paths:
             Only explicitly specified fields are returned. All response fields become optional.
 
             **Examples:**
-            - Default: No fields parameter returns id, name, description, permissions, last_modified
+
             - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
             - `?fields=permissions_count,last_modified` - Include only count and timestamp
           schema:
@@ -1477,24 +1477,6 @@ components:
           description: User details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
-    Roles.CreateRoleRequest:
-      type: object
-      required:
-        - name
-        - description
-        - permissions
-      properties:
-        name:
-          type: string
-          description: A human readable name for the role. Does not need to be unique.
-        description:
-          type: string
-          description: A description of the role to help clarify its purpose. Does not need to be unique.
-        permissions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Roles.Permission'
-          description: List of permissions to assign to this role
     Roles.Permission:
       type: object
       required:

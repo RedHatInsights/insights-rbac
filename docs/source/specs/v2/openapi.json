@@ -421,7 +421,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Roles.CreateRoleRequest"
+                "$ref": "#/components/schemas/Roles.WriteRole"
               },
               "example": {
                 "name": "Custom Inventory Admin",
@@ -463,7 +463,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- Default: No fields parameter returns id, name, description, permissions, last_modified\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
             "schema": {
               "type": "string",
               "default": "id,name,description,permissions,last_modified"
@@ -2165,31 +2165,6 @@
             "$ref": "#/components/schemas/RoleBindings.BaseSubject"
           }
         ]
-      },
-      "Roles.CreateRoleRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "description",
-          "permissions"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
-          },
-          "description": {
-            "type": "string",
-            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Roles.Permission"
-            },
-            "description": "List of permissions to assign to this role"
-          }
-        }
       },
       "Roles.Permission": {
         "type": "object",

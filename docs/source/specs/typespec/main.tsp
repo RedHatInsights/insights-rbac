@@ -962,10 +962,6 @@ namespace Roles {
         ...Role;
     }
 
-    model CreateRoleRequest {
-        ...WriteRole;
-    }
-
     @doc("Create a custom role in tenant")
     @summary("Create a custom role in tenant")
     @opExample(#{
@@ -992,7 +988,7 @@ namespace Roles {
         }
     })
     @post op create(
-        @body body: CreateRoleRequest;
+        @body body: WriteRole;
 
         @doc("""
         Control which fields are included in the response to optimize payload size.
@@ -1049,7 +1045,7 @@ namespace Roles {
         Only explicitly specified fields are returned. All response fields become optional.
 
         **Examples:**
-        - Default: No fields parameter returns id, name, description, permissions, last_modified
+
         - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
         """)
