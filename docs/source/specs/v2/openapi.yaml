@@ -235,116 +235,6 @@ paths:
       tags:
         - Role Bindings
   /roles/:
-    post:
-      operationId: Roles_create
-      summary: Create a custom role in tenant
-      description: Create a custom role in tenant
-      parameters:
-        - name: fields
-          in: query
-          required: false
-          description: |-
-            Control which fields are included in the response to optimize payload size.
-
-            **When fields parameter is provided:**
-            Only explicitly specified fields are returned. All response fields become optional.
-
-            **Examples:**
-            - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
-            - `?fields=permissions_count,last_modified` - Include only count and timestamp
-          schema:
-            type: string
-            default: id,name,description,permissions,last_modified
-          explode: false
-      responses:
-        '201':
-          description: The request has succeeded and a new resource has been created as a result.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Roles.Role'
-              example:
-                id: 550e8400-e29b-41d4-a716-446655440002
-                name: Custom Inventory Admin
-                description: Custom role for inventory management
-                permissions:
-                  - application: inventory
-                    resource_type: hosts
-                    operation: read
-                  - application: inventory
-                    resource_type: hosts
-                    operation: write
-                last_modified: '2024-08-04T12:00:00Z'
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem400'
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 401
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-        '403':
-          description: Access is forbidden.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem403'
-        '500':
-          description: Server error
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 500
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-      tags:
-        - Roles
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Roles.CreateRoleRequest'
-            example:
-              name: Custom Inventory Admin
-              description: Custom role for inventory management
-              permissions:
-                - application: inventory
-                  resource_type: hosts
-                  operation: read
-                - application: inventory
-                  resource_type: hosts
-                  operation: write
     get:
       operationId: Roles_list
       summary: List the roles for a tenant
@@ -477,6 +367,221 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
+    post:
+      operationId: Roles_create
+      summary: Create a custom role in tenant
+      description: Create a custom role in tenant
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response to optimize payload size.
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are returned. All response fields become optional.
+
+            **Examples:**
+            - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+            - `?fields=permissions_count,last_modified` - Include only count and timestamp
+          schema:
+            type: string
+            default: id,name,description,permissions,last_modified
+          explode: false
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Roles.Role'
+              example:
+                id: 550e8400-e29b-41d4-a716-446655440002
+                name: Custom Inventory Admin
+                description: Custom role for inventory management
+                permissions:
+                  - application: inventory
+                    resource_type: hosts
+                    operation: read
+                  - application: inventory
+                    resource_type: hosts
+                    operation: write
+                last_modified: '2024-08-04T12:00:00Z'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Roles.CreateRoleRequest'
+            example:
+              name: Custom Inventory Admin
+              description: Custom role for inventory management
+              permissions:
+                - application: inventory
+                  resource_type: hosts
+                  operation: read
+                - application: inventory
+                  resource_type: hosts
+                  operation: write
+  /roles/{id}/:
+    get:
+      operationId: Roles_read
+      summary: Get a role
+      description: Get a role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response to optimize payload size.
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are returned. All response fields become optional.
+
+            **Examples:**
+            - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+            - `?fields=permissions_count,last_modified` - Include only count and timestamp
+          schema:
+            type: string
+            default: id,name,description,permissions,last_modified
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Roles.Role'
+              examples:
+                example0:
+                  value:
+                    name: Workspace Admin
+                example1:
+                  value:
+                    id: 550e8400-e29b-41d4-a716-446655440002
+                    name: Workspace Admin
+                    description: Full administrative access to workspace resources
+                    permissions:
+                      - application: inventory
+                        resource_type: hosts
+                        operation: read
+                      - application: inventory
+                        resource_type: hosts
+                        operation: write
+                    last_modified: '2024-08-04T12:00:00Z'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem404'
         '500':
           description: Server error
           content:
@@ -1141,104 +1246,6 @@ paths:
               $ref: '#/components/schemas/Workspaces.MoveWorkspaceRequest'
             example:
               parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
-  /roles/{id}/:
-    get:
-      operationId: Roles_read
-      summary: Get a role
-      description: Get a role
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Unique identification
-          schema:
-            type: string
-            format: uuid
-          explode: false
-        - name: fields
-          in: query
-          required: false
-          description: |-
-            Comma-separated list of fields to include in the response.
-
-            Default: DefaultRoleFieldMask (id,name,description,permissions,last_modified)
-          schema:
-            type: string
-            default: id,name,description,permissions,last_modified
-          explode: false
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Roles.ReadRoleResponse'
-              examples:
-                example1:
-                  value:
-                    id: 550e8400-e29b-41d4-a716-446655440002
-                    name: Workspace Admin
-                    description: Full administrative access to workspace resources
-                    permissions:
-                      - application: inventory
-                        resource_type: hosts
-                        operation: read
-                      - application: inventory
-                        resource_type: hosts
-                        operation: write
-                    last_modified: '2024-08-04T12:00:00Z'
-                example2:
-                  value:
-                    name: Workspace Admin
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                required:
-                  - status
-                properties:
-                  type:
-                    $ref: '#/components/schemas/ProblemType'
-                  status:
-                    type: integer
-                    enum:
-                      - 404
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-        default:
-          description: An unexpected error response.
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                required:
-                  - status
-                properties:
-                  type:
-                    $ref: '#/components/schemas/ProblemType'
-                  status:
-                    type: integer
-                    enum:
-                      - 400
-                      - 401
-                      - 403
-                      - 500
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-      tags:
-        - Roles
 components:
   schemas:
     CursorPaginationLinks:
@@ -1666,8 +1673,6 @@ components:
       description: Role with optional fields (supports field masking)
       example:
         id: 550e8400-e29b-41d4-a716-446655440002
-        name: Workspace Admin
-        description: description
         name: Custom Inventory Admin
         description: Custom role for inventory management
         permissions:
@@ -1677,12 +1682,7 @@ components:
           - application: inventory
             resource_type: hosts
             operation: write
-        permissions_count: 2
         last_modified: '2024-08-04T12:00:00Z'
-    Roles.ReadRoleResponse:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/Roles.Role'
     Roles.WriteRole:
       type: object
       required:

@@ -893,6 +893,7 @@ namespace RoleBindings {
 @tag("Roles")
 @doc("Operations about roles")
 namespace Roles {
+    // Models and Constants
 
     @example(#{
         application: "inventory",
@@ -908,28 +909,7 @@ namespace Roles {
         operation: string;
     }
 
-    /**
-     * Default fields returned in role responses when no fields parameter is specified.
-     */
     const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
-
-    @doc("Role data for create operations")
-    @example(#{
-        name: "Host Inventory Admin",
-        description: "Custom role for host inventory management",
-        permissions: #[
-            #{ application: "inventory", resource_type: "hosts", operation: "read" },
-            #{ application: "inventory", resource_type: "hosts", operation: "write" }
-        ]
-    })
-    model WriteRole {
-        @doc("A human readable name for the role. Does not need to be unique.")
-        name: string;
-        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
-        description: string;
-        @doc("List of permissions to assign to this role")
-        permissions: Permission[];
-    }
 
     @doc("Role with optional fields (supports field masking)")
     @example(#{
@@ -962,89 +942,6 @@ namespace Roles {
         ...Role;
     }
 
-    const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
-
-    @doc("Get a role")
-    @summary("Get a role")
-    @route("{id}/")
-    @opExample(#{
-        parameters: #{
-            id: "550e8400-e29b-41d4-a716-446655440002"
-        },
-        returnType: #{
-            _: 200,
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Workspace Admin",
-            description: "Full administrative access to workspace resources",
-    model CreateRoleRequest {
-        ...WriteRole;
-    }
-
-    @doc("Create a custom role in tenant")
-    @summary("Create a custom role in tenant")
-    @opExample(#{
-        parameters: #{
-            body: #{
-                name: "Custom Inventory Admin",
-                description: "Custom role for inventory management",
-                permissions: #[
-                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                    #{ application: "inventory", resource_type: "hosts", operation: "write" }
-                ]
-            }
-        },
-        returnType: #{
-            _: 201,
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Custom Inventory Admin",
-            description: "Custom role for inventory management",
-            permissions: #[
-                #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                #{ application: "inventory", resource_type: "hosts", operation: "write" }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-        }
-    })
-    @opExample(#{
-        parameters: #{
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            fields: "name"
-        },
-        returnType: #{
-            _: 200,
-            name: "Workspace Admin"
-        }
-    })
-    @get op read(
-        @path id: UUID;
-
-        @doc("""
-        Comma-separated list of fields to include in the response.
-
-        Default: DefaultRoleFieldMask (id,name,description,permissions,last_modified)
-        """)
-        @example(DefaultRoleFieldMask)
-        @query fields?: string = DefaultRoleFieldMask;
-
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
-
-    @post op create(
-        @body body: CreateRoleRequest;
-
-        @doc("""
-        Control which fields are included in the response to optimize payload size.
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are returned. All response fields become optional.
-
-        **Examples:**
-        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
-        - `?fields=permissions_count,last_modified` - Include only count and timestamp
-        """)
-        @example("id,name,permissions_count")
-        @query fields?: string = DefaultRoleFieldMask;
-    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
-
     @example(#{
         meta: #{
             limit: 10
@@ -1067,6 +964,77 @@ namespace Roles {
         links: CursorPaginationLinks;
         data: Item[];
     }
+
+    @doc("Role data for create operations")
+    @example(#{
+        name: "Host Inventory Admin",
+        description: "Custom role for host inventory management",
+        permissions: #[
+            #{ application: "inventory", resource_type: "hosts", operation: "read" },
+            #{ application: "inventory", resource_type: "hosts", operation: "write" }
+        ]
+    })
+    model WriteRole {
+        @doc("A human readable name for the role. Does not need to be unique.")
+        name: string;
+        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
+        description: string;
+        @doc("List of permissions to assign to this role")
+        permissions: Permission[];
+    }
+
+    model CreateRoleRequest {
+        ...WriteRole;
+    }
+
+    // Read Operations
+
+    @doc("Get a role")
+    @summary("Get a role")
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002"
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            description: "Full administrative access to workspace resources",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            fields: "name"
+        },
+        returnType: #{
+            _: 200,
+            name: "Workspace Admin"
+        }
+    })
+    @get op read(
+        @path id: UUID;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All response fields become optional.
+
+        **Examples:**
+        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+        - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string = DefaultRoleFieldMask;
+
+    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
 
     @doc("List the roles for a tenant")
     @summary("List the roles for a tenant")
@@ -1140,4 +1108,48 @@ namespace Roles {
         @example("-last_modified")
         @query order_by?: string = "name";
     ): ListResponse<Role> | Problems.CommonProblems;
+
+    // Create Operations
+
+    @doc("Create a custom role in tenant")
+    @summary("Create a custom role in tenant")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                name: "Custom Inventory Admin",
+                description: "Custom role for inventory management",
+                permissions: #[
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 201,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Custom Inventory Admin",
+            description: "Custom role for inventory management",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @post op create(
+        @body body: CreateRoleRequest;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All response fields become optional.
+
+        **Examples:**
+        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+        - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string = DefaultRoleFieldMask;
+    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
 }
