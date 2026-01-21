@@ -165,6 +165,16 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         if view.action == "move":
             return self._check_move_target_access_v2(request)
 
+        # For list operations with type=standard or type=all, check if user has real workspace access
+        # This preserves V1 behavior: return 403 if user has no actual permissions
+        if view.action == "list":
+            workspace_type = request.query_params.get("type", "").lower()
+            if workspace_type in ("standard", "all"):
+                # Call is_user_allowed_v2 to populate has_real_workspace_access flag
+                is_user_allowed_v2(request, perm, None)
+                if not getattr(request, "has_real_workspace_access", False):
+                    return False
+
         # For list/detail operations, allow request to proceed
         # FilterBackend handles access filtering via queryset
         # This ensures 404 for both non-existing and inaccessible workspaces
