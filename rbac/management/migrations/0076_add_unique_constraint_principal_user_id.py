@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0074_alter_rolev2_name"),
+        ("management", "0075_alter_tenantmapping_default_admin_role_binding_uuid_and_more"),
     ]
 
     operations = [
