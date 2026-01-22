@@ -40,6 +40,7 @@ protoc-gen-validate = "==1.2.1"
 python-dateutil = "==2.9.0.post0"
 redis = "==7.1.0"
 jsonschema = "*"
+pyasn1 = ">=0.6.2"
 unleashclient = "*"
 django-pgtransaction = "*"
 kessel-sdk = {extras = ["auth"], version = "*"}

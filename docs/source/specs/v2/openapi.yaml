@@ -5,6 +5,7 @@ info:
 tags:
   - name: Workspaces
   - name: Role Bindings
+  - name: Roles
 paths:
   /role-bindings/by-subject/:
     get:
@@ -233,6 +234,271 @@ paths:
                     format: uri
       tags:
         - Role Bindings
+  /roles/:
+    post:
+      operationId: Roles_create
+      summary: Create a custom role in tenant
+      description: Create a custom role in tenant
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response to optimize payload size.
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are returned. All response fields become optional.
+
+            **Examples:**
+            - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+            - `?fields=permissions_count,last_modified` - Include only count and timestamp
+          schema:
+            type: string
+            default: id,name,description,permissions,last_modified
+          explode: false
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Roles.Role'
+              example:
+                id: 550e8400-e29b-41d4-a716-446655440002
+                name: Custom Inventory Admin
+                description: Custom role for inventory management
+                permissions:
+                  - application: inventory
+                    resource_type: hosts
+                    operation: read
+                  - application: inventory
+                    resource_type: hosts
+                    operation: write
+                last_modified: '2024-08-04T12:00:00Z'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Roles.CreateRoleRequest'
+            example:
+              name: Custom Inventory Admin
+              description: Custom role for inventory management
+              permissions:
+                - application: inventory
+                  resource_type: hosts
+                  operation: read
+                - application: inventory
+                  resource_type: hosts
+                  operation: write
+    get:
+      operationId: Roles_list
+      summary: List the roles for a tenant
+      description: List the roles for a tenant
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 10
+          explode: false
+        - name: cursor
+          in: query
+          required: false
+          description: Cursor for cursor-based pagination.
+          schema:
+            type: string
+          explode: false
+        - name: name
+          in: query
+          required: false
+          description: Filter by role name using case sensitive exact match.
+          schema:
+            type: string
+          explode: false
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response. Works as a field mask.
+
+            **Syntax:**
+            - Use comma to separate multiple fields: `id,name,permissions_count`
+
+            **Examples:**
+            - `id,name` - Returns only id and name
+            - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
+          schema:
+            type: string
+            default: id,name,description,last_modified
+          explode: false
+        - name: order_by
+          in: query
+          required: false
+          description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified."
+          schema:
+            type: string
+            default: name
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - meta
+                  - links
+                  - data
+                properties:
+                  meta:
+                    $ref: '#/components/schemas/CursorPaginationMeta'
+                  links:
+                    $ref: '#/components/schemas/CursorPaginationLinks'
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Roles.Role'
+                example:
+                  meta:
+                    limit: 10
+                  links:
+                    next: /api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9
+                    previous: null
+                  data:
+                    - id: 550e8400-e29b-41d4-a716-446655440002
+                      name: Workspace Admin
+                      description: description
+                      last_modified: '2024-08-04T12:00:00Z'
+              examples:
+                example0:
+                  value:
+                    meta:
+                      limit: 10
+                    links:
+                      next: /api/rbac/v2/roles/?limit=10&fields=id,name,permissions_count&cursor=eyJpZCI6IjEyMyJ9
+                      previous: null
+                    data:
+                      - id: 550e8400-e29b-41d4-a716-446655440002
+                        name: Workspace Admin
+                        permissions_count: 2
+                example1:
+                  value:
+                    meta:
+                      limit: 10
+                    links:
+                      next: /api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9
+                      previous: null
+                    data:
+                      - id: 550e8400-e29b-41d4-a716-446655440002
+                        name: Workspace Admin
+                        description: description
+                        last_modified: '2024-08-04T12:00:00Z'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
   /workspaces/:
     get:
       operationId: Workspaces_list
@@ -1235,6 +1501,24 @@ components:
           description: User details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
+    Roles.CreateRoleRequest:
+      type: object
+      required:
+        - name
+        - description
+        - permissions
+      properties:
+        name:
+          type: string
+          description: A human readable name for the role. Does not need to be unique.
+        description:
+          type: string
+          description: A description of the role to help clarify its purpose. Does not need to be unique.
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Roles.Permission'
+          description: List of permissions to assign to this role
     Roles.Permission:
       type: object
       required:
@@ -1257,38 +1541,35 @@ components:
         operation: read
     Roles.Role:
       type: object
-      required:
-        - id
-        - name
       properties:
         id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          description: Role identifier
+          description: UUID that uniquely identifies the role
         name:
           type: string
-          description: Role name
+          description: A human readable name for the role. Does not need to be unique.
         description:
           type: string
-          description: Role description
-        permissions_count:
-          type: integer
-          format: int32
-          description: Number of permissions assigned to this role
+          description: A description of the role to help clarify its purpose. Does not need to be unique.
         permissions:
           type: array
           items:
             $ref: '#/components/schemas/Roles.Permission'
           description: List of permissions assigned to this role
+        permissions_count:
+          type: integer
+          format: int32
+          description: Number of permissions assigned to this role
         last_modified:
           type: string
           format: date-time
-          description: Last modification timestamp
+          description: Timestamp of when the role was last modified
+      description: Role with optional fields (supports field masking)
       example:
         id: 550e8400-e29b-41d4-a716-446655440002
-        name: Workspace Admin
-        description: description
-        permissions_count: 2
+        name: Custom Inventory Admin
+        description: Custom role for inventory management
         permissions:
           - application: inventory
             resource_type: hosts
@@ -1297,6 +1578,35 @@ components:
             resource_type: hosts
             operation: write
         last_modified: '2024-08-04T12:00:00Z'
+    Roles.WriteRole:
+      type: object
+      required:
+        - name
+        - description
+        - permissions
+      properties:
+        name:
+          type: string
+          description: A human readable name for the role. Does not need to be unique.
+        description:
+          type: string
+          description: A description of the role to help clarify its purpose. Does not need to be unique.
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Roles.Permission'
+          description: List of permissions to assign to this role
+      description: Role data for create operations
+      example:
+        name: Host Inventory Admin
+        description: Custom role for host inventory management
+        permissions:
+          - application: inventory
+            resource_type: hosts
+            operation: read
+          - application: inventory
+            resource_type: hosts
+            operation: write
     Timestamps:
       type: object
       required:
