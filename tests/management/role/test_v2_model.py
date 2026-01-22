@@ -875,25 +875,6 @@ class RoleBindingModelTests(IdentityRequest):
         self.assertCountEqual([self.principal1], binding.bound_principals())
         self.assertEqual(binding.principal_entries.all().count(), 2)
 
-    def test_update_principals_by_user_id_duplicate(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        Principal.objects.create(tenant=self.tenant, username="dA", user_id="test_duplicate")
-        Principal.objects.create(tenant=self.tenant, username="dB", user_id="test_duplicate")
-
-        binding.update_principals([("car/1", self.principal1)])
-
-        with self.assertRaisesRegex(ValueError, ".*test_duplicate.*"):
-            binding.update_principals_by_user_id([("car", "test_duplicate")])
-
-        # The existing principals should be unchanged.
-        self.assertCountEqual([self.principal1], binding.bound_principals())
-
     def test_update_principals_by_user_id_nonexistent(self):
         binding: RoleBinding = RoleBinding.objects.create(
             role=self.role,

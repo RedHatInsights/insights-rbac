@@ -240,17 +240,8 @@ class RoleBinding(TenantAwareModel):
             missing_user_ids = user_ids.difference(found_user_ids)
             raise ValueError(f"Not all expected principals could be found. Missing user IDs: {missing_user_ids}")
 
-        # user_ids are not currently constrained to be unique, so we have to check for duplicates.
-        if len(principals) != len(user_ids):
-            # We have already checked for missing principals, so a duplicate should be the only case that hits this.
-            assert len(principals) > len(user_ids)
-
-            id_counts: dict[str, int] = {}
-
-            for p in principals:
-                id_counts[p.user_id] = id_counts.get(p.user_id, 0) + 1
-
-            raise ValueError(f"Duplicate user IDs: {[user_id for user_id, count in id_counts.items() if count > 1]}")
+        # This should hold because principal user_ids are unique.
+        assert len(principals) == len(user_ids)
 
         principals_by_id = {p.user_id: p for p in principals}
         assert len(principals_by_id) == len(user_ids)
