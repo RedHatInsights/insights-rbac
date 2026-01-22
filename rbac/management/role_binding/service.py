@@ -270,9 +270,9 @@ class RoleBindingService:
                 # In the current schema, the permission is `user_grant` on rbac/workspace.
                 request_fields = lookup_pb2.LookupSubjectsRequest.DESCRIPTOR.fields_by_name
                 if "permission" in request_fields:
-                    request_kwargs["permission"] = "user_grant"
+                    request_kwargs["permission"] = "role_binding_view"
                 elif "relation" in request_fields:
-                    request_kwargs["relation"] = "user_grant"
+                    request_kwargs["relation"] = "t_binding"
 
                 request = lookup_pb2.LookupSubjectsRequest(**request_kwargs)
                 logger.info("LookupSubjects request payload: %s", request)
