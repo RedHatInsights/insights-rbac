@@ -31,6 +31,7 @@ import logging
 
 from feature_flags import FEATURE_FLAGS
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
+from management.workspace.model import Workspace
 from management.workspace.utils import (
     is_user_allowed_v1,
     is_user_allowed_v2,
@@ -39,6 +40,9 @@ from management.workspace.utils import (
     workspace_from_request,
 )
 from rest_framework import permissions
+
+# Special query parameter value for listing all workspace types
+WORKSPACE_TYPE_ALL = "all"
 
 # Custom message for target workspace access denial
 # This message is relation-agnostic: V1 uses 'write' operation, V2 uses 'create' permission
@@ -164,6 +168,16 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # Source workspace access is handled by FilterBackend
         if view.action == "move":
             return self._check_move_target_access_v2(request)
+
+        # For list operations with type=standard or type=all, check if user has real workspace access
+        # This preserves V1 behavior: return 403 if user has no actual permissions
+        if view.action == "list":
+            workspace_type = request.query_params.get("type", "").lower()
+            if workspace_type in (Workspace.Types.STANDARD, WORKSPACE_TYPE_ALL):
+                # Call is_user_allowed_v2 to populate has_real_workspace_access flag
+                is_user_allowed_v2(request, perm, None)
+                if not getattr(request, "has_real_workspace_access", False):
+                    return False
 
         # For list/detail operations, allow request to proceed
         # FilterBackend handles access filtering via queryset
