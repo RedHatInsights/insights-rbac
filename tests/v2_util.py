@@ -224,6 +224,11 @@ def assert_v2_system_role_bindings_consistent(test: TestCase, tuples: Optional[I
             _assert_binding_tuples_consistent(test, tuples, binding)
 
 
+def assert_v2_roles_consistent(test: TestCase, tuples: Optional[InMemoryTuples]):
+    assert_v2_custom_roles_consistent(test, tuples)
+    assert_v2_system_role_bindings_consistent(test, tuples)
+
+
 def seed_v2_role_from_v1(role: Role) -> SeededRoleV2:
     if not role.system:
         raise ValueError("System role expected.")

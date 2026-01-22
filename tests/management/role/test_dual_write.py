@@ -78,11 +78,7 @@ from api.models import Tenant, User
 from unittest.mock import patch
 
 from migration_tool.models import V2boundresource
-from tests.v2_util import (
-    assert_v2_custom_roles_consistent,
-    seed_v2_role_from_v1,
-    assert_v2_system_role_bindings_consistent,
-)
+from tests.v2_util import seed_v2_role_from_v1, assert_v2_roles_consistent
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -2001,8 +1997,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         super().tearDown()
 
     def _expect_v2_consistent(self):
-        assert_v2_custom_roles_consistent(test=self, tuples=self.tuples)
-        assert_v2_system_role_bindings_consistent(test=self, tuples=self.tuples)
+        assert_v2_roles_consistent(test=self, tuples=self.tuples)
 
     def test_simple_role(self):
         """Test the simplest meaningful role: a single permission bound to the default resource."""
