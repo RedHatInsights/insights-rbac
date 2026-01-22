@@ -29,10 +29,12 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant
 from management.group.definer import seed_group
+from management.group.platform import GlobalPolicyIdService
 from management.models import Group, Permission, Principal, Workspace
 from management.permission.scope_service import Scope
 from management.role.definer import seed_roles
-from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
+from management.role.platform import platform_v2_role_uuid_for
+from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup, RoleV2
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -1000,7 +1002,11 @@ class DefaultBindingsAPITests(TestCase):
         return_value=True,
     )
     def test_default_bindings_created_on_api_call(self, mock_permission):
-        """Test that default bindings are created when API is called."""
+        """Test that default bindings are created when API is called.
+
+        Also verifies that platform roles return their children (seeded roles)
+        instead of the platform role itself in the API response.
+        """
         # Initially, no default bindings should exist
         self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 0)
         self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 0)
@@ -1017,6 +1023,62 @@ class DefaultBindingsAPITests(TestCase):
         # Now all 6 default bindings should exist (3 USER + 3 ADMIN for each scope)
         self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 3)
         self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
+
+        # Verify that platform roles return their children, not the platform role itself
+        data = response.data["data"]
+        public_tenant = Tenant.objects.get(tenant_name="public")
+
+        # Get platform default groups (used for default bindings)
+        platform_default_group = Group.objects.get(platform_default=True, tenant=public_tenant)
+        admin_default_group = Group.objects.get(admin_default=True, tenant=public_tenant)
+
+        # Find these groups in the response
+        platform_group_data = None
+        admin_group_data = None
+        for item in data:
+            if str(item["subject"]["id"]) == str(platform_default_group.uuid):
+                platform_group_data = item
+            if str(item["subject"]["id"]) == str(admin_default_group.uuid):
+                admin_group_data = item
+
+        # Assert that both groups are present before verifying their roles
+        self.assertIsNotNone(
+            platform_group_data,
+            f"Platform default group {platform_default_group.uuid} should be in response",
+        )
+        self.assertIsNotNone(
+            admin_group_data,
+            f"Admin default group {admin_default_group.uuid} should be in response",
+        )
+
+        # Get the platform roles used in default bindings
+        policy_service = GlobalPolicyIdService.shared()
+
+        # Verify platform default group returns children
+        role_ids = [str(role["id"]) for role in platform_group_data["roles"]]
+        platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service)
+        platform_role = PlatformRoleV2.objects.get(uuid=platform_role_uuid)
+
+        # Platform role should NOT be in response
+        self.assertNotIn(str(platform_role.uuid), role_ids, "Platform role should not be returned")
+
+        # Children should be in response
+        child_uuids = [str(child.uuid) for child in platform_role.children.all()]
+        for child_uuid in child_uuids:
+            self.assertIn(child_uuid, role_ids, f"Child role {child_uuid} should be returned")
+
+        # Verify admin default group returns children
+        role_ids = [str(role["id"]) for role in admin_group_data["roles"]]
+        admin_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, Scope.DEFAULT, policy_service)
+        admin_role = PlatformRoleV2.objects.get(uuid=admin_role_uuid)
+
+        # Platform role should NOT be in response
+        self.assertNotIn(str(admin_role.uuid), role_ids, "Admin platform role should not be returned")
+
+        # Children should be in response
+        child_uuids = [str(child.uuid) for child in admin_role.children.all()]
+        for child_uuid in child_uuids:
+            self.assertIn(child_uuid, role_ids, f"Admin child role {child_uuid} should be returned")
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",

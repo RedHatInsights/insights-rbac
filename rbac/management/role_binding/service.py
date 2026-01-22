@@ -164,9 +164,12 @@ class RoleBindingService:
         )
 
         # Prefetch role bindings for this resource with their roles
-        binding_queryset = RoleBinding.objects.filter(
-            resource_type=resource_type, resource_id=resource_id
-        ).select_related("role")
+        # Also prefetch children for platform roles (which will be returned instead of the platform role)
+        binding_queryset = (
+            RoleBinding.objects.filter(resource_type=resource_type, resource_id=resource_id)
+            .select_related("role")
+            .prefetch_related("role__children")
+        )
 
         # Prefetch the join table entries with the filtered bindings
         rolebinding_group_queryset = RoleBindingGroup.objects.filter(
