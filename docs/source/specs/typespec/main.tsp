@@ -989,8 +989,6 @@ namespace Roles {
 
     // Read Operations
 
-    @doc("Get a role")
-    @summary("Get a role")
     @route("{id}/")
     @opExample(#{
         parameters: #{

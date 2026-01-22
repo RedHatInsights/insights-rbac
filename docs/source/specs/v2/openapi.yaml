@@ -502,8 +502,6 @@ paths:
   /roles/{id}/:
     get:
       operationId: Roles_read
-      summary: Get a role
-      description: Get a role
       parameters:
         - name: id
           in: path
