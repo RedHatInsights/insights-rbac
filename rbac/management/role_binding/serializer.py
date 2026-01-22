@@ -162,6 +162,9 @@ class RoleBindingInputSerializer(serializers.Serializer):
     subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
+    parent_role_bindings = serializers.BooleanField(
+        required=False, allow_null=True, help_text="Include role bindings inherited from parent resources"
+    )
 
     def to_internal_value(self, data):
         """Sanitize input data by stripping NUL bytes before field validation."""
@@ -185,6 +188,10 @@ class RoleBindingInputSerializer(serializers.Serializer):
         return value
 
     def validate_subject_type(self, value):
+        """Return None for empty values."""
+        return value or None
+
+    def validate_parent_role_bindings(self, value):
         """Return None for empty values."""
         return value or None
 
