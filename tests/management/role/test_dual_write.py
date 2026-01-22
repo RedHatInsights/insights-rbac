@@ -500,6 +500,12 @@ class DualWriteTestCase(TestCase):
 class DualWriteGroupTestCase(DualWriteTestCase):
     """Test dual write logic for group modifications."""
 
+    def tearDown(self):
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(test=self, tuples=None)
+
+        super().tearDown()
+
     def test_cannot_replicate_group_for_public_tenant(self):
         """Do not replicate group changes for the public tenant groups (system groups)."""
         platform_default, admin_default = seed_group()
@@ -664,6 +670,11 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.given_roles_assigned_to_group(group, roles=[role_test])
         self.given_roles_assigned_to_group(group, roles=[role_test])
+
+        # Removing the RoleBinding for the system role should just result in it being recreated at the next assignment.
+        self.assertEqual(1, RoleBinding.objects.filter(role__v1_source=role_test).count())
+        RoleBinding.objects.filter(role__v1_source=role_test).delete()
+
         self.given_roles_assigned_to_group(group, roles=[role_test])
 
         # See the group bound.
@@ -672,6 +683,8 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         role_binding = RoleBinding.objects.filter(role__v1_source=role_test).get()
         self.expect_role_binding_groups(role_binding, {group})
+
+        assert_v2_roles_consistent(test=self, tuples=None)
 
         tuples = self.tuples.find_tuples(
             all_of(
