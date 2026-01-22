@@ -908,9 +908,6 @@ namespace Roles {
         operation: string;
     }
 
-    /**
-     * Default fields returned in role responses when no fields parameter is specified.
-     */
     const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
 
     @doc("Role data for create and update operations")
@@ -1075,6 +1072,51 @@ namespace Roles {
         data: Item[];
     }
 
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002"
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            description: "Full administrative access to workspace resources",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            fields: "name"
+        },
+        returnType: #{
+            _: 200,
+            name: "Workspace Admin"
+        }
+    })
+    @get op read(
+        @path id: UUID;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All response fields become optional.
+
+        **Examples:**
+        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+        - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string = DefaultRoleFieldMask;
+
+    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
+
     @doc("List the roles for a tenant")
     @summary("List the roles for a tenant")
     @opExample(#{
@@ -1147,4 +1189,5 @@ namespace Roles {
         @example("-last_modified")
         @query order_by?: string = "name";
     ): ListResponse<Role> | Problems.CommonProblems;
+
 }
