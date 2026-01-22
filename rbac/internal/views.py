@@ -37,9 +37,6 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
-    _get_duplicate_principals,
-    _parse_user_ids,
-    _remove_duplicate_principals,
     delete_bindings,
     fix_admin_default_bindings,
     get_or_create_ungrouped_workspace,
@@ -112,7 +109,7 @@ from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemory
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
-from api.cross_access.model import CrossAccountRequest, RequestsRoles
+from api.cross_access.model import RequestsRoles
 from api.models import Tenant, User
 from api.tasks import (
     cross_account_cleanup,
@@ -766,31 +763,6 @@ def populate_tenant_org_id_view(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
-@require_http_methods(["GET", "POST"])
-def remove_duplicate_principals(request):
-    """View method for identifying and removing duplicate principals by user_id.
-
-    GET /_private/api/utils/remove_duplicate_principals/?user_ids=123,456,789
-    POST /_private/api/utils/remove_duplicate_principals/?user_ids=123,456,789
-
-    Query parameters:
-        user_ids (required): Comma-separated list of user IDs to check for duplicates
-    """
-    user_ids = _parse_user_ids(request)
-    if isinstance(user_ids, HttpResponse):
-        return user_ids
-
-    logger.info(f"Remove duplicate principals: {request.method} by {request.user.username}, " f"user_ids={user_ids}")
-
-    if request.method == "GET":
-        return _get_duplicate_principals(request, user_ids)
-
-    if request.method == "POST":
-        if not destructive_ok("api"):
-            return HttpResponse("Destructive operations disallowed.", status=400)
-        return _remove_duplicate_principals(request, user_ids)
-
-
 def invalid_default_admin_groups(request):
     """View method for querying/removing invalid default admin groups.
 
@@ -1089,16 +1061,16 @@ def clean_binding_mapping(request, binding_id):
 
     POST /_private/api/utils/bindings/<binding_id>/clean
     Params:
-        field=users or groups
+        field=groups (for forwards compatibility)
     """
     if not destructive_ok("api"):
         return HttpResponse("Destructive operations disallowed.", status=400)
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     field = request.GET.get("field")
-    if not field or field not in ("users", "groups"):
+    if not field or field != "groups":
         return HttpResponse(
-            'Invalid request, must supply the "users" or "groups" in field.',
+            'The "field" parameter must be "groups".',
             status=400,
         )
 
@@ -1112,68 +1084,41 @@ def clean_binding_mapping(request, binding_id):
                 )
                 .get()
             )
-            if field == "users":
-                relations_to_remove = []
-                # Check if the user should be removed
-                if (
-                    CrossAccountRequest.objects.filter(user_id__in=mapping.mappings["users"])
-                    .filter(roles__id=mapping.role.id)
-                    .filter(status="approved")
-                    .exists()
-                ):
-                    raise Exception(
-                        f"User(s) {mapping.mappings['users']} are still related to approved cross account requests."
-                    )
-                # After migration, if it is still old format with duplication, means
-                # it only binds with expired cars, which we can remove
-                mapping.update_data_format_for_user(relations_to_remove)
-                if relations_to_remove:
-                    replicator.replicate(
-                        ReplicationEvent(
-                            event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
-                            info={
-                                "users": mapping.mappings["users"],
-                                "org_id": str(mapping.role.tenant.org_id),
-                            },
-                            partition_key=PartitionKey.byEnvironment(),
-                            remove=relations_to_remove,
-                            add=[],
-                        ),
-                    )
-            else:
-                relations_to_remove = []
-                if not mapping.role.system:
-                    raise Exception("Groups can only be cleaned for system roles")
-                # Get the list of group UUIDs from the mapping
-                group_uuids = mapping.mappings.get("groups", [])
 
-                # Get existing groups from the database
-                existing_groups = {
-                    str(group_uuid)
-                    for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
-                }
+            relations_to_remove = []
+            if not mapping.role.system:
+                raise Exception("Groups can only be cleaned for system roles")
+            # Get the list of group UUIDs from the mapping
+            group_uuids = mapping.mappings.get("groups", [])
 
-                # Find missing groups
-                missing_groups = set(group_uuids) - existing_groups
-                if not missing_groups:
-                    raise Exception("No groups to clean")
-                for group in missing_groups:
-                    removal = mapping.unassign_group(group)
-                    if removal is not None:
-                        relations_to_remove.append(removal)
-                if relations_to_remove:
-                    replicator.replicate(
-                        ReplicationEvent(
-                            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
-                            info={
-                                "groups": missing_groups,
-                                "org_id": str(mapping.role.tenant.org_id),
-                            },
-                            partition_key=PartitionKey.byEnvironment(),
-                            remove=relations_to_remove,
-                            add=[],
-                        ),
-                    )
+            # Get existing groups from the database
+            existing_groups = {
+                str(group_uuid)
+                for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
+            }
+
+            # Find missing groups
+            missing_groups = set(group_uuids) - existing_groups
+            if not missing_groups:
+                raise Exception("No groups to clean")
+            for group in missing_groups:
+                removal = mapping.unassign_group(group)
+                if removal is not None:
+                    relations_to_remove.append(removal)
+            if relations_to_remove:
+                replicator.replicate(
+                    ReplicationEvent(
+                        event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
+                        info={
+                            "groups": missing_groups,
+                            "org_id": str(mapping.role.tenant.org_id),
+                        },
+                        partition_key=PartitionKey.byEnvironment(),
+                        remove=relations_to_remove,
+                        add=[],
+                    ),
+                )
+
             mapping.save()
         return HttpResponse(f"Binding mapping {json.dumps(mapping.mappings)} cleaned.", status=200)
     except Exception as e:
