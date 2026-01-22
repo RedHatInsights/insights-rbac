@@ -996,7 +996,7 @@ namespace Roles {
 
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = DefaultRoleFieldMask;
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem400;
+    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
 
     @doc("List the roles for a tenant")
     @summary("List the roles for a tenant")

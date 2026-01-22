@@ -730,16 +730,6 @@
               }
             }
           },
-          "400": {
-            "description": "The server could not understand the request due to invalid syntax.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problems.Problem400"
-                }
-              }
-            }
-          },
           "401": {
             "description": "Access is unauthorized.",
             "content": {
@@ -777,6 +767,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
                 }
               }
             }
