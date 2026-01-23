@@ -45,7 +45,9 @@ RUN INSTALL_PKGS="python3.12 python3.12-devel glibc-langpack-en libpq-devel gcc 
     microdnf --nodocs -y upgrade && \
     microdnf -y --setopt=tsflags=nodocs --setopt=install_weak_deps=0 install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
-    microdnf -y clean all --enablerepo='*'
+    microdnf -y clean all --enablerepo='*' && \
+    # Upgrade system wheel to fix CVE GHSA-8rrh-rw8j-w5fx
+    python3.12 -m pip install --upgrade "wheel>=0.46.2"
 
 # PIPENV_DEV is set to true in the docker-compose allowing
 # local builds to install the dev dependencies
