@@ -2680,3 +2680,140 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
                 workspace_types.intersection({"root", "default", "ungrouped-hosts"}),
                 f"Expected fallback workspaces but got types: {workspace_types}",
             )
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_retrieve_root_workspace_returns_200_without_explicit_access(self, mock_flag, mock_channel):
+        """Test that retrieving root workspace by ID returns 200 when user has no explicit permissions.
+
+        This tests the fallback logic for detail actions - root, default, and ungrouped workspaces
+        should be accessible to all users even when Kessel denies access.
+        """
+        # Mock Inventory API to return NOT allowed (user has no explicit permissions)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Retrieve root workspace by ID
+            url = reverse("v2_management:workspace-detail", kwargs={"pk": str(self.root_workspace.id)})
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should return 200 OK since root is a fallback workspace
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["id"], str(self.root_workspace.id))
+            self.assertEqual(response.data["type"], Workspace.Types.ROOT)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_retrieve_default_workspace_returns_200_without_explicit_access(self, mock_flag, mock_channel):
+        """Test that retrieving default workspace by ID returns 200 when user has no explicit permissions."""
+        # Mock Inventory API to return NOT allowed (user has no explicit permissions)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Retrieve default workspace by ID
+            url = reverse("v2_management:workspace-detail", kwargs={"pk": str(self.default_workspace.id)})
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should return 200 OK since default is a fallback workspace
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["id"], str(self.default_workspace.id))
+            self.assertEqual(response.data["type"], Workspace.Types.DEFAULT)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_retrieve_ungrouped_workspace_returns_200_without_explicit_access(self, mock_flag, mock_channel):
+        """Test that retrieving ungrouped workspace by ID returns 200 when user has no explicit permissions."""
+        # Mock Inventory API to return NOT allowed (user has no explicit permissions)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Retrieve ungrouped workspace by ID
+            url = reverse("v2_management:workspace-detail", kwargs={"pk": str(self.ungrouped_workspace.id)})
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should return 200 OK since ungrouped is a fallback workspace
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["id"], str(self.ungrouped_workspace.id))
+            self.assertEqual(response.data["type"], Workspace.Types.UNGROUPED_HOSTS)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_retrieve_standard_workspace_returns_404_without_explicit_access(self, mock_flag, mock_channel):
+        """Test that retrieving standard workspace by ID returns 404 when user has no explicit permissions.
+
+        Only root, default, and ungrouped workspaces get fallback access - standard workspaces do not.
+        """
+        # Mock Inventory API to return NOT allowed (user has no explicit permissions)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Retrieve standard workspace by ID
+            url = reverse("v2_management:workspace-detail", kwargs={"pk": str(self.standard_workspace.id)})
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            # Should return 404 since standard workspaces don't get fallback access
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
