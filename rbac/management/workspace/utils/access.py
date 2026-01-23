@@ -326,6 +326,9 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
             accessible_workspace_ids = set(accessible_workspace_ids)
 
             if accessible_workspace_ids:
+                # User has actual workspace permissions (not just fallbacks)
+                request.has_real_workspace_access = True
+
                 # Add ancestors only from the top-level workspace(s) in accessible workspaces (for ancestry needs)
                 # Get workspace objects for accessible IDs
                 with record_timing(timings, "db_filter_accessible_workspaces"):
@@ -343,6 +346,9 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
                         ancestor_ids = {str(ancestor.id) for ancestor in workspace.ancestors()}
                         accessible_workspace_ids.update(ancestor_ids)
             else:
+                # User has no actual workspace permissions, only fallback access
+                request.has_real_workspace_access = False
+
                 # If no accessible workspaces, attach at least root, default, and ungrouped workspaces
                 with record_timing(timings, "get_fallback_workspace_ids"):
                     accessible_workspace_ids = get_fallback_workspace_ids(request.tenant)
