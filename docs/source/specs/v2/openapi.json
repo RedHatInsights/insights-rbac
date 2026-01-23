@@ -24,14 +24,35 @@
         "parameters": [],
         "responses": {
           "201": {
-            "description": "Response from creating role bindings",
+            "description": "Response from creating role bindings - mirrors request structure",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsResponse"
                 },
                 "example": {
-                  "created": 4
+                  "resource": {
+                    "id": "550e8400-e29b-41d4-a716-446655440001",
+                    "type": "workspace"
+                  },
+                  "subjects": [
+                    {
+                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                      "type": "group"
+                    },
+                    {
+                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                      "type": "group"
+                    }
+                  ],
+                  "roles": [
+                    {
+                      "id": "550e8400-e29b-41d4-a716-446655440002"
+                    },
+                    {
+                      "id": "550e8400-e29b-41d4-a716-446655440003"
+                    }
+                  ]
                 }
               }
             }
@@ -2190,19 +2211,66 @@
       "RoleBindings.CreateRoleBindingsResponse": {
         "type": "object",
         "required": [
-          "created"
+          "resource",
+          "subjects",
+          "roles"
         ],
         "properties": {
-          "created": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of role bindings created"
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource the roles are bound to"
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RoleBindings.UserSubject"
+                },
+                {
+                  "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+                }
+              ]
+            },
+            "description": "Subjects that were granted access"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Role"
+            },
+            "description": "Roles that were assigned"
           }
         },
-        "description": "Response from creating role bindings",
+        "description": "Response from creating role bindings - mirrors request structure",
         "example": {
           "_": 201,
-          "created": 4
+          "resource": {
+            "id": "550e8400-e29b-41d4-a716-446655440001",
+            "type": "workspace"
+          },
+          "subjects": [
+            {
+              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+              "type": "group"
+            },
+            {
+              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+              "type": "group"
+            }
+          ],
+          "roles": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440002"
+            },
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440003"
+            }
+          ]
         }
       },
       "RoleBindings.GroupDetails": {

@@ -662,15 +662,27 @@ namespace RoleBindings {
         roles: Role[];
     }
 
-    @doc("Response from creating role bindings")
+    @doc("Response from creating role bindings - mirrors request structure")
     @example(#{
         _: 201,
-        created: 4
+        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+        subjects: #[
+            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+        ],
+        roles: #[
+            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+        ]
     })
     model CreateRoleBindingsResponse {
         @statusCode _: 201;
-        @doc("Number of role bindings created")
-        created: int32;
+        @doc("Resource the roles are bound to")
+        resource: Resource;
+        @doc("Subjects that were granted access")
+        subjects: Subject[];
+        @doc("Roles that were assigned")
+        roles: Role[];
     }
 
     @example(#{
@@ -938,7 +950,15 @@ namespace RoleBindings {
         },
         returnType: #{
             _: 201,
-            created: 4
+            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+            subjects: #[
+                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+            ],
+            roles: #[
+                #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+                #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+            ]
         }
     })
     @post op create(
