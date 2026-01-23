@@ -16,6 +16,158 @@
     }
   ],
   "paths": {
+    "/role-bindings/": {
+      "post": {
+        "operationId": "RoleBindings_create",
+        "summary": "Create role bindings",
+        "description": "Create role bindings for subjects on a resource",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Response from creating role bindings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsResponse"
+                },
+                "example": {
+                  "created": 4
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem400"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Role Bindings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
+              },
+              "example": {
+                "resource": {
+                  "id": "550e8400-e29b-41d4-a716-446655440001",
+                  "type": "workspace"
+                },
+                "subjects": [
+                  {
+                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "type": "group"
+                  },
+                  {
+                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                    "type": "group"
+                  }
+                ],
+                "roles": [
+                  {
+                    "id": "550e8400-e29b-41d4-a716-446655440002"
+                  },
+                  {
+                    "id": "550e8400-e29b-41d4-a716-446655440003"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/role-bindings/by-subject/": {
       "get": {
         "operationId": "RoleBindings_listBySubject",
@@ -1969,6 +2121,88 @@
           "mapping": {
             "group": "#/components/schemas/RoleBindings.GroupSubject"
           }
+        }
+      },
+      "RoleBindings.CreateRoleBindingsRequest": {
+        "type": "object",
+        "required": [
+          "resource",
+          "subjects",
+          "roles"
+        ],
+        "properties": {
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource to bind roles to"
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RoleBindings.UserSubject"
+                },
+                {
+                  "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+                }
+              ]
+            },
+            "description": "Subjects to grant access to"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Role"
+            },
+            "description": "Roles to assign"
+          }
+        },
+        "description": "Request body for creating role bindings",
+        "example": {
+          "resource": {
+            "id": "550e8400-e29b-41d4-a716-446655440001",
+            "type": "workspace"
+          },
+          "subjects": [
+            {
+              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+              "type": "group"
+            },
+            {
+              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+              "type": "group"
+            }
+          ],
+          "roles": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440002"
+            },
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440003"
+            }
+          ]
+        }
+      },
+      "RoleBindings.CreateRoleBindingsResponse": {
+        "type": "object",
+        "required": [
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of role bindings created"
+          }
+        },
+        "description": "Response from creating role bindings",
+        "example": {
+          "_": 201,
+          "created": 4
         }
       },
       "RoleBindings.GroupDetails": {

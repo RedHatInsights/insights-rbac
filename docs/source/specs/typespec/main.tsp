@@ -641,6 +641,38 @@ namespace RoleBindings {
         name?: string;
     }
 
+    @doc("Request body for creating role bindings")
+    @example(#{
+        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+        subjects: #[
+            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+        ],
+        roles: #[
+            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+        ]
+    })
+    model CreateRoleBindingsRequest {
+        @doc("Resource to bind roles to")
+        resource: Resource;
+        @doc("Subjects to grant access to")
+        subjects: Subject[];
+        @doc("Roles to assign")
+        roles: Role[];
+    }
+
+    @doc("Response from creating role bindings")
+    @example(#{
+        _: 201,
+        created: 4
+    })
+    model CreateRoleBindingsResponse {
+        @statusCode _: 201;
+        @doc("Number of role bindings created")
+        created: int32;
+    }
+
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         subject: #{
@@ -887,6 +919,31 @@ namespace RoleBindings {
         @query order_by?: string;
 
     ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
+
+    @doc("Create role bindings for subjects on a resource")
+    @summary("Create role bindings")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subjects: #[
+                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+                ],
+                roles: #[
+                    #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+                    #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 201,
+            created: 4
+        }
+    })
+    @post op create(
+        @body body: CreateRoleBindingsRequest
+    ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 }
 
 @route("/roles/")
