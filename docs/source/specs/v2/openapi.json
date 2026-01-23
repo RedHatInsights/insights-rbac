@@ -21,38 +21,80 @@
         "operationId": "RoleBindings_create",
         "summary": "Create role bindings",
         "description": "Create role bindings for subjects on a resource",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**Default Behavior (no fields parameter):**\nReturns: resource, subjects, roles, last_modified\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields are optional.\n\n**Available Fields:**\n- resource - Resource the roles are bound to\n- subjects - Subjects that were granted access (includes group.user_count)\n- roles - Roles that were assigned\n- last_modified - Timestamp of creation\n- subject_count - Number of subjects in the binding\n- role_count - Number of roles assigned\n- inherited_from - Array of resources from which access originates\n\n**Examples:**\n- `?fields=resource,subjects,roles,last_modified` - Default fields\n- `?fields=resource,subject_count,role_count` - Minimal response with counts\n- `?fields=resource,subjects,roles,inherited_from` - Include inheritance info",
+            "schema": {
+              "type": "string",
+              "default": "resource,subjects,roles,last_modified"
+            },
+            "explode": false
+          }
+        ],
         "responses": {
           "201": {
-            "description": "Response from creating role bindings - mirrors request structure",
+            "description": "Response from creating role bindings - supports field masking with all optional fields",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsResponse"
                 },
-                "example": {
-                  "resource": {
-                    "id": "550e8400-e29b-41d4-a716-446655440001",
-                    "type": "workspace"
+                "examples": {
+                  "example0": {
+                    "value": {
+                      "resource": {
+                        "id": "550e8400-e29b-41d4-a716-446655440001",
+                        "type": "workspace",
+                        "name": "Engineering Workspace"
+                      },
+                      "subject_count": 1,
+                      "role_count": 1
+                    }
                   },
-                  "subjects": [
-                    {
-                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                      "type": "group"
-                    },
-                    {
-                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-                      "type": "group"
+                  "example1": {
+                    "value": {
+                      "resource": {
+                        "id": "550e8400-e29b-41d4-a716-446655440001",
+                        "type": "workspace",
+                        "name": "Engineering Workspace"
+                      },
+                      "subjects": [
+                        {
+                          "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                          "type": "group",
+                          "group": {
+                            "name": "Engineering Team",
+                            "user_count": 25
+                          }
+                        },
+                        {
+                          "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                          "type": "group",
+                          "group": {
+                            "name": "DevOps Team",
+                            "user_count": 10
+                          }
+                        }
+                      ],
+                      "roles": [
+                        {
+                          "id": "550e8400-e29b-41d4-a716-446655440002",
+                          "name": "Workspace Admin"
+                        },
+                        {
+                          "id": "550e8400-e29b-41d4-a716-446655440003",
+                          "name": "Viewer"
+                        }
+                      ],
+                      "last_modified": "2024-08-04T12:00:00Z",
+                      "subject_count": 2,
+                      "role_count": 2,
+                      "inherited_from": []
                     }
-                  ],
-                  "roles": [
-                    {
-                      "id": "550e8400-e29b-41d4-a716-446655440002"
-                    },
-                    {
-                      "id": "550e8400-e29b-41d4-a716-446655440003"
-                    }
-                  ]
+                  }
                 }
               }
             }
@@ -160,29 +202,52 @@
               "schema": {
                 "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
               },
-              "example": {
-                "resource": {
-                  "id": "550e8400-e29b-41d4-a716-446655440001",
-                  "type": "workspace"
+              "examples": {
+                "example0": {
+                  "value": {
+                    "resource": {
+                      "id": "550e8400-e29b-41d4-a716-446655440001",
+                      "type": "workspace"
+                    },
+                    "subjects": [
+                      {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        "type": "group"
+                      }
+                    ],
+                    "roles": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440002"
+                      }
+                    ]
+                  }
                 },
-                "subjects": [
-                  {
-                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                    "type": "group"
-                  },
-                  {
-                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-                    "type": "group"
+                "example1": {
+                  "value": {
+                    "resource": {
+                      "id": "550e8400-e29b-41d4-a716-446655440001",
+                      "type": "workspace"
+                    },
+                    "subjects": [
+                      {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        "type": "group"
+                      },
+                      {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                        "type": "group"
+                      }
+                    ],
+                    "roles": [
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440002"
+                      },
+                      {
+                        "id": "550e8400-e29b-41d4-a716-446655440003"
+                      }
+                    ]
                   }
-                ],
-                "roles": [
-                  {
-                    "id": "550e8400-e29b-41d4-a716-446655440002"
-                  },
-                  {
-                    "id": "550e8400-e29b-41d4-a716-446655440003"
-                  }
-                ]
+                }
               }
             }
           }
@@ -2210,11 +2275,6 @@
       },
       "RoleBindings.CreateRoleBindingsResponse": {
         "type": "object",
-        "required": [
-          "resource",
-          "subjects",
-          "roles"
-        ],
         "properties": {
           "resource": {
             "allOf": [
@@ -2236,7 +2296,7 @@
                 }
               ]
             },
-            "description": "Subjects that were granted access"
+            "description": "Subjects that were granted access (includes group.user_count when applicable)"
           },
           "roles": {
             "type": "array",
@@ -2244,33 +2304,70 @@
               "$ref": "#/components/schemas/RoleBindings.Role"
             },
             "description": "Roles that were assigned"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of when the role bindings were created"
+          },
+          "subject_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of subjects in the binding"
+          },
+          "role_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of roles assigned"
+          },
+          "inherited_from": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Resource"
+            },
+            "description": "Array of resources from which access originates (empty for direct bindings)"
           }
         },
-        "description": "Response from creating role bindings - mirrors request structure",
+        "description": "Response from creating role bindings - supports field masking with all optional fields",
         "example": {
           "_": 201,
           "resource": {
             "id": "550e8400-e29b-41d4-a716-446655440001",
-            "type": "workspace"
+            "type": "workspace",
+            "name": "Engineering Workspace"
           },
           "subjects": [
             {
               "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-              "type": "group"
+              "type": "group",
+              "group": {
+                "name": "Engineering Team",
+                "user_count": 25
+              }
             },
             {
               "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-              "type": "group"
+              "type": "group",
+              "group": {
+                "name": "DevOps Team",
+                "user_count": 10
+              }
             }
           ],
           "roles": [
             {
-              "id": "550e8400-e29b-41d4-a716-446655440002"
+              "id": "550e8400-e29b-41d4-a716-446655440002",
+              "name": "Workspace Admin"
             },
             {
-              "id": "550e8400-e29b-41d4-a716-446655440003"
+              "id": "550e8400-e29b-41d4-a716-446655440003",
+              "name": "Viewer"
             }
-          ]
+          ],
+          "last_modified": "2024-08-04T12:00:00Z",
+          "subject_count": 2,
+          "role_count": 2,
+          "inherited_from": []
         }
       },
       "RoleBindings.GroupDetails": {

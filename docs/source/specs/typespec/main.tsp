@@ -584,6 +584,11 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
+    /**
+     * Default fields returned in role binding responses when no fields parameter is specified.
+     */
+    const DefaultRoleBindingFieldMask = "resource,subjects,roles,last_modified";
+
     @discriminator("type")
     model BaseSubject {
         @doc("Subject identifier")
@@ -662,27 +667,39 @@ namespace RoleBindings {
         roles: Role[];
     }
 
-    @doc("Response from creating role bindings - mirrors request structure")
+    @doc("Response from creating role bindings - supports field masking with all optional fields")
     @example(#{
         _: 201,
-        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
         subjects: #[
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
+            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group", group: #{ name: "DevOps Team", user_count: 10 } }
         ],
         roles: #[
-            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
-        ]
+            #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
+            #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
+        ],
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        subject_count: 2,
+        role_count: 2,
+        inherited_from: #[]
     })
     model CreateRoleBindingsResponse {
         @statusCode _: 201;
         @doc("Resource the roles are bound to")
-        resource: Resource;
-        @doc("Subjects that were granted access")
-        subjects: Subject[];
+        resource?: Resource;
+        @doc("Subjects that were granted access (includes group.user_count when applicable)")
+        subjects?: Subject[];
         @doc("Roles that were assigned")
-        roles: Role[];
+        roles?: Role[];
+        @doc("Timestamp of when the role bindings were created")
+        last_modified?: offsetDateTime;
+        @doc("Number of subjects in the binding")
+        subject_count?: int32;
+        @doc("Number of roles assigned")
+        role_count?: int32;
+        @doc("Array of resources from which access originates (empty for direct bindings)")
+        inherited_from?: Resource[];
     }
 
     @example(#{
@@ -950,19 +967,56 @@ namespace RoleBindings {
         },
         returnType: #{
             _: 201,
-            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
             subjects: #[
-                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
+                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group", group: #{ name: "DevOps Team", user_count: 10 } }
             ],
             roles: #[
-                #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-                #{ id: "550e8400-e29b-41d4-a716-446655440003" }
-            ]
+                #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
+                #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            subject_count: 2,
+            role_count: 2,
+            inherited_from: #[]
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            fields: "resource,subject_count,role_count",
+            body: #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subjects: #[
+                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" }
+                ],
+                roles: #[
+                    #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 201,
+            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
+            subject_count: 1,
+            role_count: 1
         }
     })
     @post op create(
-        @body body: CreateRoleBindingsRequest
+        @body body: CreateRoleBindingsRequest;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All response fields are optional.       
+
+        **Examples:**
+        - `?fields=resource,subject_count,role_count` - Minimal response with counts
+        - `?fields=resource,subjects,roles,inherited_from` - Include inheritance info
+        """)
+        @example("resource,subjects,roles,last_modified")
+        @query fields?: string = DefaultRoleBindingFieldMask;
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 }
 
