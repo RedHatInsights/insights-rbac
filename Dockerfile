@@ -77,8 +77,8 @@ RUN \
     pipenv run pip install --upgrade --force-reinstall "wheel>=0.46.2" && \
     # delete the pipenv cache
     pipenv --clear && \
-    # remove pip-wheel RPM that bundles vulnerable wheel
-    microdnf -y remove python3.12-pip-wheel
+    # remove vulnerable wheel from pip-wheel RPM (CVE GHSA-8rrh-rw8j-w5fx)
+    rm -rf /usr/share/python-wheels/wheel-*.whl
 
 
 # Runtime env variables:
