@@ -1053,6 +1053,17 @@
               "type": "string"
             },
             "explode": false
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "description": "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, created, modified, type.",
+            "schema": {
+              "type": "string",
+              "default": "name"
+            },
+            "explode": false
           }
         ],
         "responses": {
