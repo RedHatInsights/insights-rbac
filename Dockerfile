@@ -61,7 +61,7 @@ ENV PATH="/pipenv-venv/bin:$PATH"
 # Install pipenv into the virtual env
 RUN \
     pip install --upgrade "pip>=23.3" && \
-    pip install "setuptools>=80.10.1" "wheel>=0.46.2" && \
+    pip install --upgrade --force-reinstall "wheel>=0.46.2" && \
     pip install pipenv
 
 WORKDIR ${APP_ROOT}
@@ -73,8 +73,13 @@ COPY Pipfile.lock .
 RUN \
     # install the dependencies into the working dir (i.e. ${APP_ROOT}/.venv)
     pipenv install --deploy && \
+    # force reinstall wheel to fix CVE GHSA-8rrh-rw8j-w5fx
+    pipenv run pip install --upgrade --force-reinstall "wheel>=0.46.2" && \
     # delete the pipenv cache
-    pipenv --clear
+    pipenv --clear && \
+    # remove all vulnerable wheel files (CVE GHSA-8rrh-rw8j-w5fx)
+    find / -type f -name "wheel-0.45*.whl" -delete 2>/dev/null || true && \
+    find / -type d -name "wheel-0.45*" -exec rm -rf {} + 2>/dev/null || true
 
 
 # Runtime env variables:
