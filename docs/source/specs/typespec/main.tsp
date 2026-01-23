@@ -30,10 +30,63 @@ model Timestamps {
 @format("uuid")
 scalar UUID extends string;
 
+/**
+ * Field mask used by the `fields` query parameter to control which fields
+ * are included in the response.
+ *
+ * **Syntax:**
+ * - Use comma to separate multiple fields: `id,name,description`
+ * - Use parentheses for nested objects: `subject(id,name),resource(type)`
+ *
+ * **Examples:**
+ * - `id,name`
+ * - `subject(group.name),role(name)`
+ */
+scalar FieldMask extends string;
+
+/**
+ * Limit for pagination. Controls the maximum number of items returned.
+ * Use -1 to return all objects.
+ */
+scalar Limit extends int64;
+
+/**
+ * Cursor for cursor-based pagination.
+ * An opaque string that points to the next/previous page of results.
+ */
+scalar Cursor extends string;
+
+/**
+ * Offset for offset-based pagination.
+ * The number of items to skip before starting to return results.
+ */
+scalar Offset extends int64;
+
+/**
+ * Sort order specification for list operations.
+ * Use comma to separate multiple fields, prefix with '-' for descending order.
+ *
+ * **Examples:**
+ * - `name` - Sort by name ascending
+ * - `-last_modified` - Sort by last_modified descending
+ * - `name,-created` - Sort by name ascending, then created descending
+ */
+scalar OrderBy extends string;
+
+// Default pagination values
+const DefaultLimit: Limit = 10;
+const DefaultOffset: Offset = 0;
+
+model ListResponse<Item> {
+    meta: CursorPaginationMeta;
+    links: CursorPaginationLinks;
+    data: Item[];
+}
+
 model CursorPaginationMeta {
     @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
-    limit: int64 = 10;
+    limit: Limit = DefaultLimit;
 }
 
 model CursorPaginationLinks {
@@ -55,11 +108,11 @@ model OffsetPaginationMeta {
 
     @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
-    limit: int64 = 10;
+    limit: Limit = DefaultLimit;
 
     @doc("Offset of returned objects")
     @example(0)
-    offset: int64 = 0;
+    offset: Offset = DefaultOffset;
 }
 
 model OffsetPaginationLinks {
@@ -391,10 +444,10 @@ namespace Workspaces {
       }
     )
     @get op list(
-        @query limit?: int64 = 10;
+        @query limit?: Limit = DefaultLimit;
 
         @doc("Offset for offset-based pagination.")
-        @query offset?: int64 = 0;
+        @query offset?: Offset = DefaultOffset;
 
         @doc("Defaults to all when param is not supplied.")
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
@@ -584,6 +637,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
+
     @discriminator("type")
     model BaseSubject {
         @doc("Subject identifier")
@@ -705,15 +759,6 @@ namespace RoleBindings {
         inherited_from?: Resource;
     }
 
-    model RoleBindingBySubjectListResponse {
-        @doc("Pagination metadata")
-        meta: CursorPaginationMeta;
-        @doc("Pagination links")
-        links: CursorPaginationLinks;
-        @doc("List of role bindings grouped by subject")
-        data: RoleBindingBySubject[];
-    }
-
     @doc("List role bindings grouped by subject")
     @summary("List role bindings grouped by subject")
     @route("by-subject/")
@@ -807,10 +852,10 @@ namespace RoleBindings {
         }
     })
     @get op listBySubject(
-        @query limit?: int64 = 10;
+        @query limit?: Limit = DefaultLimit;
 
         @doc("Cursor for cursor-based pagination.")
-        @query cursor?: string;
+        @query cursor?: Cursor;
 
         @doc("Filter by resource ID")
         @example("550e8400-e29b-41d4-a716-446655440001")
@@ -828,65 +873,14 @@ namespace RoleBindings {
         @doc("Include role bindings inherited from parent resources")
         @query parent_role_bindings?: boolean = false;
 
-        @doc("""
-        Control which fields are included in the response to optimize payload size and improve performance.
-
-        **Default Behavior (no fields parameter):**
-        Basic required fields are always included: subject.id, subject.type, role.id, resource.id
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.
-
-        **Syntax:**
-        - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-        - Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`
-        - Fields not in parentheses apply to the root level
-
-        **Available Fields:**
-
-        **subject object (polymorphic - available fields depend on type):**
-        - id (UUID) - always included
-        - type (string) - always included, cannot be excluded (determines which additional fields are available)
-
-        *When type = "user":*
-        - user.username (string) - username of the user
-
-        *When type = "group":*
-        - group.name (string) - name of the group
-        - group.description (string) - description of the group
-        - group.user_count (integer) - number of users in the group
-
-        **role object:**
-        - id (UUID) - always included
-        - name (string) - role display name
-
-        **resource object:**
-        - id (UUID) - always included
-        - name (string) - resource name
-        - type (string) - resource type
-
-        **root level:**
-        - last_modified (datetime) - timestamp of last modification
-        - inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)
-
-        **Examples:**
-        - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
-        - `subject(user.username)` - Include username (only for user subjects)
-        - `role(name)` - Include role name
-        - `resource(name,type)` - Include resource name and type
-        - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
-        - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
-        - `last_modified` - Include only modification timestamp (plus required fields)
-        - `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields
-        - `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)
-        """)
+        @doc("Control which fields are included in the response to optimize payload size and improve performance.")
         @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
-        @query fields?: string;
+        @query fields?: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
-        @query order_by?: string;
+        @query order_by?: OrderBy = "subject_name";
 
-    ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
+    ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 }
 
 @route("/roles/")
@@ -908,7 +902,10 @@ namespace Roles {
         operation: string;
     }
 
-    const DefaultRoleFieldMask = "id,name,description,permissions,last_modified";
+    /**
+     * Default fields returned for role detail operations (get/create/update)
+     */
+    const DefaultRoleFieldMask: FieldMask = "id,name,description,permissions,last_modified";
 
     @doc("Role data for create and update operations")
     @example(#{
@@ -959,164 +956,6 @@ namespace Roles {
         ...Role;
     }
 
-    @doc("Create a custom role in tenant")
-    @summary("Create a custom role in tenant")
-    @opExample(#{
-        parameters: #{
-            body: #{
-                name: "Custom Inventory Admin",
-                description: "Custom role for inventory management",
-                permissions: #[
-                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                    #{ application: "inventory", resource_type: "hosts", operation: "write" }
-                ]
-            }
-        },
-        returnType: #{
-            _: 201,
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Custom Inventory Admin",
-            description: "Custom role for inventory management",
-            permissions: #[
-                #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                #{ application: "inventory", resource_type: "hosts", operation: "write" }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-        }
-    })
-    @post op create(
-        @body body: CreateOrUpdateRoleRequest;
-
-        @doc("""
-        Control which fields are included in the response to optimize payload size.
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are returned. All response fields become optional.
-
-        **Examples:**
-        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
-        - `?fields=permissions_count,last_modified` - Include only count and timestamp
-        """)
-        @example("id,name,permissions_count")
-        @query fields?: string = DefaultRoleFieldMask;
-    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
-
-    @doc("Update a custom role in tenant")
-    @summary("Update a custom role in tenant")
-    @route("{id}/")
-    @opExample(#{
-        parameters: #{
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            body: #{
-                name: "Updated Inventory Admin",
-                description: "Updated role for inventory management",
-                permissions: #[
-                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                    #{ application: "inventory", resource_type: "hosts", operation: "write" },
-                    #{ application: "inventory", resource_type: "hosts", operation: "delete" }
-                ]
-            }
-        },
-        returnType: #{
-            _: 200,
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Updated Inventory Admin",
-            description: "Updated role for inventory management",
-            permissions: #[
-                #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                #{ application: "inventory", resource_type: "hosts", operation: "write" },
-                #{ application: "inventory", resource_type: "hosts", operation: "delete" }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-        }
-    })
-    @put op update(
-        @doc("UUID that uniquely identifies the role")
-        @path id: UUID;
-        @body body: CreateOrUpdateRoleRequest;
-
-        @doc("""
-        Control which fields are included in the response to optimize payload size.
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are returned. All response fields become optional.
-
-        **Examples:**
-        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
-        - `?fields=permissions_count,last_modified` - Include only count and timestamp
-        """)
-        @example("id,name,permissions_count")
-        @query fields?: string = DefaultRoleFieldMask;
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
-
-    @example(#{
-        meta: #{
-            limit: 10
-        },
-        links: #{
-            next: "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
-            previous: null
-        },
-        data: #[
-            #{
-                id: "550e8400-e29b-41d4-a716-446655440002",
-                name: "Workspace Admin",
-                description: "description",
-                last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-            }
-        ]
-    })
-    model ListResponse<Item> {
-        meta: CursorPaginationMeta;
-        links: CursorPaginationLinks;
-        data: Item[];
-    }
-
-    @route("{id}/")
-    @opExample(#{
-        parameters: #{
-            id: "550e8400-e29b-41d4-a716-446655440002"
-        },
-        returnType: #{
-            _: 200,
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Workspace Admin",
-            description: "Full administrative access to workspace resources",
-            permissions: #[
-                #{ application: "inventory", resource_type: "hosts", operation: "read" },
-                #{ application: "inventory", resource_type: "hosts", operation: "write" }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-        }
-    })
-    @opExample(#{
-        parameters: #{
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            fields: "name"
-        },
-        returnType: #{
-            _: 200,
-            name: "Workspace Admin"
-        }
-    })
-    @get op read(
-        @path id: UUID;
-
-        @doc("""
-        Control which fields are included in the response to optimize payload size.
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are returned. All response fields become optional.
-
-        **Examples:**
-        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
-        - `?fields=permissions_count,last_modified` - Include only count and timestamp
-        """)
-        @example("id,name,permissions_count")
-        @query fields?: string = DefaultRoleFieldMask;
-
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
-
     @doc("List the roles for a tenant")
     @summary("List the roles for a tenant")
     @opExample(#{
@@ -1164,30 +1003,136 @@ namespace Roles {
         }
     })
     @get op list(
-        @query limit?: int64 = 10;
+        @query limit?: Limit = DefaultLimit;
 
         @doc("Cursor for cursor-based pagination.")
-        @query cursor?: string;
+        @query cursor?: Cursor;
 
         @doc("Filter by role name using case sensitive exact match.")
         @query name?: string;
 
-        @doc("""
-        Control which fields are included in the response. Works as a field mask.
-
-        **Syntax:**
-        - Use comma to separate multiple fields: `id,name,permissions_count`
-
-        **Examples:**
-        - `id,name` - Returns only id and name
-        - `id,name,description,permissions_count,last_modified` - Returns all fields except permissions
-        """)
-        @example("id,name,permissions_count")
-        @query fields?: string = "id,name,description,last_modified";
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = "id,name,description,last_modified";
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.")
-        @example("-last_modified")
-        @query order_by?: string = "name";
+        @query order_by?: OrderBy = "name";
     ): ListResponse<Role> | Problems.CommonProblems;
+
+
+    @doc("Create a custom role in tenant")
+    @summary("Create a custom role in tenant")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                name: "Custom Inventory Admin",
+                description: "Custom role for inventory management",
+                permissions: #[
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 201,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Custom Inventory Admin",
+            description: "Custom role for inventory management",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @post op create(
+        @body body: CreateOrUpdateRoleRequest;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All response fields become optional.
+
+        **Examples:**
+        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+        - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string = DefaultRoleFieldMask;
+    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
+
+
+
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002"
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            description: "Full administrative access to workspace resources",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            fields: "name"
+        },
+        returnType: #{
+            _: 200,
+            name: "Workspace Admin"
+        }
+    })
+    @get op read(
+        @path id: UUID;
+
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = DefaultRoleFieldMask;
+    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
+
+    @doc("Update a custom role in tenant")
+    @summary("Update a custom role in tenant")
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            body: #{
+                name: "Updated Inventory Admin",
+                description: "Updated role for inventory management",
+                permissions: #[
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "delete" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Updated Inventory Admin",
+            description: "Updated role for inventory management",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" },
+                #{ application: "inventory", resource_type: "hosts", operation: "delete" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @put op update(
+        @doc("UUID that uniquely identifies the role")
+        @path id: UUID;
+        @body body: CreateOrUpdateRoleRequest;
+
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = DefaultRoleFieldMask;
+    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
 }
