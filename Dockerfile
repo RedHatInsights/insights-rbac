@@ -73,8 +73,9 @@ COPY Pipfile.lock .
 RUN \
     # install the dependencies into the working dir (i.e. ${APP_ROOT}/.venv)
     pipenv install --deploy && \
-    # ensure setuptools/wheel are upgraded for CVE fixes
-    pipenv run pip install --upgrade "setuptools>=80.10.1" "wheel>=0.46.2" && \
+    # force reinstall wheel to fix CVE (remove old version completely)
+    pipenv run pip uninstall -y wheel && \
+    pipenv run pip install "wheel>=0.46.2" && \
     # delete the pipenv cache
     pipenv --clear
 
