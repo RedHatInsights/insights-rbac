@@ -105,14 +105,19 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
         """Test ordering by multiple fields."""
         # Create additional workspaces with same type to test multi-field ordering
         Workspace.objects.create(
-            name="Alpha2",
+            name="Zeta",  # Different name but same type as existing workspaces
             type=Workspace.Types.STANDARD,
             tenant=self.tenant,
         )
 
         data = self._get_workspaces_data("order_by=type,name")
-        # Results should be ordered first by type, then by name within each type
+
+        # Verify primary ordering: types should be sorted
         self._assert_field_sorted(data, "type")
+
+        # Verify secondary ordering: names should be sorted within the STANDARD type group
+        standard_ws = [w["name"] for w in data if w["type"] == "standard"]
+        self.assertEqual(standard_ws, sorted(standard_ws))
 
     def test_invalid_ordering_fields(self):
         """Test that invalid order_by fields are handled gracefully."""
