@@ -284,6 +284,165 @@
       }
     },
     "/roles/": {
+      "post": {
+        "operationId": "Roles_create",
+        "summary": "Create a custom role in tenant",
+        "description": "Create a custom role in tenant",
+        "parameters": [
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "schema": {
+              "type": "string",
+              "default": "id,name,description,permissions,last_modified"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The request has succeeded and a new resource has been created as a result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Roles.Role"
+                },
+                "example": {
+                  "id": "550e8400-e29b-41d4-a716-446655440002",
+                  "name": "Custom Inventory Admin",
+                  "description": "Custom role for inventory management",
+                  "permissions": [
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "read"
+                    },
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "write"
+                    }
+                  ],
+                  "last_modified": "2024-08-04T12:00:00Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem400"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Roles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Roles.CreateOrUpdateRoleRequest"
+              },
+              "example": {
+                "name": "Custom Inventory Admin",
+                "description": "Custom role for inventory management",
+                "permissions": [
+                  {
+                    "application": "inventory",
+                    "resource_type": "hosts",
+                    "operation": "read"
+                  },
+                  {
+                    "application": "inventory",
+                    "resource_type": "hosts",
+                    "operation": "write"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "Roles_list",
         "summary": "List the roles for a tenant",
@@ -505,12 +664,23 @@
         "tags": [
           "Roles"
         ]
-      },
-      "post": {
-        "operationId": "Roles_create",
-        "summary": "Create a custom role in tenant",
-        "description": "Create a custom role in tenant",
+      }
+    },
+    "/roles/{id}/": {
+      "put": {
+        "operationId": "Roles_update",
+        "summary": "Update a custom role in tenant",
+        "description": "Update a custom role in tenant",
         "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "UUID that uniquely identifies the role",
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
           {
             "name": "fields",
             "in": "query",
@@ -524,8 +694,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "The request has succeeded and a new resource has been created as a result.",
+          "200": {
+            "description": "The request has succeeded.",
             "content": {
               "application/json": {
                 "schema": {
@@ -533,8 +703,8 @@
                 },
                 "example": {
                   "id": "550e8400-e29b-41d4-a716-446655440002",
-                  "name": "Custom Inventory Admin",
-                  "description": "Custom role for inventory management",
+                  "name": "Updated Inventory Admin",
+                  "description": "Updated role for inventory management",
                   "permissions": [
                     {
                       "application": "inventory",
@@ -545,6 +715,11 @@
                       "application": "inventory",
                       "resource_type": "hosts",
                       "operation": "write"
+                    },
+                    {
+                      "application": "inventory",
+                      "resource_type": "hosts",
+                      "operation": "delete"
                     }
                   ],
                   "last_modified": "2024-08-04T12:00:00Z"
@@ -603,6 +778,16 @@
               }
             }
           },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Server error",
             "content": {
@@ -643,11 +828,11 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Roles.CreateRoleRequest"
+                "$ref": "#/components/schemas/Roles.CreateOrUpdateRoleRequest"
               },
               "example": {
-                "name": "Custom Inventory Admin",
-                "description": "Custom role for inventory management",
+                "name": "Updated Inventory Admin",
+                "description": "Updated role for inventory management",
                 "permissions": [
                   {
                     "application": "inventory",
@@ -658,15 +843,18 @@
                     "application": "inventory",
                     "resource_type": "hosts",
                     "operation": "write"
+                  },
+                  {
+                    "application": "inventory",
+                    "resource_type": "hosts",
+                    "operation": "delete"
                   }
                 ]
               }
             }
           }
         }
-      }
-    },
-    "/roles/{id}/": {
+      },
       "get": {
         "operationId": "Roles_read",
         "parameters": [
@@ -2348,7 +2536,7 @@
           }
         ]
       },
-      "Roles.CreateRoleRequest": {
+      "Roles.CreateOrUpdateRoleRequest": {
         "type": "object",
         "required": [
           "name",
@@ -2371,6 +2559,23 @@
             },
             "description": "List of permissions to assign to this role"
           }
+        },
+        "description": "Role data for create and update operations",
+        "example": {
+          "name": "Host Inventory Admin",
+          "description": "Custom role for host inventory management",
+          "permissions": [
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "read"
+            },
+            {
+              "application": "inventory",
+              "resource_type": "hosts",
+              "operation": "write"
+            }
+          ]
         }
       },
       "Roles.Permission": {
@@ -2455,48 +2660,6 @@
             }
           ],
           "last_modified": "2024-08-04T12:00:00Z"
-        }
-      },
-      "Roles.WriteRole": {
-        "type": "object",
-        "required": [
-          "name",
-          "description",
-          "permissions"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
-          },
-          "description": {
-            "type": "string",
-            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Roles.Permission"
-            },
-            "description": "List of permissions to assign to this role"
-          }
-        },
-        "description": "Role data for create operations",
-        "example": {
-          "name": "Host Inventory Admin",
-          "description": "Custom role for host inventory management",
-          "permissions": [
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "read"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "write"
-            }
-          ]
         }
       },
       "Timestamps": {
