@@ -61,6 +61,7 @@ ENV PATH="/pipenv-venv/bin:$PATH"
 # Install pipenv into the virtual env
 RUN \
     pip install --upgrade "pip>=23.3" && \
+    pip install "setuptools>=80.10.1" "wheel>=0.46.2" && \
     pip install pipenv
 
 WORKDIR ${APP_ROOT}
