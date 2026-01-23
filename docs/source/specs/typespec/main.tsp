@@ -897,18 +897,11 @@ namespace RoleBindings {
         platform
     }
 
-    enum RoleTypeQueryParam {
-        @doc("All role types")
-        all,
-        ...RoleType
-    }
-
     model RoleDetails {
         @doc("Role identifier")
-        id: UUID;
+        id?: UUID;
         @doc("Role name")
         name?: string;
-        @doc("Role type: custom, seeded, or platform")
         type?: RoleType;
         @doc("Role description")
         description?: string;

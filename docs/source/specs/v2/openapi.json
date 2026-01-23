@@ -2138,9 +2138,6 @@
       },
       "RoleBindings.RoleDetails": {
         "type": "object",
-        "required": [
-          "id"
-        ],
         "properties": {
           "id": {
             "allOf": [
@@ -2155,12 +2152,7 @@
             "description": "Role name"
           },
           "type": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.RoleType"
-              }
-            ],
-            "description": "Role type: custom, seeded, or platform"
+            "$ref": "#/components/schemas/RoleBindings.RoleType"
           },
           "description": {
             "type": "string",
@@ -2183,15 +2175,6 @@
       "RoleBindings.RoleType": {
         "type": "string",
         "enum": [
-          "custom",
-          "seeded",
-          "platform"
-        ]
-      },
-      "RoleBindings.RoleTypeQueryParam": {
-        "type": "string",
-        "enum": [
-          "all",
           "custom",
           "seeded",
           "platform"
