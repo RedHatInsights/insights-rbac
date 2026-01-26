@@ -886,7 +886,6 @@ namespace RoleBindings {
         id?: UUID;
         name?: string;
         description?: string;
-        permissions_count?: int32;
         permissions?: Roles.Permission[];
     }
 
@@ -896,7 +895,6 @@ namespace RoleBindings {
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
             description: "Full administrative access to workspace",
-            permissions_count: 2,
             permissions: #[
                 #{
                     application: "rbac",
@@ -932,7 +930,6 @@ namespace RoleBindings {
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
-            permissions_count: 2,
             permissions: #[
                 #{
                     application: "rbac",
@@ -1094,7 +1091,6 @@ namespace RoleBindings {
         - id (UUID) - always included
         - name (string) - role name
         - description (string) - role description
-        - permissions_count (integer) - number of permissions
         - permissions (array) - full permission list (application, resource_type, operation)
 
         **subjects array:**
@@ -1116,13 +1112,12 @@ namespace RoleBindings {
         **Examples:**
         - `role(description)` - Role description
         - `role(permissions)` - Include full permissions list
-        - `role(permissions_count)` - Permission count
         - `subjects(group.name,group.user_count)` - Group names and user counts
         - `role(description),subjects(group.name),resource(name)` - Combined fields
-        - `role(description,permissions_count),resource(name,type)` - Role details with resource info
+        - `role(description,permissions),resource(name,type)` - Role details with resource info
         - `inherited_from(name,type)` - Include inherited resource details
         """)
-        @example("role(description,permissions_count,permissions),subjects(group.name),resource(name,type)")
+        @example("role(description,permissions),subjects(group.name),resource(name,type)")
         @query fields?: string;
 
         @doc("Sort by specified field(s), prefix with '-' for descending order")

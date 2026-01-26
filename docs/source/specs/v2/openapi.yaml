@@ -80,7 +80,6 @@ paths:
             - id (UUID) - always included
             - name (string) - role name
             - description (string) - role description
-            - permissions_count (integer) - number of permissions
             - permissions (array) - full permission list (application, resource_type, operation)
 
             **subjects array:**
@@ -102,10 +101,9 @@ paths:
             **Examples:**
             - `role(description)` - Role description
             - `role(permissions)` - Include full permissions list
-            - `role(permissions_count)` - Permission count
             - `subjects(group.name,group.user_count)` - Group names and user counts
             - `role(description),subjects(group.name),resource(name)` - Combined fields
-            - `role(description,permissions_count),resource(name,type)` - Role details with resource info
+            - `role(description,permissions),resource(name,type)` - Role details with resource info
             - `inherited_from(name,type)` - Include inherited resource details
           schema:
             type: string
@@ -1854,7 +1852,6 @@ components:
         role:
           id: 550e8400-e29b-41d4-a716-446655440002
           name: Workspace Admin
-          permissions_count: 2
           permissions:
             - application: rbac
               resource_type: workspace
@@ -1930,9 +1927,6 @@ components:
           type: string
         description:
           type: string
-        permissions_count:
-          type: integer
-          format: int32
         permissions:
           type: array
           items:
