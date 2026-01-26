@@ -19,7 +19,7 @@
 
 from typing import Iterable, Optional
 
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q, QuerySet, signals
 from django.utils import timezone
 from management.models import Group, Permission, Principal, Role
@@ -180,8 +180,9 @@ class RoleBinding(TenantAwareModel):
 
     def update_groups(self, groups: Iterable[Group]):
         """Update the groups bound to this RoleBinding."""
-        self.group_entries.all().delete()
-        RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
+        with transaction.atomic():
+            self.group_entries.all().delete()
+            RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
 
     def update_groups_by_uuid(self, uuids: Iterable[UUID | str]):
         """
@@ -215,11 +216,12 @@ class RoleBinding(TenantAwareModel):
 
         principals_by_source is an iterable of pairs of the source string and the principal added from that source.
         """
-        self.principal_entries.all().delete()
+        with transaction.atomic():
+            self.principal_entries.all().delete()
 
-        RoleBindingPrincipal.objects.bulk_create(
-            [RoleBindingPrincipal(binding=self, principal=p, source=s) for s, p in set(principals_by_source)]
-        )
+            RoleBindingPrincipal.objects.bulk_create(
+                [RoleBindingPrincipal(binding=self, principal=p, source=s) for s, p in set(principals_by_source)]
+            )
 
     def update_principals_by_user_id(self, user_ids_by_source: Iterable[tuple[str, str]]):
         """
