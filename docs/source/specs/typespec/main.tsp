@@ -697,8 +697,7 @@ namespace RoleBindings {
         ],
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         subject_count: 2,
-        role_count: 2,
-        inherited_from: #[]
+        role_count: 2
     })
     model CreateRoleBindingsResponse {
         @statusCode _: 201;
@@ -714,8 +713,6 @@ namespace RoleBindings {
         subject_count?: int32;
         @doc("Number of roles assigned")
         role_count?: int32;
-        @doc("Array of resources from which access originates (empty for direct bindings)")
-        inherited_from?: Resource[];
     }
 
     @example(#{
@@ -994,8 +991,7 @@ namespace RoleBindings {
             ],
             last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
             subject_count: 2,
-            role_count: 2,
-            inherited_from: #[]
+            role_count: 2
         }
     })
     @opExample(#{

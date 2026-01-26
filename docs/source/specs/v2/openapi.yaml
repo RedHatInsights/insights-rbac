@@ -70,7 +70,6 @@ paths:
                     last_modified: '2024-08-04T12:00:00Z'
                     subject_count: 2
                     role_count: 2
-                    inherited_from: []
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -1608,11 +1607,6 @@ components:
           type: integer
           format: int32
           description: Number of roles assigned
-        inherited_from:
-          type: array
-          items:
-            $ref: '#/components/schemas/RoleBindings.Resource'
-          description: Array of resources from which access originates (empty for direct bindings)
       description: Response from creating role bindings - supports field masking with all optional fields
       example:
         _: 201
@@ -1639,7 +1633,6 @@ components:
         last_modified: '2024-08-04T12:00:00Z'
         subject_count: 2
         role_count: 2
-        inherited_from: []
     RoleBindings.GroupDetails:
       type: object
       properties:
