@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Workspace access checking utilities."""
+
 import logging
 import time
 from contextlib import contextmanager

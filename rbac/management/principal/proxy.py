@@ -16,6 +16,7 @@
 #
 
 """Proxy for principal management."""
+
 import logging
 
 import requests

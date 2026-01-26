@@ -33,7 +33,6 @@ from management.relation_replicator.relation_replicator import (
 )
 from prometheus_client import Counter
 
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 relations_replication_event_total = Counter(

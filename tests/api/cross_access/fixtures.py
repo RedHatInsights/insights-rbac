@@ -30,7 +30,6 @@ from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemory
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
-
 URL_LIST = reverse("v1_api:cross-list")
 
 

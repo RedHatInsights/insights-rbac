@@ -16,6 +16,7 @@
 #
 
 """Class to handle Dual Write API related operations."""
+
 import logging
 from typing import Callable, Optional
 from uuid import uuid4

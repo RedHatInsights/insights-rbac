@@ -16,6 +16,7 @@
 #
 
 """Model for principal management."""
+
 from typing import Optional
 from uuid import uuid4
 

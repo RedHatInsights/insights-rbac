@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Serializers for role binding management."""
+
 import re
 from dataclasses import dataclass, field
 from typing import Optional

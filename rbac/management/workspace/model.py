@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Model for workspace management."""
+
 import uuid_utils.compat as uuid
 from django.core.exceptions import ValidationError
 from django.db import connection, models

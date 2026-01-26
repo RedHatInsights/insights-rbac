@@ -16,6 +16,7 @@
 #
 
 """Handler for system defined roles."""
+
 import dataclasses
 import json
 import logging

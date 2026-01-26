@@ -16,6 +16,7 @@
 #
 
 """Custom Internal RBAC Middleware."""
+
 import binascii
 import logging
 from json.decoder import JSONDecodeError

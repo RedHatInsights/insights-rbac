@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Service layer for role binding management."""
+
 import logging
 from typing import Iterable, Optional, Sequence
 
@@ -37,7 +38,6 @@ from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
 
 from api.models import Tenant
-
 
 logger = logging.getLogger(__name__)
 

@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the RoleV2 models."""
+
 import uuid
 
 from django.core.exceptions import ValidationError

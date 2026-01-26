@@ -16,6 +16,7 @@
 #
 
 """Serializer for role management."""
+
 from django.conf import settings
 from django.utils.translation import gettext as _
 from feature_flags import FEATURE_FLAGS

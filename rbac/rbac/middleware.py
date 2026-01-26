@@ -16,6 +16,7 @@
 #
 
 """Custom RBAC Middleware."""
+
 import binascii
 import json
 import logging
@@ -41,7 +42,6 @@ from rest_framework import status
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import extract_header
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_sys_counter = Counter(

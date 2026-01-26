@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the API pagination module."""
+
 from unittest.mock import Mock, patch
 
 from django.test import TestCase
