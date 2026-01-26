@@ -15,14 +15,26 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test ordering functionality for workspace list endpoint."""
+
+from importlib import reload
+from unittest.mock import patch
+
 from django.test import TestCase
+from django.test.utils import override_settings
+from django.urls import clear_url_caches
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from management.workspace.model import Workspace
+from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
+@override_settings(V2_APIS_ENABLED=True)
+@patch(
+    "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+    return_value=False,
+)
 class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
     """Test workspace ordering with order_by parameter using '-' prefix for descending order."""
 
@@ -30,26 +42,51 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
         """Set up test workspaces with different attributes."""
         super().setUp()
 
+        # Reload URLs to register V2 API endpoints
+        reload(urls)
+        clear_url_caches()
+
+        # Create workspace hierarchy: ROOT -> DEFAULT -> STANDARD
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            type=Workspace.Types.ROOT,
+            tenant=self.tenant,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            type=Workspace.Types.DEFAULT,
+            tenant=self.tenant,
+            parent=self.root_workspace,
+        )
+
         # Create workspaces with different names and timestamps
         self.workspace_alpha = Workspace.objects.create(
             name="Alpha",
             type=Workspace.Types.STANDARD,
             tenant=self.tenant,
+            parent=self.default_workspace,
         )
         self.workspace_beta = Workspace.objects.create(
             name="Beta",
             type=Workspace.Types.STANDARD,
             tenant=self.tenant,
+            parent=self.default_workspace,
         )
         self.workspace_gamma = Workspace.objects.create(
             name="Gamma",
-            type=Workspace.Types.DEFAULT,
+            type=Workspace.Types.STANDARD,
             tenant=self.tenant,
+            parent=self.default_workspace,
         )
 
     def _get_workspaces(self, query_params):
         """Helper method to fetch workspaces with query parameters."""
         client = APIClient()
+        # Default to type=standard to filter out ROOT and DEFAULT infrastructure workspaces
+        # unless type is already specified in query_params
+        if "type=" not in query_params:
+            separator = "&" if query_params else ""
+            query_params = f"{query_params}{separator}type=standard"
         url = f"/api/rbac/v2/workspaces/?{query_params}"
         return client.get(url, **self.headers)
 
@@ -65,7 +102,7 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
         expected = sorted(values, reverse=reverse)
         self.assertEqual(values, expected)
 
-    def test_ordering_by_field(self):
+    def test_ordering_by_field(self, mock_flag):
         """Test ordering by all fields in both directions using '-' prefix."""
         test_cases = [
             {"query": "order_by=name", "field": "name", "reverse": False},
@@ -88,7 +125,7 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
                 else:
                     self._assert_field_sorted(data, test_case["field"], reverse=test_case["reverse"])
 
-    def test_default_ordering(self):
+    def test_default_ordering(self, mock_flag):
         """Test default ordering behavior (no order_by or empty order_by)."""
         test_cases = [
             {"query": "", "description": "no order_by parameter"},
@@ -101,7 +138,7 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
                 # Should fall back to default ordering (name ascending)
                 self._assert_field_sorted(data, "name")
 
-    def test_multiple_field_ordering(self):
+    def test_multiple_field_ordering(self, mock_flag):
         """Test ordering by multiple fields."""
         # Create additional workspaces with same type to test multi-field ordering
         Workspace.objects.create(
@@ -119,7 +156,7 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
         standard_ws = [w["name"] for w in data if w["type"] == "standard"]
         self.assertEqual(standard_ws, sorted(standard_ws))
 
-    def test_invalid_ordering_fields(self):
+    def test_invalid_ordering_fields(self, mock_flag):
         """Test that invalid order_by fields are handled gracefully."""
         test_cases = [
             {"query": "order_by=invalid_field", "description": "non-existent field"},
@@ -138,7 +175,7 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
                 data = response.json()["data"]
                 self._assert_field_sorted(data, "name")
 
-    def test_ordering_integration(self):
+    def test_ordering_integration(self, mock_flag):
         """Test ordering with filters, pagination, and other query parameters."""
         test_cases = [
             {
@@ -170,7 +207,7 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
                 data = self._get_workspaces_data(test_case["query"])
                 test_case["validator"](self, data)
 
-    def test_timestamp_field_ordering(self):
+    def test_timestamp_field_ordering(self, mock_flag):
         """Test ordering on timestamp fields checks both boundaries."""
         # Additional validation for timestamp fields - check both first and last items
         data = self._get_workspaces_data("order_by=-created")
@@ -179,7 +216,7 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
         # Oldest created should be last (Alpha)
         self.assertEqual(data[-1]["name"], "Alpha")
 
-    def test_malformed_ordering_parameters(self):
+    def test_malformed_ordering_parameters(self, mock_flag):
         """Test handling of malformed ordering parameters."""
         test_cases = [
             {"query": "order_by=--name", "description": "double minus prefix"},

@@ -18,6 +18,7 @@
 
 import base64
 import json
+import uuid
 from importlib import reload
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -930,21 +931,30 @@ class DefaultBindingsAPITests(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up test fixtures once for all tests."""
+        """Set up test fixtures once for all tests in this class."""
         super().setUpClass()
         # Seed platform roles and default groups (required for default bindings)
+        # This must be in setUpClass so the data is committed before tests run
         seed_roles()
         seed_group()
 
     def setUp(self):
-        """Set up test data."""
+        """Set up test data for each test."""
+        super().setUp()
         reload(urls)
         clear_url_caches()
 
+        # Clear caches to ensure fresh state - other tests might have modified these
+        GlobalPolicyIdService.clear_shared()
+        Tenant._public_tenant = None  # Clear the public tenant cache
+
         # Use V2 bootstrap to create tenant with TenantMapping
+        # Use a unique org_id to avoid conflicts when running tests in parallel
+        unique_org_id = f"test-default-bindings-api-{uuid.uuid4().hex[:8]}"
+
         self.replicator = InMemoryRelationReplicator()
         self.bootstrap_service = V2TenantBootstrapService(self.replicator)
-        bootstrapped = self.bootstrap_service.new_bootstrapped_tenant("test-default-bindings-api")
+        bootstrapped = self.bootstrap_service.new_bootstrapped_tenant(unique_org_id)
         self.tenant = bootstrapped.tenant
         self.mapping = bootstrapped.mapping
         self.default_workspace = bootstrapped.default_workspace
