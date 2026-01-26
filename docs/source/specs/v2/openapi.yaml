@@ -103,12 +103,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem404'
         '500':
           description: Server error
           content:

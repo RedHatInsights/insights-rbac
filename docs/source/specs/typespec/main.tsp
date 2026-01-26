@@ -1033,7 +1033,7 @@ namespace RoleBindings {
         """)
         @example("resource,subjects,roles,last_modified")
         @query fields?: string = DefaultRoleBindingFieldMask;
-    ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+    ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 }
 
 @route("/roles/")
