@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper for determining workspace/tenant binding levels for permissions."""
+
 import dataclasses
 from enum import IntEnum
 from typing import Iterable, Self

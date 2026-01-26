@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Django database settings."""
+
 from app_common_python import LoadedConfig
 
 from .env import ENVIRONMENT

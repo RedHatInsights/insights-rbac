@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+
 from typing import Optional
 
 from django.conf import settings
@@ -45,7 +46,6 @@ from rest_framework.request import Request
 
 from api.models import Tenant, User
 from rbac.env import ENVIRONMENT
-
 
 SCOPE_KEY = "scope"
 ORG_ID_SCOPE = "org_id"
