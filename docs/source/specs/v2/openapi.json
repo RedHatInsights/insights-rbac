@@ -88,7 +88,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior:**\nRequired fields are always included: last_modified, role.id, resource.id, subjects[].id, subjects[].type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in addition to the required fields.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `role(description),resource(name),subject_count`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role name\n- type (string) - role type (custom, seeded, or platform)\n- description (string) - role description\n- permissions_count (integer) - number of permissions\n- permissions (array) - full permission list (application, resource_type, operation)\n\n**subjects array:**\n- id (UUID) - always included\n- type (string) - always included (\"group\")\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- last_modified (datetime) - always included\n- subject_count (integer) - count of subjects\n- inherited_from (object) - resource from which this role binding is inherited\n\n**Examples:**\n- `role(description)` - Role description\n- `role(permissions)` - Include full permissions list\n- `role(permissions_count)` - Permission count\n- `subjects(group.name,group.user_count)` - Group names and user counts\n- `subject_count` - Just the count without full group details\n- `role(description),subjects(group.name),resource(name)` - Combined fields\n- `role(description,permissions_count),subject_count,resource(name,type)` - Role details with subject count\n- `inherited_from(name,type)` - Include inherited resource details",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior:**\nRequired fields are always included: last_modified, role.id, resource.id, subjects[].id, subjects[].type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in addition to the required fields.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `role(description),resource(name)`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role name\n- description (string) - role description\n- permissions_count (integer) - number of permissions\n- permissions (array) - full permission list (application, resource_type, operation)\n\n**subjects array:**\n- id (UUID) - always included\n- type (string) - always included (\"group\")\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- last_modified (datetime) - always included\n- inherited_from (object) - resource from which this role binding is inherited\n\n**Examples:**\n- `role(description)` - Role description\n- `role(permissions)` - Include full permissions list\n- `role(permissions_count)` - Permission count\n- `subjects(group.name,group.user_count)` - Group names and user counts\n- `role(description),subjects(group.name),resource(name)` - Combined fields\n- `role(description,permissions_count),resource(name,type)` - Role details with resource info\n- `inherited_from(name,type)` - Include inherited resource details",
             "schema": {
               "type": "string"
             },
@@ -112,7 +112,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoleBindings.RoleBindingByRoleListResponse"
+                  "type": "object",
+                  "required": [
+                    "meta",
+                    "links",
+                    "data"
+                  ],
+                  "properties": {
+                    "meta": {
+                      "$ref": "#/components/schemas/CursorPaginationMeta"
+                    },
+                    "links": {
+                      "$ref": "#/components/schemas/CursorPaginationLinks"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RoleBindings.RoleBindingByRole"
+                      }
+                    }
+                  }
                 },
                 "examples": {
                   "example0": {
@@ -2688,11 +2707,6 @@
             },
             "description": "Subjects assigned this role on the resource"
           },
-          "subject_count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Count of subjects bound to this role"
-          },
           "resource": {
             "allOf": [
               {
@@ -2715,7 +2729,6 @@
           "role": {
             "id": "550e8400-e29b-41d4-a716-446655440002",
             "name": "Workspace Admin",
-            "type": "seeded",
             "permissions_count": 2,
             "permissions": [
               {
@@ -2740,7 +2753,6 @@
               }
             }
           ],
-          "subject_count": 1,
           "resource": {
             "id": "550e8400-e29b-41d4-a716-446655440003",
             "name": "Child Workspace",
@@ -2750,39 +2762,6 @@
             "id": "550e8400-e29b-41d4-a716-446655440001",
             "name": "Parent Workspace",
             "type": "workspace"
-          }
-        }
-      },
-      "RoleBindings.RoleBindingByRoleListResponse": {
-        "type": "object",
-        "required": [
-          "meta",
-          "links",
-          "data"
-        ],
-        "properties": {
-          "meta": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CursorPaginationMeta"
-              }
-            ],
-            "description": "Pagination metadata"
-          },
-          "links": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CursorPaginationLinks"
-              }
-            ],
-            "description": "Pagination links"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleBindings.RoleBindingByRole"
-            },
-            "description": "List of role bindings grouped by role"
           }
         }
       },
@@ -2858,82 +2837,29 @@
           }
         }
       },
-      "RoleBindings.RoleBindingBySubjectListResponse": {
-        "type": "object",
-        "required": [
-          "meta",
-          "links",
-          "data"
-        ],
-        "properties": {
-          "meta": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CursorPaginationMeta"
-              }
-            ],
-            "description": "Pagination metadata"
-          },
-          "links": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CursorPaginationLinks"
-              }
-            ],
-            "description": "Pagination links"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
-            },
-            "description": "List of role bindings grouped by subject"
-          }
-        }
-      },
       "RoleBindings.RoleDetails": {
         "type": "object",
         "properties": {
           "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "Role identifier"
+            "$ref": "#/components/schemas/UUID"
           },
           "name": {
-            "type": "string",
-            "description": "Role name"
-          },
-          "type": {
-            "$ref": "#/components/schemas/RoleBindings.RoleType"
+            "type": "string"
           },
           "description": {
-            "type": "string",
-            "description": "Role description"
+            "type": "string"
           },
           "permissions_count": {
             "type": "integer",
-            "format": "int32",
-            "description": "Number of permissions assigned to this role"
+            "format": "int32"
           },
           "permissions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Roles.Permission"
-            },
-            "description": "List of permissions assigned to this role"
+            }
           }
         }
-      },
-      "RoleBindings.RoleType": {
-        "type": "string",
-        "enum": [
-          "custom",
-          "seeded",
-          "platform"
-        ]
       },
       "RoleBindings.UserDetails": {
         "type": "object",

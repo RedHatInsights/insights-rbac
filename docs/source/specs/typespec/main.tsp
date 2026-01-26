@@ -880,28 +880,13 @@ namespace RoleBindings {
         @example("subject_name,-subject_type")
         @query order_by?: OrderBy = "subject_name";
 
-    ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
-
-    enum RoleType {
-        @doc("Custom role created by tenant")
-        custom,
-        @doc("Seeded role from configuration")
-        seeded,
-        @doc("Platform-level role")
-        platform
-    }
+    ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 
     model RoleDetails {
-        @doc("Role identifier")
         id?: UUID;
-        @doc("Role name")
         name?: string;
-        type?: RoleType;
-        @doc("Role description")
         description?: string;
-        @doc("Number of permissions assigned to this role")
         permissions_count?: int32;
-        @doc("List of permissions assigned to this role")
         permissions?: Roles.Permission[];
     }
 
@@ -910,7 +895,6 @@ namespace RoleBindings {
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
-            type: RoleType.seeded,
             description: "Full administrative access to workspace",
             permissions_count: 2,
             permissions: #[
@@ -937,7 +921,6 @@ namespace RoleBindings {
                 }
             }
         ],
-        subject_count: 1,
         resource: #{
             id: "550e8400-e29b-41d4-a716-446655440001",
             name: "Engineering Workspace",
@@ -949,7 +932,6 @@ namespace RoleBindings {
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
-            type: RoleType.seeded,
             permissions_count: 2,
             permissions: #[
                 #{
@@ -974,7 +956,6 @@ namespace RoleBindings {
                 }
             }
         ],
-        subject_count: 1,
         resource: #{
             id: "550e8400-e29b-41d4-a716-446655440003",
             name: "Child Workspace",
@@ -993,21 +974,10 @@ namespace RoleBindings {
         role?: RoleDetails;
         @doc("Subjects assigned this role on the resource")
         subjects?: GroupSubject[];
-        @doc("Count of subjects bound to this role")
-        subject_count?: int64;
         @doc("Resource the role applies to")
         resource?: Resource;
         @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
         inherited_from?: Resource;
-    }
-
-    model RoleBindingByRoleListResponse {
-        @doc("Pagination metadata")
-        meta: CursorPaginationMeta;
-        @doc("Pagination links")
-        links: CursorPaginationLinks;
-        @doc("List of role bindings grouped by role")
-        data: RoleBindingByRole[];
     }
 
     @doc("List role bindings grouped by role")
@@ -1115,7 +1085,7 @@ namespace RoleBindings {
 
         **Syntax:**
         - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-        - Use comma to separate multiple field specifications: `role(description),resource(name),subject_count`
+        - Use comma to separate multiple field specifications: `role(description),resource(name)`
         - Fields not in parentheses apply to the root level
 
         **Available Fields:**
@@ -1123,7 +1093,6 @@ namespace RoleBindings {
         **role object:**
         - id (UUID) - always included
         - name (string) - role name
-        - type (string) - role type (custom, seeded, or platform)
         - description (string) - role description
         - permissions_count (integer) - number of permissions
         - permissions (array) - full permission list (application, resource_type, operation)
@@ -1142,7 +1111,6 @@ namespace RoleBindings {
 
         **root level:**
         - last_modified (datetime) - always included
-        - subject_count (integer) - count of subjects
         - inherited_from (object) - resource from which this role binding is inherited
 
         **Examples:**
@@ -1150,19 +1118,18 @@ namespace RoleBindings {
         - `role(permissions)` - Include full permissions list
         - `role(permissions_count)` - Permission count
         - `subjects(group.name,group.user_count)` - Group names and user counts
-        - `subject_count` - Just the count without full group details
         - `role(description),subjects(group.name),resource(name)` - Combined fields
-        - `role(description,permissions_count),subject_count,resource(name,type)` - Role details with subject count
+        - `role(description,permissions_count),resource(name,type)` - Role details with resource info
         - `inherited_from(name,type)` - Include inherited resource details
         """)
         @example("role(description,permissions_count,permissions),subjects(group.name),resource(name,type)")
         @query fields?: string;
 
         @doc("Sort by specified field(s), prefix with '-' for descending order")
-        @example("role_name,-subject_count")
+        @example("role_name,-last_modified")
         @query order_by?: string = "role.name";
 
-    ): RoleBindingByRoleListResponse | Problems.CommonProblems;
+    ): ListResponse<RoleBindingByRole> | Problems.CommonProblems;
 }
 
 @route("/roles/")
