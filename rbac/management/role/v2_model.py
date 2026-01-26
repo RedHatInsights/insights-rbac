@@ -202,7 +202,7 @@ class RoleBinding(TenantAwareModel):
         self.update_groups(groups)
 
     def bound_principals(self) -> QuerySet:
-        """Get a QuerySet for all groups bound to this RoleBinding."""
+        """Get a QuerySet for all principals bound to this RoleBinding."""
         return Principal.objects.filter(role_binding_entries__in=self.principal_entries.all()).distinct()
 
     def update_principals(self, principals_by_source: Iterable[tuple[str, Principal]]):
