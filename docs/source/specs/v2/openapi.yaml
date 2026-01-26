@@ -19,23 +19,10 @@ paths:
           description: |-
             Control which fields are included in the response to optimize payload size.
 
-            **Default Behavior (no fields parameter):**
-            Returns: resource, subjects, roles, last_modified
-
             **When fields parameter is provided:**
-            Only explicitly specified fields are returned. All response fields are optional.
-
-            **Available Fields:**
-            - resource - Resource the roles are bound to
-            - subjects - Subjects that were granted access (includes group.user_count)
-            - roles - Roles that were assigned
-            - last_modified - Timestamp of creation
-            - subject_count - Number of subjects in the binding
-            - role_count - Number of roles assigned
-            - inherited_from - Array of resources from which access originates
+            Only explicitly specified fields are returned. All response fields are optional.       
 
             **Examples:**
-            - `?fields=resource,subjects,roles,last_modified` - Default fields
             - `?fields=resource,subject_count,role_count` - Minimal response with counts
             - `?fields=resource,subjects,roles,inherited_from` - Include inheritance info
           schema:
@@ -1536,21 +1523,53 @@ components:
         - roles
       properties:
         resource:
-          allOf:
-            - $ref: '#/components/schemas/RoleBindings.Resource'
+          type: object
+          properties:
+            id:
+              allOf:
+                - $ref: '#/components/schemas/UUID'
+              description: Resource identifier
+            type:
+              type: string
+              description: Resource type (e.g., 'workspace')
+              example: workspace
+          required:
+            - id
+            - type
           description: Resource to bind roles to
         subjects:
           type: array
           items:
-            anyOf:
-              - $ref: '#/components/schemas/RoleBindings.UserSubject'
-              - $ref: '#/components/schemas/RoleBindings.GroupSubject'
-          description: Subjects to grant access to
+            type: object
+            properties:
+              id:
+                allOf:
+                  - $ref: '#/components/schemas/UUID'
+                description: Subject identifier
+              type:
+                type: string
+                enum:
+                  - user
+                  - group
+                description: Type of subject
+            required:
+              - id
+              - type
+          minItems: 1
+          description: Subjects to grant access to (at least one required)
         roles:
           type: array
           items:
-            $ref: '#/components/schemas/RoleBindings.Role'
-          description: Roles to assign
+            type: object
+            properties:
+              id:
+                allOf:
+                  - $ref: '#/components/schemas/UUID'
+                description: Role identifier
+            required:
+              - id
+          minItems: 1
+          description: Roles to assign (at least one required)
       description: Request body for creating role bindings
       example:
         resource:
@@ -1560,7 +1579,7 @@ components:
           - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
             type: group
           - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-            type: group
+            type: user
         roles:
           - id: 550e8400-e29b-41d4-a716-446655440002
           - id: 550e8400-e29b-41d4-a716-446655440003

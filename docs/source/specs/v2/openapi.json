@@ -26,7 +26,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**Default Behavior (no fields parameter):**\nReturns: resource, subjects, roles, last_modified\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields are optional.\n\n**Available Fields:**\n- resource - Resource the roles are bound to\n- subjects - Subjects that were granted access (includes group.user_count)\n- roles - Roles that were assigned\n- last_modified - Timestamp of creation\n- subject_count - Number of subjects in the binding\n- role_count - Number of roles assigned\n- inherited_from - Array of resources from which access originates\n\n**Examples:**\n- `?fields=resource,subjects,roles,last_modified` - Default fields\n- `?fields=resource,subject_count,role_count` - Minimal response with counts\n- `?fields=resource,subjects,roles,inherited_from` - Include inheritance info",
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields are optional.       \n\n**Examples:**\n- `?fields=resource,subject_count,role_count` - Minimal response with counts\n- `?fields=resource,subjects,roles,inherited_from` - Include inheritance info",
             "schema": {
               "type": "string",
               "default": "resource,subjects,roles,last_modified"
@@ -2218,33 +2218,78 @@
         ],
         "properties": {
           "resource": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.Resource"
+            "type": "object",
+            "properties": {
+              "id": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UUID"
+                  }
+                ],
+                "description": "Resource identifier"
+              },
+              "type": {
+                "type": "string",
+                "description": "Resource type (e.g., 'workspace')",
+                "example": "workspace"
               }
+            },
+            "required": [
+              "id",
+              "type"
             ],
             "description": "Resource to bind roles to"
           },
           "subjects": {
             "type": "array",
             "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/RoleBindings.UserSubject"
+              "type": "object",
+              "properties": {
+                "id": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/UUID"
+                    }
+                  ],
+                  "description": "Subject identifier"
                 },
-                {
-                  "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "group"
+                  ],
+                  "description": "Type of subject"
                 }
+              },
+              "required": [
+                "id",
+                "type"
               ]
             },
-            "description": "Subjects to grant access to"
+            "minItems": 1,
+            "description": "Subjects to grant access to (at least one required)"
           },
           "roles": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RoleBindings.Role"
+              "type": "object",
+              "properties": {
+                "id": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/UUID"
+                    }
+                  ],
+                  "description": "Role identifier"
+                }
+              },
+              "required": [
+                "id"
+              ]
             },
-            "description": "Roles to assign"
+            "minItems": 1,
+            "description": "Roles to assign (at least one required)"
           }
         },
         "description": "Request body for creating role bindings",
@@ -2260,7 +2305,7 @@
             },
             {
               "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-              "type": "group"
+              "type": "user"
             }
           ],
           "roles": [

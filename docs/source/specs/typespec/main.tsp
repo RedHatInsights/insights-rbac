@@ -651,7 +651,7 @@ namespace RoleBindings {
         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
         subjects: #[
             #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" }
         ],
         roles: #[
             #{ id: "550e8400-e29b-41d4-a716-446655440002" },
@@ -660,11 +660,27 @@ namespace RoleBindings {
     })
     model CreateRoleBindingsRequest {
         @doc("Resource to bind roles to")
-        resource: Resource;
-        @doc("Subjects to grant access to")
-        subjects: Subject[];
-        @doc("Roles to assign")
-        roles: Role[];
+        resource: {
+            @doc("Resource identifier")
+            id: UUID;
+            @doc("Resource type (e.g., 'workspace')")
+            @example("workspace")
+            type: string;
+        };
+        @doc("Subjects to grant access to (at least one required)")
+        @minItems(1)
+        subjects: {
+            @doc("Subject identifier")
+            id: UUID;
+            @doc("Type of subject")
+            type: "user" | "group";
+        }[];
+        @doc("Roles to assign (at least one required)")
+        @minItems(1)
+        roles: {
+            @doc("Role identifier")
+            id: UUID;
+        }[];
     }
 
     @doc("Response from creating role bindings - supports field masking with all optional fields")
