@@ -20,7 +20,7 @@
 from typing import Iterable, Optional
 
 from django.db import models
-from django.db.models import QuerySet, signals
+from django.db.models import Q, QuerySet, signals
 from django.utils import timezone
 from management.models import Group, Permission, Principal, Role
 from management.rbac_fields import AutoDateTimeField
@@ -296,13 +296,14 @@ class RoleBindingPrincipal(models.Model):
 
     principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
     binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
-    source = models.CharField(max_length=128, default=None, null=False)
+    source = models.CharField(max_length=128, null=False)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
                 fields=["principal", "binding", "source"], name="unique principal binding source triple"
-            )
+            ),
+            models.CheckConstraint(condition=~Q(source=""), name="role binding principal has source"),
         ]
 
 

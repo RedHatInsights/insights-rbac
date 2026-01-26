@@ -35,6 +35,7 @@ from management.models import (
 )
 from management.principal.model import Principal
 from management.role.model import Access
+from management.role.v2_model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
 
 
@@ -890,3 +891,18 @@ class RoleBindingModelTests(IdentityRequest):
 
         # The existing principals should be unchanged.
         self.assertCountEqual([self.principal1], binding.bound_principals())
+
+    def test_principal_no_source(self):
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                RoleBindingPrincipal.objects.create(
+                    binding=binding,
+                    principal=self.principal1,
+                )
