@@ -92,7 +92,7 @@ def _get_or_migrate_binding_for_system_role(tenant: Tenant, binding_mapping: Bin
 
     v2_role: SeededRoleV2 = SeededRoleV2.objects.filter(v1_source=v1_role).get()
 
-    role_binding, created = RoleBinding.objects.get_or_create(
+    role_binding, created = RoleBinding.objects.select_for_update().get_or_create(
         tenant=tenant,
         uuid=binding_mapping.mappings["id"],
         role=v2_role,
@@ -348,7 +348,7 @@ class RelationApiDualWriteSubjectHandler:
         # If this assumption is ever changed, then we must be sure to explicitly lock the role below when migrating it.
         mappings: list[BindingMapping] = list(role.binding_mappings.all())
         bindings_by_id: dict[str, RoleBinding] = {
-            str(b.uuid): b for b in RoleBinding.objects.filter(role__v1_source=role)
+            str(b.uuid): b for b in RoleBinding.objects.select_for_update().filter(role__v1_source=role)
         }
 
         if not mappings:
