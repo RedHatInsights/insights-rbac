@@ -16,6 +16,7 @@
 #
 
 """View for V2 Role management."""
+
 import logging
 
 from django.core.exceptions import FieldError
