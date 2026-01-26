@@ -24,6 +24,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from datetime import timedelta
+
+from management.principal.model import Principal
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 
@@ -107,10 +109,13 @@ class CrossAccountRequestTest(IdentityRequest):
         tenant_for_target_account.save()
         self.fixture.bootstrap_tenant(tenant_for_target_account)
 
-        self.role_1 = Role.objects.create(name="role_1", system=True, tenant=public_tenant)
-        self.role_2 = Role.objects.create(name="role_2", system=True, tenant=public_tenant)
-        self.role_9 = Role.objects.create(name="role_9", system=True, tenant=public_tenant)
-        self.role_8 = Role.objects.create(name="role_8", system=True, tenant=public_tenant)
+        self.role_1 = self.fixture.new_system_role(name="role_1")
+        self.role_2 = self.fixture.new_system_role(name="role_2")
+        self.role_9 = self.fixture.new_system_role(name="role_9")
+        self.role_8 = self.fixture.new_system_role(name="role_8")
+
+        Principal.objects.create(tenant=public_tenant, username="1111111", user_id="1111111")
+        Principal.objects.create(tenant=public_tenant, username="2222222", user_id="2222222")
 
         self.request_1 = CrossAccountRequest.objects.create(
             target_account=self.account,

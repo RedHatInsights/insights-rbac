@@ -20,13 +20,18 @@ from api.models import CrossAccountRequest, Tenant
 from api.cross_access.util import get_cross_principal_name
 from django.urls import reverse
 from django.utils import timezone
-from management.models import Role, Principal
+
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.models import Group, Role, Principal
 from management.notifications.notification_handlers import EVENT_TYPE_RH_TAM_REQUEST_CREATED
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from datetime import timedelta
 from unittest.mock import patch
+
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.role.model import BindingMapping
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     all_of,
@@ -42,11 +47,19 @@ from tests.api.cross_access.fixtures import CrossAccountRequestTest
 from django.test.utils import override_settings
 from functools import partial
 
+from tests.v2_util import assert_v2_system_role_bindings_consistent
+
 URL_LIST = reverse("v1_api:cross-list")
 
 
 class CrossAccountRequestViewTests(CrossAccountRequestTest):
     """Test the cross account request view."""
+
+    def tearDown(self):
+        with self.subTest(msg="tuple consistency"):
+            assert_v2_system_role_bindings_consistent(test=self, tuples=None)
+
+        super().tearDown()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -707,12 +720,20 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
+        test_group = Group.objects.create(tenant=self.tenant, name="test_group")
+
+        dual_write = RelationApiDualWriteGroupHandler(test_group, ReplicationEventType.ASSIGN_ROLE)
+        dual_write.generate_relations_reset_roles([self.role_1])
+        dual_write.replicate()
+
         binding_mapping = self.role_1.binding_mappings.first()
-        binding_mapping.mappings["groups"] = ["12345f"]  # fake groups to stop it from getting deleted
-        binding_mapping.save()
+
         # From approved to denied
         update_data = {"status": "denied"}
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        # Assigning the group should have prevented the BindingMapping from being deleted.
+        self.assertTrue(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))

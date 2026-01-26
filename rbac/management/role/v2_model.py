@@ -19,14 +19,14 @@
 
 from typing import Iterable, Optional
 
-import uuid_utils.compat as uuid
-from django.db import models
-from django.db.models import QuerySet, signals
+from django.db import models, transaction
+from django.db.models import Q, QuerySet, signals
 from django.utils import timezone
-from management.models import Group, Permission, Role
+from management.models import Group, Permission, Principal, Role
 from management.rbac_fields import AutoDateTimeField
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from rest_framework import serializers
+from uuid_utils.compat import UUID, uuid7
 
 from api.models import TenantAwareModel
 
@@ -39,7 +39,7 @@ class RoleV2(TenantAwareModel):
         SEEDED = "seeded"
         PLATFORM = "platform"
 
-    uuid = models.UUIDField(default=uuid.uuid7, editable=False, unique=True, null=False)
+    uuid = models.UUIDField(default=uuid7, editable=False, unique=True, null=False)
     name = models.CharField(max_length=175, null=False, blank=False)
     description = models.TextField(null=True, blank=True)
     type = models.CharField(
@@ -168,7 +168,7 @@ class PlatformRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 class RoleBinding(TenantAwareModel):
     """A role binding."""
 
-    uuid = models.UUIDField(default=uuid.uuid7, editable=False, unique=True, null=False)
+    uuid = models.UUIDField(default=uuid7, editable=False, unique=True, null=False)
     role = models.ForeignKey(RoleV2, on_delete=models.CASCADE, related_name="bindings")
 
     resource_type = models.CharField(max_length=256, null=False)
@@ -180,8 +180,81 @@ class RoleBinding(TenantAwareModel):
 
     def update_groups(self, groups: Iterable[Group]):
         """Update the groups bound to this RoleBinding."""
-        self.group_entries.all().delete()
-        RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
+        with transaction.atomic():
+            self.group_entries.all().delete()
+            RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
+
+    def update_groups_by_uuid(self, uuids: Iterable[UUID | str]):
+        """
+        Update the groups bound to this RoleBinding by UUID.
+
+        Raises a ValueError if one of the UUIDs cannot be found.
+        """
+        uuids = set(str(u) for u in uuids)
+
+        groups = Group.objects.filter(uuid__in=uuids).only("id", "uuid")
+        found_uuids = {str(g.uuid) for g in groups}
+
+        if found_uuids != uuids:
+            missing_uuids = uuids.difference(found_uuids)
+            raise ValueError(f"Not all expected groups could be found. Missing UUIDs: {missing_uuids}")
+
+        # Group.uuid is unique, so at most one Group will be found per UUID, and len(groups) <= len(uuids).
+        # By construction, len(found_uuids) <= len(groups).
+        # We have just checked that found_uuids = uuids, so len(found_uuids) = len(uuids) <= len(groups) <= len(uuids).
+        # Thus, len(groups) = len(uuids), and we have found one group for each specified UUID.
+
+        self.update_groups(groups)
+
+    def bound_principals(self) -> QuerySet:
+        """Get a QuerySet for all principals bound to this RoleBinding."""
+        return Principal.objects.filter(role_binding_entries__in=self.principal_entries.all()).distinct()
+
+    def update_principals(self, principals_by_source: Iterable[tuple[str, Principal]]):
+        """
+        Update the principals bound to this RoleBinding.
+
+        principals_by_source is an iterable of pairs of the source string and the principal added from that source.
+        """
+        with transaction.atomic():
+            self.principal_entries.all().delete()
+
+            RoleBindingPrincipal.objects.bulk_create(
+                [RoleBindingPrincipal(binding=self, principal=p, source=s) for s, p in set(principals_by_source)]
+            )
+
+    def update_principals_by_user_id(self, user_ids_by_source: Iterable[tuple[str, str]]):
+        """
+        Update the principals bound to this RoleBinding by user_id.
+
+        principals_by_source is an iterable of pairs of the source string and the user_id of the principal added from
+        that source.
+
+        A ValueError is raised if one of the user IDs cannot be found or if multiple principals are associated with
+        one of the provided user IDs.
+        """
+        user_ids_by_source = set(user_ids_by_source)
+        user_ids = set(entry[1] for entry in user_ids_by_source)
+
+        if None in user_ids:
+            raise TypeError("None user IDs are not supported.")
+
+        principals = Principal.objects.filter(user_id__in=user_ids)
+        found_user_ids: set[str] = {p.user_id for p in principals}
+
+        if found_user_ids != user_ids:
+            missing_user_ids = user_ids.difference(found_user_ids)
+            raise ValueError(f"Not all expected principals could be found. Missing user IDs: {missing_user_ids}")
+
+        # Principal.user_id is unique, so at most one Principal will be found per user ID, and we have:
+        #   len(principals) <= len(user_ids).
+        # By construction, len(found_user_ids) <= len(principals).
+        # We have just checked that found_user_ids = user_ids, so we have:
+        #   len(found_user_ids) = len(user_ids) <= len(principals) <= len(user_ids).
+        # Thus, len(user_ids) = len(principals), and we have found one group for each specified UUID.
+
+        principals_by_id = {p.user_id: p for p in principals}
+        self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
         """
@@ -224,6 +297,22 @@ class RoleBindingGroup(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["group", "binding"], name="unique group binding pair")]
+
+
+class RoleBindingPrincipal(models.Model):
+    """The relationship between a RoleBinding and one of its principal subjects."""
+
+    principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
+    binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
+    source = models.CharField(max_length=128, null=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["principal", "binding", "source"], name="unique principal binding source triple"
+            ),
+            models.CheckConstraint(condition=~Q(source=""), name="role binding principal has source"),
+        ]
 
 
 def validate_role_children_on_m2m_change(sender, instance, action, pk_set, **kwargs):
