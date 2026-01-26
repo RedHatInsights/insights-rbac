@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Serializers for V2 Role API."""
+
 from dataclasses import dataclass, field
 from typing import Optional
 
