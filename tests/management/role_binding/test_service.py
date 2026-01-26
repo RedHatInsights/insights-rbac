@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Tests for the RoleBindingService and Serializer."""
+
 from django.test import TestCase
 
 from management.models import Group, Permission, Principal, Workspace

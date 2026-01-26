@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Tests for WorkspaceService notify wait logic."""
+
 from collections import deque
 from dataclasses import dataclass
 from unittest.mock import Mock, call, patch

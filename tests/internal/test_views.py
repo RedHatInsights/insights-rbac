@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the internal viewset."""
+
 from abc import abstractmethod
 import logging
 

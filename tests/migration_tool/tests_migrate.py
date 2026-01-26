@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the utils module."""
+
 from datetime import timedelta
 
 from platform import system

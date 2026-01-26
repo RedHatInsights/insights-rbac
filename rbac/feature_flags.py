@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Feature flag module module."""
+
 import logging
 import threading
 from typing import Callable, Optional

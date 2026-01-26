@@ -16,6 +16,7 @@
 #
 
 """Model for role V2 management."""
+
 from typing import Iterable, Optional
 
 import uuid_utils.compat as uuid
