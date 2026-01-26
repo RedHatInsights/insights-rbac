@@ -16,6 +16,7 @@
 #
 
 """Class to handle Dual Write API related operations."""
+
 import logging
 from typing import Optional
 
@@ -30,7 +31,6 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.relation_api_dual_write_handler import BaseRelationApiDualWriteHandler
 from migration_tool.utils import create_relationship
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

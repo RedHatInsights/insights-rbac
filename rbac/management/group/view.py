@@ -16,6 +16,7 @@
 #
 
 """View for group management."""
+
 import logging
 from typing import Iterable, List, Optional, Tuple
 from uuid import UUID

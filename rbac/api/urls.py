@@ -14,6 +14,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Describes the urls and patterns for the API application."""
+
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 

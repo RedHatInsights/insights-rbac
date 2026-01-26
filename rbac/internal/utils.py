@@ -16,6 +16,7 @@
 #
 
 """Utilities for Internal RBAC use."""
+
 import json
 import logging
 import uuid
@@ -50,7 +51,6 @@ from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.utils import create_relationship
 
 from api.models import Tenant, User
-
 
 logger = logging.getLogger(__name__)
 PROXY = PrincipalProxy()

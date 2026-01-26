@@ -16,6 +16,7 @@
 #
 
 """View for role management."""
+
 import json
 import logging
 import os

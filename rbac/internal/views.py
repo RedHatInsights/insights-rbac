@@ -16,6 +16,7 @@
 #
 
 """View for internal tenant management."""
+
 import json
 import logging
 import uuid
@@ -527,26 +528,20 @@ def get_user_from_bop(username, email):
     user = users[0]
 
     if ("username" not in user) or (not user["username"]) or (user["username"].isspace()):
-        logger.error(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'username' field"""
-        )
+        logger.error(f"""invalid data for user '{query_by}={principal}':
+             user found in bop but does not contain required 'username' field""")
         raise Exception(
             f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
         )
 
     if "is_org_admin" not in user:
         user["is_org_admin"] = False
-        logger.warning(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'is_org_admin' field"""
-        )
+        logger.warning(f"""invalid data for user '{query_by}={principal}':
+             user found in bop but does not contain required 'is_org_admin' field""")
 
     if "org_id" not in user:
-        logger.error(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'org_id' field"""
-        )
+        logger.error(f"""invalid data for user '{query_by}={principal}':
+             user found in bop but does not contain required 'org_id' field""")
         raise Exception(f"invalid user data for user '{query_by}={principal}': user found in bop but no org_id exists")
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
