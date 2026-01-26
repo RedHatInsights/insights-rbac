@@ -246,8 +246,6 @@ class RoleBinding(TenantAwareModel):
             missing_user_ids = user_ids.difference(found_user_ids)
             raise ValueError(f"Not all expected principals could be found. Missing user IDs: {missing_user_ids}")
 
-        principals_by_id = {p.user_id: p for p in principals}
-
         # Principal.user_id is unique, so at most one Principal will be found per user ID, and we have:
         #   len(principals) <= len(user_ids).
         # By construction, len(found_user_ids) <= len(principals).
@@ -255,6 +253,7 @@ class RoleBinding(TenantAwareModel):
         #   len(found_user_ids) = len(user_ids) <= len(principals) <= len(user_ids).
         # Thus, len(user_ids) = len(principals), and we have found one group for each specified UUID.
 
+        principals_by_id = {p.user_id: p for p in principals}
         self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
