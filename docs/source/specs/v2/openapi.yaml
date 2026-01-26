@@ -715,6 +715,77 @@ paths:
                 - application: inventory
                   resource_type: hosts
                   operation: write
+    delete:
+      operationId: Roles_bulkDelete
+      description: Delete multiple roles by ID atomically.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: A comma-separated list of the UUIDs of the roles to delete.
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/UUID'
+          explode: false
+          style: commaDelimited
+      responses:
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
   /roles/{id}/:
     get:
       operationId: Roles_read
