@@ -198,7 +198,11 @@ class RoleBinding(TenantAwareModel):
             missing_uuids = uuids.difference(found_uuids)
             raise ValueError(f"Not all expected groups could be found. Missing UUIDs: {missing_uuids}")
 
-        assert len(groups) == len(uuids)
+        # Group.uuid is unique, so at most one Group will be found per UUID, and len(groups) <= len(uuids).
+        # By construction, len(found_uuids) <= len(groups).
+        # We have just checked that found_uuids = uuids, so len(found_uuids) = len(uuids) <= len(groups) <= len(uuids).
+        # Thus, len(groups) = len(uuids), and we have found one group for each specified UUID.
+
         self.update_groups(groups)
 
     def bound_principals(self) -> QuerySet:
@@ -240,11 +244,14 @@ class RoleBinding(TenantAwareModel):
             missing_user_ids = user_ids.difference(found_user_ids)
             raise ValueError(f"Not all expected principals could be found. Missing user IDs: {missing_user_ids}")
 
-        # This should hold because principal user_ids are unique.
-        assert len(principals) == len(user_ids)
-
         principals_by_id = {p.user_id: p for p in principals}
-        assert len(principals_by_id) == len(user_ids)
+
+        # Principal.user_id is unique, so at most one Principal will be found per user ID, and we have:
+        #   len(principals) <= len(user_ids).
+        # By construction, len(found_user_ids) <= len(principals).
+        # We have just checked that found_user_ids = user_ids, so we have:
+        #   len(found_user_ids) = len(user_ids) <= len(principals) <= len(user_ids).
+        # Thus, len(user_ids) = len(principals), and we have found one group for each specified UUID.
 
         self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
 
