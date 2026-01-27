@@ -641,7 +641,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingFieldMask = "resource,subjects,roles,last_modified";
+    const DefaultRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
 
 
     @discriminator("type")
@@ -1011,18 +1011,9 @@ namespace RoleBindings {
     @post op create(
         @body body: CreateRoleBindingsRequest;
 
-        @doc("""
-        Control which fields are included in the response to optimize payload size.
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are returned. All response fields are optional.       
-
-        **Examples:**
-        - `?fields=resource,subject_count,role_count` - Minimal response with counts
-        - `?fields=resource,subjects,roles,inherited_from` - Include inheritance info
-        """)
-        @example("resource,subjects,roles,last_modified")
-        @query fields?: string = DefaultRoleBindingFieldMask;
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @example("resource(id),subjects(id),roles(id),last_modified")
+        @query fields?: FieldMask = DefaultRoleBindingFieldMask;
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 }
 
