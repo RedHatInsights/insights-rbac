@@ -957,9 +957,7 @@ namespace RoleBindings {
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
         @query order_by?: OrderBy = "subject_name";
-
-<<<<<<< HEAD
-    ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
+    ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 
     @doc("Create role bindings for subjects on a resource")
     @summary("Create role bindings")
@@ -1029,9 +1027,6 @@ namespace RoleBindings {
         @example("resource,subjects,roles,last_modified")
         @query fields?: string = DefaultRoleBindingFieldMask;
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
-=======
-    ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
->>>>>>> master
 }
 
 @route("/roles/")
