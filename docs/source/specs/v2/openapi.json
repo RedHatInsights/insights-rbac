@@ -40,7 +40,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoleBindings.RoleBindingsResponseBody"
+                  "$ref": "#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsResponse"
                 },
                 "examples": {
                   "example0": {
@@ -265,7 +265,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoleBindings.RoleBindingsResponseBody"
+                  "$ref": "#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsResponse"
                 },
                 "example": {
                   "resource": {
@@ -2493,6 +2493,56 @@
           ]
         }
       },
+      "RoleBindings.CreateOrUpdateRoleBindingsResponse": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource the roles are bound to"
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RoleBindings.UserSubject"
+                },
+                {
+                  "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+                }
+              ]
+            },
+            "description": "Subjects that were granted access (includes group.user_count when applicable)"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Role"
+            },
+            "description": "Roles that were assigned"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of when the role bindings were last modified"
+          },
+          "subject_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of subjects in the binding"
+          },
+          "role_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of roles assigned"
+          }
+        },
+        "description": "Role bindings response data - supports field masking with all optional fields"
+      },
       "RoleBindings.GroupDetails": {
         "type": "object",
         "properties": {
@@ -2682,56 +2732,6 @@
             "description": "List of role bindings grouped by subject"
           }
         }
-      },
-      "RoleBindings.RoleBindingsResponseBody": {
-        "type": "object",
-        "properties": {
-          "resource": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.Resource"
-              }
-            ],
-            "description": "Resource the roles are bound to"
-          },
-          "subjects": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/RoleBindings.UserSubject"
-                },
-                {
-                  "$ref": "#/components/schemas/RoleBindings.GroupSubject"
-                }
-              ]
-            },
-            "description": "Subjects that were granted access (includes group.user_count when applicable)"
-          },
-          "roles": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleBindings.Role"
-            },
-            "description": "Roles that were assigned"
-          },
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Timestamp of when the role bindings were last modified"
-          },
-          "subject_count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of subjects in the binding"
-          },
-          "role_count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of roles assigned"
-          }
-        },
-        "description": "Role bindings response data - supports field masking with all optional fields"
       },
       "RoleBindings.UserDetails": {
         "type": "object",

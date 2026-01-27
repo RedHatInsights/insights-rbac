@@ -684,7 +684,7 @@ namespace RoleBindings {
     }
 
     @doc("Role bindings response data - supports field masking with all optional fields")
-    model RoleBindingsResponseBody {
+    model CreateOrUpdateRoleBindingsResponse {
         @doc("Resource the roles are bound to")
         resource?: Resource;
         @doc("Subjects that were granted access (includes group.user_count when applicable)")
@@ -701,7 +701,7 @@ namespace RoleBindings {
 
     model RoleBindingsResponse<StatusCode extends int32> {
         @statusCode _: StatusCode;
-        ...RoleBindingsResponseBody;
+        ...CreateOrUpdateRoleBindingsResponse;
     }
 
     @example(#{
