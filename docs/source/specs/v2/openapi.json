@@ -353,7 +353,7 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
-              "default": "resource(id),subjects(id),roles(id),last_modified"
+              "default": "resource(id),subject(id),roles(id),last_modified"
             },
             "explode": false
           }

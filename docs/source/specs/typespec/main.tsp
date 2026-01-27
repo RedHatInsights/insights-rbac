@@ -641,7 +641,8 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
+    const DefaultCreateRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id),last_modified";
 
 
     @discriminator("type")
@@ -998,7 +999,7 @@ namespace RoleBindings {
         @body body: CreateRoleBindingsRequest;
 
         @example("resource(id),subjects(id),roles(id),last_modified")
-        @query fields?: FieldMask = DefaultRoleBindingFieldMask;
+        @query fields?: FieldMask = DefaultCreateRoleBindingFieldMask;
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
@@ -1063,7 +1064,7 @@ namespace RoleBindings {
 
         @body body: UpdateRoleBindingsRequest;
 
-        @query fields?: FieldMask = DefaultRoleBindingFieldMask;
+        @query fields?: FieldMask = DefaultRoleBindingBySubjectFieldMask;
     ): UpdateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
     @doc("Response from updating role bindings - matches RoleBindingBySubject shape")
