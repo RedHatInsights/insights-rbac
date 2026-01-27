@@ -16,6 +16,7 @@
 #
 
 """Models to store cross account access request."""
+
 import datetime
 from uuid import uuid4
 
@@ -24,7 +25,6 @@ from django.utils import timezone
 from management.rbac_fields import AutoDateTimeField
 from management.role.user_source import SourceKey
 from rest_framework.serializers import ValidationError
-
 
 STATUS_LIST = ["pending", "cancelled", "approved", "denied", "expired"]
 

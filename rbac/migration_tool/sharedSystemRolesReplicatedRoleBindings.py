@@ -35,7 +35,6 @@ from migration_tool.models import (
     cleanNameForV2SchemaCompatibility,
 )
 
-
 logger = logging.getLogger(__name__)
 
 _PermissionGroupings = dict[V2boundresource, set[Permission]]
@@ -151,10 +150,8 @@ def v1_role_to_v2_bindings(
                 if len(workspace_ids) >= 1:
                     is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=v1_role.tenant).exists()
                     if not is_same_tenant:
-                        logger.info(
-                            f"""skipping migrating permission '{permission}' from v1 role '{v1_role.name}'
-                                -- it was added to workspace outside of users org"""
-                        )
+                        logger.info(f"""skipping migrating permission '{permission}' from v1 role '{v1_role.name}'
+                            -- it was added to workspace outside of users org""")
                         continue
 
             resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])

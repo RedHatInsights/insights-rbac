@@ -16,6 +16,7 @@
 #
 
 """Common exception handler class."""
+
 import copy
 
 from django.db import IntegrityError

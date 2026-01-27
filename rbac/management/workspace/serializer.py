@@ -16,6 +16,7 @@
 #
 
 """Serializer for workspace management."""
+
 from management.workspace.service import WorkspaceService
 from rest_framework import serializers
 

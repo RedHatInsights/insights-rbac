@@ -15,8 +15,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the RoleBindingViewSet."""
+
 import base64
 import json
+import uuid
 from importlib import reload
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -757,6 +759,171 @@ class RoleBindingViewSetTest(IdentityRequest):
         created_times = [role_created_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
         self.assertEqual(created_times, sorted(created_times))
 
+    # Parent role bindings tests
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_parent_role_bindings_false_returns_direct_only(self, mock_permission):
+        """Test that parent_role_bindings=false returns only direct bindings."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=false&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return direct bindings for the workspace
+        self.assertEqual(len(response.data["data"]), 15)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_without_parent_role_bindings_returns_direct_only(self, mock_permission):
+        """Test that omitting parent_role_bindings returns only direct bindings (default)."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return direct bindings for the workspace
+        self.assertEqual(len(response.data["data"]), 15)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.settings")
+    def test_by_subject_parent_role_bindings_true_without_relations_server(self, mock_settings, mock_permission):
+        """Test that parent_role_bindings=true without RELATION_API_SERVER falls back to direct only."""
+        mock_settings.RELATION_API_SERVER = None
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should still return direct bindings when Relations API is not configured
+        self.assertEqual(len(response.data["data"]), 15)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_by_subject_parent_role_bindings_true_includes_inherited(self, mock_lookup, mock_permission):
+        """Test that parent_role_bindings=true includes inherited bindings from Relations API."""
+        # Create a binding on parent workspace
+        parent_role = RoleV2.objects.create(
+            name="parent_role",
+            tenant=self.tenant,
+        )
+        parent_group = Group.objects.create(
+            name="parent_group",
+            tenant=self.tenant,
+        )
+        parent_binding = RoleBinding.objects.create(
+            role=parent_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=parent_group,
+            binding=parent_binding,
+        )
+
+        # Mock Relations API to return the parent binding UUID
+        mock_lookup.return_value = [str(parent_binding.uuid)]
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should include 15 direct bindings + 1 inherited binding
+        self.assertEqual(len(response.data["data"]), 16)
+
+        # Verify parent_group is in the response
+        subject_ids = [item["subject"]["id"] for item in response.data["data"]]
+        self.assertIn(str(parent_group.uuid), [str(sid) for sid in subject_ids])
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=parent_binding).delete()
+        parent_binding.delete()
+        parent_group.delete()
+        parent_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_by_subject_parent_role_bindings_true_with_empty_inherited(self, mock_lookup, mock_permission):
+        """Test that parent_role_bindings=true with no inherited bindings returns direct only."""
+        # Mock Relations API to return empty list
+        mock_lookup.return_value = []
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return only direct bindings
+        self.assertEqual(len(response.data["data"]), 15)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_by_subject_parent_role_bindings_true_with_relations_error(self, mock_lookup, mock_permission):
+        """Test that parent_role_bindings=true gracefully handles Relations API errors."""
+        # Mock Relations API to return None (error case)
+        mock_lookup.return_value = None
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should fall back to direct bindings only
+        self.assertEqual(len(response.data["data"]), 15)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_parent_role_bindings_accepts_boolean_string(self, mock_permission):
+        """Test that parent_role_bindings accepts 'true' and 'false' strings."""
+        url = self._get_by_subject_url()
+
+        # Test with 'true' string
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Test with 'false' string
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=false",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class DefaultBindingsAPITests(TestCase):
@@ -764,21 +931,30 @@ class DefaultBindingsAPITests(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up test fixtures once for all tests."""
+        """Set up test fixtures once for all tests in this class."""
         super().setUpClass()
         # Seed platform roles and default groups (required for default bindings)
+        # This must be in setUpClass so the data is committed before tests run
         seed_roles()
         seed_group()
 
     def setUp(self):
-        """Set up test data."""
+        """Set up test data for each test."""
+        super().setUp()
         reload(urls)
         clear_url_caches()
 
+        # Clear caches to ensure fresh state - other tests might have modified these
+        GlobalPolicyIdService.clear_shared()
+        Tenant._public_tenant = None  # Clear the public tenant cache
+
         # Use V2 bootstrap to create tenant with TenantMapping
+        # Use a unique org_id to avoid conflicts when running tests in parallel
+        unique_org_id = f"test-default-bindings-api-{uuid.uuid4().hex[:8]}"
+
         self.replicator = InMemoryRelationReplicator()
         self.bootstrap_service = V2TenantBootstrapService(self.replicator)
-        bootstrapped = self.bootstrap_service.new_bootstrapped_tenant("test-default-bindings-api")
+        bootstrapped = self.bootstrap_service.new_bootstrapped_tenant(unique_org_id)
         self.tenant = bootstrapped.tenant
         self.mapping = bootstrapped.mapping
         self.default_workspace = bootstrapped.default_workspace

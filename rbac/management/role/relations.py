@@ -15,13 +15,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Contains utilities for handling relations between V2 roles."""
+
 import logging
 from uuid import UUID
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from migration_tool.utils import create_relationship
-
 
 logger = logging.getLogger(__name__)
 

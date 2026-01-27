@@ -16,6 +16,7 @@
 #
 
 """View for principal access."""
+
 from django.db.models import Prefetch
 from management.cache import AccessCache
 from management.models import Access, ResourceDefinition

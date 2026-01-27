@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the role definer."""
+
 from uuid import UUID
 from django.conf import settings
 from django.test.utils import override_settings

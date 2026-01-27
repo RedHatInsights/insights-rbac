@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Provide common helpers for V2 tenant relationships."""
+
 import logging
 from typing import Iterable, Optional
 
