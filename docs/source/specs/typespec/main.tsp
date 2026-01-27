@@ -466,6 +466,10 @@ namespace Workspaces {
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, created, modified, type.")
+        @example("-created")
+        @query order_by?: string = "name";
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
