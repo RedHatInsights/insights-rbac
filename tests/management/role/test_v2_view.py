@@ -17,14 +17,12 @@
 """Test the RoleV2 viewset."""
 
 from importlib import reload
-
 from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from management.cache import TenantCache
 from management.models import Permission, RoleV2
 from rbac import urls
 from tests.identity_request import IdentityRequest
@@ -110,8 +108,8 @@ class RoleV2ViewTests(IdentityRequest):
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["name"], "test_role")
 
-    def test_list_roles_with_order_by(self):
-        """Test that order_by parameter returns roles sorted by the specified field."""
+    def test_list_roles_with_order_by_name(self):
+        """Test that order_by parameter returns roles sorted by name."""
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
         RoleV2.objects.create(name="first_role", description="First", tenant=self.tenant)
 
@@ -130,3 +128,40 @@ class RoleV2ViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0]["name"], "test_role")
         self.assertEqual(response.data["data"][1]["name"], "other_role")
         self.assertEqual(response.data["data"][2]["name"], "first_role")
+
+    def test_list_roles_with_order_by_last_modified(self):
+        """Test that order_by parameter returns roles sorted by last_modified."""
+        # last_modified field is added automatically by the model
+        RoleV2.objects.create(name="first_role", description="First", tenant=self.tenant)
+        RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
+
+        url = f"{self.url}?order_by=last_modified"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 3)
+        self.assertEqual(response.data["data"][0]["name"], "test_role")
+        self.assertEqual(response.data["data"][1]["name"], "first_role")
+        self.assertEqual(response.data["data"][2]["name"], "other_role")
+        # order by descending last_modified
+        url = f"{self.url}?order_by=-last_modified"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 3)
+        self.assertEqual(response.data["data"][0]["name"], "other_role")
+        self.assertEqual(response.data["data"][1]["name"], "first_role")
+        self.assertEqual(response.data["data"][2]["name"], "test_role")
+
+    def test_list_roles_with_name_filter_and_order_by(self):
+        """Test that name filter and order_by can be combined."""
+        RoleV2.objects.create(name="test_role_alpha", description="Alpha", tenant=self.tenant)
+        RoleV2.objects.create(name="test_role_beta", description="Beta", tenant=self.tenant)
+        RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
+
+        # Filter by name containing "test_role" and order by last_modified descending
+        url = f"{self.url}?name=test_role&order_by=-last_modified"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should only return exact match "test_role" from setUp()
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["name"], "test_role")
