@@ -16,6 +16,7 @@
 #
 
 """Model for role management."""
+
 import logging
 from typing import Optional, Union
 from uuid import uuid4
@@ -39,7 +40,6 @@ from migration_tool.models import (
 )
 
 from api.models import FilterQuerySet, TenantAwareModel
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

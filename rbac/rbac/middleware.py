@@ -16,6 +16,7 @@
 #
 
 """Custom RBAC Middleware."""
+
 import binascii
 import json
 import logging
@@ -41,7 +42,6 @@ from rest_framework import status
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import extract_header
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_sys_counter = Counter(
@@ -137,9 +137,16 @@ class IdentityHeaderMiddleware:
             try:
                 # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
                 tenant = Tenant.objects.get(org_id=request.user.org_id)
+                # Update account_id if missing and user has it (fixes regression from Phase 0 to Phase 1)
+                needs_update = False
                 if not tenant.ready:
                     tenant.ready = True
-                    tenant.save(update_fields=["ready"])
+                    needs_update = True
+                if tenant.account_id is None and request.user.account:
+                    tenant.account_id = request.user.account
+                    needs_update = True
+                if needs_update:
+                    tenant.save(update_fields=["ready", "account_id"])
             except Tenant.DoesNotExist:
                 if request.user.system:
                     raise Http404()

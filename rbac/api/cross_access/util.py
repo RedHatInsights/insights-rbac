@@ -16,6 +16,7 @@
 #
 
 """Handler for cross-account request clean up."""
+
 import logging
 
 from django.db import transaction

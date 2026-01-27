@@ -16,6 +16,7 @@
 #
 
 """View for internal tenant management."""
+
 import json
 import logging
 import uuid
@@ -37,9 +38,6 @@ from grpc import RpcError
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
-    _get_duplicate_principals,
-    _parse_user_ids,
-    _remove_duplicate_principals,
     delete_bindings,
     fix_admin_default_bindings,
     get_or_create_ungrouped_workspace,
@@ -530,26 +528,20 @@ def get_user_from_bop(username, email):
     user = users[0]
 
     if ("username" not in user) or (not user["username"]) or (user["username"].isspace()):
-        logger.error(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'username' field"""
-        )
+        logger.error(f"""invalid data for user '{query_by}={principal}':
+            user found in bop but does not contain required 'username' field""")
         raise Exception(
             f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
         )
 
     if "is_org_admin" not in user:
         user["is_org_admin"] = False
-        logger.warning(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'is_org_admin' field"""
-        )
+        logger.warning(f"""invalid data for user '{query_by}={principal}':
+            user found in bop but does not contain required 'is_org_admin' field""")
 
     if "org_id" not in user:
-        logger.error(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'org_id' field"""
-        )
+        logger.error(f"""invalid data for user '{query_by}={principal}':
+            user found in bop but does not contain required 'org_id' field""")
         raise Exception(f"invalid user data for user '{query_by}={principal}': user found in bop but no org_id exists")
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
@@ -764,31 +756,6 @@ def populate_tenant_org_id_view(request):
             )
 
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
-
-
-@require_http_methods(["GET", "POST"])
-def remove_duplicate_principals(request):
-    """View method for identifying and removing duplicate principals by user_id.
-
-    GET /_private/api/utils/remove_duplicate_principals/?user_ids=123,456,789
-    POST /_private/api/utils/remove_duplicate_principals/?user_ids=123,456,789
-
-    Query parameters:
-        user_ids (required): Comma-separated list of user IDs to check for duplicates
-    """
-    user_ids = _parse_user_ids(request)
-    if isinstance(user_ids, HttpResponse):
-        return user_ids
-
-    logger.info(f"Remove duplicate principals: {request.method} by {request.user.username}, " f"user_ids={user_ids}")
-
-    if request.method == "GET":
-        return _get_duplicate_principals(request, user_ids)
-
-    if request.method == "POST":
-        if not destructive_ok("api"):
-            return HttpResponse("Destructive operations disallowed.", status=400)
-        return _remove_duplicate_principals(request, user_ids)
 
 
 def invalid_default_admin_groups(request):

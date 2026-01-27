@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Contains utilities for handling platform roles."""
+
 from typing import Callable
 from uuid import UUID
 

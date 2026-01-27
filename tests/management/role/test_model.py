@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group model."""
+
 from django.db import IntegrityError, transaction
 
 from api.cross_access.model import CrossAccountRequest

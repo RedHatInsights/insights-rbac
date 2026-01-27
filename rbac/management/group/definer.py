@@ -16,6 +16,7 @@
 #
 
 """Handler for system defined group."""
+
 import logging
 from typing import Optional, Tuple, Union
 from uuid import uuid4
