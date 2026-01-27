@@ -70,6 +70,28 @@ class RoleInputSerializerTests(TestCase):
         self.assertIn("fields", serializer.errors)
         self.assertIn("foobar_field", str(serializer.errors["fields"]))
 
+    def test_valid_order_by_parameter(self):
+        """Test valid order_by parameter passes validation."""
+        serializer = RoleInputSerializer(data={"order_by": "name"})
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["order_by"], "name")
+
+        serializer = RoleInputSerializer(data={"order_by": "-last_modified"})
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["order_by"], "-last_modified")
+
+    def test_invalid_order_by_parameter(self):
+        """Test invalid order_by parameter raises validation error."""
+        serializer = RoleInputSerializer(data={"order_by": "foobar"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("Invalid order_by field(s)", str(serializer.errors["order_by"]))
+
+    def test_order_by_permissions_count_not_allowed(self):
+        """Test invalid but real field in ?order_by= returns false."""
+        serializer = RoleInputSerializer(data={"order_by": "permissions_count"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("order_by", serializer.errors)
+
 
 class RoleOutputSerializerTests(IdentityRequest):
     """Test the RoleOutputSerializer for role serialization."""

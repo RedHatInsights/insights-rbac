@@ -98,6 +98,9 @@ class RoleInputSerializer(serializers.Serializer):
     Handles validation of query parameters for the V2 roles API.
     """
 
+    # Allowed fields for order_by parameter
+    VALID_ORDER_BY_FIELDS = {"name", "last_modified"}
+
     name = serializers.CharField(
         required=False, allow_blank=True, help_text="Filter by role name (case-sensitive exact match)"
     )
@@ -125,8 +128,27 @@ class RoleInputSerializer(serializers.Serializer):
             raise serializers.ValidationError(e.message)
 
     def validate_order_by(self, value):
-        """Return None for empty values."""
-        return value or None
+        """Validate order_by parameter against allowed fields."""
+        if not value:
+            return None
+
+        invalid_fields = []
+        for f in value.split(","):
+            f = f.strip()
+            if not f:
+                continue
+            # Strip leading '-' for descending order
+            field_name = f.lstrip("-")
+            if field_name not in self.VALID_ORDER_BY_FIELDS:
+                invalid_fields.append(field_name)
+
+        if invalid_fields:
+            raise serializers.ValidationError(
+                f"Invalid order_by field(s): {', '.join(sorted(invalid_fields))}. "
+                f"Allowed fields are: {sorted(self.VALID_ORDER_BY_FIELDS)}."
+            )
+
+        return value
 
 
 class PermissionSerializer(serializers.Serializer):

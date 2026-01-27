@@ -165,3 +165,19 @@ class RoleV2ViewTests(IdentityRequest):
         # Should only return exact match "test_role" from setUp()
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["name"], "test_role")
+
+    def test_list_roles_with_invalid_order_by(self):
+        """Test that invalid order_by field returns 400 error."""
+        url = f"{self.url}?order_by=foobar"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Invalid order_by field(s)", str(response.data["detail"]))
+
+    def test_list_roles_with_invalid_order_by_permissions_count(self):
+        """Test invalid but real field in ?order_by= returns 400 error."""
+        url = f"{self.url}?order_by=permissions_count"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Invalid order_by field(s)", str(response.data["detail"]))

@@ -41,7 +41,6 @@ class RoleV2CursorPagination(V2CursorPagination):
 
     ORDERING_FIELD_MAPPING = {
         "last_modified": "modified",
-        "permissions_count": "permissions_count_annotation",
     }
 
     def get_ordering(self, request, queryset, view):
