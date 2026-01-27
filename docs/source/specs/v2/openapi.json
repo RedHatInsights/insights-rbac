@@ -523,9 +523,8 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields are optional.       \n\n**Examples:**\n- `?fields=resource,subject_count,role_count` - Minimal response with counts\n- `?fields=resource,subjects,roles,inherited_from` - Include inheritance info",
             "schema": {
-              "type": "string",
+              "$ref": "#/components/schemas/FieldMask",
               "default": "resource(id),subjects(id),roles(id),last_modified"
             },
             "explode": false
@@ -533,7 +532,7 @@
         ],
         "responses": {
           "201": {
-            "description": "The request has succeeded and a new resource has been created as a result.",
+            "description": "Response from creating role bindings - supports field masking with all optional fields",
             "content": {
               "application/json": {
                 "schema": {
@@ -2932,7 +2931,7 @@
           "last_modified": {
             "type": "string",
             "format": "date-time",
-            "description": "Timestamp of when the role bindings were last modified"
+            "description": "Timestamp of when the role bindings were created"
           },
           "subject_count": {
             "type": "integer",
@@ -2945,7 +2944,7 @@
             "description": "Number of roles assigned"
           }
         },
-        "description": "Role bindings response data - supports field masking with all optional fields"
+        "description": "Response from creating role bindings - supports field masking with all optional fields"
       },
       "RoleBindings.GroupDetails": {
         "type": "object",

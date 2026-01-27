@@ -738,25 +738,21 @@ namespace RoleBindings {
         }[];
     }
 
-    @doc("Role bindings response data - supports field masking with all optional fields")
+    @doc("Response from creating role bindings - supports field masking with all optional fields")
     model CreateRoleBindingsResponse {
+        @statusCode _: 201;
         @doc("Resource the roles are bound to")
         resource?: Resource;
         @doc("Subjects that were granted access (includes group.user_count when applicable)")
         subjects?: Subject[];
         @doc("Roles that were assigned")
         roles?: Role[];
-        @doc("Timestamp of when the role bindings were last modified")
+        @doc("Timestamp of when the role bindings were created")
         last_modified?: offsetDateTime;
         @doc("Number of subjects in the binding")
         subject_count?: int32;
         @doc("Number of roles assigned")
         role_count?: int32;
-    }
-
-    model RoleBindingsResponse<StatusCode extends int32> {
-        @statusCode _: StatusCode;
-        ...CreateRoleBindingsResponse;
     }
 
     @example(#{
@@ -1001,19 +997,9 @@ namespace RoleBindings {
     @post op create(
         @body body: CreateRoleBindingsRequest;
 
-        @doc("""
-        Control which fields are included in the response to optimize payload size.
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are returned. All response fields are optional.       
-
-        **Examples:**
-        - `?fields=resource,subject_count,role_count` - Minimal response with counts
-        - `?fields=resource,subjects,roles,inherited_from` - Include inheritance info
-        """)
-        @example("resource,subjects,roles,last_modified")
-        @query fields?: string = DefaultRoleBindingFieldMask;
-    ): RoleBindingsResponse<201> | Problems.CommonProblems | Problems.Problem400;
+        @example("resource(id),subjects(id),roles(id),last_modified")
+        @query fields?: FieldMask = DefaultRoleBindingFieldMask;
+    ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
     @example(#{
