@@ -739,7 +739,7 @@ namespace RoleBindings {
     }
 
     @doc("Role bindings response data - supports field masking with all optional fields")
-    model CreateOrUpdateRoleBindingsResponse {
+    model CreateRoleBindingsResponse {
         @doc("Resource the roles are bound to")
         resource?: Resource;
         @doc("Subjects that were granted access (includes group.user_count when applicable)")
@@ -756,7 +756,7 @@ namespace RoleBindings {
 
     model RoleBindingsResponse<StatusCode extends int32> {
         @statusCode _: StatusCode;
-        ...CreateOrUpdateRoleBindingsResponse;
+        ...CreateRoleBindingsResponse;
     }
 
     @example(#{
@@ -1049,41 +1049,42 @@ namespace RoleBindings {
         },
         returnType: #{
             _: 200,
-            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
-            subjects: #[
-                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } }
-            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
             roles: #[
                 #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
                 #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
             ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-            subject_count: 1,
-            role_count: 2
+            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" }
         }
     })
     @put op update(
-        @doc("Filter by resource ID")
+        @doc("Identify the resource ID for the set of role bindings to replace")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id: string;
 
-        @doc("Filter by resource type")
+        @doc("Identify the resource type for the set of role bindings to replace")
         @example("workspace")
         @query resource_type: string;
 
-        @doc("Filter by subject ID")
+        @doc("Identify the subject ID for the set of role bindings to replace")
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id: string;
 
-        @doc("Filter by subject type")
+        @doc("Identify the subject type for the set of role bindings to replace")
         @example("group")
         @query subject_type: string;
 
         @body body: UpdateRoleBindingsRequest;
 
-        @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = DefaultRoleBindingFieldMask;
-    ): RoleBindingsResponse<200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+    ): UpdateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+
+    @doc("Response from updating role bindings - matches RoleBindingBySubject shape")
+    model UpdateRoleBindingsResponse {
+        @statusCode _: 200;
+        ...RoleBindingBySubject;
+    }
 }
 
 @route("/roles/")
