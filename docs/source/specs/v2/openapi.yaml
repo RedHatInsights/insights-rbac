@@ -31,11 +31,11 @@ paths:
           explode: false
       responses:
         '201':
-          description: Response from creating role bindings - supports field masking with all optional fields
+          description: The request has succeeded and a new resource has been created as a result.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleBindings.CreateRoleBindingsResponse'
+                $ref: '#/components/schemas/RoleBindings.RoleBindingsResponseBody'
               examples:
                 example0:
                   value:
@@ -154,6 +154,129 @@ paths:
                   roles:
                     - id: 550e8400-e29b-41d4-a716-446655440002
                     - id: 550e8400-e29b-41d4-a716-446655440003
+    put:
+      operationId: RoleBindings_update
+      summary: Update role bindings
+      description: Update role bindings for a resource. Replaces all existing bindings with the provided subjects and roles.
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response to optimize payload size.
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are returned. All response fields are optional.
+
+            **Examples:**
+            - `?fields=resource,subject_count,role_count` - Minimal response with counts
+            - `?fields=resource,subjects,roles,last_modified` - Full details
+          schema:
+            type: string
+            default: resource,subjects,roles,last_modified
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleBindings.RoleBindingsResponseBody'
+              example:
+                resource:
+                  id: 550e8400-e29b-41d4-a716-446655440001
+                  type: workspace
+                  name: Engineering Workspace
+                subjects:
+                  - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    type: group
+                    group:
+                      name: Engineering Team
+                      user_count: 25
+                  - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                    type: user
+                    user:
+                      username: jdoe
+                roles:
+                  - id: 550e8400-e29b-41d4-a716-446655440002
+                    name: Workspace Admin
+                  - id: 550e8400-e29b-41d4-a716-446655440003
+                    name: Viewer
+                last_modified: '2024-08-04T12:00:00Z'
+                subject_count: 2
+                role_count: 2
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Role Bindings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleBindings.CreateRoleBindingsRequest'
+            example:
+              resource:
+                id: 550e8400-e29b-41d4-a716-446655440001
+                type: workspace
+              subjects:
+                - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  type: group
+                - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                  type: user
+              roles:
+                - id: 550e8400-e29b-41d4-a716-446655440002
+                - id: 550e8400-e29b-41d4-a716-446655440003
   /role-bindings/by-subject/:
     get:
       operationId: RoleBindings_listBySubject
@@ -1576,63 +1699,6 @@ components:
         roles:
           - id: 550e8400-e29b-41d4-a716-446655440002
           - id: 550e8400-e29b-41d4-a716-446655440003
-    RoleBindings.CreateRoleBindingsResponse:
-      type: object
-      properties:
-        resource:
-          allOf:
-            - $ref: '#/components/schemas/RoleBindings.Resource'
-          description: Resource the roles are bound to
-        subjects:
-          type: array
-          items:
-            anyOf:
-              - $ref: '#/components/schemas/RoleBindings.UserSubject'
-              - $ref: '#/components/schemas/RoleBindings.GroupSubject'
-          description: Subjects that were granted access (includes group.user_count when applicable)
-        roles:
-          type: array
-          items:
-            $ref: '#/components/schemas/RoleBindings.Role'
-          description: Roles that were assigned
-        last_modified:
-          type: string
-          format: date-time
-          description: Timestamp of when the role bindings were created
-        subject_count:
-          type: integer
-          format: int32
-          description: Number of subjects in the binding
-        role_count:
-          type: integer
-          format: int32
-          description: Number of roles assigned
-      description: Response from creating role bindings - supports field masking with all optional fields
-      example:
-        _: 201
-        resource:
-          id: 550e8400-e29b-41d4-a716-446655440001
-          type: workspace
-          name: Engineering Workspace
-        subjects:
-          - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-            type: group
-            group:
-              name: Engineering Team
-              user_count: 25
-          - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-            type: group
-            group:
-              name: DevOps Team
-              user_count: 10
-        roles:
-          - id: 550e8400-e29b-41d4-a716-446655440002
-            name: Workspace Admin
-          - id: 550e8400-e29b-41d4-a716-446655440003
-            name: Viewer
-        last_modified: '2024-08-04T12:00:00Z'
-        subject_count: 2
-        role_count: 2
     RoleBindings.GroupDetails:
       type: object
       properties:
@@ -1751,6 +1817,38 @@ components:
           items:
             $ref: '#/components/schemas/RoleBindings.RoleBindingBySubject'
           description: List of role bindings grouped by subject
+    RoleBindings.RoleBindingsResponseBody:
+      type: object
+      properties:
+        resource:
+          allOf:
+            - $ref: '#/components/schemas/RoleBindings.Resource'
+          description: Resource the roles are bound to
+        subjects:
+          type: array
+          items:
+            anyOf:
+              - $ref: '#/components/schemas/RoleBindings.UserSubject'
+              - $ref: '#/components/schemas/RoleBindings.GroupSubject'
+          description: Subjects that were granted access (includes group.user_count when applicable)
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleBindings.Role'
+          description: Roles that were assigned
+        last_modified:
+          type: string
+          format: date-time
+          description: Timestamp of when the role bindings were last modified
+        subject_count:
+          type: integer
+          format: int32
+          description: Number of subjects in the binding
+        role_count:
+          type: integer
+          format: int32
+          description: Number of roles assigned
+      description: Role bindings response data - supports field masking with all optional fields
     RoleBindings.UserDetails:
       type: object
       properties:
