@@ -129,7 +129,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RoleBindings.CreateRoleBindingsRequest'
+              $ref: '#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsRequest'
             examples:
               example0:
                 value:
@@ -264,7 +264,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RoleBindings.CreateRoleBindingsRequest'
+              $ref: '#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsRequest'
             example:
               resource:
                 id: 550e8400-e29b-41d4-a716-446655440001
@@ -1631,7 +1631,7 @@ components:
         propertyName: type
         mapping:
           group: '#/components/schemas/RoleBindings.GroupSubject'
-    RoleBindings.CreateRoleBindingsRequest:
+    RoleBindings.CreateOrUpdateRoleBindingsRequest:
       type: object
       required:
         - resource

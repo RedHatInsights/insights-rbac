@@ -658,7 +658,7 @@ namespace RoleBindings {
             #{ id: "550e8400-e29b-41d4-a716-446655440003" }
         ]
     })
-    model CreateRoleBindingsRequest {
+    model CreateOrUpdateRoleBindingsRequest {
         @doc("Resource to bind roles to")
         resource: {
             @doc("Resource identifier")
@@ -1004,7 +1004,7 @@ namespace RoleBindings {
         }
     })
     @post op create(
-        @body body: CreateRoleBindingsRequest;
+        @body body: CreateOrUpdateRoleBindingsRequest;
 
         @doc("""
         Control which fields are included in the response to optimize payload size.
@@ -1053,7 +1053,7 @@ namespace RoleBindings {
         }
     })
     @put op update(
-        @body body: CreateRoleBindingsRequest;
+        @body body: CreateOrUpdateRoleBindingsRequest;
 
         @doc("""
         Control which fields are included in the response to optimize payload size.

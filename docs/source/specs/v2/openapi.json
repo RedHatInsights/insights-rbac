@@ -189,7 +189,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
+                "$ref": "#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsRequest"
               },
               "examples": {
                 "example0": {
@@ -398,7 +398,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
+                "$ref": "#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsRequest"
               },
               "example": {
                 "resource": {
@@ -2384,7 +2384,7 @@
           }
         }
       },
-      "RoleBindings.CreateRoleBindingsRequest": {
+      "RoleBindings.CreateOrUpdateRoleBindingsRequest": {
         "type": "object",
         "required": [
           "resource",
