@@ -31,7 +31,7 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, RoleBinding
+from management.role.v2_model import CustomRoleV2, RoleBinding, SeededRoleV2
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -49,6 +49,7 @@ from migration_tool.migrate_binding_scope import (
 from migration_tool.utils import create_relationship
 from api.models import Tenant
 from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
+from tests.v2_util import seed_v2_role_from_v1, assert_v2_roles_consistent
 
 
 class BindingScopeMigrationAPITest(TestCase):
@@ -91,6 +92,12 @@ class BindingScopeMigrationAPITest(TestCase):
         self.root_permission = Permission.objects.create(
             tenant=self.tenant, application="rbac", resource_type="group", verb="read", permission="rbac:group:read"
         )
+
+    def tearDown(self):
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(test=self, tuples=None)
+
+        super().tearDown()
 
     @patch("internal.views.migrate_binding_scope_in_worker.delay")
     def test_api_endpoint_triggers_migration(self, mock_task):
@@ -163,6 +170,12 @@ class BindingScopeMigrationReplicatorTest(TestCase):
             verb="read",
             permission="inventory:hosts:read",
         )
+
+    def tearDown(self):
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(test=self, tuples=None)
+
+        super().tearDown()
 
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
     @patch.object(OutboxReplicator, "replicate")
@@ -250,6 +263,13 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
             verb="read",
             permission="cost-management:cost:read",
         )
+
+    def tearDown(self):
+        # Not all tests use self.tuples
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(test=self, tuples=None)
+
+        super().tearDown()
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
@@ -491,6 +511,13 @@ class SystemRoleBindingMigrationTest(TestCase):
             permission="rbac:group:read",
         )
 
+    def tearDown(self):
+        # Not all tests actually use self.tuples.
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(self, tuples=None)
+
+        super().tearDown()
+
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
         TENANT_SCOPE_PERMISSIONS="",
@@ -505,6 +532,9 @@ class SystemRoleBindingMigrationTest(TestCase):
             system=True,
         )
         Access.objects.create(role=system_role, permission=self.root_permission, tenant=self.public_tenant)
+
+        # Required for dual-write to work.
+        seed_v2_role_from_v1(system_role)
 
         # Create a group and assign the system role
         group = Group.objects.create(
@@ -536,6 +566,8 @@ class SystemRoleBindingMigrationTest(TestCase):
             workspace.type, Workspace.Types.ROOT, "System role with ROOT scope should be at root workspace"
         )
 
+        assert_v2_roles_consistent(self, tuples=self.tuples)
+
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
         TENANT_SCOPE_PERMISSIONS="",
@@ -562,6 +594,8 @@ class SystemRoleBindingMigrationTest(TestCase):
         )
         Access.objects.create(role=system_role, permission=self.root_permission, tenant=self.public_tenant)
 
+        seed_v2_role_from_v1(system_role)
+
         # Create two groups
         groupA = Group.objects.create(name="GroupA", tenant=self.tenant, system=False)
         groupB = Group.objects.create(name="GroupB", tenant=self.tenant, system=False)
@@ -572,15 +606,18 @@ class SystemRoleBindingMigrationTest(TestCase):
 
         # Delete auto-created bindings - set up exact scenario manually
         BindingMapping.objects.filter(role=system_role).delete()
+        RoleBinding.objects.filter(role__v1_source=system_role).delete()
 
         # Clear all tuples to start fresh
         self.tuples.clear()
+
+        wrong_binding_uuid = str(uuid.uuid4())
 
         # Create binding at wrong scope with BOTH groups
         wrong_binding = BindingMapping.objects.create(
             role=system_role,
             mappings={
-                "id": "wrong-binding",
+                "id": wrong_binding_uuid,
                 "groups": [str(groupA.uuid), str(groupB.uuid)],  # Both groups here
                 "users": {},
                 "role": {"id": str(system_role.uuid), "is_system": True, "permissions": []},
@@ -590,11 +627,13 @@ class SystemRoleBindingMigrationTest(TestCase):
             resource_id=str(self.default_workspace.id),  # Wrong!
         )
 
+        correct_binding_uuid = str(uuid.uuid4())
+
         # Create binding at correct scope with ONLY groupA
         correct_binding = BindingMapping.objects.create(
             role=system_role,
             mappings={
-                "id": "correct-binding",
+                "id": correct_binding_uuid,
                 "groups": [str(groupA.uuid)],  # Only groupA here - groupB is only in wrong binding
                 "users": {},
                 "role": {"id": str(system_role.uuid), "is_system": True, "permissions": []},
@@ -643,15 +682,17 @@ class SystemRoleBindingMigrationTest(TestCase):
         role_uuid_str = str(system_role.uuid)
         final_binding_id = final_binding.mappings["id"]
 
-        # 1. Verify wrong-binding tuples are REMOVED
-        wrong_binding_tuples_after = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", "wrong-binding")))
-        self.assertEqual(len(wrong_binding_tuples_after), 0, "Wrong-binding tuples should be deleted")
-
-        # 2. Verify old correct-binding tuples are REMOVED (replaced with new binding ID)
-        old_correct_binding_tuples = self.tuples.find_tuples(
-            all_of(resource("rbac", "role_binding", "correct-binding"))
+        # 1. Verify wrong binding tuples are REMOVED
+        wrong_binding_tuples_after = self.tuples.find_tuples(
+            all_of(resource("rbac", "role_binding", wrong_binding_uuid))
         )
-        self.assertEqual(len(old_correct_binding_tuples), 0, "Old correct-binding tuples should be replaced")
+        self.assertEqual(len(wrong_binding_tuples_after), 0, "Wrong binding tuples should be deleted")
+
+        # 2. Verify old correct binding tuples are REMOVED (replaced with new binding ID)
+        old_correct_binding_tuples = self.tuples.find_tuples(
+            all_of(resource("rbac", "role_binding", correct_binding_uuid))
+        )
+        self.assertEqual(len(old_correct_binding_tuples), 0, "Old correct binding tuples should be replaced")
 
         # 3. Verify EXACTLY 4 tuples exist for the new binding:
         self.assertEqual(len(self.tuples), 4, "Should have exactly 4 tuples after migration")
@@ -689,6 +730,8 @@ class SystemRoleBindingMigrationTest(TestCase):
         group_uuids_in_tuples = {t.subject_id for t in all_group_tuples}
         self.assertIn(str(groupA.uuid), group_uuids_in_tuples, "GroupA UUID should be in tuples")
         self.assertIn(str(groupB.uuid), group_uuids_in_tuples, "GroupB UUID should be in tuples")
+
+        assert_v2_roles_consistent(self, tuples=self.tuples)
 
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
     def test_migration_creates_bindings_for_roles_with_no_bindings(self):
@@ -803,6 +846,12 @@ class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):
         self.tenant2 = self.switch_to_new_tenant("globex", "org_globex")
         self.tenant3 = self.switch_to_new_tenant("initech", "org_initech")
         self.restore_test_tenant()  # Switch back to tenant1
+
+    def tearDown(self):
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(test=self, tuples=None)
+
+        super().tearDown()
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
