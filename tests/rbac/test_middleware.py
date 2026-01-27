@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the project middleware."""
+
 import collections
 from functools import partial
 import json

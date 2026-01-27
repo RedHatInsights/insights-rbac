@@ -16,6 +16,7 @@
 #
 
 """Model for permission management."""
+
 import dataclasses
 
 from django.db import models

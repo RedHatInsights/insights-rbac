@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test JWT utilities."""
+
 import base64
 import json
 import time

@@ -22,7 +22,6 @@ import logging
 from kessel.relations.v1beta1 import common_pb2
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
 
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 

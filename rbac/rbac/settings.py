@@ -25,6 +25,7 @@ https://docs.djangoproject.com/en/2.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.0/ref/settings/
 """
+
 import os
 
 import datetime
@@ -38,7 +39,6 @@ from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics, DependencyEndpoints
 from feature_flags import FEATURE_FLAGS
-
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
