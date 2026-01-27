@@ -240,7 +240,7 @@ paths:
           explode: false
       responses:
         '200':
-          description: Response from updating role bindings - matches RoleBindingBySubject shape
+          description: The request has succeeded.
           content:
             application/json:
               schema:

@@ -83,6 +83,11 @@ model ListResponse<Item> {
     data: Item[];
 }
 
+model ItemResponse<Item, StatusCode extends int32> {
+    @statusCode _: StatusCode;
+    ...Item;
+}
+
 model CursorPaginationMeta {
     @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
@@ -1065,13 +1070,7 @@ namespace RoleBindings {
         @body body: UpdateRoleBindingsRequest;
 
         @query fields?: FieldMask = DefaultRoleBindingBySubjectFieldMask;
-    ): UpdateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
-
-    @doc("Response from updating role bindings - matches RoleBindingBySubject shape")
-    model UpdateRoleBindingsResponse {
-        @statusCode _: 200;
-        ...RoleBindingBySubject;
-    }
+    ): ItemResponse<RoleBindingBySubject, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 }
 
 @route("/roles/")
@@ -1140,11 +1139,6 @@ namespace Roles {
         permissions_count?: int32;
         @doc("Timestamp of when the role was last modified")
         last_modified?: offsetDateTime;
-    }
-
-    model RoleResponse<StatusCode extends int32> {
-        @statusCode _: StatusCode;
-        ...Role;
     }
 
     @doc("List the roles for a tenant")
@@ -1250,7 +1244,7 @@ namespace Roles {
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;
-    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
+    ): ItemResponse<Role, 201> | Problems.CommonProblems | Problems.Problem400;
 
 
 
@@ -1286,7 +1280,7 @@ namespace Roles {
 
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = DefaultRoleFieldMask;
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
+    ): ItemResponse<Role, 200> | Problems.CommonProblems | Problems.Problem404;
 
     @doc("Update a custom role in tenant")
     @summary("Update a custom role in tenant")
@@ -1324,6 +1318,6 @@ namespace Roles {
 
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = DefaultRoleFieldMask;
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+    ): ItemResponse<Role, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
 }
