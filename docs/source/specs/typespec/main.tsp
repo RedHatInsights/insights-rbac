@@ -918,12 +918,7 @@ namespace RoleBindings {
                     user_count: 25
                 }
             }
-        ],
-        resource: #{
-            id: "550e8400-e29b-41d4-a716-446655440001",
-            name: "Engineering Workspace",
-            type: "workspace"
-        }
+        ]
     })
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
@@ -952,29 +947,15 @@ namespace RoleBindings {
                     user_count: 25
                 }
             }
-        ],
-        resource: #{
-            id: "550e8400-e29b-41d4-a716-446655440003",
-            name: "Child Workspace",
-            type: "workspace"
-        },
-        inherited_from: #{
-            id: "550e8400-e29b-41d4-a716-446655440001",
-            name: "Parent Workspace",
-            type: "workspace"
-        }
+        ]
     })
     model RoleBindingByRole {
         @doc("Timestamp of last modification")
         last_modified?: offsetDateTime;
         @doc("Role details")
         role?: RoleDetails;
-        @doc("Subjects assigned this role on the resource")
-        subjects?: GroupSubject[];
-        @doc("Resource the role applies to")
-        resource?: Resource;
-        @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
-        inherited_from?: Resource;
+        @doc("Subjects assigned this role")
+        subjects?: Subject[];
     }
 
     @doc("List role bindings grouped by role")
@@ -983,15 +964,14 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             limit: 10,
-            resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace"
+            role_id: "550e8400-e29b-41d4-a716-446655440002"
         },
         returnType: #{
             meta: #{
                 limit: 10
             },
             links: #{
-                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?cursor=cD0yMDI1LTA4LTE1",
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1",
                 previous: null
             },
             data: #[
@@ -1005,10 +985,7 @@ namespace RoleBindings {
                             id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                             type: "group"
                         }
-                    ],
-                    resource: #{
-                        id: "550e8400-e29b-41d4-a716-446655440001"
-                    }
+                    ]
                 }
             ]
         }
@@ -1016,16 +993,14 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             limit: 10,
-            parent_role_bindings: true,
-            resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace"
+            role_id: "550e8400-e29b-41d4-a716-446655440002"
         },
         returnType: #{
             meta: #{
                 limit: 10
             },
             links: #{
-                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&parent_role_bindings=true&cursor=xyz",
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&role_id=550e8400-e29b-41d4-a716-446655440002&cursor=xyz",
                 previous: null
             },
             data: #[
@@ -1039,13 +1014,7 @@ namespace RoleBindings {
                             id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                             type: "group"
                         }
-                    ],
-                    resource: #{
-                        id: "550e8400-e29b-41d4-a716-446655440003"
-                    },
-                    inherited_from: #{
-                        id: "550e8400-e29b-41d4-a716-446655440001"
-                    }
+                    ]
                 }
             ]
         }
@@ -1056,33 +1025,22 @@ namespace RoleBindings {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: string;
 
-        @doc("Filter by resource ID")
-        @example("550e8400-e29b-41d4-a716-446655440001")
-        @query resource_id: string;
-
-        @doc("Filter by resource type")
-        @example("workspace")
-        @query resource_type: string;
-
-        @doc("Filter roles containing specific permission pattern")
-        @example("inventory:hosts:read")
-        @query permission?: string;
-
-        @doc("Include role bindings inherited from parent resources")
-        @query parent_role_bindings?: boolean = false;
+        @doc("Filter by role ID")
+        @example("550e8400-e29b-41d4-a716-446655440002")
+        @query role_id: string;
 
         @doc("""
         Control which fields are included in the response to optimize payload size and improve performance.
 
         **Default Behavior:**
-        Required fields are always included: last_modified, role.id, resource.id, subjects[].id, subjects[].type
+        Required fields are always included: last_modified, role.id, subjects[].id, subjects[].type
 
         **When fields parameter is provided:**
         Only explicitly specified fields are included in addition to the required fields.
 
         **Syntax:**
         - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-        - Use comma to separate multiple field specifications: `role(description),resource(name)`
+        - Use comma to separate multiple field specifications: `role(description),subjects(group.name)`
         - Fields not in parentheses apply to the root level
 
         **Available Fields:**
@@ -1100,24 +1058,17 @@ namespace RoleBindings {
         - group.description (string) - description of the group
         - group.user_count (integer) - number of users in the group
 
-        **resource object:**
-        - id (UUID) - always included
-        - name (string) - resource name
-        - type (string) - resource type
-
         **root level:**
         - last_modified (datetime) - always included
-        - inherited_from (object) - resource from which this role binding is inherited
 
         **Examples:**
         - `role(description)` - Role description
         - `role(permissions)` - Include full permissions list
         - `subjects(group.name,group.user_count)` - Group names and user counts
-        - `role(description),subjects(group.name),resource(name)` - Combined fields
-        - `role(description,permissions),resource(name,type)` - Role details with resource info
-        - `inherited_from(name,type)` - Include inherited resource details
+        - `role(description),subjects(group.name)` - Combined fields
+        - `role(description,permissions),subjects(group.name,group.user_count)` - Role details with subject info
         """)
-        @example("role(description,permissions),subjects(group.name),resource(name,type)")
+        @example("role(description,permissions),subjects(group.name,group.user_count)")
         @query fields?: string;
 
         @doc("Sort by specified field(s), prefix with '-' for descending order")

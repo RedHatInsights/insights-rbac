@@ -44,43 +44,12 @@
             "explode": false
           },
           {
-            "name": "resource_id",
+            "name": "role_id",
             "in": "query",
             "required": true,
-            "description": "Filter by resource ID",
+            "description": "Filter by role ID",
             "schema": {
               "type": "string"
-            },
-            "explode": false
-          },
-          {
-            "name": "resource_type",
-            "in": "query",
-            "required": true,
-            "description": "Filter by resource type",
-            "schema": {
-              "type": "string"
-            },
-            "explode": false
-          },
-          {
-            "name": "permission",
-            "in": "query",
-            "required": false,
-            "description": "Filter roles containing specific permission pattern",
-            "schema": {
-              "type": "string"
-            },
-            "explode": false
-          },
-          {
-            "name": "parent_role_bindings",
-            "in": "query",
-            "required": false,
-            "description": "Include role bindings inherited from parent resources",
-            "schema": {
-              "type": "boolean",
-              "default": false
             },
             "explode": false
           },
@@ -88,7 +57,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior:**\nRequired fields are always included: last_modified, role.id, resource.id, subjects[].id, subjects[].type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in addition to the required fields.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `role(description),resource(name)`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role name\n- description (string) - role description\n- permissions (array) - full permission list (application, resource_type, operation)\n\n**subjects array:**\n- id (UUID) - always included\n- type (string) - always included (\"group\")\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**resource object:**\n- id (UUID) - always included\n- name (string) - resource name\n- type (string) - resource type\n\n**root level:**\n- last_modified (datetime) - always included\n- inherited_from (object) - resource from which this role binding is inherited\n\n**Examples:**\n- `role(description)` - Role description\n- `role(permissions)` - Include full permissions list\n- `subjects(group.name,group.user_count)` - Group names and user counts\n- `role(description),subjects(group.name),resource(name)` - Combined fields\n- `role(description,permissions),resource(name,type)` - Role details with resource info\n- `inherited_from(name,type)` - Include inherited resource details",
+            "description": "Control which fields are included in the response to optimize payload size and improve performance.\n\n**Default Behavior:**\nRequired fields are always included: last_modified, role.id, subjects[].id, subjects[].type\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are included in addition to the required fields.\n\n**Syntax:**\n- Use parentheses to specify fields for nested objects: `object(field1,field2)`\n- Use comma to separate multiple field specifications: `role(description),subjects(group.name)`\n- Fields not in parentheses apply to the root level\n\n**Available Fields:**\n\n**role object:**\n- id (UUID) - always included\n- name (string) - role name\n- description (string) - role description\n- permissions (array) - full permission list (application, resource_type, operation)\n\n**subjects array:**\n- id (UUID) - always included\n- type (string) - always included (\"group\")\n- group.name (string) - name of the group\n- group.description (string) - description of the group\n- group.user_count (integer) - number of users in the group\n\n**root level:**\n- last_modified (datetime) - always included\n\n**Examples:**\n- `role(description)` - Role description\n- `role(permissions)` - Include full permissions list\n- `subjects(group.name,group.user_count)` - Group names and user counts\n- `role(description),subjects(group.name)` - Combined fields\n- `role(description,permissions),subjects(group.name,group.user_count)` - Role details with subject info",
             "schema": {
               "type": "string"
             },
@@ -140,7 +109,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&role_id=550e8400-e29b-41d4-a716-446655440002&cursor=xyz",
                         "previous": null
                       },
                       "data": [
@@ -154,13 +123,7 @@
                               "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                               "type": "group"
                             }
-                          ],
-                          "resource": {
-                            "id": "550e8400-e29b-41d4-a716-446655440003"
-                          },
-                          "inherited_from": {
-                            "id": "550e8400-e29b-41d4-a716-446655440001"
-                          }
+                          ]
                         }
                       ]
                     }
@@ -171,7 +134,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?cursor=cD0yMDI1LTA4LTE1",
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1",
                         "previous": null
                       },
                       "data": [
@@ -185,10 +148,7 @@
                               "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                               "type": "group"
                             }
-                          ],
-                          "resource": {
-                            "id": "550e8400-e29b-41d4-a716-446655440001"
-                          }
+                          ]
                         }
                       ]
                     }
@@ -2703,25 +2663,16 @@
           "subjects": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RoleBindings.UserSubject"
+                },
+                {
+                  "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+                }
+              ]
             },
-            "description": "Subjects assigned this role on the resource"
-          },
-          "resource": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.Resource"
-              }
-            ],
-            "description": "Resource the role applies to"
-          },
-          "inherited_from": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.Resource"
-              }
-            ],
-            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
+            "description": "Subjects assigned this role"
           }
         },
         "example": {
@@ -2751,17 +2702,7 @@
                 "user_count": 25
               }
             }
-          ],
-          "resource": {
-            "id": "550e8400-e29b-41d4-a716-446655440003",
-            "name": "Child Workspace",
-            "type": "workspace"
-          },
-          "inherited_from": {
-            "id": "550e8400-e29b-41d4-a716-446655440001",
-            "name": "Parent Workspace",
-            "type": "workspace"
-          }
+          ]
         }
       },
       "RoleBindings.RoleBindingBySubject": {
