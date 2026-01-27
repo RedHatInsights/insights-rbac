@@ -641,9 +641,6 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    /**
-     * Default fields returned in role binding responses when no fields parameter is specified.
-     */
     const DefaultRoleBindingFieldMask = "resource,subjects,roles,last_modified";
 
 
@@ -719,16 +716,16 @@ namespace RoleBindings {
     model CreateRoleBindingsRequest {
         @doc("Resource to bind roles to")
         resource: {
-            @doc("Resource identifier")
+            @doc("UUID that uniquely identifies the resource")
             id: UUID;
-            @doc("Resource type (e.g., 'workspace')")
+            @doc("Type of resource")
             @example("workspace")
             type: string;
         };
         @doc("Subjects to grant access to (at least one required)")
         @minItems(1)
         subjects: {
-            @doc("Subject identifier")
+            @doc("UUID that uniquely identifies the subject")
             id: UUID;
             @doc("Type of subject")
             type: "user" | "group";
@@ -736,7 +733,7 @@ namespace RoleBindings {
         @doc("Roles to assign (at least one required)")
         @minItems(1)
         roles: {
-            @doc("Role identifier")
+            @doc("UUID that uniquely identifies the role")
             id: UUID;
         }[];
     }

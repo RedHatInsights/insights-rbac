@@ -1726,10 +1726,10 @@ components:
             id:
               allOf:
                 - $ref: '#/components/schemas/UUID'
-              description: Resource identifier
+              description: UUID that uniquely identifies the resource
             type:
               type: string
-              description: Resource type (e.g., 'workspace')
+              description: Type of resource
               example: workspace
           required:
             - id
@@ -1743,7 +1743,7 @@ components:
               id:
                 allOf:
                   - $ref: '#/components/schemas/UUID'
-                description: Subject identifier
+                description: UUID that uniquely identifies the subject
               type:
                 type: string
                 enum:
@@ -1763,7 +1763,7 @@ components:
               id:
                 allOf:
                   - $ref: '#/components/schemas/UUID'
-                description: Role identifier
+                description: UUID that uniquely identifies the role
             required:
               - id
           minItems: 1
