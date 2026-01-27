@@ -951,8 +951,9 @@ namespace RoleBindings {
 
     ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
 
-    @doc("Create role bindings for subjects on a resource")
-    @summary("Create role bindings")
+    @doc("Grant access to a resource to a set of subjects with a set of roles")
+    @summary("Grant access to a resource to a set of subjects with a set of roles")
+    @route("create/")
     @opExample(#{
         parameters: #{
             body: #{
@@ -1020,8 +1021,7 @@ namespace RoleBindings {
         @query fields?: string = DefaultRoleBindingFieldMask;
     ): RoleBindingsResponse<201> | Problems.CommonProblems | Problems.Problem400;
 
-    @doc("Update role bindings for a resource. Replaces all existing bindings with the provided subjects and roles.")
-    @summary("Update role bindings")
+    @doc("Update access for a resource. Replaces all existing bindings with the provided subjects and roles.")
     @opExample(#{
         parameters: #{
             body: #{

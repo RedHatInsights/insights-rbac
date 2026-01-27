@@ -8,156 +8,9 @@ tags:
   - name: Roles
 paths:
   /role-bindings/:
-    post:
-      operationId: RoleBindings_create
-      summary: Create role bindings
-      description: Create role bindings for subjects on a resource
-      parameters:
-        - name: fields
-          in: query
-          required: false
-          description: |-
-            Control which fields are included in the response to optimize payload size.
-
-            **When fields parameter is provided:**
-            Only explicitly specified fields are returned. All response fields are optional.       
-
-            **Examples:**
-            - `?fields=resource,subject_count,role_count` - Minimal response with counts
-            - `?fields=resource,subjects,roles,inherited_from` - Include inheritance info
-          schema:
-            type: string
-            default: resource,subjects,roles,last_modified
-          explode: false
-      responses:
-        '201':
-          description: The request has succeeded and a new resource has been created as a result.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsResponse'
-              examples:
-                example0:
-                  value:
-                    resource:
-                      id: 550e8400-e29b-41d4-a716-446655440001
-                      type: workspace
-                      name: Engineering Workspace
-                    subject_count: 1
-                    role_count: 1
-                example1:
-                  value:
-                    resource:
-                      id: 550e8400-e29b-41d4-a716-446655440001
-                      type: workspace
-                      name: Engineering Workspace
-                    subjects:
-                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                        type: group
-                        group:
-                          name: Engineering Team
-                          user_count: 25
-                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-                        type: group
-                        group:
-                          name: DevOps Team
-                          user_count: 10
-                    roles:
-                      - id: 550e8400-e29b-41d4-a716-446655440002
-                        name: Workspace Admin
-                      - id: 550e8400-e29b-41d4-a716-446655440003
-                        name: Viewer
-                    last_modified: '2024-08-04T12:00:00Z'
-                    subject_count: 2
-                    role_count: 2
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem400'
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 401
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-        '403':
-          description: Access is forbidden.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem403'
-        '500':
-          description: Server error
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 500
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-      tags:
-        - Role Bindings
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsRequest'
-            examples:
-              example0:
-                value:
-                  resource:
-                    id: 550e8400-e29b-41d4-a716-446655440001
-                    type: workspace
-                  subjects:
-                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                      type: group
-                  roles:
-                    - id: 550e8400-e29b-41d4-a716-446655440002
-              example1:
-                value:
-                  resource:
-                    id: 550e8400-e29b-41d4-a716-446655440001
-                    type: workspace
-                  subjects:
-                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                      type: group
-                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-                      type: group
-                  roles:
-                    - id: 550e8400-e29b-41d4-a716-446655440002
-                    - id: 550e8400-e29b-41d4-a716-446655440003
     put:
       operationId: RoleBindings_update
-      summary: Update role bindings
-      description: Update role bindings for a resource. Replaces all existing bindings with the provided subjects and roles.
+      description: Update access for a resource. Replaces all existing bindings with the provided subjects and roles.
       parameters:
         - name: fields
           in: query
@@ -504,6 +357,153 @@ paths:
                     format: uri
       tags:
         - Role Bindings
+  /role-bindings/create/:
+    post:
+      operationId: RoleBindings_create
+      summary: Grant access to a resource to a set of subjects with a set of roles
+      description: Grant access to a resource to a set of subjects with a set of roles
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          description: |-
+            Control which fields are included in the response to optimize payload size.
+
+            **When fields parameter is provided:**
+            Only explicitly specified fields are returned. All response fields are optional.       
+
+            **Examples:**
+            - `?fields=resource,subject_count,role_count` - Minimal response with counts
+            - `?fields=resource,subjects,roles,inherited_from` - Include inheritance info
+          schema:
+            type: string
+            default: resource,subjects,roles,last_modified
+          explode: false
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsResponse'
+              examples:
+                example0:
+                  value:
+                    resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      type: workspace
+                      name: Engineering Workspace
+                    subject_count: 1
+                    role_count: 1
+                example1:
+                  value:
+                    resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      type: workspace
+                      name: Engineering Workspace
+                    subjects:
+                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                        type: group
+                        group:
+                          name: Engineering Team
+                          user_count: 25
+                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                        type: group
+                        group:
+                          name: DevOps Team
+                          user_count: 10
+                    roles:
+                      - id: 550e8400-e29b-41d4-a716-446655440002
+                        name: Workspace Admin
+                      - id: 550e8400-e29b-41d4-a716-446655440003
+                        name: Viewer
+                    last_modified: '2024-08-04T12:00:00Z'
+                    subject_count: 2
+                    role_count: 2
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Role Bindings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleBindings.CreateOrUpdateRoleBindingsRequest'
+            examples:
+              example0:
+                value:
+                  resource:
+                    id: 550e8400-e29b-41d4-a716-446655440001
+                    type: workspace
+                  subjects:
+                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      type: group
+                  roles:
+                    - id: 550e8400-e29b-41d4-a716-446655440002
+              example1:
+                value:
+                  resource:
+                    id: 550e8400-e29b-41d4-a716-446655440001
+                    type: workspace
+                  subjects:
+                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      type: group
+                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                      type: group
+                  roles:
+                    - id: 550e8400-e29b-41d4-a716-446655440002
+                    - id: 550e8400-e29b-41d4-a716-446655440003
   /roles/:
     post:
       operationId: Roles_create
