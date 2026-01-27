@@ -30,6 +30,19 @@ model Timestamps {
 @format("uuid")
 scalar UUID extends string;
 
+model Permission {
+    application: string;
+    resource_type: string;
+    operation: string;
+}
+
+model Role {
+    id?: UUID;
+    name?: string;
+    description?: string;
+    permissions?: Permission[];
+}
+
 /**
  * Field mask used by the `fields` query parameter to control which fields
  * are included in the response.
@@ -688,13 +701,6 @@ namespace RoleBindings {
         type?: string;
     }
 
-    model Role {
-        @doc("Role identifier")
-        id?: UUID;
-        @doc("Name of the role")
-        name?: string;
-    }
-
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         subject: #{
@@ -752,7 +758,7 @@ namespace RoleBindings {
         @doc("Subject of the role binding")
         subject?: Subject;
         @doc("Roles assigned to the subject")
-        roles?: Role[];
+        roles?: KesselRBAC.Role[];
         @doc("Resource the roles apply to")
         resource?: Resource;
         @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
@@ -882,13 +888,6 @@ namespace RoleBindings {
 
     ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 
-    model RoleDetails {
-        id?: UUID;
-        name?: string;
-        description?: string;
-        permissions?: Roles.Permission[];
-    }
-
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
@@ -953,7 +952,7 @@ namespace RoleBindings {
         @doc("Timestamp of last modification")
         last_modified?: offsetDateTime;
         @doc("Role details")
-        role?: RoleDetails;
+        role?: KesselRBAC.Role;
         @doc("Subjects assigned this role")
         subjects?: Subject[];
     }
@@ -1083,20 +1082,6 @@ namespace RoleBindings {
 @doc("Operations about roles")
 namespace Roles {
 
-    @example(#{
-        application: "inventory",
-        resource_type: "hosts",
-        operation: "read"
-    })
-    model Permission {
-        @doc("Application name")
-        application: string;
-        @doc("Resource type within the application")
-        resource_type: string;
-        @doc("Operation for this permission")
-        operation: string;
-    }
-
     /**
      * Default fields returned for role detail operations (get/create/update)
      */
@@ -1139,7 +1124,7 @@ namespace Roles {
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description?: string;
         @doc("List of permissions assigned to this role")
-        permissions?: Permission[];
+        permissions?: KesselRBAC.Permission[];
         @doc("Number of permissions assigned to this role")
         permissions_count?: int32;
         @doc("Timestamp of when the role was last modified")

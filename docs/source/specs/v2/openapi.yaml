@@ -1602,6 +1602,19 @@ components:
         - `name` - Sort by name ascending
         - `-last_modified` - Sort by last_modified descending
         - `name,-created` - Sort by name ascending, then created descending
+    Permission:
+      type: object
+      required:
+        - application
+        - resource_type
+        - operation
+      properties:
+        application:
+          type: string
+        resource_type:
+          type: string
+        operation:
+          type: string
     Problems.Problem400:
       type: object
       required:
@@ -1719,6 +1732,19 @@ components:
             instance:
               type: string
               format: uri
+    Role:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
     RoleBindings.BaseSubject:
       type: object
       required:
@@ -1778,16 +1804,6 @@ components:
           type: string
           description: Resource type
           example: workspace
-    RoleBindings.Role:
-      type: object
-      properties:
-        id:
-          allOf:
-            - $ref: '#/components/schemas/UUID'
-          description: Role identifier
-        name:
-          type: string
-          description: Name of the role
     RoleBindings.RoleBindingByRole:
       type: object
       properties:
@@ -1797,7 +1813,7 @@ components:
           description: Timestamp of last modification
         role:
           allOf:
-            - $ref: '#/components/schemas/RoleBindings.RoleDetails'
+            - $ref: '#/components/schemas/Role'
           description: Role details
         subjects:
           type: array
@@ -1839,7 +1855,7 @@ components:
         roles:
           type: array
           items:
-            $ref: '#/components/schemas/RoleBindings.Role'
+            $ref: '#/components/schemas/Role'
           description: Roles assigned to the subject
         resource:
           allOf:
@@ -1869,19 +1885,6 @@ components:
           id: 550e8400-e29b-41d4-a716-446655440001
           name: Parent Workspace
           type: workspace
-    RoleBindings.RoleDetails:
-      type: object
-      properties:
-        id:
-          $ref: '#/components/schemas/UUID'
-        name:
-          type: string
-        description:
-          type: string
-        permissions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Roles.Permission'
     RoleBindings.UserDetails:
       type: object
       properties:
@@ -1920,7 +1923,7 @@ components:
         permissions:
           type: array
           items:
-            $ref: '#/components/schemas/Roles.Permission'
+            $ref: '#/components/schemas/Permission'
           description: List of permissions to assign to this role
       description: Role data for create and update operations
       example:
@@ -1933,26 +1936,6 @@ components:
           - application: inventory
             resource_type: hosts
             operation: write
-    Roles.Permission:
-      type: object
-      required:
-        - application
-        - resource_type
-        - operation
-      properties:
-        application:
-          type: string
-          description: Application name
-        resource_type:
-          type: string
-          description: Resource type within the application
-        operation:
-          type: string
-          description: Operation for this permission
-      example:
-        application: inventory
-        resource_type: hosts
-        operation: read
     Roles.Role:
       type: object
       properties:
@@ -1969,7 +1952,7 @@ components:
         permissions:
           type: array
           items:
-            $ref: '#/components/schemas/Roles.Permission'
+            $ref: '#/components/schemas/Permission'
           description: List of permissions assigned to this role
         permissions_count:
           type: integer
