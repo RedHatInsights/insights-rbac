@@ -1011,7 +1011,6 @@ namespace RoleBindings {
     @post op create(
         @body body: CreateRoleBindingsRequest;
 
-        @doc("Control which fields are included in the response to optimize payload size.")
         @example("resource(id),subjects(id),roles(id),last_modified")
         @query fields?: FieldMask = DefaultRoleBindingFieldMask;
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;

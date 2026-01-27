@@ -26,7 +26,6 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
               "default": "resource(id),subjects(id),roles(id),last_modified"
