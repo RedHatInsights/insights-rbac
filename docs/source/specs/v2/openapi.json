@@ -285,7 +285,7 @@
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
-              "default": "role(id,name,description,permissions),subjects(id,type),last_modified"
+              "default": "resource(id),role(id),subjects(id, type),last_modified"
             },
             "explode": false
           },
@@ -340,26 +340,17 @@
                     {
                       "last_modified": "2024-08-04T12:00:00Z",
                       "role": {
-                        "id": "550e8400-e29b-41d4-a716-446655440002",
-                        "name": "Workspace Admin",
-                        "description": "Full administrative access to workspace",
-                        "permissions": [
-                          {
-                            "application": "rbac",
-                            "resource_type": "workspace",
-                            "operation": "read"
-                          },
-                          {
-                            "application": "rbac",
-                            "resource_type": "workspace",
-                            "operation": "write"
-                          }
-                        ]
+                        "id": "550e8400-e29b-41d4-a716-446655440002"
                       },
                       "subjects": [
                         {
                           "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                           "type": "group"
+                        }
+                      ],
+                      "resources": [
+                        {
+                          "id": "550e8400-e29b-41d4-a716-446655440001"
                         }
                       ]
                     }
@@ -2589,6 +2580,11 @@
           "operation": {
             "type": "string"
           }
+        },
+        "example": {
+          "application": "rbac",
+          "resource_type": "workspace",
+          "operation": "read"
         }
       },
       "Problems.Problem400": {
@@ -2778,20 +2774,57 @@
         "type": "object",
         "properties": {
           "id": {
-            "$ref": "#/components/schemas/UUID"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "UUID that uniquely identifies the role"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "A human readable name for the role. Does not need to be unique."
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
           },
           "permissions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Permission"
-            }
+            },
+            "description": "List of permissions assigned to this role"
+          },
+          "permissions_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of permissions assigned to this role"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of when the role was last modified"
           }
+        },
+        "example": {
+          "id": "550e8400-e29b-41d4-a716-446655440002",
+          "name": "Workspace Admin",
+          "description": "Full administrative access to workspace",
+          "permissions": [
+            {
+              "application": "rbac",
+              "resource_type": "workspace",
+              "operation": "read"
+            },
+            {
+              "application": "rbac",
+              "resource_type": "workspace",
+              "operation": "write"
+            }
+          ],
+          "permissions_count": 2,
+          "last_modified": "2024-08-04T12:00:00Z"
         }
       },
       "RoleBindings.BaseSubject": {
@@ -3132,6 +3165,13 @@
               ]
             },
             "description": "Subjects assigned this role"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Resource"
+            },
+            "description": "Resources assigned this role"
           }
         },
         "example": {

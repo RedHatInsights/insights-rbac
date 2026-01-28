@@ -30,17 +30,49 @@ model Timestamps {
 @format("uuid")
 scalar UUID extends string;
 
+@example(#{
+    application: "rbac",
+    resource_type: "workspace",
+    operation: "read"
+})
 model Permission {
     application: string;
     resource_type: string;
     operation: string;
 }
 
+@example(#{
+    id: "550e8400-e29b-41d4-a716-446655440002",
+    name: "Workspace Admin",
+    description: "Full administrative access to workspace",
+    permissions: #[
+        #{
+            application: "rbac",
+            resource_type: "workspace",
+            operation: "read"
+        },
+        #{
+            application: "rbac",
+            resource_type: "workspace",
+            operation: "write"
+        }
+    ],
+    permissions_count: 2,
+    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+})
 model Role {
+    @doc("UUID that uniquely identifies the role")
     id?: UUID;
+    @doc("A human readable name for the role. Does not need to be unique.")
     name?: string;
+    @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
     description?: string;
-    permissions?: Permission[];
+    @doc("List of permissions assigned to this role")
+    permissions?: KesselRBAC.Permission[];
+    @doc("Number of permissions assigned to this role")
+    permissions_count?: int32;
+    @doc("Timestamp of when the role was last modified")
+    last_modified?: offsetDateTime;
 }
 
 /**
@@ -655,7 +687,7 @@ namespace Workspaces {
 @doc("Operations about role bindings")
 namespace RoleBindings {
     const DefaultRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
-    const DefaultRoleBindingByRoleFieldMask: FieldMask = "role(id,name,description,permissions),subjects(id,type),last_modified";
+    const DefaultRoleBindingByRoleFieldMask: FieldMask = "resource(id),role(id),subjects(id, type),last_modified";
 
 
     @discriminator("type")
@@ -1097,6 +1129,8 @@ namespace RoleBindings {
         role?: KesselRBAC.Role;
         @doc("Subjects assigned this role")
         subjects?: Subject[];
+        @doc("Resources assigned this role")
+        resources?: Resource[]; 
     }
 
     @doc("List role bindings grouped by role")
@@ -1119,26 +1153,17 @@ namespace RoleBindings {
                 #{
                     last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
-                        id: "550e8400-e29b-41d4-a716-446655440002",
-                        name: "Workspace Admin",
-                        description: "Full administrative access to workspace",
-                        permissions: #[
-                            #{
-                                application: "rbac",
-                                resource_type: "workspace",
-                                operation: "read"
-                            },
-                            #{
-                                application: "rbac",
-                                resource_type: "workspace",
-                                operation: "write"
-                            }
-                        ]
+                        id: "550e8400-e29b-41d4-a716-446655440002"
                     },
                     subjects: #[
                         #{
                             id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                             type: "group"
+                        }
+                    ],
+                    resources: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440001"
                         }
                     ]
                 }
