@@ -69,7 +69,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
     queryset = Workspace.objects.annotate()
     serializer_class = WorkspaceSerializer
     pagination_class = WorkspacePagination
-    ordering_fields = ("name",)
+    ordering_fields = ("name", "created", "modified", "type")
     ordering = ("name",)
     # WorkspaceAccessFilterBackend must be first to filter by access before other filters
     filter_backends = (WorkspaceAccessFilterBackend, filters.DjangoFilterBackend, OrderingFilter)
@@ -170,10 +170,11 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         """Get a list of workspaces.
 
         Access filtering is handled by WorkspaceAccessFilterBackend.
+        Ordering is handled by OrderingFilter (supports ?order_by=name or ?order_by=-name).
         This method only handles additional query parameter filtering.
         """
         all_types = "all"
-        # Use filter_queryset to apply all filter backends (including access filtering)
+        # Use filter_queryset to apply all filter backends (including access filtering and ordering)
         queryset = self.filter_queryset(self.get_queryset())
 
         type_values = Workspace.Types.values + [all_types]

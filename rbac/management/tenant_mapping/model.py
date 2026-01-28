@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """TenantMapping model."""
+
 import enum
 import logging
 import uuid
@@ -38,6 +39,10 @@ class DefaultAccessType(enum.StrEnum):
 class TenantMapping(models.Model):
     """Tenant mappings to V2 domain concepts."""
 
+    @staticmethod
+    def _role_binding_field():
+        return models.UUIDField(default=uuid.uuid4, editable=False, null=False, unique=True)
+
     tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="tenant_mapping")
 
     # Default group UUID specific to a Tenant. This is used for adding members of the Tenant to the access graph.
@@ -50,12 +55,12 @@ class TenantMapping(models.Model):
     # UUIDs for the role bindings that bind the user default and admin default groups to the appropriate platform
     # groups. One such role binding exists for each of the scopes that has default roles: the tenant itself, the
     # tenant's root workspace, and the tenant's default workspace.
-    default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    root_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    root_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    tenant_scope_default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    tenant_scope_default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    default_role_binding_uuid = _role_binding_field()
+    default_admin_role_binding_uuid = _role_binding_field()
+    root_scope_default_role_binding_uuid = _role_binding_field()
+    root_scope_default_admin_role_binding_uuid = _role_binding_field()
+    tenant_scope_default_role_binding_uuid = _role_binding_field()
+    tenant_scope_default_admin_role_binding_uuid = _role_binding_field()
 
     _role_binding_uuid_fns: ClassVar[dict[DefaultAccessType, dict[Scope, Callable[["TenantMapping"], uuid.UUID]]]] = {
         DefaultAccessType.USER: {

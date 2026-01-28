@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper utilities for management module."""
+
 import logging
 import os
 import uuid
@@ -128,6 +129,7 @@ def validate_psk(psk, client_id):
 
 def build_user_from_psk(request):
     """Build a user from the PSK."""
+    req_id = getattr(request, "req_id", None)
     user = None
     request_psk = request.META.get(RH_RBAC_PSK)
     account = request.META.get(RH_RBAC_ACCOUNT)
@@ -135,13 +137,33 @@ def build_user_from_psk(request):
     client_id = request.META.get(RH_RBAC_CLIENT_ID)
     has_system_auth_headers = request_psk and org_id and client_id
 
-    if has_system_auth_headers and validate_psk(request_psk, client_id):
-        user = User()
-        user.username = client_id
-        user.account = account
-        user.org_id = org_id
-        user.admin = True
-        user.system = True
+    if not has_system_auth_headers:
+        # Missing required headers - not a PSK auth attempt, will fall through to token auth
+        return None
+
+    if not validate_psk(request_psk, client_id):
+        logger.info(
+            "S2S PSK auth failed: invalid PSK for client_id [request_id=%s, client_id=%s, org_id=%s, path=%s]",
+            req_id,
+            client_id,
+            org_id,
+            request.path,
+        )
+        return None
+
+    user = User()
+    user.username = client_id
+    user.account = account
+    user.org_id = org_id
+    user.admin = True
+    user.system = True
+    logger.info(
+        "S2S PSK auth successful [request_id=%s, client_id=%s, org_id=%s, path=%s]",
+        req_id,
+        client_id,
+        org_id,
+        request.path,
+    )
     return user
 
 
@@ -163,34 +185,81 @@ class SystemUserConfig(TypedDict, total=False):
 
 def build_system_user_from_token(request, token_validator: TokenValidator) -> Optional[User]:
     """Build a system user from the token."""
+    req_id = getattr(request, "req_id", None)
     # Token validator class uses a singleton
     try:
         user = token_validator.get_user_from_bearer_token(request)
+        if not user:
+            logger.info(
+                "S2S token auth failed: no user returned from token validator [request_id=%s, path=%s]",
+                req_id,
+                request.path,
+            )
+            return None
+
         system_users: dict[str, SystemUserConfig] = settings.SYSTEM_USERS
-        if user and user.user_id in system_users:
-            system_user = system_users[user.user_id]
-            user.username = user.username or user.user_id
-            user.system = True
-            user.admin = system_user.get("admin", False)
-            user.is_service_account = system_user.get("is_service_account", False)
-            if system_user.get("allow_any_org", False):
-                user.account = request.META.get(RH_RBAC_ACCOUNT, user.account)
-                user.org_id = request.META.get(RH_RBAC_ORG_ID, user.org_id)
-            # Could allow authn without org_id, but this breaks some code paths
-            # which assume there is either no user, or a user with an org_id.
-            # An AnonymousUser does not work yet.
-            # Hence, if no org_id, consider authentication invalid.
-            if user.org_id:
-                if user.org_id != request.META.get(RH_RBAC_ORG_ID, user.org_id):
-                    logger.warning(
-                        "Token org_id does not match org_id header. Ignoring token for user_id %s",
-                        user.user_id,
-                    )
-                    return None
-                return user
+        if user.user_id not in system_users:
+            logger.info(
+                "S2S token auth failed: user_id not in SYSTEM_USERS [request_id=%s, user_id=%s, path=%s]",
+                req_id,
+                user.user_id,
+                request.path,
+            )
+            return None
+
+        system_user = system_users[user.user_id]
+        user.username = user.username or user.user_id
+        user.system = True
+        user.admin = system_user.get("admin", False)
+        user.is_service_account = system_user.get("is_service_account", False)
+        if system_user.get("allow_any_org", False):
+            user.account = request.META.get(RH_RBAC_ACCOUNT, user.account)
+            user.org_id = request.META.get(RH_RBAC_ORG_ID, user.org_id)
+        # Could allow authn without org_id, but this breaks some code paths
+        # which assume there is either no user, or a user with an org_id.
+        # An AnonymousUser does not work yet.
+        # Hence, if no org_id, consider authentication invalid.
+        if not user.org_id:
+            logger.info(
+                "S2S token auth failed: no org_id available [request_id=%s, user_id=%s, path=%s]",
+                req_id,
+                user.user_id,
+                request.path,
+            )
+            return None
+
+        header_org_id = request.META.get(RH_RBAC_ORG_ID, user.org_id)
+        if user.org_id != header_org_id:
+            logger.warning(
+                "S2S token auth failed: token org_id does not match org_id header "
+                "[request_id=%s, user_id=%s, token_org_id=%s, header_org_id=%s, path=%s]",
+                req_id,
+                user.user_id,
+                user.org_id,
+                header_org_id,
+                request.path,
+            )
+            return None
+
+        logger.info(
+            "S2S token auth successful [request_id=%s, user_id=%s, org_id=%s, is_admin=%s, path=%s]",
+            req_id,
+            user.user_id,
+            user.org_id,
+            user.admin,
+            request.path,
+        )
+        return user
+
+    except MissingAuthorizationError:
+        logger.info(
+            "S2S token auth failed: missing authorization header [request_id=%s, path=%s]", req_id, request.path
+        )
         return None
-    except (MissingAuthorizationError, InvalidTokenError):
-        # If the token is not valid, we return None.
+    except InvalidTokenError as e:
+        logger.info(
+            "S2S token auth failed: invalid token [request_id=%s, path=%s, error=%s]", req_id, request.path, str(e)
+        )
         return None
 
 

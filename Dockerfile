@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1764794109 AS base
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1769056855 AS base
 
 USER root
 
@@ -60,7 +60,8 @@ RUN python3.12 -m venv /pipenv-venv
 ENV PATH="/pipenv-venv/bin:$PATH"
 # Install pipenv into the virtual env
 RUN \
-    pip install --upgrade pip && \
+    pip install --upgrade "pip>=23.3" && \
+    pip install --upgrade --force-reinstall "wheel>=0.46.2" && \
     pip install pipenv
 
 WORKDIR ${APP_ROOT}
@@ -72,8 +73,13 @@ COPY Pipfile.lock .
 RUN \
     # install the dependencies into the working dir (i.e. ${APP_ROOT}/.venv)
     pipenv install --deploy && \
+    # force reinstall wheel to fix CVE GHSA-8rrh-rw8j-w5fx
+    pipenv run pip install --upgrade --force-reinstall "wheel>=0.46.2" && \
     # delete the pipenv cache
-    pipenv --clear
+    pipenv --clear && \
+    # remove all vulnerable wheel files (CVE GHSA-8rrh-rw8j-w5fx)
+    find / -type f -name "wheel-0.45*.whl" -delete 2>/dev/null || true && \
+    find / -type d -name "wheel-0.45*" -exec rm -rf {} + 2>/dev/null || true
 
 
 # Runtime env variables:

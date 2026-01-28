@@ -35,7 +35,6 @@ from migration_tool.models import (
     cleanNameForV2SchemaCompatibility,
 )
 
-
 logger = logging.getLogger(__name__)
 
 _PermissionGroupings = dict[V2boundresource, set[Permission]]
@@ -98,14 +97,14 @@ class MigrateCustomRoleResult:
     role_bindings: tuple[RoleBinding, ...]
 
     def __post_init__(self):
-        """Check tha tthis object is in a valid state."""
+        """Check that this object is in a valid state."""
         if len(self.binding_mappings) != len(self.role_bindings):
             raise ValueError("BindingMappings and RoleBindings must be one-to-one")
 
         if {str(r.uuid) for r in self.role_bindings} != {m.mappings["id"] for m in self.binding_mappings}:
             raise ValueError("BindingMapping and RoleBinding UUIDs must match")
 
-        if not {r.id for r in self.v2_roles}.issubset(b.role_id for b in self.role_bindings):
+        if not {r.id for r in self.v2_roles}.issuperset(b.role_id for b in self.role_bindings):
             raise ValueError("All V2 roles referenced by RoleBindings must be included in v2_roles")
 
 
@@ -151,10 +150,8 @@ def v1_role_to_v2_bindings(
                 if len(workspace_ids) >= 1:
                     is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=v1_role.tenant).exists()
                     if not is_same_tenant:
-                        logger.info(
-                            f"""skipping migrating permission '{permission}' from v1 role '{v1_role.name}'
-                                -- it was added to workspace outside of users org"""
-                        )
+                        logger.info(f"""skipping migrating permission '{permission}' from v1 role '{v1_role.name}'
+                            -- it was added to workspace outside of users org""")
                         continue
 
             resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])

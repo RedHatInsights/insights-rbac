@@ -16,6 +16,7 @@
 #
 
 """Model for role management."""
+
 import logging
 from typing import Optional, Union
 from uuid import uuid4
@@ -29,6 +30,7 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
+from management.role.user_source import SourceKey
 from migration_tool.models import (
     V2boundresource,
     V2role,
@@ -38,7 +40,6 @@ from migration_tool.models import (
 )
 
 from api.models import FilterQuerySet, TenantAwareModel
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -146,24 +147,6 @@ class ExtRoleRelation(models.Model):
         ]
 
 
-class SourceKey:
-    """Key for a source."""
-
-    key: str
-
-    def __init__(self, source, source_id: str):
-        """Init method."""
-        self.key = f"{source.__class__.__name__}/{source_id}"
-
-    def __hash__(self):
-        """Hash value for the SourceKey instance."""
-        return hash(self.key)
-
-    def __str__(self):
-        """Return the string representation of the SourceKey instance."""
-        return f"{self.key}"
-
-
 class BindingMapping(models.Model):
     """V2 binding Mapping definition."""
 
@@ -173,6 +156,15 @@ class BindingMapping(models.Model):
     resource_type_namespace = models.CharField(max_length=256, null=False)
     resource_type_name = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
+
+    def save(self, *args, **kwargs):
+        """Validate and save this BindingMapping."""
+        users = self.mappings.get("users", None)
+
+        if (users is not None) and not isinstance(users, dict):
+            raise TypeError("users must be a dict. Support for representing users as a list has been removed.")
+
+        super().save(*args, **kwargs)
 
     @classmethod
     def for_role_binding(cls, role_binding: V2rolebinding, v1_role: Union[Role, str]):
@@ -200,7 +192,7 @@ class BindingMapping(models.Model):
 
     def is_unassigned(self):
         """Return true if mapping is not assigned to any groups or users."""
-        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
+        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", {})) == 0
 
     def unassign_group(self, group_uuid) -> Optional[Relationship]:
         """
@@ -254,12 +246,11 @@ class BindingMapping(models.Model):
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def unassign_user_from_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Optional[Relationship]:
+    def unassign_user_from_bindings(self, user_id: str, source: SourceKey) -> Optional[Relationship]:
         """Unassign user from mappings."""
-        self._remove_value_from_mappings("users", user_id, source)
-        users_list = (
-            self.mappings["users"] if isinstance(self.mappings["users"], list) else self.mappings["users"].values()
-        )
+        self._require_source(source)
+        self.mappings["users"].pop(str(source), None)
+        users_list = self.mappings["users"].values()
         if user_id in users_list:
             logging.info(
                 f"[Dual Write] user {user_id} still in mappings of bindingmapping {self.pk}, "
@@ -268,19 +259,10 @@ class BindingMapping(models.Model):
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def update_data_format_for_user(self, all_relations_to_remove):
-        """Update data format for users in mappings."""
-        if isinstance(self.mappings["users"], list):
-            existing_user_ids = list(self.mappings["users"])
-            for existing_user_id in existing_user_ids:
-                relations_to_remove = self.unassign_user_from_bindings(existing_user_id)
-                if relations_to_remove is not None:
-                    all_relations_to_remove.append(relations_to_remove)
-            self.mappings["users"] = {}
-
-    def assign_user_to_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Relationship:
+    def assign_user_to_bindings(self, user_id: str, source: SourceKey) -> Relationship:
         """Assign user to mappings."""
-        self._add_value_to_mappings("users", user_id, source)
+        self._require_source(source)
+        self.mappings["users"][str(source)] = user_id
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
@@ -313,19 +295,12 @@ class BindingMapping(models.Model):
         )
         return V2rolebinding(**args)
 
-    def _remove_value_from_mappings(self, field, value, source):
-        """Update mappings by removing value."""
-        if isinstance(self.mappings[field], dict):
-            self.mappings[field].pop(str(source), None)
-        else:
-            self.mappings[field].remove(value)
+    @staticmethod
+    def _require_source(source) -> SourceKey:
+        if not isinstance(source, SourceKey):
+            raise TypeError(f"Expected SourceKey, but got: {source!r}")
 
-    def _add_value_to_mappings(self, field, value, source):
-        """Update mappings by adding value."""
-        if isinstance(self.mappings[field], dict):
-            self.mappings[field].update({str(source): value})
-        else:
-            self.mappings[field].append(value)
+        return source
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):

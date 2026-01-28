@@ -16,6 +16,7 @@
 #
 
 """Class to handle Dual Write API related operations."""
+
 import logging
 from abc import ABC
 from typing import Any, Iterable, Optional
@@ -44,7 +45,6 @@ from migration_tool.utils import create_relationship
 
 
 from api.models import Tenant
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

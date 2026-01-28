@@ -16,6 +16,7 @@
 #
 
 """View for group management."""
+
 import logging
 from typing import Iterable, List, Optional, Tuple
 from uuid import UUID
@@ -65,6 +66,7 @@ from management.querysets import (
 )
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.view import RoleViewSet
+from management.role_binding.service import RoleBindingService
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -440,6 +442,10 @@ class GroupViewSet(
             if not request.user.admin:
                 self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
+            # Capture these before deletion
+            is_custom_default_group = group.platform_default
+            group_tenant = group.tenant
+
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
             roles = Role.objects.filter(policies__group=group)
             if not group.platform_default and not group.principals.exists() and not roles.exists():
@@ -455,6 +461,11 @@ class GroupViewSet(
             response = super().destroy(request=request, args=args, kwargs=kwargs)
 
             dual_write_handler.replicate()
+
+            # Restore USER default role bindings if custom default group was deleted
+            if is_custom_default_group:
+                role_binding_service = RoleBindingService(tenant=group_tenant)
+                role_binding_service.restore_user_default_bindings()
 
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")

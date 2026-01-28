@@ -17,7 +17,7 @@
 """Test tuple changes for RBAC operations."""
 
 from datetime import datetime, timedelta
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, Iterable
 from django.test import TestCase, override_settings
 from django.db.models import Q
 from django.conf import settings
@@ -50,7 +50,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v2_model import RoleV2, CustomRoleV2, RoleBinding
+from management.role.v2_model import RoleV2, CustomRoleV2, RoleBinding, SeededRoleV2
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -78,7 +78,7 @@ from api.models import Tenant, User
 from unittest.mock import patch
 
 from migration_tool.models import V2boundresource
-from tests.v2_util import assert_v2_custom_roles_consistent
+from tests.v2_util import seed_v2_role_from_v1, assert_v2_roles_consistent
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -211,7 +211,7 @@ class DualWriteTestCase(TestCase):
             replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
             return self.fixture.custom_default_group(self.tenant)
 
-    def given_car(self, user_id: str, roles: list[Role], old_format=True):
+    def given_car(self, user_id: str, roles: list[Role]):
         create_cross_principal(user_id, target_org=self.tenant.org_id)
         car = self.fixture.new_car(self.tenant, user_id)
         car.roles.add(*roles)
@@ -222,12 +222,6 @@ class DualWriteTestCase(TestCase):
         )
         dual_write_handler.generate_relations_to_add_roles(car.roles.all())
         dual_write_handler.replicate()
-        if old_format:
-            for role in car.roles.all():
-                mapping = role.binding_mappings.first()
-                if "users" in mapping.mappings and isinstance(mapping.mappings["users"], dict):
-                    mapping.mappings["users"] = list(mapping.mappings["users"].values())
-                    mapping.save()
         return car
 
     def given_additional_group_members(
@@ -457,6 +451,14 @@ class DualWriteTestCase(TestCase):
 
         self.assertIn(group_id, mapping.mappings["groups"])
 
+        binding = RoleBinding.objects.get(
+            resource_type=target.resource_type[1],
+            resource_id=target.resource_id,
+            role__uuid=v2_role_id,
+        )
+
+        self.assertTrue(binding.bound_groups().filter(uuid=group_id).exists())
+
     def expect_binding_absent(self, target: V2boundresource, v2_role_id: str, group_id: str):
         """Assert that a role binding (and BindingMapping) do not exist for the given resource, role, and group."""
         self.expect_role_bindings_to_resource(
@@ -483,10 +485,26 @@ class DualWriteTestCase(TestCase):
         mapping = mappings[0]
         self.assertNotIn(group_id, mapping.mappings["groups"])
 
+    def expect_role_binding_groups(self, binding: RoleBinding, groups: Iterable[Group]):
+        groups = set(groups)
+
+        self.assertEqual(len(groups), binding.group_entries.count())
+        self.assertCountEqual(groups, binding.bound_groups())
+
+    def expect_role_binding_principals(self, binding: RoleBinding, entries: list[tuple[str, Principal]]):
+        actual = [(e.source, e.principal) for e in binding.principal_entries.all()]
+        self.assertCountEqual(entries, actual)
+
 
 @override_settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS="tenant:*:*")
 class DualWriteGroupTestCase(DualWriteTestCase):
     """Test dual write logic for group modifications."""
+
+    def tearDown(self):
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(test=self, tuples=None)
+
+        super().tearDown()
 
     def test_cannot_replicate_group_for_public_tenant(self):
         """Do not replicate group changes for the public tenant groups (system groups)."""
@@ -652,11 +670,22 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.given_roles_assigned_to_group(group, roles=[role_test])
         self.given_roles_assigned_to_group(group, roles=[role_test])
+
+        # Removing the RoleBinding for the system role should just result in it being recreated at the next assignment.
+        self.assertEqual(1, RoleBinding.objects.filter(role__v1_source=role_test).count())
+        RoleBinding.objects.filter(role__v1_source=role_test).delete()
+
         self.given_roles_assigned_to_group(group, roles=[role_test])
 
         # See the group bound.
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
         self.assertEqual(len(mappings["groups"]), 1)
+
+        role_binding = RoleBinding.objects.filter(role__v1_source=role_test).get()
+        self.expect_role_binding_groups(role_binding, {group})
+
+        assert_v2_roles_consistent(test=self, tuples=None)
+
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -678,6 +707,10 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
         self.assertEqual(len(mappings["groups"]), 1)
+
+        role_binding = RoleBinding.objects.filter(role__v1_source=role_test).get()
+        self.expect_role_binding_groups(role_binding, {group})
+
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -728,6 +761,10 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         # Retrieve the updated mapping.
         binding_mapping = BindingMapping.objects.filter(role=role_test).get()
         self.assertEqual(binding_mapping.mappings["groups"], [str(group.uuid)])
+
+        role_binding = RoleBinding.objects.filter(role__v1_source=role_test).get()
+        self.expect_role_binding_groups(role_binding, {group})
+
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", binding_mapping.mappings["id"]),
@@ -1116,7 +1153,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(g1, roles=[role])
 
         t2 = self.switch_to_new_tenant("tenant2", "7654321")
-        g2, _ = self.given_group("g2", ["u1", "u2"])
+        g2, _ = self.given_group("g2", ["u3", "u4"])
         self.given_roles_assigned_to_group(g2, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
@@ -1137,7 +1174,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(g1, roles=[role])
 
         t2 = self.switch_to_new_tenant("tenant2", "7654321")
-        g2, _ = self.given_group("g2", ["u1", "u2"])
+        g2, _ = self.given_group("g2", ["u3", "u4"])
         self.given_roles_assigned_to_group(g2, roles=[role])
 
         self.given_roles_unassigned_from_group(g1, roles=[role])
@@ -1973,7 +2010,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         super().tearDown()
 
     def _expect_v2_consistent(self):
-        assert_v2_custom_roles_consistent(test=self, tuples=self.tuples)
+        assert_v2_roles_consistent(test=self, tuples=self.tuples)
 
     def test_simple_role(self):
         """Test the simplest meaningful role: a single permission bound to the default resource."""
@@ -2440,13 +2477,32 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
 
     def test_adding_same_principal_to_two_cars_and_expire_one(self):
         user_id = "user_id"
+        user = self.fixture.new_principals_in_tenant([user_id], self.fixture.new_tenant("car_source").tenant)[0]
+
         system_role = self.given_v1_system_role("rtest", permissions=["app1:hosts:read", "inventory:hosts:write"])
-        car_1 = self.given_car(user_id, [system_role], old_format=True)
-        self.given_car(user_id, [system_role])
+        car_1 = self.given_car(user_id, [system_role])
+        car_2 = self.given_car(user_id, [system_role])
 
         # See the user bound multiple times
         mappings = BindingMapping.objects.filter(role=system_role).first().mappings
-        self.assertEqual(len(mappings["users"]), 2)
+
+        self.assertEqual(
+            mappings["users"],
+            {
+                str(car_1.source_key()): user_id,
+                str(car_2.source_key()): user_id,
+            },
+        )
+
+        role_binding: RoleBinding = RoleBinding.objects.filter(role__v1_source=system_role).get()
+        self.expect_role_binding_principals(
+            role_binding,
+            [
+                (str(car_1.source_key()), user),
+                (str(car_2.source_key()), user),
+            ],
+        )
+
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -2465,140 +2521,20 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
 
         mappings = BindingMapping.objects.filter(role=system_role).first().mappings
         self.assertEqual(len(mappings["users"]), 1)
+
+        role_binding: RoleBinding = RoleBinding.objects.filter(role__v1_source=system_role).get()
+        self.expect_role_binding_principals(
+            role_binding,
+            [
+                (str(car_2.source_key()), user),
+            ],
+        )
+
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
                 subject("rbac", "principal", f"localhost/{user_id}"),
-            )
-        )
-        self.assertEqual(len(tuples), 1)
-
-    def test_multiple_cars_for_same_user_and_reset_multiple_times(self):
-        user_id_1 = "user_id_1"
-        user_id_2 = "user_id_2"
-        system_role = self.given_v1_system_role("rtest", permissions=["app1:hosts:read", "inventory:hosts:write"])
-        car_1 = self.given_car(user_id_1, [system_role], old_format=True)
-        car_2 = self.given_car(user_id_2, [system_role])
-        car_3 = self.given_car(user_id_1, [system_role])
-
-        # See the user bound multiple times
-        mappings = BindingMapping.objects.filter(role=system_role).first().mappings
-        self.assertEqual(len(mappings["users"]), 3)
-        tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role_binding", mappings["id"]),
-                relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}"),
-            )
-        )
-        self.assertEqual(len(tuples), 1)
-        tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role_binding", mappings["id"]),
-                relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_2}"),
-            )
-        )
-        self.assertEqual(len(tuples), 1)
-
-        # Call reset and there would be only one user in mapping
-        dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-            car_1,
-            ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
-            replicator=InMemoryRelationReplicator(self.tuples),
-        )
-        dual_write_handler.generate_relations_reset_roles(car_1.roles.all())
-        dual_write_handler.replicate()
-
-        mapping = BindingMapping.objects.filter(role=system_role).first()
-        self.assertEqual(
-            mapping.mappings["users"],
-            {str(SourceKey(car_1, car_1.source_pk())): user_id_1},
-        )
-        tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role_binding", mapping.mappings["id"]),
-                relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}"),
-            )
-        )
-        self.assertEqual(len(tuples), 1)
-        # user_id_2 is gone because we wipe the old format out
-        tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role_binding", mapping.mappings["id"]),
-                relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_2}"),
-            )
-        )
-        self.assertEqual(len(tuples), 0)
-
-        # Call reset again for car_1, should be the same
-        dual_write_handler.generate_relations_reset_roles(car_1.roles.all())
-        dual_write_handler.replicate()
-        mapping.refresh_from_db()
-        self.assertEqual(
-            mapping.mappings["users"],
-            {str(SourceKey(car_1, car_1.source_pk())): user_id_1},
-        )
-        tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role_binding", mapping.mappings["id"]),
-                relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}"),
-            )
-        )
-        self.assertEqual(len(tuples), 1)
-
-        # Call reset for car_2, it will appear in the mapping
-        dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-            car_2,
-            ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
-            replicator=InMemoryRelationReplicator(self.tuples),
-        )
-        dual_write_handler.generate_relations_reset_roles(car_2.roles.all())
-        dual_write_handler.replicate()
-        mapping.refresh_from_db()
-        self.assertEqual(
-            mapping.mappings["users"],
-            {
-                str(SourceKey(car_1, car_1.source_pk())): user_id_1,
-                str(SourceKey(car_2, car_2.source_pk())): user_id_2,
-            },
-        )
-        tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role_binding", mapping.mappings["id"]),
-                relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_2}"),
-            )
-        )
-        self.assertEqual(len(tuples), 1)
-
-        # Call reset for car_3, it will appear in the mapping, but relation tuple
-        # remains 1 cuase it is still creating relationship for user_id_1
-        dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-            car_3,
-            ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
-            replicator=InMemoryRelationReplicator(self.tuples),
-        )
-        dual_write_handler.generate_relations_reset_roles(car_3.roles.all())
-        dual_write_handler.replicate()
-        mapping.refresh_from_db()
-        self.assertEqual(
-            mapping.mappings["users"],
-            {
-                str(SourceKey(car_1, car_1.source_pk())): user_id_1,
-                str(SourceKey(car_2, car_2.source_pk())): user_id_2,
-                str(SourceKey(car_3, car_3.source_pk())): user_id_1,
-            },
-        )
-        tuples = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "role_binding", mapping.mappings["id"]),
-                relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id_1}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2640,11 +2576,14 @@ class RbacFixture:
     def new_system_role(
         self,
         name: str,
-        permissions: list[str],
+        permissions: Optional[list[str]] = None,
         platform_default=False,
         admin_default=False,
     ) -> Role:
         """Create a new system role with the given name and permissions."""
+        if permissions is None:
+            permissions = []
+
         role = Role.objects.create(
             name=name,
             system=True,
@@ -2663,6 +2602,8 @@ class RbacFixture:
         ]
 
         Access.objects.bulk_create(access_list)
+
+        seed_v2_role_from_v1(role)
 
         return role
 

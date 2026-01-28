@@ -27,8 +27,11 @@ Data filtering for list operations is handled by WorkspaceAccessFilterBackend
 in management/workspace/filters.py.
 """
 
+import logging
+
 from feature_flags import FEATURE_FLAGS
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
+from management.workspace.model import Workspace
 from management.workspace.utils import (
     is_user_allowed_v1,
     is_user_allowed_v2,
@@ -38,9 +41,30 @@ from management.workspace.utils import (
 )
 from rest_framework import permissions
 
+# Special query parameter value for listing all workspace types
+WORKSPACE_TYPE_ALL = "all"
+
 # Custom message for target workspace access denial
 # This message is relation-agnostic: V1 uses 'write' operation, V2 uses 'create' permission
 TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = "You do not have permission to access the target workspace."
+
+logger = logging.getLogger(__name__)
+
+
+def _build_s2s_log_context(request, view, ws_id=None):
+    """Build log context string for S2S system user access."""
+    user = request.user
+    request_id = getattr(request, "req_id", None)
+    org_id = getattr(user, "org_id", None)
+    username = getattr(user, "username", None)
+    user_id = getattr(user, "user_id", None)
+    is_admin = getattr(user, "admin", False)
+    action = getattr(view, "action", None)
+    return (
+        f"[request_id={request_id}, org_id={org_id}, username={username}, "
+        f"user_id={user_id}, is_admin={is_admin}, action={action}, "
+        f"method={request.method}, path={request.path}, workspace_id={ws_id}]"
+    )
 
 
 class WorkspaceAccessPermission(permissions.BasePermission):
@@ -116,11 +140,21 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # Uses unified check_system_user_access to prevent behavior drift
         system_check = check_system_user_access(request.user, action=view.action)
         if system_check.result == SystemUserAccessResult.ALLOWED:
+            log_ctx = _build_s2s_log_context(request, view, ws_id)
+            logger.info("S2S system user admin access granted (v2) %s", log_ctx)
             return True
         if system_check.result == SystemUserAccessResult.DENIED:
+            log_ctx = _build_s2s_log_context(request, view, ws_id)
+            logger.info("S2S system user access denied: not admin (v2) %s", log_ctx)
             return False
         if system_check.result == SystemUserAccessResult.CHECK_MOVE_TARGET:
-            return self._check_move_target_exists_v1(request)
+            result = self._check_move_target_exists_v1(request)
+            log_ctx = _build_s2s_log_context(request, view, ws_id)
+            if result:
+                logger.info("S2S system user admin access granted for move (v2) %s", log_ctx)
+            else:
+                logger.info("S2S system user admin denied: target ws not found (v2) %s", log_ctx)
+            return result
         # SystemUserAccessResult.NOT_SYSTEM_USER - continue with normal checks
 
         # For create operations, check permission on parent workspace (ws_id)
@@ -135,6 +169,16 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         if view.action == "move":
             return self._check_move_target_access_v2(request)
 
+        # For list operations with type=standard or type=all, check if user has real workspace access
+        # This preserves V1 behavior: return 403 if user has no actual permissions
+        if view.action == "list":
+            workspace_type = request.query_params.get("type", "").lower()
+            if workspace_type in (Workspace.Types.STANDARD, WORKSPACE_TYPE_ALL):
+                # Call is_user_allowed_v2 to populate has_real_workspace_access flag
+                is_user_allowed_v2(request, perm, None)
+                if not getattr(request, "has_real_workspace_access", False):
+                    return False
+
         # For list/detail operations, allow request to proceed
         # FilterBackend handles access filtering via queryset
         # This ensures 404 for both non-existing and inaccessible workspaces
@@ -147,12 +191,29 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         Admin users have full access (except move requires target validation).
         Non-admin users are checked against role-based permissions.
         """
+        is_system_user = getattr(request.user, "system", False)
+
         # Admin users have full access, but for move operations they still need
         # the target workspace to exist within their tenant
         if request.user.admin:
             if view.action == "move":
-                return self._check_move_target_exists_v1(request)
+                result = self._check_move_target_exists_v1(request)
+                if is_system_user:
+                    log_ctx = _build_s2s_log_context(request, view, ws_id)
+                    if result:
+                        logger.info("S2S system user admin access granted for move %s", log_ctx)
+                    else:
+                        logger.info("S2S system user admin denied: target ws not found %s", log_ctx)
+                return result
+            if is_system_user:
+                log_ctx = _build_s2s_log_context(request, view, ws_id)
+                logger.info("S2S system user admin access granted %s", log_ctx)
             return True
+
+        # Non-admin user (including system users without admin)
+        if is_system_user:
+            log_ctx = _build_s2s_log_context(request, view, ws_id)
+            logger.info("S2S system user access denied: not admin %s", log_ctx)
 
         op = operation_from_request(request)
         if not is_user_allowed_v1(request, op, ws_id):

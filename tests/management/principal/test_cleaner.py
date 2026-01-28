@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal cleaner."""
+
 from functools import partial
 from threading import Event, Thread
 import uuid

@@ -16,6 +16,7 @@
 #
 
 """Class to handle Dual Write API related operations."""
+
 import logging
 import time
 from abc import ABC, abstractmethod
