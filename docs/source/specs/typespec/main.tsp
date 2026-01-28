@@ -646,7 +646,6 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultCreateRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
     const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id),last_modified";
 
 
@@ -949,7 +948,6 @@ namespace RoleBindings {
 
     @doc("Grant access to a resource to a set of subjects with a set of roles")
     @summary("Grant access to a resource to a set of subjects with a set of roles")
-    @route("create/")
     @opExample(#{
         parameters: #{
             body: #{
@@ -1004,7 +1002,7 @@ namespace RoleBindings {
         @body body: CreateRoleBindingsRequest;
 
         @example("resource(id),subjects(id),roles(id),last_modified")
-        @query fields?: FieldMask = DefaultCreateRoleBindingFieldMask;
+        @query fields?: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
