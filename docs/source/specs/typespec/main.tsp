@@ -1333,9 +1333,19 @@ namespace Roles {
             statusCode: 204,
         },
     })
-    @delete op bulkDelete(
-        @doc("A comma-separated list of the UUIDs of the roles to delete.")
-        @encode(ArrayEncoding.commaDelimited)
-        @query ids: UUID[]
-    ): DeleteRolesResponse | Problems.CommonProblems | Problems.Problem400;
+@doc("Request to batch delete roles")
+model BatchDeleteRolesRequest {
+    @doc("The UUIDs of the roles to delete. Maximum of 100 roles can be deleted in a batch.")
+    @minItems(1)
+    @maxItems(100)
+    ids: UUID[];
+}
+
+@doc("Batch delete multiple roles")
+@route(":batchDelete")
+@post op batchDelete(
+    @body body: BatchDeleteRolesRequest
+): {
+    @statusCode _: 204;
+} | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 }
