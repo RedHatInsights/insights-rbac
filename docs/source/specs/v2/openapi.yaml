@@ -155,8 +155,7 @@ paths:
           in: query
           required: false
           schema:
-            type: integer
-            format: int64
+            $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -164,7 +163,7 @@ paths:
           required: false
           description: Cursor for cursor-based pagination.
           schema:
-            type: string
+            $ref: '#/components/schemas/Cursor'
           explode: false
         - name: role_id
           in: query
@@ -176,53 +175,17 @@ paths:
         - name: fields
           in: query
           required: false
-          description: |-
-            Control which fields are included in the response to optimize payload size and improve performance.
-
-            **Default Behavior:**
-            Required fields are always included: last_modified, role.id, subjects[].id, subjects[].type
-
-            **When fields parameter is provided:**
-            Only explicitly specified fields are included in addition to the required fields.
-
-            **Syntax:**
-            - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-            - Use comma to separate multiple field specifications: `role(description),subjects(group.name)`
-            - Fields not in parentheses apply to the root level
-
-            **Available Fields:**
-
-            **role object:**
-            - id (UUID) - always included
-            - name (string) - role name
-            - description (string) - role description
-            - permissions (array) - full permission list (application, resource_type, operation)
-
-            **subjects array:**
-            - id (UUID) - always included
-            - type (string) - always included ("group")
-            - group.name (string) - name of the group
-            - group.description (string) - description of the group
-            - group.user_count (integer) - number of users in the group
-
-            **root level:**
-            - last_modified (datetime) - always included
-
-            **Examples:**
-            - `role(description)` - Role description
-            - `role(permissions)` - Include full permissions list
-            - `subjects(group.name,group.user_count)` - Group names and user counts
-            - `role(description),subjects(group.name)` - Combined fields
-            - `role(description,permissions),subjects(group.name,group.user_count)` - Role details with subject info
+          description: Control which fields are included in the response to optimize payload size.
           schema:
-            type: string
+            $ref: '#/components/schemas/FieldMask'
+            default: role(id,name,description,permissions),subjects(id,type),last_modified
           explode: false
         - name: order_by
           in: query
           required: false
-          description: Sort by specified field(s), prefix with '-' for descending order
+          description: Sort by specified field(s), prefix with '-' for descending order.
           schema:
-            type: string
+            $ref: '#/components/schemas/OrderBy'
             default: role.name
           explode: false
       responses:
@@ -245,35 +208,28 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/RoleBindings.RoleBindingByRole'
-              examples:
-                example0:
-                  value:
-                    meta:
-                      limit: 10
-                    links:
-                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&role_id=550e8400-e29b-41d4-a716-446655440002&cursor=xyz
-                      previous: null
-                    data:
-                      - last_modified: '2024-08-04T12:00:00Z'
-                        role:
-                          id: 550e8400-e29b-41d4-a716-446655440002
-                        subjects:
-                          - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                            type: group
-                example1:
-                  value:
-                    meta:
-                      limit: 10
-                    links:
-                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1
-                      previous: null
-                    data:
-                      - last_modified: '2024-08-04T12:00:00Z'
-                        role:
-                          id: 550e8400-e29b-41d4-a716-446655440002
-                        subjects:
-                          - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                            type: group
+              example:
+                meta:
+                  limit: 10
+                links:
+                  next: http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1
+                  previous: null
+                data:
+                  - last_modified: '2024-08-04T12:00:00Z'
+                    role:
+                      id: 550e8400-e29b-41d4-a716-446655440002
+                      name: Workspace Admin
+                      description: Full administrative access to workspace
+                      permissions:
+                        - application: rbac
+                          resource_type: workspace
+                          operation: read
+                        - application: rbac
+                          resource_type: workspace
+                          operation: write
+                    subjects:
+                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                        type: group
         '401':
           description: Access is unauthorized.
           content:
@@ -2075,6 +2031,16 @@ components:
           type: string
           description: Resource type
           example: workspace
+    RoleBindings.Role:
+      type: object
+      properties:
+        id:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          description: Role identifier
+        name:
+          type: string
+          description: Name of the role
     RoleBindings.RoleBindingByRole:
       type: object
       properties:

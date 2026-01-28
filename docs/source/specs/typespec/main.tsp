@@ -655,6 +655,7 @@ namespace Workspaces {
 @doc("Operations about role bindings")
 namespace RoleBindings {
     const DefaultRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
+    const DefaultRoleBindingByRoleFieldMask: FieldMask = "role(id,name,description,permissions),subjects(id,type),last_modified";
 
 
     @discriminator("type")
@@ -1118,36 +1119,21 @@ namespace RoleBindings {
                 #{
                     last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
-                        id: "550e8400-e29b-41d4-a716-446655440002"
-                    },
-                    subjects: #[
-                        #{
-                            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                            type: "group"
-                        }
-                    ]
-                }
-            ]
-        }
-    })
-    @opExample(#{
-        parameters: #{
-            limit: 10,
-            role_id: "550e8400-e29b-41d4-a716-446655440002"
-        },
-        returnType: #{
-            meta: #{
-                limit: 10
-            },
-            links: #{
-                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?limit=10&role_id=550e8400-e29b-41d4-a716-446655440002&cursor=xyz",
-                previous: null
-            },
-            data: #[
-                #{
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-                    role: #{
-                        id: "550e8400-e29b-41d4-a716-446655440002"
+                        id: "550e8400-e29b-41d4-a716-446655440002",
+                        name: "Workspace Admin",
+                        description: "Full administrative access to workspace",
+                        permissions: #[
+                            #{
+                                application: "rbac",
+                                resource_type: "workspace",
+                                operation: "read"
+                            },
+                            #{
+                                application: "rbac",
+                                resource_type: "workspace",
+                                operation: "write"
+                            }
+                        ]
                     },
                     subjects: #[
                         #{
@@ -1160,60 +1146,20 @@ namespace RoleBindings {
         }
     })
     @get op listByRole(
-        @query limit?: int64 = 10;
+        @query limit?: Limit = DefaultLimit;
 
         @doc("Cursor for cursor-based pagination.")
-        @query cursor?: string;
+        @query cursor?: Cursor;
 
         @doc("Filter by role ID")
         @example("550e8400-e29b-41d4-a716-446655440002")
         @query role_id: string;
 
-        @doc("""
-        Control which fields are included in the response to optimize payload size and improve performance.
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = DefaultRoleBindingByRoleFieldMask;
 
-        **Default Behavior:**
-        Required fields are always included: last_modified, role.id, subjects[].id, subjects[].type
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are included in addition to the required fields.
-
-        **Syntax:**
-        - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-        - Use comma to separate multiple field specifications: `role(description),subjects(group.name)`
-        - Fields not in parentheses apply to the root level
-
-        **Available Fields:**
-
-        **role object:**
-        - id (UUID) - always included
-        - name (string) - role name
-        - description (string) - role description
-        - permissions (array) - full permission list (application, resource_type, operation)
-
-        **subjects array:**
-        - id (UUID) - always included
-        - type (string) - always included ("group")
-        - group.name (string) - name of the group
-        - group.description (string) - description of the group
-        - group.user_count (integer) - number of users in the group
-
-        **root level:**
-        - last_modified (datetime) - always included
-
-        **Examples:**
-        - `role(description)` - Role description
-        - `role(permissions)` - Include full permissions list
-        - `subjects(group.name,group.user_count)` - Group names and user counts
-        - `role(description),subjects(group.name)` - Combined fields
-        - `role(description,permissions),subjects(group.name,group.user_count)` - Role details with subject info
-        """)
-        @example("role(description,permissions),subjects(group.name,group.user_count)")
-        @query fields?: string;
-
-        @doc("Sort by specified field(s), prefix with '-' for descending order")
-        @example("role_name,-last_modified")
-        @query order_by?: string = "role.name";
+        @doc("Sort by specified field(s), prefix with '-' for descending order.")
+        @query order_by?: OrderBy = "role.name";
 
     ): ListResponse<RoleBindingByRole> | Problems.CommonProblems;
 }
