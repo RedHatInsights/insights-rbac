@@ -401,7 +401,7 @@ namespace Workspaces {
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
         @doc("Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.")
-        @query({explode: false}) ids?: UUID[];
+        @query(#{explode: false}) ids?: UUID[];
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
