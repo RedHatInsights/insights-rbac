@@ -400,8 +400,8 @@ namespace Workspaces {
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
-        @doc("Filter workspaces by one or more comma-separated UUIDs.")
-        @query({explode: false}) id?: UUID[];
+        @doc("Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.")
+        @query({explode: false}) ids?: UUID[];
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
