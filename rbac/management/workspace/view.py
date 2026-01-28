@@ -180,6 +180,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
+        id_filter = request.query_params.get("ids")
 
         # Validate name parameter: treat empty strings as "return all", reject NUL characters
         if name is not None:
@@ -187,6 +188,28 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                 name = None  # Treat empty name as unset, returning all results
             elif "\x00" in name:
                 raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
+
+        # Validate and filter by ids parameter (comma-separated list of UUIDs)
+        if id_filter is not None:
+            if not id_filter.strip():
+                id_filter = None  # Treat empty ids as unset, returning all results
+            else:
+                if "\x00" in id_filter:
+                    raise serializers.ValidationError(
+                        {"ids": "The 'ids' query parameter contains invalid characters."}
+                    )
+
+                ids = list(
+                    dict.fromkeys(stripped for id_val in id_filter.split(",") if (stripped := id_val.strip().lower()))
+                )
+
+                for workspace_id in ids:
+                    validate_uuid(workspace_id, "workspace id filter")
+                queryset = queryset.filter(id__in=ids)
+
+                # When filtering by ids, default to standard type unless type is explicitly specified
+                if "type" not in request.query_params:
+                    type_field = Workspace.Types.STANDARD
 
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)
