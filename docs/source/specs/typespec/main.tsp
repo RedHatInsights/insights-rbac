@@ -1130,7 +1130,7 @@ namespace RoleBindings {
         @doc("Subjects assigned this role")
         subjects?: Subject[];
         @doc("Resources assigned this role")
-        resources?: Resource[]; 
+        resources?: Resource[];
     }
 
     @doc("List role bindings grouped by role")
