@@ -348,11 +348,9 @@
                           "type": "group"
                         }
                       ],
-                      "resources": [
-                        {
-                          "id": "550e8400-e29b-41d4-a716-446655440001"
-                        }
-                      ]
+                      "resource": {
+                        "id": "550e8400-e29b-41d4-a716-446655440001"
+                      }
                     }
                   ]
                 }
@@ -3149,12 +3147,13 @@
             },
             "description": "Subjects assigned this role"
           },
-          "resources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleBindings.Resource"
-            },
-            "description": "Resources assigned this role"
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource the role is assigned to"
           }
         },
         "example": {

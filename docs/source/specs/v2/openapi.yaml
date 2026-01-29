@@ -221,8 +221,8 @@ paths:
                     subjects:
                       - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
                         type: group
-                    resources:
-                      - id: 550e8400-e29b-41d4-a716-446655440001
+                    resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
         '401':
           description: Access is unauthorized.
           content:
@@ -2072,11 +2072,10 @@ components:
               - $ref: '#/components/schemas/RoleBindings.UserSubject'
               - $ref: '#/components/schemas/RoleBindings.GroupSubject'
           description: Subjects assigned this role
-        resources:
-          type: array
-          items:
-            $ref: '#/components/schemas/RoleBindings.Resource'
-          description: Resources assigned this role
+        resource:
+          allOf:
+            - $ref: '#/components/schemas/RoleBindings.Resource'
+          description: Resource the role is assigned to
       example:
         last_modified: '2024-08-04T12:00:00Z'
         role:

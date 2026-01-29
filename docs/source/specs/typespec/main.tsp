@@ -1122,8 +1122,8 @@ namespace RoleBindings {
         role?: KesselRBAC.Role;
         @doc("Subjects assigned this role")
         subjects?: Subject[];
-        @doc("Resources assigned this role")
-        resources?: Resource[];
+        @doc("Resource the role is assigned to")
+        resource?: Resource;
     }
 
     @doc("List role bindings grouped by role")
@@ -1154,11 +1154,9 @@ namespace RoleBindings {
                             type: "group"
                         }
                     ],
-                    resources: #[
-                        #{
-                            id: "550e8400-e29b-41d4-a716-446655440001"
-                        }
-                    ]
+                    resource: #{
+                        id: "550e8400-e29b-41d4-a716-446655440001"
+                    }
                 }
             ]
         }
