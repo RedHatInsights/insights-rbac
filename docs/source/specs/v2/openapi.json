@@ -283,7 +283,7 @@
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
-              "default": "resource(id),role(id),subject(id, type),last_modified"
+              "default": "resource(id),role(id),subject(id, type)"
             },
             "explode": false
           },
@@ -336,7 +336,6 @@
                   },
                   "data": [
                     {
-                      "last_modified": "2024-08-04T12:00:00Z",
                       "role": {
                         "id": "550e8400-e29b-41d4-a716-446655440002"
                       },
@@ -3410,11 +3409,6 @@
       "RoleBindings.RoleBinding": {
         "type": "object",
         "properties": {
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Timestamp of last modification"
-          },
           "role": {
             "allOf": [
               {
@@ -3444,7 +3438,6 @@
           }
         },
         "example": {
-          "last_modified": "2024-08-04T12:00:00Z",
           "role": {
             "id": "550e8400-e29b-41d4-a716-446655440002",
             "name": "Workspace Admin",

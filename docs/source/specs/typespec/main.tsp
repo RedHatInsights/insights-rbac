@@ -1138,7 +1138,6 @@ namespace RoleBindings {
         }
     })
     @example(#{
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
@@ -1165,8 +1164,6 @@ namespace RoleBindings {
         }
     })
     model RoleBinding {
-        @doc("Timestamp of last modification")
-        last_modified?: offsetDateTime;
         @doc("Role details")
         role?: KesselRBAC.Role;
         @doc("Subject assigned this role")
@@ -1191,7 +1188,6 @@ namespace RoleBindings {
             },
             data: #[
                 #{
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
                         id: "550e8400-e29b-41d4-a716-446655440002"
                     },
@@ -1217,7 +1213,7 @@ namespace RoleBindings {
         @query role_id?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "resource(id),role(id),subject(id, type),last_modified";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
 
         @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.id";
