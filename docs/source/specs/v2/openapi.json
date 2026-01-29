@@ -17,229 +17,6 @@
   ],
   "paths": {
     "/role-bindings/": {
-      "post": {
-        "operationId": "RoleBindings_create",
-        "summary": "Grant access to a resource to a set of subjects with a set of roles",
-        "description": "Grant access to a resource to a set of subjects with a set of roles",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "The request has succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "meta",
-                    "links",
-                    "data"
-                  ],
-                  "properties": {
-                    "meta": {
-                      "$ref": "#/components/schemas/CursorPaginationMeta"
-                    },
-                    "links": {
-                      "$ref": "#/components/schemas/CursorPaginationLinks"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/RoleBindings.RoleBinding"
-                      }
-                    }
-                  }
-                },
-                "example": {
-                  "meta": {
-                    "limit": 10
-                  },
-                  "links": {
-                    "next": null,
-                    "previous": null
-                  },
-                  "data": [
-                    {
-                      "resource": {
-                        "id": "550e8400-e29b-41d4-a716-446655440001",
-                        "type": "workspace"
-                      },
-                      "subject": {
-                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                        "type": "group"
-                      },
-                      "role": {
-                        "id": "550e8400-e29b-41d4-a716-446655440002"
-                      },
-                      "last_modified": "2024-08-04T12:00:00Z"
-                    },
-                    {
-                      "resource": {
-                        "id": "550e8400-e29b-41d4-a716-446655440001",
-                        "type": "workspace"
-                      },
-                      "subject": {
-                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                        "type": "group"
-                      },
-                      "role": {
-                        "id": "550e8400-e29b-41d4-a716-446655440003"
-                      },
-                      "last_modified": "2024-08-04T12:00:00Z"
-                    },
-                    {
-                      "resource": {
-                        "id": "550e8400-e29b-41d4-a716-446655440001",
-                        "type": "workspace"
-                      },
-                      "subject": {
-                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-                        "type": "user"
-                      },
-                      "role": {
-                        "id": "550e8400-e29b-41d4-a716-446655440002"
-                      },
-                      "last_modified": "2024-08-04T12:00:00Z"
-                    },
-                    {
-                      "resource": {
-                        "id": "550e8400-e29b-41d4-a716-446655440001",
-                        "type": "workspace"
-                      },
-                      "subject": {
-                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-                        "type": "user"
-                      },
-                      "role": {
-                        "id": "550e8400-e29b-41d4-a716-446655440003"
-                      },
-                      "last_modified": "2024-08-04T12:00:00Z"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The server could not understand the request due to invalid syntax.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problems.Problem400"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Access is unauthorized.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "$ref": "#/components/schemas/Problems.ProblemType"
-                    },
-                    "status": {
-                      "type": "number",
-                      "enum": [
-                        401
-                      ]
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    },
-                    "instance": {
-                      "type": "string",
-                      "format": "uri"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Access is forbidden.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problems.Problem403"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Server error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "$ref": "#/components/schemas/Problems.ProblemType"
-                    },
-                    "status": {
-                      "type": "number",
-                      "enum": [
-                        500
-                      ]
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    },
-                    "instance": {
-                      "type": "string",
-                      "format": "uri"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Role Bindings"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
-              },
-              "example": {
-                "resource": {
-                  "id": "550e8400-e29b-41d4-a716-446655440001",
-                  "type": "workspace"
-                },
-                "subjects": [
-                  {
-                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                    "type": "group"
-                  },
-                  {
-                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-                    "type": "user"
-                  }
-                ],
-                "roles": [
-                  {
-                    "id": "550e8400-e29b-41d4-a716-446655440002"
-                  },
-                  {
-                    "id": "550e8400-e29b-41d4-a716-446655440003"
-                  }
-                ]
-              }
-            }
-          }
-        }
-      },
       "get": {
         "operationId": "RoleBindings_list",
         "summary": "List role bindings",
@@ -282,7 +59,7 @@
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
-              "default": "resource(id),role(id),subject(id, type),last_modified"
+              "default": "resource(id),role(id),subject(id, type)"
             },
             "explode": false
           },
@@ -335,7 +112,6 @@
                   },
                   "data": [
                     {
-                      "last_modified": "2024-08-04T12:00:00Z",
                       "role": {
                         "id": "550e8400-e29b-41d4-a716-446655440002"
                       },
@@ -921,6 +697,188 @@
                     "id": "550e8400-e29b-41d4-a716-446655440003"
                   }
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/role-bindings:batchCreate": {
+      "post": {
+        "operationId": "RoleBindings_batchCreate",
+        "summary": "Grant access to a resource to a set of subjects with a set of roles",
+        "description": "Grant access to a resource to a set of subjects with a set of roles",
+        "parameters": [
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FieldMask",
+              "default": "resource(id),role(id),subject(id, type)"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "meta",
+                    "links",
+                    "data"
+                  ],
+                  "properties": {
+                    "meta": {
+                      "$ref": "#/components/schemas/CursorPaginationMeta"
+                    },
+                    "links": {
+                      "$ref": "#/components/schemas/CursorPaginationLinks"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RoleBindings.RoleBinding"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "meta": {
+                    "limit": 10
+                  },
+                  "links": {
+                    "next": null,
+                    "previous": null
+                  },
+                  "data": [
+                    {
+                      "resource": {
+                        "id": "550e8400-e29b-41d4-a716-446655440001",
+                        "type": "workspace"
+                      },
+                      "subject": {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        "type": "group"
+                      },
+                      "role": {
+                        "id": "550e8400-e29b-41d4-a716-446655440002"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem400"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Role Bindings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
+              },
+              "example": {
+                "resource": {
+                  "id": "550e8400-e29b-41d4-a716-446655440001",
+                  "type": "workspace"
+                },
+                "subject": {
+                  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                  "type": "group"
+                },
+                "role": {
+                  "id": "550e8400-e29b-41d4-a716-446655440002"
+                }
               }
             }
           }
@@ -3183,8 +3141,8 @@
         "type": "object",
         "required": [
           "resource",
-          "subjects",
-          "roles"
+          "subject",
+          "role"
         ],
         "properties": {
           "resource": {
@@ -3208,58 +3166,50 @@
               "id",
               "type"
             ],
-            "description": "Resource to bind roles to"
+            "description": "Resource to bind the role to"
           },
-          "subjects": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/UUID"
-                    }
-                  ],
-                  "description": "UUID that uniquely identifies the subject"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "user",
-                    "group"
-                  ],
-                  "description": "Type of subject"
-                }
+          "subject": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UUID"
+                  }
+                ],
+                "description": "UUID that uniquely identifies the subject"
               },
-              "required": [
-                "id",
-                "type"
-              ]
+              "type": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "group"
+                ],
+                "description": "Type of subject"
+              }
             },
-            "minItems": 1,
-            "description": "Subjects to grant access to (at least one required)"
+            "required": [
+              "id",
+              "type"
+            ],
+            "description": "Subject to grant access to"
           },
-          "roles": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/UUID"
-                    }
-                  ],
-                  "description": "UUID that uniquely identifies the role"
-                }
-              },
-              "required": [
-                "id"
-              ]
+          "role": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UUID"
+                  }
+                ],
+                "description": "UUID that uniquely identifies the role"
+              }
             },
-            "minItems": 1,
-            "description": "Roles to assign (at least one required)"
+            "required": [
+              "id"
+            ],
+            "description": "Role to assign"
           }
         },
         "description": "Request body for creating role bindings",
@@ -3268,24 +3218,13 @@
             "id": "550e8400-e29b-41d4-a716-446655440001",
             "type": "workspace"
           },
-          "subjects": [
-            {
-              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-              "type": "group"
-            },
-            {
-              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-              "type": "user"
-            }
-          ],
-          "roles": [
-            {
-              "id": "550e8400-e29b-41d4-a716-446655440002"
-            },
-            {
-              "id": "550e8400-e29b-41d4-a716-446655440003"
-            }
-          ]
+          "subject": {
+            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "type": "group"
+          },
+          "role": {
+            "id": "550e8400-e29b-41d4-a716-446655440002"
+          }
         }
       },
       "RoleBindings.GroupDetails": {
@@ -3359,11 +3298,6 @@
       "RoleBindings.RoleBinding": {
         "type": "object",
         "properties": {
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Timestamp of last modification"
-          },
           "role": {
             "allOf": [
               {
@@ -3393,7 +3327,6 @@
           }
         },
         "example": {
-          "last_modified": "2024-08-04T12:00:00Z",
           "role": {
             "id": "550e8400-e29b-41d4-a716-446655440002",
             "name": "Workspace Admin",

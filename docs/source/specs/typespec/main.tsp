@@ -747,17 +747,11 @@ namespace RoleBindings {
     @doc("Request body for creating role bindings")
     @example(#{
         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-        subjects: #[
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" }
-        ],
-        roles: #[
-            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
-        ]
+        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+        role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
     })
     model CreateRoleBindingsRequest {
-        @doc("Resource to bind roles to")
+        @doc("Resource to bind the role to")
         resource: {
             @doc("UUID that uniquely identifies the resource")
             id: UUID;
@@ -765,21 +759,21 @@ namespace RoleBindings {
             @example("workspace")
             type: string;
         };
-        @doc("Subjects to grant access to (at least one required)")
-        @minItems(1)
-        subjects: {
+        @doc("Subject to grant access to")
+        subject: {
             @doc("UUID that uniquely identifies the subject")
             id: UUID;
             @doc("Type of subject")
             type: "user" | "group";
-        }[];
-        @doc("Roles to assign (at least one required)")
-        @minItems(1)
-        roles: {
+        };
+        @doc("Role to assign")
+        role: {
             @doc("UUID that uniquely identifies the role")
             id: UUID;
-        }[];
+        };
     }
+
+
 
 
     @example(#{
@@ -970,18 +964,13 @@ namespace RoleBindings {
 
     @doc("Grant access to a resource to a set of subjects with a set of roles")
     @summary("Grant access to a resource to a set of subjects with a set of roles")
+    @route(":batchCreate")
     @opExample(#{
         parameters: #{
             body: #{
                 resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subjects: #[
-                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" }
-                ],
-                roles: #[
-                    #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-                    #{ id: "550e8400-e29b-41d4-a716-446655440003" }
-                ]
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
             }
         },
         returnType: #{
@@ -996,31 +985,13 @@ namespace RoleBindings {
                 #{
                     resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
                     subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-                    role: #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-                },
-                #{
-                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-                    role: #{ id: "550e8400-e29b-41d4-a716-446655440003" },
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-                },
-                #{
-                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
-                    role: #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-                },
-                #{
-                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
-                    role: #{ id: "550e8400-e29b-41d4-a716-446655440003" },
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
                 }
             ]
         }
     })
-    @post op create(
+    @post op batchCreate(
+        @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
         @body body: CreateRoleBindingsRequest;
     ): ListResponse<RoleBinding> | Problems.CommonProblems | Problems.Problem400;
 
@@ -1090,7 +1061,6 @@ namespace RoleBindings {
     ): ItemResponse<RoleBindingBySubject, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
     @example(#{
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
@@ -1119,7 +1089,6 @@ namespace RoleBindings {
         }
     })
     @example(#{
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
@@ -1146,8 +1115,6 @@ namespace RoleBindings {
         }
     })
     model RoleBinding {
-        @doc("Timestamp of last modification")
-        last_modified?: offsetDateTime;
         @doc("Role details")
         role?: KesselRBAC.Role;
         @doc("Subject assigned this role")
@@ -1172,7 +1139,6 @@ namespace RoleBindings {
             },
             data: #[
                 #{
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
                     role: #{
                         id: "550e8400-e29b-41d4-a716-446655440002"
                     },
@@ -1198,7 +1164,7 @@ namespace RoleBindings {
         @query role_id?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "resource(id),role(id),subject(id, type),last_modified";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
 
         @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.id";
