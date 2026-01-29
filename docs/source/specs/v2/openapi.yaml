@@ -1056,6 +1056,84 @@ paths:
                 - application: inventory
                   resource_type: hosts
                   operation: delete
+  /roles:batchDelete:
+    post:
+      operationId: Roles_batchDelete
+      description: Delete multiple roles by ID atomically.
+      parameters: [ ]
+      responses:
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem404'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Roles.BatchDeleteRolesRequest'
+            example:
+              ids:
+                - 3a780e8d-da23-4a2c-a457-c9d31d8a6df0
+                - 4fc3eb8e-2675-4807-8072-c69bd2a66482
   /workspaces/:
     get:
       operationId: Workspaces_list
@@ -2293,6 +2371,22 @@ components:
           description: User details
       allOf:
         - $ref: '#/components/schemas/RoleBindings.BaseSubject'
+    Roles.BatchDeleteRolesRequest:
+      type: object
+      required:
+        - ids
+      properties:
+        ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/UUID'
+          minItems: 1
+          maxItems: 100
+          description: The IDs of the roles to delete. A maximum of 100 roles can be deleted in one batch.
+          example:
+            - 3a780e8d-da23-4a2c-a457-c9d31d8a6df0
+            - 4fc3eb8e-2675-4807-8072-c69bd2a66482
+      description: Data for request to delete multiple roles by ID.
     Roles.CreateOrUpdateRoleRequest:
       type: object
       required:
