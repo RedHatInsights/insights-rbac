@@ -1318,4 +1318,34 @@ namespace Roles {
         @query fields?: FieldMask = DefaultRoleFieldMask;
     ): ItemResponse<Role, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
+    @doc("Data for request to delete multiple roles by ID.")
+    model BatchDeleteRolesRequest {
+        @doc("The IDs of the roles to delete. A maximum of 100 roles can be deleted in one batch.")
+        @minItems(1)
+        @maxItems(100)
+        @example(#["3a780e8d-da23-4a2c-a457-c9d31d8a6df0", "4fc3eb8e-2675-4807-8072-c69bd2a66482"])
+        ids: UUID[];
+    }
+
+    @example(#{ statusCode: 204 })
+    model BatchDeleteRolesResponse {
+        @statusCode
+        statusCode: 204,
+    }
+
+    @doc("Delete multiple roles by ID atomically.")
+    @route(":batchDelete")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                ids: #["3a780e8d-da23-4a2c-a457-c9d31d8a6df0", "4fc3eb8e-2675-4807-8072-c69bd2a66482"],
+            }
+        },
+        returnType: #{
+            statusCode: 204
+        }
+    })
+    @post op batchDelete(
+        @body body: BatchDeleteRolesRequest
+    ): BatchDeleteRolesResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 }
