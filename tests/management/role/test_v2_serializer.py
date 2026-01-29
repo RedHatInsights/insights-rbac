@@ -16,81 +16,16 @@
 #
 """Test the RoleV2 serializer."""
 
-from django.test import TestCase
+from unittest.mock import Mock
+
+from django.db.models import Count
 
 from management.models import (
     RoleV2,
     Permission,
 )
-from management.role.v2_serializer import (
-    FieldSelection,
-    FieldSelectionValidationError,
-    RoleInputSerializer,
-    RoleOutputSerializer,
-)
+from management.role.v2_serializer import RoleOutputSerializer
 from tests.identity_request import IdentityRequest
-
-
-class FieldSelectionTests(TestCase):
-    """Test the FieldSelection class."""
-
-    def test_parse_valid_fields(self):
-        """Test parsing valid field names returns correct set."""
-        result = FieldSelection.parse("id,name,description")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.selected_fields, {"id", "name", "description"})
-
-    def test_parse_invalid_fields_raises_error(self):
-        """Test parsing invalid field names raises FieldSelectionValidationError."""
-        with self.assertRaises(FieldSelectionValidationError) as cm:
-            FieldSelection.parse("id,invalid_field,name")
-        self.assertIn("invalid_field", cm.exception.message)
-
-    def test_parse_empty_returns_none(self):
-        """Test parsing empty/None input returns None (server applies defaults)."""
-        self.assertIsNone(FieldSelection.parse(None))
-        self.assertIsNone(FieldSelection.parse(""))
-
-
-class RoleInputSerializerTests(TestCase):
-    """Test the RoleInputSerializer for query parameter validation."""
-
-    def test_valid_fields_parameter(self):
-        """Test valid fields parameter passes validation."""
-        serializer = RoleInputSerializer(data={"fields": "id,name,permissions_count"})
-        self.assertTrue(serializer.is_valid())
-        field_selection = serializer.validated_data["fields"]
-        self.assertIsInstance(field_selection, FieldSelection)
-        self.assertEqual(field_selection.selected_fields, {"id", "name", "permissions_count"})
-
-    def test_invalid_fields_parameter(self):
-        """Test invalid fields parameter raises validation error."""
-        serializer = RoleInputSerializer(data={"fields": "id,foobar_field"})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("fields", serializer.errors)
-        self.assertIn("foobar_field", str(serializer.errors["fields"]))
-
-    def test_valid_order_by_parameter(self):
-        """Test valid order_by parameter passes validation."""
-        serializer = RoleInputSerializer(data={"order_by": "name"})
-        self.assertTrue(serializer.is_valid())
-        self.assertEqual(serializer.validated_data["order_by"], "name")
-
-        serializer = RoleInputSerializer(data={"order_by": "-last_modified"})
-        self.assertTrue(serializer.is_valid())
-        self.assertEqual(serializer.validated_data["order_by"], "-last_modified")
-
-    def test_invalid_order_by_parameter(self):
-        """Test invalid order_by parameter raises validation error."""
-        serializer = RoleInputSerializer(data={"order_by": "foobar"})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("Invalid order_by field(s)", str(serializer.errors["order_by"]))
-
-    def test_order_by_permissions_count_not_allowed(self):
-        """Test invalid but real field in ?order_by= returns false."""
-        serializer = RoleInputSerializer(data={"order_by": "permissions_count"})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("order_by", serializer.errors)
 
 
 class RoleOutputSerializerTests(IdentityRequest):
@@ -113,9 +48,22 @@ class RoleOutputSerializerTests(IdentityRequest):
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
 
+    def _get_annotated_role(self):
+        """Get the role with the permissions_count annotation."""
+        return RoleV2.objects.annotate(permissions_count_annotation=Count("permissions", distinct=True)).get(
+            pk=self.role.pk
+        )
+
+    def _mock_request(self, fields=None):
+        """Create a mock request with query_params."""
+        request = Mock()
+        request.query_params = {"fields": fields} if fields else {}
+        return request
+
     def test_default_fields_when_no_field_selection(self):
         """Test that default fields are returned when no fields param is provided."""
-        serializer = RoleOutputSerializer(self.role)
+        role = self._get_annotated_role()
+        serializer = RoleOutputSerializer(role, context={"request": self._mock_request()})
         data = serializer.data
 
         # Should return exactly the default fields
@@ -124,13 +72,13 @@ class RoleOutputSerializerTests(IdentityRequest):
 
         self.assertEqual(data["name"], "test_role")
         self.assertEqual(data["description"], "Test role description")
-        self.assertEqual(data["id"], self.role.uuid)
+        self.assertEqual(data["id"], str(self.role.uuid))
         self.assertIsNotNone(data["last_modified"])
 
     def test_custom_fields_with_field_selection(self):
         """Test that only requested fields are returned with field selection."""
-        field_selection = FieldSelection.parse("id,name,permissions_count")
-        serializer = RoleOutputSerializer(self.role, context={"field_selection": field_selection})
+        role = self._get_annotated_role()
+        serializer = RoleOutputSerializer(role, context={"request": self._mock_request("id,name,permissions_count")})
         data = serializer.data
 
         self.assertEqual(set(data.keys()), {"id", "name", "permissions_count"})
@@ -139,8 +87,8 @@ class RoleOutputSerializerTests(IdentityRequest):
 
     def test_permissions_field_returns_permission_objects(self):
         """Test that permissions field returns properly formatted permission objects."""
-        field_selection = FieldSelection.parse("id,permissions")
-        serializer = RoleOutputSerializer(self.role, context={"field_selection": field_selection})
+        role = self._get_annotated_role()
+        serializer = RoleOutputSerializer(role, context={"request": self._mock_request("id,permissions")})
         data = serializer.data
 
         self.assertIn("permissions", data)
@@ -150,3 +98,30 @@ class RoleOutputSerializerTests(IdentityRequest):
         self.assertEqual(perm["application"], "inventory")
         self.assertEqual(perm["resource_type"], "hosts")
         self.assertEqual(perm["operation"], "read")
+
+    def test_all_fields_can_be_selected(self):
+        """Test that all valid fields can be selected."""
+        role = self._get_annotated_role()
+        serializer = RoleOutputSerializer(
+            role,
+            context={"request": self._mock_request("id,name,description,permissions_count,last_modified,permissions")},
+        )
+        data = serializer.data
+
+        expected = {"id", "name", "description", "permissions_count", "last_modified", "permissions"}
+        self.assertEqual(set(data.keys()), expected)
+
+    def test_invalid_fields_are_ignored(self):
+        """Test that invalid field names are silently ignored."""
+        role = self._get_annotated_role()
+        serializer = RoleOutputSerializer(role, context={"request": self._mock_request("id,invalid_field,name")})
+        data = serializer.data
+
+        # Only valid fields are returned
+        self.assertEqual(set(data.keys()), {"id", "name"})
+
+    def test_valid_fields_constant_matches_meta_fields(self):
+        """Test that VALID_FIELDS matches the fields defined in Meta."""
+        meta_fields = set(RoleOutputSerializer.Meta.fields)
+        valid_fields = RoleOutputSerializer.VALID_FIELDS
+        self.assertEqual(meta_fields, valid_fields)

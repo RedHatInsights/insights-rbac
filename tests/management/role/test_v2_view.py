@@ -172,7 +172,7 @@ class RoleV2ViewTests(IdentityRequest):
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Invalid order_by field(s)", str(response.data["detail"]))
+        self.assertIn("Invalid ordering field", str(response.data["detail"]))
 
     def test_list_roles_with_invalid_order_by_permissions_count(self):
         """Test invalid but real field in ?order_by= returns 400 error."""
@@ -180,4 +180,4 @@ class RoleV2ViewTests(IdentityRequest):
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Invalid order_by field(s)", str(response.data["detail"]))
+        self.assertIn("Invalid ordering field", str(response.data["detail"]))
