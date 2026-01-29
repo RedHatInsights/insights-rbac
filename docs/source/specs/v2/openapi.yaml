@@ -145,11 +145,10 @@ paths:
                   roles:
                     - id: 550e8400-e29b-41d4-a716-446655440002
                     - id: 550e8400-e29b-41d4-a716-446655440003
-  /role-bindings/by-role/:
     get:
-      operationId: RoleBindings_listByRole
-      summary: List role bindings grouped by role
-      description: List role bindings grouped by role
+      operationId: RoleBindings_list
+      summary: List role bindings
+      description: List role bindings
       parameters:
         - name: limit
           in: query
@@ -167,7 +166,7 @@ paths:
           explode: false
         - name: role_id
           in: query
-          required: true
+          required: false
           description: Filter by role ID
           schema:
             type: string
@@ -178,7 +177,7 @@ paths:
           description: Control which fields are included in the response to optimize payload size.
           schema:
             $ref: '#/components/schemas/FieldMask'
-            default: resource(id),role(id),subjects(id, type),last_modified
+            default: resource(id),role(id),subject(id, type),last_modified
           explode: false
         - name: order_by
           in: query
@@ -207,20 +206,20 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/RoleBindings.RoleBindingByRole'
+                      $ref: '#/components/schemas/RoleBindings.RoleBinding'
               example:
                 meta:
                   limit: 10
                 links:
-                  next: http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1
+                  next: http://localhost:8000/api/rbac/v2/role-bindings/?cursor=cD0yMDI1LTA4LTE1
                   previous: null
                 data:
                   - last_modified: '2024-08-04T12:00:00Z'
                     role:
                       id: 550e8400-e29b-41d4-a716-446655440002
-                    subjects:
-                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                        type: group
+                    subject:
+                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      type: group
                     resource:
                       id: 550e8400-e29b-41d4-a716-446655440001
         '401':
@@ -2241,7 +2240,7 @@ components:
           type: string
           description: Resource type
           example: workspace
-    RoleBindings.RoleBindingByRole:
+    RoleBindings.RoleBinding:
       type: object
       properties:
         last_modified:
@@ -2252,13 +2251,11 @@ components:
           allOf:
             - $ref: '#/components/schemas/Role'
           description: Role details
-        subjects:
-          type: array
-          items:
-            anyOf:
-              - $ref: '#/components/schemas/RoleBindings.UserSubject'
-              - $ref: '#/components/schemas/RoleBindings.GroupSubject'
-          description: Subjects assigned this role
+        subject:
+          anyOf:
+            - $ref: '#/components/schemas/RoleBindings.UserSubject'
+            - $ref: '#/components/schemas/RoleBindings.GroupSubject'
+          description: Subject assigned this role
         resource:
           allOf:
             - $ref: '#/components/schemas/RoleBindings.Resource'
@@ -2275,12 +2272,12 @@ components:
             - application: rbac
               resource_type: workspace
               operation: write
-        subjects:
-          - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-            type: group
-            group:
-              name: Engineering Team
-              user_count: 25
+        subject:
+          id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+          type: group
+          group:
+            name: Engineering Team
+            user_count: 25
     RoleBindings.RoleBindingBySubject:
       type: object
       properties:

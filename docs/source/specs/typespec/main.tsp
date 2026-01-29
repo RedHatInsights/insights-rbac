@@ -1128,17 +1128,15 @@ namespace RoleBindings {
                 }
             ]
         },
-        subjects: #[
-            #{
-                id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                type: "group",
-                group: #{
-                    name: "Engineering Team",
-                    description: "Development and engineering team",
-                    user_count: 25
-                }
+        subject: #{
+            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            type: "group",
+            group: #{
+                name: "Engineering Team",
+                description: "Development and engineering team",
+                user_count: 25
             }
-        ]
+        }
     })
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
@@ -1158,42 +1156,38 @@ namespace RoleBindings {
                 }
             ]
         },
-        subjects: #[
-            #{
-                id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                type: "group",
-                group: #{
-                    name: "Engineering Team",
-                    user_count: 25
-                }
+        subject: #{
+            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            type: "group",
+            group: #{
+                name: "Engineering Team",
+                user_count: 25
             }
-        ]
+        }
     })
-    model RoleBindingByRole {
+    model RoleBinding {
         @doc("Timestamp of last modification")
         last_modified?: offsetDateTime;
         @doc("Role details")
         role?: KesselRBAC.Role;
-        @doc("Subjects assigned this role")
-        subjects?: Subject[];
+        @doc("Subject assigned this role")
+        subject?: Subject;
         @doc("Resource the role is assigned to")
         resource?: Resource;
     }
 
-    @doc("List role bindings grouped by role")
-    @summary("List role bindings grouped by role")
-    @route("by-role/")
+    @doc("List role bindings")
+    @summary("List role bindings")
     @opExample(#{
         parameters: #{
-            limit: 10,
-            role_id: "550e8400-e29b-41d4-a716-446655440002"
+            limit: 10
         },
         returnType: #{
             meta: #{
                 limit: 10
             },
             links: #{
-                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1",
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/?cursor=cD0yMDI1LTA4LTE1",
                 previous: null
             },
             data: #[
@@ -1202,12 +1196,10 @@ namespace RoleBindings {
                     role: #{
                         id: "550e8400-e29b-41d4-a716-446655440002"
                     },
-                    subjects: #[
-                        #{
-                            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                            type: "group"
-                        }
-                    ],
+                    subject: #{
+                        id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        type: "group"
+                    },
                     resource: #{
                         id: "550e8400-e29b-41d4-a716-446655440001"
                     }
@@ -1215,7 +1207,7 @@ namespace RoleBindings {
             ]
         }
     })
-    @get op listByRole(
+    @get op list(
         @query limit?: Limit = DefaultLimit;
 
         @doc("Cursor for cursor-based pagination.")
@@ -1223,15 +1215,15 @@ namespace RoleBindings {
 
         @doc("Filter by role ID")
         @example("550e8400-e29b-41d4-a716-446655440002")
-        @query role_id: string;
+        @query role_id?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "resource(id),role(id),subjects(id, type),last_modified";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id, type),last_modified";
 
         @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.id";
 
-    ): ListResponse<RoleBindingByRole> | Problems.CommonProblems;
+    ): ListResponse<RoleBinding> | Problems.CommonProblems;
 }
 
 @route("/roles/")

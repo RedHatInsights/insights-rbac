@@ -240,13 +240,11 @@
             }
           }
         }
-      }
-    },
-    "/role-bindings/by-role/": {
+      },
       "get": {
-        "operationId": "RoleBindings_listByRole",
-        "summary": "List role bindings grouped by role",
-        "description": "List role bindings grouped by role",
+        "operationId": "RoleBindings_list",
+        "summary": "List role bindings",
+        "description": "List role bindings",
         "parameters": [
           {
             "name": "limit",
@@ -271,7 +269,7 @@
           {
             "name": "role_id",
             "in": "query",
-            "required": true,
+            "required": false,
             "description": "Filter by role ID",
             "schema": {
               "type": "string"
@@ -285,7 +283,7 @@
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
-              "default": "resource(id),role(id),subjects(id, type),last_modified"
+              "default": "resource(id),role(id),subject(id, type),last_modified"
             },
             "explode": false
           },
@@ -323,7 +321,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/RoleBindings.RoleBindingByRole"
+                        "$ref": "#/components/schemas/RoleBindings.RoleBinding"
                       }
                     }
                   }
@@ -333,7 +331,7 @@
                     "limit": 10
                   },
                   "links": {
-                    "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1",
+                    "next": "http://localhost:8000/api/rbac/v2/role-bindings/?cursor=cD0yMDI1LTA4LTE1",
                     "previous": null
                   },
                   "data": [
@@ -342,12 +340,10 @@
                       "role": {
                         "id": "550e8400-e29b-41d4-a716-446655440002"
                       },
-                      "subjects": [
-                        {
-                          "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                          "type": "group"
-                        }
-                      ],
+                      "subject": {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        "type": "group"
+                      },
                       "resource": {
                         "id": "550e8400-e29b-41d4-a716-446655440001"
                       }
@@ -3411,7 +3407,7 @@
           }
         }
       },
-      "RoleBindings.RoleBindingByRole": {
+      "RoleBindings.RoleBinding": {
         "type": "object",
         "properties": {
           "last_modified": {
@@ -3427,19 +3423,16 @@
             ],
             "description": "Role details"
           },
-          "subjects": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/RoleBindings.UserSubject"
-                },
-                {
-                  "$ref": "#/components/schemas/RoleBindings.GroupSubject"
-                }
-              ]
-            },
-            "description": "Subjects assigned this role"
+          "subject": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.UserSubject"
+              },
+              {
+                "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+              }
+            ],
+            "description": "Subject assigned this role"
           },
           "resource": {
             "allOf": [
@@ -3468,16 +3461,14 @@
               }
             ]
           },
-          "subjects": [
-            {
-              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-              "type": "group",
-              "group": {
-                "name": "Engineering Team",
-                "user_count": 25
-              }
+          "subject": {
+            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "type": "group",
+            "group": {
+              "name": "Engineering Team",
+              "user_count": 25
             }
-          ]
+          }
         }
       },
       "RoleBindings.RoleBindingBySubject": {
