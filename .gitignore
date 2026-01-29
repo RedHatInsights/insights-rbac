@@ -144,3 +144,6 @@ rbac/management/principal/umb_certs/
 
 # Sphinx documentation build output
 _build/
+
+# Skill configuration (contains URLs and proxy settings)
+.cursor/skills/config.env
