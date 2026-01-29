@@ -740,13 +740,6 @@ namespace RoleBindings {
         type?: string;
     }
 
-    model Role {
-        @doc("Role identifier")
-        id?: UUID;
-        @doc("Name of the role")
-        name?: string;
-    }
-
     @doc("Request body for creating role bindings")
     @example(#{
         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
@@ -807,7 +800,7 @@ namespace RoleBindings {
         @doc("Subjects that were granted access (includes group.user_count when applicable)")
         subjects?: Subject[];
         @doc("Roles that were assigned")
-        roles?: Role[];
+        roles?: KesselRBAC.Role[];
         @doc("Timestamp of when the role bindings were created")
         last_modified?: offsetDateTime;
         @doc("Number of subjects in the binding")
@@ -1217,35 +1210,9 @@ namespace Roles {
         permissions: Permission[];
     }
 
-    @doc("Role with optional fields (supports field masking)")
-    @example(#{
-        id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Custom Inventory Admin",
-        description: "Custom role for inventory management",
-        permissions: #[
-            #{ application: "inventory", resource_type: "hosts", operation: "read" },
-            #{ application: "inventory", resource_type: "hosts", operation: "write" }
-        ],
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-    })
-    model Role {
-        @doc("UUID that uniquely identifies the role")
-        id?: UUID;
-        @doc("A human readable name for the role. Does not need to be unique.")
-        name?: string;
-        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
-        description?: string;
-        @doc("List of permissions assigned to this role")
-        permissions?: KesselRBAC.Permission[];
-        @doc("Number of permissions assigned to this role")
-        permissions_count?: int32;
-        @doc("Timestamp of when the role was last modified")
-        last_modified?: offsetDateTime;
-    }
-
     model RoleResponse<StatusCode extends int32> {
         @statusCode _: StatusCode;
-        ...Role;
+        ...KesselRBAC.Role;
     }
 
     @doc("List the roles for a tenant")

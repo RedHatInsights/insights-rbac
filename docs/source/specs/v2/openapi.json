@@ -805,7 +805,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Roles.Role"
+                        "$ref": "#/components/schemas/Role"
                       }
                     }
                   }
@@ -952,7 +952,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Roles.Role"
+                  "$ref": "#/components/schemas/Role"
                 },
                 "example": {
                   "id": "550e8400-e29b-41d4-a716-446655440002",
@@ -1119,7 +1119,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Roles.Role"
+                  "$ref": "#/components/schemas/Role"
                 },
                 "examples": {
                   "example0": {
@@ -1270,7 +1270,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Roles.Role"
+                  "$ref": "#/components/schemas/Role"
                 },
                 "example": {
                   "id": "550e8400-e29b-41d4-a716-446655440002",
@@ -2990,7 +2990,7 @@
           "roles": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RoleBindings.Role"
+              "$ref": "#/components/schemas/Role"
             },
             "description": "Roles that were assigned"
           },
@@ -3116,23 +3116,6 @@
             "type": "string",
             "description": "Resource type",
             "example": "workspace"
-          }
-        }
-      },
-      "RoleBindings.Role": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "Role identifier"
-          },
-          "name": {
-            "type": "string",
-            "description": "Name of the role"
           }
         }
       },
@@ -3353,63 +3336,6 @@
               "operation": "write"
             }
           ]
-        }
-      },
-      "Roles.Role": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "UUID that uniquely identifies the role"
-          },
-          "name": {
-            "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
-          },
-          "description": {
-            "type": "string",
-            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Permission"
-            },
-            "description": "List of permissions assigned to this role"
-          },
-          "permissions_count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of permissions assigned to this role"
-          },
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Timestamp of when the role was last modified"
-          }
-        },
-        "description": "Role with optional fields (supports field masking)",
-        "example": {
-          "id": "550e8400-e29b-41d4-a716-446655440002",
-          "name": "Custom Inventory Admin",
-          "description": "Custom role for inventory management",
-          "permissions": [
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "read"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "write"
-            }
-          ],
-          "last_modified": "2024-08-04T12:00:00Z"
         }
       },
       "Timestamps": {
