@@ -63,7 +63,7 @@ model Permission {
 model Role {
     @doc("UUID that uniquely identifies the role")
     id?: UUID;
-    @doc("A human readable name for the role. Does not need to be unique.")
+    @doc("A human readable name for the role. Must be unique within a tenant.")
     name?: string;
     @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
     description?: string;
@@ -1228,8 +1228,8 @@ namespace RoleBindings {
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "resource(id),role(id),subjects(id, type),last_modified";
 
-        @doc("Sort by specified field(s), prefix with '-' for descending order.")
-        @query order_by?: OrderBy = "role.name";
+        @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
+        @query order_by?: OrderBy = "role.id";
 
     ): ListResponse<RoleBindingByRole> | Problems.CommonProblems;
 }
@@ -1254,7 +1254,7 @@ namespace Roles {
         ]
     })
     model CreateOrUpdateRoleRequest {
-        @doc("A human readable name for the role. Does not need to be unique.")
+        @doc("A human readable name for the role. Must be unique within a tenant.")
         name: string;
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description: string;

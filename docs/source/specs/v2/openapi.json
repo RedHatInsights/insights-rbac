@@ -293,10 +293,10 @@
             "name": "order_by",
             "in": "query",
             "required": false,
-            "description": "Sort by specified field(s), prefix with '-' for descending order.",
+            "description": "Default sort is by the time the role was first created. Prefix with '-' for descending order.",
             "schema": {
               "$ref": "#/components/schemas/OrderBy",
-              "default": "role.name"
+              "default": "role.id"
             },
             "explode": false
           }
@@ -3114,7 +3114,7 @@
           },
           "name": {
             "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
+            "description": "A human readable name for the role. Must be unique within a tenant."
           },
           "description": {
             "type": "string",
@@ -3661,7 +3661,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
+            "description": "A human readable name for the role. Must be unique within a tenant."
           },
           "description": {
             "type": "string",
