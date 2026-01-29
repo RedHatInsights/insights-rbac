@@ -2792,6 +2792,105 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertEqual(len(payload.get("data")), Workspace.objects.count())
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
 
+    def test_workspace_list_filter_by_single_id(self):
+        """Test filtering workspaces by a single id."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?ids={self.standard_workspace.id}", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["id"], str(self.standard_workspace.id))
+
+    def test_workspace_list_filter_by_multiple_ids(self):
+        """Test filtering workspaces by multiple comma-separated ids."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # Use two standard workspaces since ids filter defaults to type=standard
+        ids = f"{self.standard_workspace.id},{self.standard_sub_workspace.id}"
+        response = client.get(f"{url}?ids={ids}", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 2)
+        returned_ids = [ws["id"] for ws in payload.get("data")]
+        self.assertIn(str(self.standard_workspace.id), returned_ids)
+        self.assertIn(str(self.standard_sub_workspace.id), returned_ids)
+
+    def test_workspace_list_filter_by_ids_empty_string(self):
+        """Test that filtering by empty ids string returns all workspaces."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?ids=", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Empty ids filter should return all workspaces (same as no filter)
+        self.assertIn("data", response.data)
+        self.assertEqual(response.data.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_filter_by_invalid_ids(self):
+        """Test that filtering by invalid UUID returns a validation error."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?ids=invalid-uuid", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not a valid UUID", str(response.data))
+
+    def test_workspace_list_filter_by_multiple_ids_with_invalid(self):
+        """Test that filtering by ids with one invalid UUID returns a validation error."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        ids = f"{self.standard_workspace.id},invalid-uuid"
+        response = client.get(f"{url}?ids={ids}", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not a valid UUID", str(response.data))
+
+    def test_workspace_list_filter_by_nonexistent_ids(self):
+        """Test filtering by a valid UUID that doesn't exist returns empty results."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        non_existent_uuid = "00000000-0000-0000-0000-000000000000"
+        response = client.get(f"{url}?ids={non_existent_uuid}", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(payload.get("meta").get("count"), 0)
+        self.assertEqual(len(payload.get("data")), 0)
+
+    def test_workspace_list_filter_by_ids_with_type_all(self):
+        """Test filtering workspaces by ids with type=all returns all types."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        ids = f"{self.standard_workspace.id},{self.default_workspace.id},{self.root_workspace.id}"
+        response = client.get(f"{url}?ids={ids}&type=all", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        # All three workspaces should be returned when type=all is specified
+        self.assertEqual(payload.get("meta").get("count"), 3)
+        returned_ids = [ws["id"] for ws in payload.get("data")]
+        self.assertIn(str(self.standard_workspace.id), returned_ids)
+        self.assertIn(str(self.default_workspace.id), returned_ids)
+        self.assertIn(str(self.root_workspace.id), returned_ids)
+
+    def test_workspace_list_filter_by_ids_defaults_to_standard(self):
+        """Test that ids filter defaults to type=standard when type not specified."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # Include workspaces of different types
+        ids = f"{self.standard_workspace.id},{self.default_workspace.id},{self.root_workspace.id}"
+        response = client.get(f"{url}?ids={ids}", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        # Only the standard workspace should be returned (default type filter)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["id"], str(self.standard_workspace.id))
+        self.assertEqual(payload.get("data")[0]["type"], "standard")
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class WorkspaceTestsDetail(WorkspaceViewTests):
