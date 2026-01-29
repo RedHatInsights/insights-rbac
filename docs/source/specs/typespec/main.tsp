@@ -30,6 +30,51 @@ model Timestamps {
 @format("uuid")
 scalar UUID extends string;
 
+@example(#{
+    application: "rbac",
+    resource_type: "workspace",
+    operation: "read"
+})
+model Permission {
+    application: string;
+    resource_type: string;
+    operation: string;
+}
+
+@example(#{
+    id: "550e8400-e29b-41d4-a716-446655440002",
+    name: "Workspace Admin",
+    description: "Full administrative access to workspace",
+    permissions: #[
+        #{
+            application: "rbac",
+            resource_type: "workspace",
+            operation: "read"
+        },
+        #{
+            application: "rbac",
+            resource_type: "workspace",
+            operation: "write"
+        }
+    ],
+    permissions_count: 2,
+    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+})
+model Role {
+    @doc("UUID that uniquely identifies the role")
+    id?: UUID;
+    @doc("A human readable name for the role. Does not need to be unique.")
+    name?: string;
+    @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
+    description?: string;
+    @doc("List of permissions assigned to this role")
+    permissions?: KesselRBAC.Permission[];
+    @doc("Number of permissions assigned to this role")
+    permissions_count?: int32;
+    @doc("Timestamp of when the role was last modified")
+    last_modified?: offsetDateTime;
+}
+
 /**
  * Field mask used by the `fields` query parameter to control which fields
  * are included in the response.
@@ -642,6 +687,7 @@ namespace Workspaces {
 @doc("Operations about role bindings")
 namespace RoleBindings {
     const DefaultRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
+    const DefaultRoleBindingByRoleFieldMask: FieldMask = "resource(id),role(id),subjects(id, type),last_modified";
 
 
     @discriminator("type")
@@ -770,6 +816,7 @@ namespace RoleBindings {
         role_count?: int32;
     }
 
+
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         subject: #{
@@ -827,7 +874,7 @@ namespace RoleBindings {
         @doc("Subject of the role binding")
         subject?: Subject;
         @doc("Roles assigned to the subject")
-        roles?: Role[];
+        roles?: KesselRBAC.Role[];
         @doc("Resource the roles apply to")
         resource?: Resource;
         @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
@@ -956,7 +1003,7 @@ namespace RoleBindings {
         @query order_by?: OrderBy = "subject_name";
     ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 
-    @doc("Create role bindings for subjects on a resource")
+@doc("Create role bindings for subjects on a resource")
     @summary("Create role bindings")
     @opExample(#{
         parameters: #{
@@ -1014,26 +1061,138 @@ namespace RoleBindings {
         @example("resource(id),subjects(id),roles(id),last_modified")
         @query fields?: FieldMask = DefaultRoleBindingFieldMask;
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
+
+    @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        role: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            description: "Full administrative access to workspace",
+            permissions: #[
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "read"
+                },
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "write"
+                }
+            ]
+        },
+        subjects: #[
+            #{
+                id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                type: "group",
+                group: #{
+                    name: "Engineering Team",
+                    description: "Development and engineering team",
+                    user_count: 25
+                }
+            }
+        ]
+    })
+    @example(#{
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+        role: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            permissions: #[
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "read"
+                },
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "write"
+                }
+            ]
+        },
+        subjects: #[
+            #{
+                id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                type: "group",
+                group: #{
+                    name: "Engineering Team",
+                    user_count: 25
+                }
+            }
+        ]
+    })
+    model RoleBindingByRole {
+        @doc("Timestamp of last modification")
+        last_modified?: offsetDateTime;
+        @doc("Role details")
+        role?: KesselRBAC.Role;
+        @doc("Subjects assigned this role")
+        subjects?: Subject[];
+        @doc("Resources assigned this role")
+        resources?: Resource[];
+    }
+
+    @doc("List role bindings grouped by role")
+    @summary("List role bindings grouped by role")
+    @route("by-role/")
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            role_id: "550e8400-e29b-41d4-a716-446655440002"
+        },
+        returnType: #{
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-role/?role_id=550e8400-e29b-41d4-a716-446655440002&cursor=cD0yMDI1LTA4LTE1",
+                previous: null
+            },
+            data: #[
+                #{
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+                    role: #{
+                        id: "550e8400-e29b-41d4-a716-446655440002"
+                    },
+                    subjects: #[
+                        #{
+                            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                            type: "group"
+                        }
+                    ],
+                    resources: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440001"
+                        }
+                    ]
+                }
+            ]
+        }
+    })
+    @get op listByRole(
+        @query limit?: Limit = DefaultLimit;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: Cursor;
+
+        @doc("Filter by role ID")
+        @example("550e8400-e29b-41d4-a716-446655440002")
+        @query role_id: string;
+
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = DefaultRoleBindingByRoleFieldMask;
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order.")
+        @query order_by?: OrderBy = "role.name";
+
+    ): ListResponse<RoleBindingByRole> | Problems.CommonProblems;
 }
 
 @route("/roles/")
 @tag("Roles")
 @doc("Operations about roles")
 namespace Roles {
-
-    @example(#{
-        application: "inventory",
-        resource_type: "hosts",
-        operation: "read"
-    })
-    model Permission {
-        @doc("Application name")
-        application: string;
-        @doc("Resource type within the application")
-        resource_type: string;
-        @doc("Operation for this permission")
-        operation: string;
-    }
 
     /**
      * Default fields returned for role detail operations (get/create/update)
@@ -1077,7 +1236,7 @@ namespace Roles {
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description?: string;
         @doc("List of permissions assigned to this role")
-        permissions?: Permission[];
+        permissions?: KesselRBAC.Permission[];
         @doc("Number of permissions assigned to this role")
         permissions_count?: int32;
         @doc("Timestamp of when the role was last modified")
