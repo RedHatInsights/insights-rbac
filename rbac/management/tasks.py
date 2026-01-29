@@ -20,9 +20,9 @@ from __future__ import absolute_import, unicode_literals
 
 from celery import shared_task
 from django.core.management import call_command
+from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from internal.utils import (
     clean_invalid_workspace_resource_definitions,
-    cleanup_tenant_orphan_bindings,
     get_replicator,
     replicate_missing_binding_tuples,
 )

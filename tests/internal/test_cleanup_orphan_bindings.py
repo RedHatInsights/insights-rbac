@@ -35,7 +35,8 @@ from migration_tool.in_memory_tuples import (
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.utils import create_relationship
 from api.models import Tenant
-from internal.utils import cleanup_tenant_orphaned_relationships, rebuild_tenant_workspace_relations
+from internal.migrations.remove_orphan_relations import cleanup_tenant_orphaned_relationships
+from internal.utils import rebuild_tenant_workspace_relations
 from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
 
 
