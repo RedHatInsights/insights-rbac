@@ -122,7 +122,8 @@ scalar OrderBy extends string;
 const DefaultLimit: Limit = 10;
 const DefaultOffset: Offset = 0;
 
-model ListResponse<Item> {
+model ListResponse<Item, StatusCode extends int32 = 200> {
+    @statusCode _: StatusCode;
     meta: CursorPaginationMeta;
     links: CursorPaginationLinks;
     data: Item[];
@@ -871,6 +872,7 @@ namespace RoleBindings {
             resource_type: "workspace"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -913,6 +915,7 @@ namespace RoleBindings {
             resource_type: "workspace"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -1003,6 +1006,7 @@ namespace RoleBindings {
             }
         },
         returnType: #{
+            _: 201,
             meta: #{
                 limit: 10
             },
@@ -1027,7 +1031,7 @@ namespace RoleBindings {
     @post op batchCreate(
         @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
         @body body: BatchCreateRoleBindingsRequest;
-    ): ListResponse<RoleBinding> | Problems.CommonProblems | Problems.Problem400;
+    ): ListResponse<RoleBinding, 201> | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
     @example(#{
@@ -1164,6 +1168,7 @@ namespace RoleBindings {
             limit: 10
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -1246,6 +1251,7 @@ namespace Roles {
             limit: 10
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -1269,6 +1275,7 @@ namespace Roles {
             fields: "id,name,permissions_count"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
