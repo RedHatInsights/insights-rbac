@@ -781,23 +781,6 @@ namespace RoleBindings {
         }[];
     }
 
-    @doc("Response from creating role bindings - supports field masking with all optional fields")
-    model CreateRoleBindingsResponse {
-        @statusCode _: 201;
-        @doc("Resource the roles are bound to")
-        resource?: Resource;
-        @doc("Subjects that were granted access (includes group.user_count when applicable)")
-        subjects?: Subject[];
-        @doc("Roles that were assigned")
-        roles?: KesselRBAC.Role[];
-        @doc("Timestamp of when the role bindings were created")
-        last_modified?: offsetDateTime;
-        @doc("Number of subjects in the binding")
-        subject_count?: int32;
-        @doc("Number of roles assigned")
-        role_count?: int32;
-    }
-
 
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
@@ -993,7 +976,7 @@ namespace RoleBindings {
                 resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
                 subjects: #[
                     #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
+                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" }
                 ],
                 roles: #[
                     #{ id: "550e8400-e29b-41d4-a716-446655440002" },
@@ -1002,47 +985,44 @@ namespace RoleBindings {
             }
         },
         returnType: #{
-            _: 201,
-            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
-            subjects: #[
-                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
-                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group", group: #{ name: "DevOps Team", user_count: 10 } }
-            ],
-            roles: #[
-                #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
-                #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-            subject_count: 2,
-            role_count: 2
-        }
-    })
-    @opExample(#{
-        parameters: #{
-            fields: "resource,subject_count,role_count",
-            body: #{
-                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subjects: #[
-                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" }
-                ],
-                roles: #[
-                    #{ id: "550e8400-e29b-41d4-a716-446655440002" }
-                ]
-            }
-        },
-        returnType: #{
-            _: 201,
-            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
-            subject_count: 1,
-            role_count: 1
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: null,
+                previous: null
+            },
+            data: #[
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                },
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440003" },
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                },
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                },
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440003" },
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                }
+            ]
         }
     })
     @post op create(
         @body body: CreateRoleBindingsRequest;
-
-        @example("resource(id),subjects(id),roles(id),last_modified")
-        @query fields?: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
-    ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
+    ): ListResponse<RoleBinding> | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
     @example(#{

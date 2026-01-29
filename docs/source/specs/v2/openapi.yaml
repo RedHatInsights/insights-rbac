@@ -12,55 +12,70 @@ paths:
       operationId: RoleBindings_create
       summary: Grant access to a resource to a set of subjects with a set of roles
       description: Grant access to a resource to a set of subjects with a set of roles
-      parameters:
-        - name: fields
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/FieldMask'
-            default: resource(id),subjects(id),roles(id),last_modified
-          explode: false
+      parameters: []
       responses:
-        '201':
-          description: Response from creating role bindings - supports field masking with all optional fields
+        '200':
+          description: The request has succeeded.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleBindings.CreateRoleBindingsResponse'
-              examples:
-                example0:
-                  value:
-                    resource:
+                type: object
+                required:
+                  - meta
+                  - links
+                  - data
+                properties:
+                  meta:
+                    $ref: '#/components/schemas/CursorPaginationMeta'
+                  links:
+                    $ref: '#/components/schemas/CursorPaginationLinks'
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RoleBindings.RoleBinding'
+              example:
+                meta:
+                  limit: 10
+                links:
+                  next: null
+                  previous: null
+                data:
+                  - resource:
                       id: 550e8400-e29b-41d4-a716-446655440001
                       type: workspace
-                      name: Engineering Workspace
-                    subject_count: 1
-                    role_count: 1
-                example1:
-                  value:
-                    resource:
-                      id: 550e8400-e29b-41d4-a716-446655440001
-                      type: workspace
-                      name: Engineering Workspace
-                    subjects:
-                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                        type: group
-                        group:
-                          name: Engineering Team
-                          user_count: 25
-                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-                        type: group
-                        group:
-                          name: DevOps Team
-                          user_count: 10
-                    roles:
-                      - id: 550e8400-e29b-41d4-a716-446655440002
-                        name: Workspace Admin
-                      - id: 550e8400-e29b-41d4-a716-446655440003
-                        name: Viewer
+                    subject:
+                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      type: group
+                    role:
+                      id: 550e8400-e29b-41d4-a716-446655440002
                     last_modified: '2024-08-04T12:00:00Z'
-                    subject_count: 2
-                    role_count: 2
+                  - resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      type: workspace
+                    subject:
+                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      type: group
+                    role:
+                      id: 550e8400-e29b-41d4-a716-446655440003
+                    last_modified: '2024-08-04T12:00:00Z'
+                  - resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      type: workspace
+                    subject:
+                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                      type: user
+                    role:
+                      id: 550e8400-e29b-41d4-a716-446655440002
+                    last_modified: '2024-08-04T12:00:00Z'
+                  - resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      type: workspace
+                    subject:
+                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                      type: user
+                    role:
+                      id: 550e8400-e29b-41d4-a716-446655440003
+                    last_modified: '2024-08-04T12:00:00Z'
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -121,30 +136,18 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RoleBindings.CreateRoleBindingsRequest'
-            examples:
-              example0:
-                value:
-                  resource:
-                    id: 550e8400-e29b-41d4-a716-446655440001
-                    type: workspace
-                  subjects:
-                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                      type: group
-                  roles:
-                    - id: 550e8400-e29b-41d4-a716-446655440002
-              example1:
-                value:
-                  resource:
-                    id: 550e8400-e29b-41d4-a716-446655440001
-                    type: workspace
-                  subjects:
-                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                      type: group
-                    - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-                      type: group
-                  roles:
-                    - id: 550e8400-e29b-41d4-a716-446655440002
-                    - id: 550e8400-e29b-41d4-a716-446655440003
+            example:
+              resource:
+                id: 550e8400-e29b-41d4-a716-446655440001
+                type: workspace
+              subjects:
+                - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  type: group
+                - id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                  type: user
+              roles:
+                - id: 550e8400-e29b-41d4-a716-446655440002
+                - id: 550e8400-e29b-41d4-a716-446655440003
     get:
       operationId: RoleBindings_list
       summary: List role bindings
@@ -2165,38 +2168,6 @@ components:
         roles:
           - id: 550e8400-e29b-41d4-a716-446655440002
           - id: 550e8400-e29b-41d4-a716-446655440003
-    RoleBindings.CreateRoleBindingsResponse:
-      type: object
-      properties:
-        resource:
-          allOf:
-            - $ref: '#/components/schemas/RoleBindings.Resource'
-          description: Resource the roles are bound to
-        subjects:
-          type: array
-          items:
-            anyOf:
-              - $ref: '#/components/schemas/RoleBindings.UserSubject'
-              - $ref: '#/components/schemas/RoleBindings.GroupSubject'
-          description: Subjects that were granted access (includes group.user_count when applicable)
-        roles:
-          type: array
-          items:
-            $ref: '#/components/schemas/Role'
-          description: Roles that were assigned
-        last_modified:
-          type: string
-          format: date-time
-          description: Timestamp of when the role bindings were created
-        subject_count:
-          type: integer
-          format: int32
-          description: Number of subjects in the binding
-        role_count:
-          type: integer
-          format: int32
-          description: Number of roles assigned
-      description: Response from creating role bindings - supports field masking with all optional fields
     RoleBindings.GroupDetails:
       type: object
       properties:
