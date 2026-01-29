@@ -1614,6 +1614,19 @@
             "explode": false
           },
           {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "description": "Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/UUID"
+              }
+            },
+            "explode": false
+          },
+          {
             "name": "order_by",
             "in": "query",
             "required": false,
