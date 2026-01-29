@@ -23,7 +23,7 @@ from rest_framework import serializers
 
 from api.common.pagination import V2CursorPagination
 from .v2_model import RoleV2
-from .v2_serializer import RoleOutputSerializer
+from .v2_serializer import RoleSerializer
 
 
 class RoleV2CursorPagination(V2CursorPagination):
@@ -41,13 +41,10 @@ class RoleV2CursorPagination(V2CursorPagination):
 
 
 class RoleV2ViewSet(BaseV2ViewSet):
-    """V2 Role ViewSet.
-
-    A viewset that provides default `list()`.
-    """
+    """V2 Role ViewSet."""
 
     queryset = RoleV2.objects.annotate(permissions_count_annotation=Count("permissions", distinct=True))
-    serializer_class = RoleOutputSerializer
+    serializer_class = RoleSerializer
     permission_classes = (RoleAccessPermission,)
     pagination_class = RoleV2CursorPagination
 
@@ -56,22 +53,7 @@ class RoleV2ViewSet(BaseV2ViewSet):
         return super().get_queryset().filter(tenant=self.request.tenant)
 
     def list(self, request, *args, **kwargs):
-        """Get a list of roles.
-
-        @api {get} /api/rbac/v2/roles/
-        @apiName getRoles
-        @apiGroup Role
-        @apiVersion 2.0.0
-        @apiDescription Obtain a list of roles
-
-        @apiParam (Query) {String} name Filter by role name.
-        @apiParam (Query) {String} fields Control which fields are included.
-        @apiParam (Query) {String} order_by Sort by specified field(s), prefix with '-' for descending.
-
-        @apiSuccess {Object} meta The metadata for pagination.
-        @apiSuccess {Object} links The object containing links of results.
-        @apiSuccess {Object[]} data The array of results.
-        """
+        """Get a list of roles."""
         queryset = self.get_queryset()
 
         # Handle name filter
