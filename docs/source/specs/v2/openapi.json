@@ -19,8 +19,8 @@
     "/role-bindings/": {
       "post": {
         "operationId": "RoleBindings_create",
-        "summary": "Create role bindings",
-        "description": "Create role bindings for subjects on a resource",
+        "summary": "Grant access to a resource to a set of subjects with a set of roles",
+        "description": "Grant access to a resource to a set of subjects with a set of roles",
         "parameters": [
           {
             "name": "fields",
@@ -720,6 +720,216 @@
         "tags": [
           "Role Bindings"
         ]
+      },
+      "put": {
+        "operationId": "RoleBindings_update",
+        "summary": "Update role bindings",
+        "description": "Update roles for a specific subject on a resource. Replaces all existing roles with the provided roles.",
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": true,
+            "description": "Identify the resource ID for the set of role bindings to replace",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": true,
+            "description": "Identify the resource type for the set of role bindings to replace",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": true,
+            "description": "Identify the subject ID for the set of role bindings to replace",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "subject_type",
+            "in": "query",
+            "required": true,
+            "description": "Identify the subject type for the set of role bindings to replace",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FieldMask",
+              "default": "resource(id),subject(id),roles(id),last_modified"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
+                },
+                "example": {
+                  "last_modified": "2024-08-04T12:00:00Z",
+                  "subject": {
+                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "type": "group",
+                    "group": {
+                      "name": "Engineering Team",
+                      "user_count": 25
+                    }
+                  },
+                  "roles": [
+                    {
+                      "id": "550e8400-e29b-41d4-a716-446655440002",
+                      "name": "Workspace Admin"
+                    },
+                    {
+                      "id": "550e8400-e29b-41d4-a716-446655440003",
+                      "name": "Viewer"
+                    }
+                  ],
+                  "resource": {
+                    "id": "550e8400-e29b-41d4-a716-446655440001",
+                    "type": "workspace",
+                    "name": "Engineering Workspace"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem400"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem404"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Role Bindings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleBindings.UpdateRoleBindingsRequest"
+              },
+              "example": {
+                "roles": [
+                  {
+                    "id": "550e8400-e29b-41d4-a716-446655440002"
+                  },
+                  {
+                    "id": "550e8400-e29b-41d4-a716-446655440003"
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/roles/": {
@@ -3008,46 +3218,7 @@
             "description": "Number of roles assigned"
           }
         },
-        "description": "Response from creating role bindings - supports field masking with all optional fields",
-        "example": {
-          "_": 201,
-          "resource": {
-            "id": "550e8400-e29b-41d4-a716-446655440001",
-            "type": "workspace",
-            "name": "Engineering Workspace"
-          },
-          "subjects": [
-            {
-              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-              "type": "group",
-              "group": {
-                "name": "Engineering Team",
-                "user_count": 25
-              }
-            },
-            {
-              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-              "type": "group",
-              "group": {
-                "name": "DevOps Team",
-                "user_count": 10
-              }
-            }
-          ],
-          "roles": [
-            {
-              "id": "550e8400-e29b-41d4-a716-446655440002",
-              "name": "Workspace Admin"
-            },
-            {
-              "id": "550e8400-e29b-41d4-a716-446655440003",
-              "name": "Viewer"
-            }
-          ],
-          "last_modified": "2024-08-04T12:00:00Z",
-          "subject_count": 2,
-          "role_count": 2
-        }
+        "description": "Response from creating role bindings - supports field masking with all optional fields"
       },
       "RoleBindings.GroupDetails": {
         "type": "object",
@@ -3256,6 +3427,46 @@
             "name": "Parent Workspace",
             "type": "workspace"
           }
+        }
+      },
+      "RoleBindings.UpdateRoleBindingsRequest": {
+        "type": "object",
+        "required": [
+          "roles"
+        ],
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/UUID"
+                    }
+                  ],
+                  "description": "Role identifier"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "minItems": 1,
+            "description": "Roles to assign (replaces existing roles for the target binding)"
+          }
+        },
+        "description": "Request body for updating role bindings - contains the new roles to assign",
+        "example": {
+          "roles": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440002"
+            },
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440003"
+            }
+          ]
         }
       },
       "RoleBindings.UserDetails": {

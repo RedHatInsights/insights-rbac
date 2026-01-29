@@ -128,6 +128,11 @@ model ListResponse<Item> {
     data: Item[];
 }
 
+model ItemResponse<Item, StatusCode extends int32> {
+    @statusCode _: StatusCode;
+    ...Item;
+}
+
 model CursorPaginationMeta {
     @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
@@ -686,8 +691,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingFieldMask: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
-    const DefaultRoleBindingByRoleFieldMask: FieldMask = "resource(id),role(id),subjects(id, type),last_modified";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id),last_modified";
 
 
     @discriminator("type")
@@ -778,21 +782,6 @@ namespace RoleBindings {
     }
 
     @doc("Response from creating role bindings - supports field masking with all optional fields")
-    @example(#{
-        _: 201,
-        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
-        subjects: #[
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group", group: #{ name: "DevOps Team", user_count: 10 } }
-        ],
-        roles: #[
-            #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
-            #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
-        ],
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-        subject_count: 2,
-        role_count: 2
-    })
     model CreateRoleBindingsResponse {
         @statusCode _: 201;
         @doc("Resource the roles are bound to")
@@ -996,8 +985,8 @@ namespace RoleBindings {
         @query order_by?: OrderBy = "subject_name";
     ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 
-@doc("Create role bindings for subjects on a resource")
-    @summary("Create role bindings")
+    @doc("Grant access to a resource to a set of subjects with a set of roles")
+    @summary("Grant access to a resource to a set of subjects with a set of roles")
     @opExample(#{
         parameters: #{
             body: #{
@@ -1052,8 +1041,73 @@ namespace RoleBindings {
         @body body: CreateRoleBindingsRequest;
 
         @example("resource(id),subjects(id),roles(id),last_modified")
-        @query fields?: FieldMask = DefaultRoleBindingFieldMask;
+        @query fields?: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
     ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
+
+    @doc("Request body for updating role bindings - contains the new roles to assign")
+    @example(#{
+        roles: #[
+            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+        ]
+    })
+    model UpdateRoleBindingsRequest {
+        @doc("Roles to assign (replaces existing roles for the target binding)")
+        @minItems(1)
+        roles: {
+            @doc("Role identifier")
+            id: UUID;
+        }[];
+    }
+
+    @doc("Update roles for a specific subject on a resource. Replaces all existing roles with the provided roles.")
+    @summary("Update role bindings")
+    @route("by-subject/")
+    @opExample(#{
+        parameters: #{
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace",
+            subject_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            subject_type: "group",
+            body: #{
+                roles: #[
+                    #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+                    #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 200,
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
+            roles: #[
+                #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
+                #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
+            ],
+            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" }
+        }
+    })
+    @put op update(
+        @doc("Identify the resource ID for the set of role bindings to replace")
+        @example("550e8400-e29b-41d4-a716-446655440001")
+        @query resource_id: string;
+
+        @doc("Identify the resource type for the set of role bindings to replace")
+        @example("workspace")
+        @query resource_type: string;
+
+        @doc("Identify the subject ID for the set of role bindings to replace")
+        @example("550e8400-e29b-41d4-a716-446655440004")
+        @query subject_id: string;
+
+        @doc("Identify the subject type for the set of role bindings to replace")
+        @example("group")
+        @query subject_type: string;
+
+        @body body: UpdateRoleBindingsRequest;
+
+        @query fields?: FieldMask = DefaultRoleBindingBySubjectFieldMask;
+    ): ItemResponse<RoleBindingBySubject, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
@@ -1172,7 +1226,7 @@ namespace RoleBindings {
         @query role_id: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = DefaultRoleBindingByRoleFieldMask;
+        @query fields?: FieldMask = "resource(id),role(id),subjects(id, type),last_modified";
 
         @doc("Sort by specified field(s), prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.name";
@@ -1316,7 +1370,7 @@ namespace Roles {
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;
-    ): RoleResponse<201> | Problems.CommonProblems | Problems.Problem400;
+    ): ItemResponse<Role, 201> | Problems.CommonProblems | Problems.Problem400;
 
 
 
@@ -1352,7 +1406,7 @@ namespace Roles {
 
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = DefaultRoleFieldMask;
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem404;
+    ): ItemResponse<Role, 200> | Problems.CommonProblems | Problems.Problem404;
 
     @doc("Update a custom role in tenant")
     @summary("Update a custom role in tenant")
@@ -1390,6 +1444,6 @@ namespace Roles {
 
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = DefaultRoleFieldMask;
-    ): RoleResponse<200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+    ): ItemResponse<Role, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
 }
