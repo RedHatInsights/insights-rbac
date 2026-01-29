@@ -503,6 +503,8 @@ namespace Workspaces {
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
+        @doc("Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.")
+        @query(#{explode: false}) ids?: UUID[];
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, created, modified, type.")
         @example("-created")
