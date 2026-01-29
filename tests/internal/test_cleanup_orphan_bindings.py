@@ -21,6 +21,7 @@ from django.test import TestCase, override_settings
 from management.group.model import Group
 from management.models import BindingMapping, Workspace, Access, Permission
 from management.policy.model import Policy
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.model import Role
 from management.tenant_mapping.model import TenantMapping
 from migration_tool.in_memory_tuples import (
@@ -35,9 +36,13 @@ from migration_tool.in_memory_tuples import (
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.utils import create_relationship
 from api.models import Tenant
-from internal.migrations.remove_orphan_relations import cleanup_tenant_orphaned_relationships
+from internal.migrations.remove_orphan_relations import (
+    cleanup_tenant_orphaned_relationships,
+    cleanup_tenant_orphan_bindings,
+)
 from internal.utils import rebuild_tenant_workspace_relations
 from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
+from tests.v2_util import assert_v2_roles_consistent
 
 
 class CleanupOrphanBindingsTest(DualWriteTestCase):
@@ -890,6 +895,33 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Should have relations_to_remove_count in result
         self.assertIn("relations_to_remove_count", result)
         self.assertGreater(result["relations_to_remove_count"], 0, "Should have relations to remove")
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_preserve_system(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        r = self.given_v1_system_role("system_role", ["rbac:roles:read"])
+
+        g1, _ = self.given_group("g1", ["p1"])
+        g2, _ = self.given_group("g2", ["p2"])
+
+        self.given_roles_assigned_to_group(g1, [r])
+        self.given_roles_assigned_to_group(g2, [r])
+
+        assert_v2_roles_consistent(test=self, tuples=self.tuples)
+
+        cleanup_tenant_orphan_bindings(
+            org_id=self.tenant.org_id,
+            dry_run=False,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+        )
+
+        assert_v2_roles_consistent(test=self, tuples=self.tuples)
 
 
 class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):

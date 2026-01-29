@@ -472,7 +472,7 @@ def cleanup_tenant_orphaned_relationships(
     return result
 
 
-def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False) -> dict:
+def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_tuples_fn=None) -> dict:
     """
     Clean up orphaned role binding relationships for a tenant and run migration.
 
@@ -486,6 +486,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False) -> dict:
     Args:
         org_id (str): Organization ID for the tenant to clean up
         dry_run (bool): If True, only report counts without making changes
+        read_tuples_fn: Function to read tuples from Kessel (same signature as read_tuples_from_kessel)
 
     Returns:
         dict: Results with cleanup counts and migration results, or error details
@@ -521,7 +522,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False) -> dict:
             root_workspace=root_workspace,
             default_workspace=default_workspace,
             tenant_mapping=tenant_mapping,
-            read_tuples_fn=read_tuples_from_kessel,
+            read_tuples_fn=(read_tuples_fn if read_tuples_fn is not None else read_tuples_from_kessel),
             dry_run=dry_run,
         )
 
