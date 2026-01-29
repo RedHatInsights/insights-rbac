@@ -1110,7 +1110,6 @@ namespace RoleBindings {
     ): ItemResponse<RoleBindingBySubject, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 
     @example(#{
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
         role: #{
             id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Workspace Admin",
