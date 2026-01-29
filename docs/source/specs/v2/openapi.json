@@ -768,6 +768,19 @@
                       "role": {
                         "id": "550e8400-e29b-41d4-a716-446655440002"
                       }
+                    },
+                    {
+                      "resource": {
+                        "id": "550e8400-e29b-41d4-a716-446655440001",
+                        "type": "workspace"
+                      },
+                      "subject": {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                        "type": "user"
+                      },
+                      "role": {
+                        "id": "550e8400-e29b-41d4-a716-446655440003"
+                      }
                     }
                   ]
                 }
@@ -865,20 +878,37 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
+                "$ref": "#/components/schemas/RoleBindings.BatchCreateRoleBindingsRequest"
               },
               "example": {
-                "resource": {
-                  "id": "550e8400-e29b-41d4-a716-446655440001",
-                  "type": "workspace"
-                },
-                "subject": {
-                  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                  "type": "group"
-                },
-                "role": {
-                  "id": "550e8400-e29b-41d4-a716-446655440002"
-                }
+                "requests": [
+                  {
+                    "resource": {
+                      "id": "550e8400-e29b-41d4-a716-446655440001",
+                      "type": "workspace"
+                    },
+                    "subject": {
+                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                      "type": "group"
+                    },
+                    "role": {
+                      "id": "550e8400-e29b-41d4-a716-446655440002"
+                    }
+                  },
+                  {
+                    "resource": {
+                      "id": "550e8400-e29b-41d4-a716-446655440001",
+                      "type": "workspace"
+                    },
+                    "subject": {
+                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                      "type": "user"
+                    },
+                    "role": {
+                      "id": "550e8400-e29b-41d4-a716-446655440003"
+                    }
+                  }
+                ]
               }
             }
           }
@@ -3150,6 +3180,53 @@
           }
         }
       },
+      "RoleBindings.BatchCreateRoleBindingsRequest": {
+        "type": "object",
+        "required": [
+          "requests"
+        ],
+        "properties": {
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.CreateRoleBindingsRequest"
+            },
+            "minItems": 1,
+            "description": "List of role bindings to create"
+          }
+        },
+        "description": "Batch request to create multiple role bindings",
+        "example": {
+          "requests": [
+            {
+              "resource": {
+                "id": "550e8400-e29b-41d4-a716-446655440001",
+                "type": "workspace"
+              },
+              "subject": {
+                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                "type": "group"
+              },
+              "role": {
+                "id": "550e8400-e29b-41d4-a716-446655440002"
+              }
+            },
+            {
+              "resource": {
+                "id": "550e8400-e29b-41d4-a716-446655440001",
+                "type": "workspace"
+              },
+              "subject": {
+                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                "type": "user"
+              },
+              "role": {
+                "id": "550e8400-e29b-41d4-a716-446655440003"
+              }
+            }
+          ]
+        }
+      },
       "RoleBindings.CreateRoleBindingsRequest": {
         "type": "object",
         "required": [
@@ -3317,7 +3394,7 @@
                 "$ref": "#/components/schemas/Role"
               }
             ],
-            "description": "Role details"
+            "description": "The role that grants permissions to the subject on the resource"
           },
           "subject": {
             "anyOf": [
@@ -3328,7 +3405,7 @@
                 "$ref": "#/components/schemas/RoleBindings.GroupSubject"
               }
             ],
-            "description": "Subject assigned this role"
+            "description": "The subject (user or group) that is granted the role"
           },
           "resource": {
             "allOf": [
@@ -3336,7 +3413,7 @@
                 "$ref": "#/components/schemas/RoleBindings.Resource"
               }
             ],
-            "description": "Resource the role is assigned to"
+            "description": "The resource on which the subject is granted the role"
           }
         },
         "example": {

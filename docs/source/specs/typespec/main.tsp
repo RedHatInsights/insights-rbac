@@ -775,8 +775,26 @@ namespace RoleBindings {
         };
     }
 
-
-
+    @doc("Batch request to create multiple role bindings")
+    @example(#{
+        requests: #[
+            #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+            },
+            #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+            }
+        ]
+    })
+    model BatchCreateRoleBindingsRequest {
+        @doc("List of role bindings to create")
+        @minItems(1)
+        requests: CreateRoleBindingsRequest[];
+    }
 
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
@@ -970,9 +988,18 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             body: #{
-                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-                role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                requests: #[
+                    #{
+                        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                        role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                    },
+                    #{
+                        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                        role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                    }
+                ]
             }
         },
         returnType: #{
@@ -988,13 +1015,18 @@ namespace RoleBindings {
                     resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
                     subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
                     role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                },
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
                 }
             ]
         }
     })
     @post op batchCreate(
         @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
-        @body body: CreateRoleBindingsRequest;
+        @body body: BatchCreateRoleBindingsRequest;
     ): ListResponse<RoleBinding> | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
@@ -1117,11 +1149,11 @@ namespace RoleBindings {
         }
     })
     model RoleBinding {
-        @doc("Role details")
+        @doc("The role that grants permissions to the subject on the resource")
         role?: KesselRBAC.Role;
-        @doc("Subject assigned this role")
+        @doc("The subject (user or group) that is granted the role")
         subject?: Subject;
-        @doc("Resource the role is assigned to")
+        @doc("The resource on which the subject is granted the role")
         resource?: Resource;
     }
 
