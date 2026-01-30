@@ -585,10 +585,12 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Verify ws2 is identified as orphaned (now checking count)
-        self.assertGreater(result["orphaned_workspaces_cleaned_count"], 0, "Should have orphaned workspaces")
+        self.assertGreater(result["orphaned_workspace_relations_cleaned_count"], 0, "Should have orphaned workspaces")
 
         # Verify ws3 is identified as having stale parent (now checking count)
-        self.assertGreater(result["stale_parent_workspaces_cleaned_count"], 0, "Should have stale parent workspaces")
+        self.assertGreater(
+            result["stale_parent_workspace_relations_cleaned_count"], 0, "Should have stale parent workspaces"
+        )
 
         # Verify bindings are cleaned (now checking count)
         self.assertGreater(result["bindings_cleaned_count"], 0, "Should have bindings cleaned")
@@ -671,9 +673,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=True,
         )
-
-        # Verify no custom default group
-        self.assertFalse(result["has_custom_default_group"])
 
         # Verify no built-in scope bindings were cleaned (count should be 0 since no custom default group)
         self.assertEqual(

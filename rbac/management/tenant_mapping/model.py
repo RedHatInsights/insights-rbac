@@ -87,3 +87,14 @@ class TenantMapping(models.Model):
     def default_role_binding_uuid_for(self, access_type: DefaultAccessType, scope: Scope) -> uuid.UUID:
         """Get the UUID for the tenant's default role binding (in the provided scope) of the provided access type."""
         return TenantMapping._role_binding_uuid_fns[access_type][scope](self)
+
+    def role_binding_ids(self) -> set[str]:
+        """Return the set of all role binding UUIDs (as strings) that this TenantMapping defines."""
+        return {
+            str(self.default_role_binding_uuid),
+            str(self.default_admin_role_binding_uuid),
+            str(self.root_scope_default_role_binding_uuid),
+            str(self.root_scope_default_admin_role_binding_uuid),
+            str(self.tenant_scope_default_role_binding_uuid),
+            str(self.tenant_scope_default_admin_role_binding_uuid),
+        }

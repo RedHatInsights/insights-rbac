@@ -15,6 +15,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import uuid
 from dataclasses import dataclass
 from typing import Iterable, Optional, Tuple
 
@@ -65,6 +66,14 @@ class V2boundresource:
     resource_id: str
 
     @classmethod
+    def for_workspace_id(cls, workspace_id: str | uuid.UUID) -> "V2boundresource":
+        """Return a V2boundresource corresponding to the provided workspace ID."""
+        if not (isinstance(workspace_id, str) or isinstance(workspace_id, uuid.UUID)):
+            raise TypeError(f"Expected workspace_id to be a string or UUID, but got: {workspace_id!r}")
+
+        return V2boundresource(("rbac", "workspace"), str(workspace_id))
+
+    @classmethod
     def try_for_model(cls, model: Workspace | Tenant) -> Optional["V2boundresource"]:
         """
         Return a V2boundresource corresponding to the provided model.
@@ -72,7 +81,7 @@ class V2boundresource:
         This will return None if no such resource can be computed (e.g. for a Tenant without an org_id).
         """
         if isinstance(model, Workspace):
-            return V2boundresource(("rbac", "workspace"), str(model.id))
+            return V2boundresource.for_workspace_id(model.id)
 
         if isinstance(model, Tenant):
             resource_id = model.tenant_resource_id()
