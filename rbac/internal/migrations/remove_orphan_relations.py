@@ -477,9 +477,6 @@ def _remove_incorrect_workspace_parent_relations(
 
 def cleanup_tenant_orphaned_relationships(
     tenant,
-    root_workspace,
-    default_workspace,
-    tenant_mapping,
     read_tuples_fn,
     dry_run: bool = False,
 ) -> dict:
@@ -646,28 +643,10 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
         logger.error(f"Tenant {org_id} not found")
         return {"error": f"Tenant {org_id} not found"}
 
-    # Get TenantMapping
-    try:
-        tenant_mapping = tenant.tenant_mapping
-    except TenantMapping.DoesNotExist:
-        logger.error(f"No TenantMapping found for tenant {org_id}")
-        return {"error": f"No TenantMapping found for tenant {org_id}. Tenant may not be bootstrapped."}
-
-    # Get root and default workspaces
-    try:
-        root_workspace = Workspace.objects.root(tenant=tenant)
-        default_workspace = Workspace.objects.default(tenant=tenant)
-    except Workspace.DoesNotExist as e:
-        logger.error(f"Missing root or default workspace for tenant {org_id}: {str(e)}")
-        return {"error": f"Missing root or default workspace for tenant {org_id}: {str(e)}"}
-
     try:
         # Clean orphaned relationships
         cleanup_result = cleanup_tenant_orphaned_relationships(
             tenant=tenant,
-            root_workspace=root_workspace,
-            default_workspace=default_workspace,
-            tenant_mapping=tenant_mapping,
             read_tuples_fn=(read_tuples_fn if read_tuples_fn is not None else read_tuples_from_kessel),
             dry_run=dry_run,
         )

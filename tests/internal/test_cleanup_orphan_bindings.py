@@ -417,9 +417,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Step 3: Run cleanup
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=default_workspace,
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=False,
         )
@@ -577,9 +574,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Run cleanup
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=default_workspace,
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=False,
         )
@@ -667,9 +661,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Run cleanup in dry_run mode
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=Workspace.objects.default(tenant=self.tenant),
-            tenant_mapping=tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=True,
         )
@@ -708,9 +699,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Run cleanup
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=Workspace.objects.default(tenant=self.tenant),
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=True,
         )
@@ -816,9 +804,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Step 3: Run cleanup
         cleanup_result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=Workspace.objects.default(tenant=self.tenant),
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=False,
         )
@@ -877,9 +862,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Run cleanup in dry_run mode
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=Workspace.objects.default(tenant=self.tenant),
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=True,
         )
@@ -1420,9 +1402,6 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
         # Step 2: Run cleanup - DFS should now discover all workspaces
         cleanup_result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=root_workspace,
-            default_workspace=default_workspace,
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=True,
         )
