@@ -210,9 +210,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Step 4: Run cleanup using the utility function
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=Workspace.objects.default(tenant=self.tenant),
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=False,
         )
@@ -318,9 +315,6 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Step 4: Run cleanup
         result = cleanup_tenant_orphaned_relationships(
             tenant=self.tenant,
-            root_workspace=Workspace.objects.root(tenant=self.tenant),
-            default_workspace=Workspace.objects.default(tenant=self.tenant),
-            tenant_mapping=self.tenant.tenant_mapping,
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
             dry_run=False,
         )
