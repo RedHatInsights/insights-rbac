@@ -626,7 +626,7 @@ def cleanup_tenant_orphaned_relationships(
         "workspaces_discovered_count": len(workspace_ids_in_kessel),
         "orphaned_workspace_relations_cleaned_count": orphaned_workspace_parent_count,
         "stale_parent_workspace_relations_cleaned_count": incorrect_workspace_parent_count,
-        "relations_to_remove_count": removed_count,
+        "relations_removed_count": removed_count,
     }
 
 
@@ -670,7 +670,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
 
         # If we removed any role binding relations, we need to re-replicate all role bindings for this tenant.
         # (We conservatively check whether any relations were removed at all.)
-        if cleanup_result["relations_to_remove_count"] > 0:
+        if cleanup_result["relations_removed_count"] > 0:
             if not dry_run:
                 logger.info(f"Running migrate_all_role_bindings for tenant {org_id}")
 
