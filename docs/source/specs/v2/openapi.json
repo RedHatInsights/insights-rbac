@@ -59,7 +59,7 @@
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
-              "default": "resource(id),role(id),subject(id, type)"
+              "default": "resource(id),role(id),subject(id,type)"
             },
             "explode": false
           },
@@ -715,7 +715,7 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/FieldMask",
-              "default": "resource(id),role(id),subject(id, type)"
+              "default": "resource(id),role(id),subject(id,type)"
             },
             "explode": false
           }

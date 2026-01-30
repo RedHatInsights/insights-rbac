@@ -1029,7 +1029,7 @@ namespace RoleBindings {
         }
     })
     @post op batchCreate(
-        @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
         @body body: BatchCreateRoleBindingsRequest;
     ): ListResponse<RoleBinding, 201> | Problems.CommonProblems | Problems.Problem400;
 
@@ -1203,7 +1203,7 @@ namespace RoleBindings {
         @query role_id?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
 
         @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.id";
