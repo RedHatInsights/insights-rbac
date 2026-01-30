@@ -4231,6 +4231,7 @@
         ]
       },
       "RoleWithAccess": {
+        "description": "Complete role object with access permissions. IMPORTANT: This schema-level example ensures consistent mock generation - mock tools prioritize schema examples over individual field examples in allOf compositions. Do not remove this example as it prevents incomplete mock responses that only contain the access field.",
         "allOf": [
           {
             "$ref": "#/components/schemas/RoleOut"
