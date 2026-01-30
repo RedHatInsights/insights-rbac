@@ -22,7 +22,7 @@ from typing import Protocol
 
 from api.models import Tenant
 from django.db import transaction
-from internal.utils import read_tuples_from_kessel
+from internal.utils import read_tuples_from_kessel, replicate_missing_binding_tuples
 from management.tenant_mapping.model import TenantMapping
 from management.models import Group, Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
@@ -666,20 +666,26 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
             dry_run=dry_run,
         )
 
-        # Run migration if not dry_run
         migration_result = None
-        if not dry_run:
-            logger.info(f"Running migrate_all_role_bindings for tenant {org_id}")
-            checked, migrated = migrate_all_role_bindings(tenant=tenant)
-            migration_result = {
-                "items_checked": checked,
-                "items_migrated": migrated,
-            }
+
+        # If we removed any role binding relations, we need to re-replicate all role bindings for this tenant.
+        # (We conservatively check whether any relations were removed at all.)
+        if cleanup_result["relations_to_remove_count"] > 0:
+            if not dry_run:
+                logger.info(f"Running migrate_all_role_bindings for tenant {org_id}")
+
+                rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
+
+                migration_result = {
+                    "items_checked": rereplicate_result["bindings_checked"],
+                    "items_migrated": rereplicate_result["bindings_fixed"],
+                }
 
         result = {
             "cleanup": cleanup_result,
             "migration": migration_result,
         }
+
         logger.info(f"Cleanup completed for tenant {org_id}")
         return result
 
