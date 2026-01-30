@@ -368,9 +368,9 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_fn) -> _Remo
     def add_seen_workspace(workspace_id: str, parent_resource: V2boundresource):
         # Enqueue this workspace for further searching, but ensure that we don't end up in a loop.
         if not workspace_data.has_workspace(workspace_id):
-            stack.append(ws_id)
+            stack.append(workspace_id)
 
-        workspace_data.add_workspace(workspace_id=ws_id, parent_resource=parent_resource)
+        workspace_data.add_workspace(workspace_id=workspace_id, parent_resource=parent_resource)
 
     # Find root workspaces (workspace -> parent -> tenant)
     # Query with empty resource_id to find all workspaces with this tenant as parent
