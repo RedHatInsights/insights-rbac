@@ -20,6 +20,7 @@ from importlib import reload
 from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
+from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -135,21 +136,37 @@ class RoleV2ViewTests(IdentityRequest):
         RoleV2.objects.create(name="first_role", description="First", tenant=self.tenant)
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
 
+        # Ascending order
         url = f"{self.url}?order_by=last_modified"
         response = self.client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
-        self.assertEqual(response.data["data"][0]["name"], "test_role")
-        self.assertEqual(response.data["data"][1]["name"], "first_role")
-        self.assertEqual(response.data["data"][2]["name"], "other_role")
-        # order by descending last_modified
+
+        data = response.data["data"]
+        # Ensure we got the expected roles, regardless of order
+        self.assertEqual(
+            set(role["name"] for role in data),
+            {"test_role", "first_role", "other_role"},
+        )
+
+        # Assert that last_modified is sorted ascending
+        last_modified_values = [parse_datetime(role["last_modified"]) for role in data]
+        self.assertEqual(last_modified_values, sorted(last_modified_values))
+
+        # Descending order
         url = f"{self.url}?order_by=-last_modified"
         response = self.client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
-        self.assertEqual(response.data["data"][0]["name"], "other_role")
-        self.assertEqual(response.data["data"][1]["name"], "first_role")
-        self.assertEqual(response.data["data"][2]["name"], "test_role")
+
+        data = response.data["data"]
+        self.assertEqual(
+            set(role["name"] for role in data),
+            {"test_role", "first_role", "other_role"},
+        )
+
+        last_modified_values = [parse_datetime(role["last_modified"]) for role in data]
+        self.assertEqual(last_modified_values, sorted(last_modified_values, reverse=True))
 
     def test_list_roles_with_name_filter_and_order_by(self):
         """Test that name filter and order_by can be combined."""
