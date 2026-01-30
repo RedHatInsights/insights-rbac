@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Service for workspace management."""
+
 import logging
 import select
 import time

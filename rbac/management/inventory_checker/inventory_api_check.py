@@ -17,7 +17,6 @@
 
 """Inventory checker class which checks assignments on Inventory API."""
 
-
 import logging
 from typing import List, Union
 

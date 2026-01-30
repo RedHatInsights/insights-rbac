@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Seeds command."""
+
 import logging
 
 from django.core.management import CommandError

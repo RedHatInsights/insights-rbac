@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the feature flags module."""
+
 import threading
 import time
 from django.test import TestCase

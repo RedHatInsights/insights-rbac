@@ -16,12 +16,13 @@
 #
 
 """Class to handle Dual Write API related operations."""
+
 import logging
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 from uuid import uuid4
 
 from django.conf import settings
-from management.models import BindingMapping, Group, Role, RoleBinding, Workspace
+from management.models import BindingMapping, Role, RoleBinding, Workspace
 from management.permission.scope_service import Scope, bound_model_for_scope
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -31,6 +32,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.v2_model import SeededRoleV2
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 from api.models import Tenant
@@ -38,7 +40,17 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _update_binding_for_custom_role(
+def _sync_binding_mapping_to_role_binding(binding_mapping: BindingMapping, role_binding: RoleBinding):
+    assert role_binding.role.v1_source == binding_mapping.role
+    assert role_binding.resource_type == binding_mapping.resource_type_name
+    assert role_binding.resource_id == binding_mapping.resource_id
+
+    role_binding.update_groups_by_uuid(binding_mapping.mappings["groups"])
+    role_binding.update_principals_by_user_id(binding_mapping.mappings["users"].items())
+    role_binding.save()
+
+
+def _update_role_binding(
     binding_mapping: BindingMapping, role_binding: RoleBinding, update_mapping: Callable[[BindingMapping], None]
 ):
     def _key_attrs_for(mapping: BindingMapping):
@@ -56,15 +68,42 @@ def _update_binding_for_custom_role(
     if _key_attrs_for(binding_mapping) != prior_key:
         raise ValueError("Expected ID, role, and resource of role binding not to be updated.")
 
+    if not binding_mapping.role.system:
+        if len(binding_mapping.mappings["users"]) > 0:
+            raise ValueError("Principal bindings are not supported for custom roles.")
+
     binding_mapping.save(force_update=True)
+    _sync_binding_mapping_to_role_binding(binding_mapping, role_binding)
 
-    new_groups = Group.objects.filter(uuid__in=binding_mapping.mappings["groups"])
-    missing_groups = set(binding_mapping.mappings["groups"]).difference(str(g.uuid) for g in new_groups)
 
-    if missing_groups:
-        raise ValueError(f"Not all expected groups could be found. Missing UUIDs: {missing_groups}")
+def _get_or_migrate_binding_for_system_role(tenant: Tenant, binding_mapping: BindingMapping) -> RoleBinding:
+    """
+    Get or create a RoleBinding with values corresponding to the provided BindingMapping.
 
-    role_binding.update_groups(new_groups)
+    The role of the BindingMapping must be a system role. It is assumed that the V2 equivalent of the system role
+    already exists.
+
+    If the RoleBinding does not already exist, it is created with the appropriate values from the BindingMapping.
+    """
+    v1_role: Role = binding_mapping.role
+
+    if not v1_role.system:
+        raise ValueError(f"BindingMapping's role must be a system role, but got role {v1_role.id} ({v1_role.name!r})")
+
+    v2_role: SeededRoleV2 = SeededRoleV2.objects.filter(v1_source=v1_role).get()
+
+    role_binding, created = RoleBinding.objects.select_for_update().get_or_create(
+        tenant=tenant,
+        uuid=binding_mapping.mappings["id"],
+        role=v2_role,
+        resource_type=binding_mapping.resource_type_name,
+        resource_id=binding_mapping.resource_id,
+    )
+
+    if created:
+        _sync_binding_mapping_to_role_binding(binding_mapping, role_binding)
+
+    return role_binding
 
 
 class RelationApiDualWriteSubjectHandler:
@@ -166,7 +205,7 @@ class RelationApiDualWriteSubjectHandler:
         self,
         system_role: Role,
         resource: V2boundresource,
-        **subject: Iterable[str],
+        **subject,
     ) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
@@ -256,13 +295,18 @@ class RelationApiDualWriteSubjectHandler:
                 .get()
             )
 
-            update_mapping(mapping)
+            role_binding = _get_or_migrate_binding_for_system_role(self.tenant, mapping)
+
+            _update_role_binding(binding_mapping=mapping, role_binding=role_binding, update_mapping=update_mapping)
 
             if mapping.is_unassigned():
+                assert not role_binding.group_entries.exists()
+                assert not role_binding.principal_entries.exists()
+
                 self.relations_to_remove.extend(mapping.as_tuples())
+
                 mapping.delete()
-            else:
-                mapping.save(force_update=True)
+                role_binding.delete()
         except BindingMapping.DoesNotExist:
             # create_default_mapping_for_system_role is None if e.g. the role is being removed.
             if create_default_mapping_for_system_role is not None:
@@ -288,6 +332,8 @@ class RelationApiDualWriteSubjectHandler:
                     mapping = create_default_mapping_for_system_role(v2_resource)
                     mapping.save(force_insert=True)
 
+                    _get_or_migrate_binding_for_system_role(self.tenant, mapping)
+
     def _update_mappings_for_custom_role(
         self, role: Role, update_mapping: Callable[[BindingMapping], None], migrated: bool = False
     ):
@@ -302,7 +348,7 @@ class RelationApiDualWriteSubjectHandler:
         # If this assumption is ever changed, then we must be sure to explicitly lock the role below when migrating it.
         mappings: list[BindingMapping] = list(role.binding_mappings.all())
         bindings_by_id: dict[str, RoleBinding] = {
-            str(b.uuid): b for b in RoleBinding.objects.filter(role__v1_source=role)
+            str(b.uuid): b for b in RoleBinding.objects.select_for_update().filter(role__v1_source=role)
         }
 
         if not mappings:
@@ -343,7 +389,7 @@ class RelationApiDualWriteSubjectHandler:
             )
 
         for mapping in mappings:
-            _update_binding_for_custom_role(
+            _update_role_binding(
                 binding_mapping=mapping,
                 role_binding=bindings_by_id[mapping.mappings["id"]],
                 update_mapping=update_mapping,

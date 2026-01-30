@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group definer."""
+
 from unittest.mock import ANY, call, patch
 from api.models import Tenant
 

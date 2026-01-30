@@ -36,7 +36,6 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.utils import create_client_channel_relation
 
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 # Initialize JWT manager for token handling (using optimized cache for Kafka consumer)

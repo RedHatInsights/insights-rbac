@@ -16,6 +16,7 @@
 #
 
 """View for permission management."""
+
 from django.conf import settings
 from django.db.models import Q
 from django.db.models.functions import Collate

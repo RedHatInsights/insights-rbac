@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for role binding management."""
+
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
