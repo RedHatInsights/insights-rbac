@@ -21,6 +21,15 @@ from rest_framework import serializers
 from .v2_model import RoleV2
 
 
+def parse_fields_param(fields_param: str | None) -> set[str]:
+    """Parse and sanitize the fields query parameter."""
+    if not fields_param:
+        return set()
+
+    sanitized = fields_param.replace("\x00", "")
+    return {f.strip() for f in sanitized.split(",") if f.strip()}
+
+
 class PermissionSerializer(serializers.Serializer):
     """Serializer for Permission objects."""
 
@@ -59,11 +68,10 @@ class RoleSerializer(serializers.ModelSerializer):
         if not request:
             return self.DEFAULT_LIST_FIELDS
 
-        fields_param = request.query_params.get("fields", "").replace("\x00", "")
-        if not fields_param:
+        requested = parse_fields_param(request.query_params.get("fields"))
+        if not requested:
             return self.DEFAULT_LIST_FIELDS
 
         # return the requested fields or default
         valid_fields = set(self.Meta.fields)
-        requested = {f.strip() for f in fields_param.split(",") if f.strip()}
         return requested & valid_fields or self.DEFAULT_LIST_FIELDS
