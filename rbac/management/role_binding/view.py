@@ -19,6 +19,7 @@
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
+from management.group.model import Group
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
@@ -57,8 +58,12 @@ class RoleBindingViewSet(BaseV2ViewSet):
     pagination_class = V2CursorPagination
 
     def get_queryset(self):
-        """Not used - this ViewSet only exposes custom actions."""
-        return None
+        """Return empty queryset - this ViewSet only exposes custom actions.
+
+        Returns Group.objects.none() to satisfy DRF expectations (e.g., schema
+        generation, mixin logic) while indicating no default queryset is used.
+        """
+        return Group.objects.none()
 
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
