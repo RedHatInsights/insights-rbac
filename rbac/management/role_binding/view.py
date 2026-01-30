@@ -60,8 +60,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
     def get_queryset(self):
         """Return empty queryset - this ViewSet only exposes custom actions.
 
-        Returns Group.objects.none() to satisfy DRF expectations (e.g., schema
-        generation, mixin logic) while indicating no default queryset is used.
+        Returns Group.objects.none() to satisfy DRF expectations while indicating no default queryset is used.
         """
         return Group.objects.none()
 
