@@ -428,8 +428,9 @@ def _remove_orphaned_workspace_parent_relations(
     )
 
     orphaned_ids = remote_ids - existing_local_ids
+
     logger.info(
-        f"Found {len(orphaned_ids)} orphaned workspace IDs for tenant (org_id={tenant.org_id!r}): {orphaned_ids}"
+        f"Found {len(orphaned_ids)} orphaned workspace IDs for tenant with org_id={tenant.org_id!r}: {orphaned_ids}"
     )
 
     incorrect_relations = [
@@ -437,6 +438,11 @@ def _remove_orphaned_workspace_parent_relations(
         for workspace_id in orphaned_ids
         for parent in workspace_data.parents_for(workspace_id)
     ]
+
+    logger.info(
+        f"Removing {len(incorrect_relations)} orphaned workspace parent relations "
+        f"for tenant with org_id={tenant.org_id!r})."
+    )
 
     commit_removal(incorrect_relations)
 
@@ -476,10 +482,18 @@ def _remove_incorrect_workspace_parent_relations(
                 for excess_parent in excess_parents:
                     to_remove.append(_workspace_parent_relationship(workspace_id, excess_parent))
 
-            logger.info(f"Removing {len(to_remove)} incorrect workspace parent relationships.")
-            commit_removal(to_remove)
+            logger.info(
+                f"Removing {len(to_remove)} incorrect workspace parent relationships "
+                f"for tenant with org_id={tenant.org_id!r}."
+            )
 
+            commit_removal(to_remove)
             removed_count += len(to_remove)
+
+    logger.info(
+        f"Removed a total of {removed_count} incorrect workspace parent relations "
+        f"for tenant with org_id={tenant.org_id!r})."
+    )
 
     return removed_count
 
@@ -588,6 +602,10 @@ def cleanup_tenant_orphaned_relationships(
 
     workspace_ids_in_kessel = set(kessel_workspace_data.workspace_ids())
 
+    logger.info(
+        f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r})."
+    )
+
     # Remove all the role bindings. We will add them back later (in cleanup_tenant_orphan_bindings).
 
     do_remove_role_bindings("tenant", tenant.tenant_resource_id())
@@ -649,7 +667,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
     Returns:
         dict: Results with cleanup counts and migration results, or error details
     """
-    logger.info(f"Cleaning orphaned relationships for tenant {org_id} (dry_run={dry_run})")
+    logger.info(f"Cleaning orphaned relationships for tenant org_id={org_id!r} (dry_run={dry_run})")
 
     # Get tenant
     try:
@@ -672,7 +690,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
         # (We conservatively check whether any relations were removed at all.)
         if cleanup_result["relations_removed_count"] > 0:
             if not dry_run:
-                logger.info(f"Running migrate_all_role_bindings for tenant {org_id}")
+                logger.info(f"Running replicate_missing_binding_tuples for tenant with org_id={org_id!r}.")
 
                 rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
 
