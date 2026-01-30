@@ -4249,7 +4249,29 @@
               }
             }
           }
-        ]
+        ],
+        "example": {
+          "name": "ExampleRole",
+          "display_name": "Example Role Display Name",
+          "description": "An example role description",
+          "uuid": "57e60f90-8c0c-4bd1-87a0-2143759aae1c",
+          "created": "2019-01-21T17:32:28Z",
+          "modified": "2019-03-04T07:25:58Z",
+          "policyCount": 0,
+          "accessCount": 1,
+          "applications": ["catalog"],
+          "system": false,
+          "platform_default": false,
+          "admin_default": false,
+          "external_role_id": "ExternalRoleId",
+          "external_tenant": "ExternalTenant",
+          "access": [
+            {
+              "permission": "catalog:*:read",
+              "resourceDefinitions": []
+            }
+          ]
+        }
       },
       "Policy": {
         "required": [
