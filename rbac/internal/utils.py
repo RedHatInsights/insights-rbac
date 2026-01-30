@@ -27,6 +27,7 @@ from typing import Optional
 import jsonschema
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
@@ -395,7 +396,7 @@ def rebuild_tenant_workspace_relations(
     }
 
 
-def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) -> dict:
+def replicate_missing_binding_tuples(tenant: Optional[Tenant] = None, binding_ids: Optional[list[int]] = None) -> dict:
     """
     Replicate all tuples for specified bindings to fix missing relationships in Kessel.
 
@@ -410,10 +411,24 @@ def replicate_missing_binding_tuples(binding_ids: Optional[list[int]] = None) ->
     """
     logger = logging.getLogger(__name__)
 
+    if (tenant is not None) and (binding_ids is not None):
+        raise ValueError("At most one of a Tenant and a list of binding IDs must be provided.")
+
     # Get bindings to fix
-    if binding_ids:
+    if binding_ids is not None:
         bindings_query = BindingMapping.objects.filter(id__in=binding_ids)
         logger.info(f"Fixing {len(binding_ids)} specific bindings: {binding_ids}")
+    elif tenant is not None:
+        # We do not need to lock anything here. We assume that replication is currently working correctly, so any
+        # workspaces created after this instant will be correctly replicated.
+        workspace_ids_to_fix = set(Workspace.objects.filter(tenant=tenant).values_list("id", flat=True))
+
+        bindings_query = BindingMapping.objects.filter(
+            Q(resource_type_namespace="rbac", resource_type_name="workspace", resource_id__in=workspace_ids_to_fix)
+            | Q(resource_type_namespace="rbac", resource_type_name="tenant", resource_id=tenant.tenant_resource_id())
+        )
+
+        logger.info(f"Fixing {bindings_query.count()} bindings from tenant pk={tenant.pk!r}, org_id={tenant.org_id!r}")
     else:
         bindings_query = BindingMapping.objects.all()
         logger.warning(f"Fixing ALL bindings ({bindings_query.count()} total) - this may take a while")
