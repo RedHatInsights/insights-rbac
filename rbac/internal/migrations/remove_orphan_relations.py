@@ -18,6 +18,7 @@ import dataclasses
 import itertools
 import logging
 from collections.abc import Callable, Iterable
+from typing import Protocol
 
 from api.models import Tenant
 from django.db import transaction
@@ -62,6 +63,24 @@ def _as_relationship(relation: Relationship | RelationTuple) -> Relationship:
     raise TypeError(f"Expected Relationship or RelationTuple, but got: {relation!r}")
 
 
+class _ReadTuplesTyped(Protocol):
+    def __call__(
+        self, *, resource_type: str, resource_id: str, relation: str, subject_type: str, subject_id: str
+    ) -> Iterable[RelationTuple]: ...
+
+
+def _make_read_tuples_typed(read_tuples) -> _ReadTuplesTyped:
+    def impl(
+        resource_type: str, resource_id: str, relation: str, subject_type: str, subject_id: str
+    ) -> Iterable[RelationTuple]:
+        return (
+            RelationTuple.from_message_dict(r["tuple"])
+            for r in read_tuples(resource_type, resource_id, relation, subject_type, subject_id)
+        )
+
+    return impl
+
+
 class _RemoteBindingState:
     _relations: set[RelationTuple]
     _custom_role_ids: set[str]
@@ -92,7 +111,7 @@ class _RemoteBindingState:
 def _collect_remote_relations_for_binding(
     binding_id: str,
     scope_relations: list[tuple[str, str]],
-    read_tuples_fn,
+    read_tuples_typed: _ReadTuplesTyped,
     system_role_uuids: set[str],
 ) -> _RemoteBindingState:
     """
@@ -101,7 +120,7 @@ def _collect_remote_relations_for_binding(
     Args:
         binding_id: The role_binding UUID to clean
         scope_relations: List of (resource_type, resource_id) tuples for scope bindings
-        read_tuples_fn: Function to read tuples from Kessel
+        read_tuples_typed: Function to read tuples from Kessel
         system_role_uuids: Set of system role UUIDs to exclude from custom role cleanup
 
     Returns:
@@ -109,49 +128,37 @@ def _collect_remote_relations_for_binding(
     """
     result = _RemoteBindingState()
 
-    # Query: role_binding:<id> → role → role:*
-    role_tuples = read_tuples_fn("role_binding", binding_id, "role", "role", "")
+    # Add relation from role binding to role. (There should only be one of these.)
+    role_tuples = list(
+        read_tuples_typed(
+            resource_type="role_binding",
+            resource_id=binding_id,
+            relation="role",
+            subject_type="role",
+            subject_id="",
+        )
+    )
+
+    result.add_relations(role_tuples)
+
     for t in role_tuples:
-        # Response format: {"tuple": {..., "subject": {"subject": {"id": "..."}}}, ...}
-        role_id = t.get("tuple", {}).get("subject", {}).get("subject", {}).get("id")
-        if role_id:
-            result.add_relations(
-                [
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        binding_id,
-                        ("rbac", "role"),
-                        role_id,
-                        "role",
-                    )
-                ]
-            )
+        role_id = t.subject_id
 
-            # If this is a custom V2 role (not a system role), collect permission relations inline
-            if role_id not in system_role_uuids:
-                result.add_custom_role(role_id)
+        if role_id not in system_role_uuids:
+            result.add_custom_role(role_id)
 
-    # Query: role_binding:<id> → subject → group:*#member
-    group_tuples = read_tuples_fn("role_binding", binding_id, "subject", "group", "")
-    for t in group_tuples:
-        # Response format: {"tuple": {..., "subject": {"subject": {"id": "..."}, "relation": "..."}}, ...}
-        group_id = t.get("tuple", {}).get("subject", {}).get("subject", {}).get("id")
-        subject_relation = t.get("tuple", {}).get("subject", {}).get("relation")
-        if group_id:
-            result.add_relations(
-                [
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        binding_id,
-                        ("rbac", "group"),
-                        group_id,
-                        "subject",
-                        subject_relation=subject_relation,
-                    )
-                ]
-            )
+    # Add relation from role binding to group subjects.
+    result.add_relations(
+        read_tuples_typed(
+            resource_type="role_binding",
+            resource_id=binding_id,
+            relation="subject",
+            subject_type="group",
+            subject_id="",
+        )
+    )
 
-    # Remove the scope binding relationships: workspace/tenant → binding → role_binding
+    # Add the relations from the underlying resource(s) to the role binding.
     for resource_type, resource_id in scope_relations:
         result.add_relations(
             [
@@ -168,33 +175,29 @@ def _collect_remote_relations_for_binding(
     return result
 
 
-def _collect_custom_role_permission_relations(role_id: str, read_tuples_fn) -> list[Relationship]:
+def _collect_custom_role_permission_relations(
+    role_id: str, read_tuples_typed: _ReadTuplesTyped
+) -> list[RelationTuple]:
     """
     Collect permission relations to remove for a custom V2 role.
 
     Args:
         role_id: The role UUID to clean permissions for
-        read_tuples_fn: Function to read tuples from Kessel
+        read_tuples_typed: Function to read tuples from Kessel
 
     Returns:
         list: Relations to remove for this role's permissions
     """
-    relations_to_remove = []
-    permission_tuples = read_tuples_fn("role", role_id, "", "principal", "*")
-    for t in permission_tuples:
-        # Response format: {"tuple": {"relation": "...", ...}, ...}
-        relation = t.get("tuple", {}).get("relation")
-        if relation:
-            relations_to_remove.append(
-                create_relationship(
-                    ("rbac", "role"),
-                    role_id,
-                    ("rbac", "principal"),
-                    "*",
-                    relation,
-                )
-            )
-    return relations_to_remove
+
+    return list(
+        read_tuples_typed(
+            resource_type="role",
+            resource_id=role_id,
+            relation="",
+            subject_type="principal",
+            subject_id="*",
+        )
+    )
 
 
 @dataclasses.dataclass
@@ -209,7 +212,7 @@ def _remove_all_role_bindings(
     tenant: Tenant,
     resource_type: str,
     resource_id: str,
-    read_tuples_fn,
+    read_tuples_typed: _ReadTuplesTyped,
     commit_removal: _CommitRemoval,
     system_role_uuids: set[str],
 ) -> _RemoveRoleBindingsResult:
@@ -229,7 +232,7 @@ def _remove_all_role_bindings(
         tenant: The tenant
         resource_type: "tenant" or "workspace"
         resource_id: The resource ID
-        read_tuples_fn: Function to read tuples from Kessel
+        read_tuples_typed: Function to read tuples from Kessel
         system_role_uuids: Set of system role UUIDs to exclude from custom role cleanup
 
     Returns: _RemoveRoleBindingsResults indicating what was done
@@ -242,20 +245,22 @@ def _remove_all_role_bindings(
 
     # Here, we will remove *all* role bindings for the tenant. We will recreate them all later.
 
-    binding_tuples = read_tuples_fn(resource_type, resource_id, "binding", "role_binding", "")
+    binding_tuples = read_tuples_typed(
+        resource_type=resource_type,
+        resource_id=resource_id,
+        relation="binding",
+        subject_type="role_binding",
+        subject_id="",
+    )
 
     for batch in itertools.batched(binding_tuples, 100):
-        binding_ids: set[str] = {
-            b
-            for b in (t.get("tuple", {}).get("subject", {}).get("subject", {}).get("id") for t in batch)
-            if (b is not None)
-        }
+        binding_ids: set[str] = {t.subject_id for t in batch}
 
         lookup_result_by_binding = {
             b: _collect_remote_relations_for_binding(
                 binding_id=b,
                 scope_relations=scope_relations,
-                read_tuples_fn=read_tuples_fn,
+                read_tuples_typed=read_tuples_typed,
                 system_role_uuids=system_role_uuids,
             )
             for b in binding_ids
@@ -300,7 +305,9 @@ def _remove_all_role_bindings(
         to_remove = []
 
         for role_id in custom_role_ids:
-            to_remove.extend(_collect_custom_role_permission_relations(role_id, read_tuples_fn))
+            to_remove.extend(
+                _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
+            )
 
         commit_removal(to_remove)
 
@@ -348,7 +355,7 @@ def _workspace_parent_relationship(workspace_id: str, parent: V2boundresource) -
     )
 
 
-def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_fn) -> _RemoteWorkspaceData:
+def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_typed: _ReadTuplesTyped) -> _RemoteWorkspaceData:
     """
     Discover all workspaces under a tenant in Kessel.
 
@@ -357,7 +364,7 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_fn) -> _Remo
 
     Args:
         tenant_resource_id: The tenant resource ID to search from
-        read_tuples_fn: Function to read tuples from Kessel
+        read_tuples_typed: Function to read tuples from Kessel
 
     Returns:
         dict: Mapping of workspace_id -> (parent_type, parent_id) for all workspaces found
@@ -374,32 +381,32 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_fn) -> _Remo
 
     # Find root workspaces (workspace -> parent -> tenant)
     # Query with empty resource_id to find all workspaces with this tenant as parent
-    root_tuples = read_tuples_fn("workspace", "", "parent", "tenant", tenant_resource_id)
+    root_tuples = read_tuples_typed(
+        resource_type="workspace",
+        resource_id="",
+        relation="parent",
+        subject_type="tenant",
+        subject_id=tenant_resource_id,
+    )
 
     for t in root_tuples:
-        # The workspace ID is in the resource part of the tuple response
-        # Response format: {"tuple": {"resource": {"type": {...}, "id": "..."}, ...}, ...}
-        ws_id = t.get("tuple", {}).get("resource", {}).get("id")
-
-        if not ws_id:
-            continue
-
-        add_seen_workspace(ws_id, V2boundresource(("rbac", "tenant"), tenant_resource_id))
+        add_seen_workspace(t.resource_id, V2boundresource(("rbac", "tenant"), tenant_resource_id))
 
     # DFS to find child workspaces
     while stack:
         parent_ws_id = stack.pop()  # LIFO for DFS
 
         # Find workspaces where parent is this workspace
-        child_tuples = read_tuples_fn("workspace", "", "parent", "workspace", parent_ws_id)
+        child_tuples = read_tuples_typed(
+            resource_type="workspace",
+            resource_id="",
+            relation="parent",
+            subject_type="workspace",
+            subject_id=parent_ws_id,
+        )
 
         for t in child_tuples:
-            ws_id = t.get("tuple", {}).get("resource", {}).get("id")
-
-            if not ws_id:
-                continue
-
-            add_seen_workspace(ws_id, V2boundresource(("rbac", "workspace"), parent_ws_id))
+            add_seen_workspace(t.resource_id, V2boundresource(("rbac", "workspace"), parent_ws_id))
 
     return workspace_data
 
@@ -416,7 +423,9 @@ def _remove_orphaned_workspace_parent_relations(
     #
     # There is also no issue if a workspace has been locally deleted but the deletion has not yet been replicated.
     # It can't be recreated (for the reasons above), and redundantly deleting the relation will have no effect.
-    existing_local_ids = set(Workspace.objects.filter(tenant=tenant, id__in=remote_ids).values_list("id", flat=True))
+    existing_local_ids = set(
+        str(u) for u in Workspace.objects.filter(tenant=tenant, id__in=remote_ids).values_list("id", flat=True)
+    )
 
     orphaned_ids = remote_ids - existing_local_ids
     logger.info(
@@ -518,6 +527,8 @@ def cleanup_tenant_orphaned_relationships(
     replicator = OutboxReplicator()
     removed_count = 0
 
+    read_tuples_typed = _make_read_tuples_typed(read_tuples_fn)
+
     # Process bindings and collect relations to remove
     # Counters for results
     bindings_cleaned_count = 0
@@ -558,7 +569,7 @@ def cleanup_tenant_orphaned_relationships(
             tenant=tenant,
             resource_type=resource_type,
             resource_id=resource_id,
-            read_tuples_fn=read_tuples_fn,
+            read_tuples_typed=read_tuples_typed,
             system_role_uuids=system_role_uuids,
             commit_removal=commit_removal,
         )
@@ -570,7 +581,11 @@ def cleanup_tenant_orphaned_relationships(
     # Get system role UUIDs (same for V1 and V2)
     system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True))
 
-    kessel_workspace_data = _collect_remote_workspaces(tenant.tenant_resource_id(), read_tuples_fn)
+    kessel_workspace_data = _collect_remote_workspaces(
+        tenant_resource_id=tenant.tenant_resource_id(),
+        read_tuples_typed=read_tuples_typed,
+    )
+
     workspace_ids_in_kessel = set(kessel_workspace_data.workspace_ids())
 
     # Remove all the role bindings. We will add them back later (in cleanup_tenant_orphan_bindings).
