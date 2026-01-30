@@ -792,9 +792,17 @@ namespace RoleBindings {
         ]
     })
     model BatchCreateRoleBindingsRequest {
-        @doc("List of role bindings to create")
+        @doc("List of role bindings to create (maximum 100)")
         @minItems(1)
+        @maxItems(100)
         requests: CreateRoleBindingsRequest[];
+    }
+
+    @doc("Response containing the created role bindings")
+    model BatchCreateRoleBindingsResponse {
+        @statusCode _: 201;
+        @doc("The role bindings that were created")
+        role_bindings: RoleBinding[];
     }
 
     @example(#{
@@ -1007,14 +1015,7 @@ namespace RoleBindings {
         },
         returnType: #{
             _: 201,
-            meta: #{
-                limit: 10
-            },
-            links: #{
-                next: null,
-                previous: null
-            },
-            data: #[
+            role_bindings: #[
                 #{
                     resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
                     subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
@@ -1031,7 +1032,7 @@ namespace RoleBindings {
     @post op batchCreate(
         @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
         @body body: BatchCreateRoleBindingsRequest;
-    ): ListResponse<RoleBinding, 201> | Problems.CommonProblems | Problems.Problem400;
+    ): BatchCreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
     @example(#{

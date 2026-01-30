@@ -472,31 +472,13 @@ paths:
           explode: false
       responses:
         '201':
-          description: The request has succeeded and a new resource has been created as a result.
+          description: Response containing the created role bindings
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - meta
-                  - links
-                  - data
-                properties:
-                  meta:
-                    $ref: '#/components/schemas/CursorPaginationMeta'
-                  links:
-                    $ref: '#/components/schemas/CursorPaginationLinks'
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/RoleBindings.RoleBinding'
+                $ref: '#/components/schemas/RoleBindings.BatchCreateRoleBindingsResponse'
               example:
-                meta:
-                  limit: 10
-                links:
-                  next: null
-                  previous: null
-                data:
+                role_bindings:
                   - resource:
                       id: 550e8400-e29b-41d4-a716-446655440001
                       type: workspace
@@ -2112,7 +2094,8 @@ components:
           items:
             $ref: '#/components/schemas/RoleBindings.CreateRoleBindingsRequest'
           minItems: 1
-          description: List of role bindings to create
+          maxItems: 100
+          description: List of role bindings to create (maximum 100)
       description: Batch request to create multiple role bindings
       example:
         requests:
@@ -2132,6 +2115,17 @@ components:
               type: user
             role:
               id: 550e8400-e29b-41d4-a716-446655440003
+    RoleBindings.BatchCreateRoleBindingsResponse:
+      type: object
+      required:
+        - role_bindings
+      properties:
+        role_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleBindings.RoleBinding'
+          description: The role bindings that were created
+      description: Response containing the created role bindings
     RoleBindings.CreateRoleBindingsRequest:
       type: object
       required:
