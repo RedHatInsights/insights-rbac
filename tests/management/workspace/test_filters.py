@@ -32,6 +32,7 @@ from management.models import Workspace
 from management.permissions.system_user_utils import SystemUserAccessResult
 from management.workspace.filters import WorkspaceAccessFilterBackend
 from management.workspace.service import WorkspaceService
+from management.workspace.utils.access import filter_top_level_workspaces
 from rbac import urls
 from tests.identity_request import BaseIdentityRequest
 
@@ -450,3 +451,139 @@ class WorkspacePermissionAndFilterBackendIntegrationTests(TransactionTestCase):
         # Permission should allow - filtering happens in FilterBackend
         result = permission.has_permission(request, view)
         self.assertTrue(result)
+
+
+class FilterTopLevelWorkspacesTests(TransactionTestCase):
+    """Unit tests for filter_top_level_workspaces optimization."""
+
+    def setUp(self):
+        """Set up test fixtures with a workspace hierarchy."""
+        self.tenant = Tenant.objects.create(
+            tenant_name="test_tenant",
+            org_id="test_org_id",
+            ready=True,
+        )
+
+        # Create hierarchy:
+        #   root
+        #   └── default
+        #       ├── ws_a
+        #       │   └── ws_a1
+        #       │       └── ws_a1a
+        #       └── ws_b
+        self.root = Workspace.objects.create(
+            name="Root",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default = Workspace.objects.create(
+            name="Default",
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root,
+        )
+        self.ws_a = Workspace.objects.create(
+            name="Workspace A",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default,
+        )
+        self.ws_a1 = Workspace.objects.create(
+            name="Workspace A1",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.ws_a,
+        )
+        self.ws_a1a = Workspace.objects.create(
+            name="Workspace A1A",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.ws_a1,
+        )
+        self.ws_b = Workspace.objects.create(
+            name="Workspace B",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default,
+        )
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        Workspace.objects.update(parent=None)
+        Workspace.objects.all().delete()
+        Tenant.objects.all().delete()
+
+    def test_single_workspace_is_top_level(self):
+        """Single workspace with no ancestors in set is top-level."""
+        queryset = Workspace.objects.filter(id=self.ws_a1a.id)
+        result = filter_top_level_workspaces(queryset)
+
+        self.assertEqual(list(result), [self.ws_a1a])
+
+    def test_parent_and_child_only_parent_is_top_level(self):
+        """When parent and child are in set, only parent is top-level."""
+        queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_a1.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a.id})
+
+    def test_grandparent_and_grandchild_only_grandparent_is_top_level(self):
+        """When grandparent and grandchild are in set (parent not), only grandparent is top-level."""
+        # ws_a is grandparent of ws_a1a, ws_a1 (parent) is not in set
+        queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_a1a.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a.id})
+
+    def test_siblings_both_are_top_level(self):
+        """Sibling workspaces (no ancestor relationship) are both top-level."""
+        queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_b.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a.id, self.ws_b.id})
+
+    def test_full_hierarchy_only_root_is_top_level(self):
+        """When full hierarchy is in set, only root is top-level."""
+        all_ids = [
+            self.root.id,
+            self.default.id,
+            self.ws_a.id,
+            self.ws_a1.id,
+            self.ws_a1a.id,
+            self.ws_b.id,
+        ]
+        queryset = Workspace.objects.filter(id__in=all_ids)
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.root.id})
+
+    def test_empty_queryset_returns_empty(self):
+        """Empty queryset returns empty result."""
+        queryset = Workspace.objects.none()
+        result = filter_top_level_workspaces(queryset)
+
+        self.assertEqual(list(result), [])
+
+    def test_multiple_branches_multiple_top_levels(self):
+        """Workspaces from different branches are all top-level."""
+        # ws_a1 and ws_b are from different branches
+        queryset = Workspace.objects.filter(id__in=[self.ws_a1.id, self.ws_b.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a1.id, self.ws_b.id})
+
+    def test_deep_hierarchy_with_gaps(self):
+        """Workspace with ancestor in set is not top-level, even with gaps."""
+        # default -> ws_a -> ws_a1 -> ws_a1a
+        # Include default and ws_a1a (skip ws_a and ws_a1)
+        queryset = Workspace.objects.filter(id__in=[self.default.id, self.ws_a1a.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        # Only default is top-level because ws_a1a has default as ancestor
+        self.assertEqual(result_ids, {self.default.id})
