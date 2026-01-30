@@ -119,3 +119,85 @@ class RoleSerializerTests(IdentityRequest):
 
         # Only valid fields are returned
         self.assertEqual(set(data.keys()), {"id", "name"})
+
+    def test_multiple_permissions_serialization(self):
+        """Test that role with multiple permissions serializes correctly."""
+        # Add more permissions
+        perm2 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
+        perm3 = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
+        self.role.permissions.add(perm2, perm3)
+
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role, context={"request": self._mock_request("id,permissions,permissions_count")})
+        data = serializer.data
+
+        self.assertEqual(data["permissions_count"], 3)
+        self.assertEqual(len(data["permissions"]), 3)
+
+        # Verify all permissions have correct structure
+        for perm in data["permissions"]:
+            self.assertIn("application", perm)
+            self.assertIn("resource_type", perm)
+            self.assertIn("operation", perm)
+
+    def test_role_with_no_permissions(self):
+        """Test that role with no permissions returns empty list."""
+        self.role.permissions.clear()
+
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role, context={"request": self._mock_request("id,permissions,permissions_count")})
+        data = serializer.data
+
+        self.assertEqual(data["permissions_count"], 0)
+        self.assertEqual(data["permissions"], [])
+
+    def test_fields_with_whitespace(self):
+        """Test that fields with whitespace around commas are parsed correctly."""
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role, context={"request": self._mock_request("id, name, description")})
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"id", "name", "description"})
+
+    def test_fields_with_null_character(self):
+        """Test that null characters in fields param are sanitized."""
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role, context={"request": self._mock_request("id,na\x00me,description")})
+        data = serializer.data
+
+        # Null character should be removed, "name" should be parsed correctly
+        self.assertEqual(set(data.keys()), {"id", "name", "description"})
+
+    def test_fields_with_duplicates(self):
+        """Test that duplicate field names are handled."""
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role, context={"request": self._mock_request("id,name,id,name")})
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"id", "name"})
+
+    def test_fields_with_empty_entries(self):
+        """Test that empty entries between commas are ignored."""
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role, context={"request": self._mock_request("id,,name,,,description")})
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"id", "name", "description"})
+
+    def test_only_permissions_count_field(self):
+        """Test requesting only permissions_count field."""
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role, context={"request": self._mock_request("permissions_count")})
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"permissions_count"})
+        self.assertEqual(data["permissions_count"], 1)
+
+    def test_serializer_without_request_context(self):
+        """Test that serializer without request context uses default fields."""
+        role = self._get_annotated_role()
+        serializer = RoleSerializer(role)
+        data = serializer.data
+
+        expected = {"id", "name", "description", "last_modified"}
+        self.assertEqual(set(data.keys()), expected)

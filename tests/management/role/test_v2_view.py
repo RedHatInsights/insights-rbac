@@ -198,3 +198,145 @@ class RoleV2ViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Invalid ordering field", str(response.data["detail"]))
+
+    def test_list_roles_with_limit_parameter(self):
+        """Test that limit parameter restricts the number of returned roles."""
+        # Create additional roles
+        RoleV2.objects.create(name="role_2", description="Second", tenant=self.tenant)
+        RoleV2.objects.create(name="role_3", description="Third", tenant=self.tenant)
+
+        url = f"{self.url}?limit=2"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data["meta"]["limit"], 2)
+
+    def test_list_roles_meta_contains_correct_limit(self):
+        """Test that meta.limit reflects the requested limit value."""
+        url = f"{self.url}?limit=5"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["meta"]["limit"], 5)
+
+    def test_list_roles_pagination_generates_next_link(self):
+        """Test that links.next is non-null when there are more roles than limit."""
+        # Create more roles than the limit
+        for i in range(5):
+            RoleV2.objects.create(name=f"extra_role_{i}", description=f"Extra {i}", tenant=self.tenant)
+
+        url = f"{self.url}?limit=2"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertIsNotNone(response.data["links"]["next"])
+
+    def test_list_roles_pagination_previous_link_null_on_first_page(self):
+        """Test that links.previous is null on the first page."""
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["links"]["previous"])
+
+    def test_list_roles_with_empty_name_filter(self):
+        """Test that empty name filter returns all roles."""
+        RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
+
+        url = f"{self.url}?name="
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+
+    def test_list_roles_with_whitespace_name_filter(self):
+        """Test that whitespace-only name filter is treated as empty."""
+        RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
+
+        url = f"{self.url}?name=%20"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+
+    def test_list_roles_name_filter_is_case_sensitive(self):
+        """Test that name filter is case sensitive exact match."""
+        RoleV2.objects.create(name="Test_Role", description="Uppercase", tenant=self.tenant)
+
+        # Should not match "test_role" (lowercase from setUp)
+        url = f"{self.url}?name=Test_Role"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["name"], "Test_Role")
+
+    def test_list_roles_with_permissions_field(self):
+        """Test that requesting permissions field returns permissions array."""
+        url = f"{self.url}?fields=id,name,permissions"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        role_data = response.data["data"][0]
+        self.assertEqual(set(role_data.keys()), {"id", "name", "permissions"})
+        self.assertIsInstance(role_data["permissions"], list)
+        self.assertEqual(len(role_data["permissions"]), 1)
+
+        perm = role_data["permissions"][0]
+        self.assertEqual(perm["application"], "test")
+        self.assertEqual(perm["resource_type"], "resource")
+        self.assertEqual(perm["operation"], "read")
+
+    def test_list_roles_with_all_available_fields(self):
+        """Test that all available fields can be requested."""
+        url = f"{self.url}?fields=id,name,description,permissions_count,permissions,last_modified"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_data = response.data["data"][0]
+
+        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
+        self.assertEqual(set(role_data.keys()), expected)
+
+    def test_list_roles_with_only_id_field(self):
+        """Test minimal field request returns only id."""
+        url = f"{self.url}?fields=id"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_data = response.data["data"][0]
+        self.assertEqual(set(role_data.keys()), {"id"})
+
+    def test_list_roles_with_invalid_fields_returns_defaults(self):
+        """Test that requesting only invalid fields returns default fields."""
+        url = f"{self.url}?fields=invalid_field,another_invalid"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_data = response.data["data"][0]
+        # Should return default fields when all requested are invalid
+        expected = {"id", "name", "description", "last_modified"}
+        self.assertEqual(set(role_data.keys()), expected)
+
+    def test_list_roles_returns_empty_list_when_no_roles(self):
+        """Test that empty list is returned when no roles exist for tenant."""
+        # Delete the role created in setUp
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+        self.assertIn("meta", response.data)
+        self.assertIn("links", response.data)
+
+    def test_list_roles_with_no_matching_name(self):
+        """Test that empty list is returned when name filter matches nothing."""
+        url = f"{self.url}?name=nonexistent_role"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
