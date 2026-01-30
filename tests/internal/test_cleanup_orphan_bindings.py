@@ -867,9 +867,9 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         tuple_count_after = len(self.tuples)
         self.assertEqual(tuple_count_before, tuple_count_after, "Dry run should not modify tuples")
 
-        # Should have relations_to_remove_count in result
-        self.assertIn("relations_to_remove_count", result)
-        self.assertGreater(result["relations_to_remove_count"], 0, "Should have relations to remove")
+        # Should have relations_removed_count in result
+        self.assertIn("relations_removed_count", result)
+        self.assertGreater(result["relations_removed_count"], 0, "Should have relations to remove")
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
