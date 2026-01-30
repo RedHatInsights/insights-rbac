@@ -21,6 +21,15 @@ from rest_framework import serializers
 from .v2_model import RoleV2
 
 
+def parse_fields_param(fields_param: str | None) -> set[str]:
+    """Parse and sanitize the fields query parameter."""
+    if not fields_param:
+        return set()
+
+    sanitized = fields_param.replace("\x00", "")
+    return {f.strip() for f in sanitized.split(",") if f.strip()}
+
+
 class PermissionSerializer(serializers.Serializer):
     """Serializer for Permission objects."""
 
@@ -32,7 +41,10 @@ class PermissionSerializer(serializers.Serializer):
 class RoleSerializer(serializers.ModelSerializer):
     """Serializer for V2 Role model."""
 
+    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
+
     id = serializers.UUIDField(source="uuid", read_only=True)
+    permissions_count = serializers.IntegerField(source="permissions_count_annotation", read_only=True)
     permissions = PermissionSerializer(many=True, required=False)
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
 
@@ -40,4 +52,26 @@ class RoleSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = RoleV2
-        fields = ("id", "name", "description", "permissions", "last_modified")
+        fields = ("id", "name", "description", "permissions_count", "permissions", "last_modified")
+
+    def __init__(self, *args, **kwargs):
+        """Initialize with dynamic field selection from request."""
+        super().__init__(*args, **kwargs)
+
+        allowed = self._get_allowed_fields()
+        for field_name in set(self.fields) - allowed:
+            self.fields.pop(field_name)
+
+    def _get_allowed_fields(self) -> set:
+        """Parse fields from request query params."""
+        request = self.context.get("request")
+        if not request:
+            return self.DEFAULT_LIST_FIELDS
+
+        requested = parse_fields_param(request.query_params.get("fields"))
+        if not requested:
+            return self.DEFAULT_LIST_FIELDS
+
+        # return the requested fields or default
+        valid_fields = set(self.Meta.fields)
+        return requested & valid_fields or self.DEFAULT_LIST_FIELDS
