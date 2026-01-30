@@ -32,6 +32,7 @@ from management.models import Workspace
 from management.permissions.system_user_utils import SystemUserAccessResult
 from management.workspace.filters import WorkspaceAccessFilterBackend
 from management.workspace.service import WorkspaceService
+from management.workspace.utils.access import filter_top_level_workspaces
 from rbac import urls
 from tests.identity_request import BaseIdentityRequest
 
@@ -514,8 +515,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_single_workspace_is_top_level(self):
         """Single workspace with no ancestors in set is top-level."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         queryset = Workspace.objects.filter(id=self.ws_a1a.id)
         result = filter_top_level_workspaces(queryset)
 
@@ -523,8 +522,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_parent_and_child_only_parent_is_top_level(self):
         """When parent and child are in set, only parent is top-level."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_a1.id])
         result = filter_top_level_workspaces(queryset)
 
@@ -533,8 +530,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_grandparent_and_grandchild_only_grandparent_is_top_level(self):
         """When grandparent and grandchild are in set (parent not), only grandparent is top-level."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         # ws_a is grandparent of ws_a1a, ws_a1 (parent) is not in set
         queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_a1a.id])
         result = filter_top_level_workspaces(queryset)
@@ -544,8 +539,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_siblings_both_are_top_level(self):
         """Sibling workspaces (no ancestor relationship) are both top-level."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_b.id])
         result = filter_top_level_workspaces(queryset)
 
@@ -554,8 +547,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_full_hierarchy_only_root_is_top_level(self):
         """When full hierarchy is in set, only root is top-level."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         all_ids = [
             self.root.id,
             self.default.id,
@@ -572,8 +563,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_empty_queryset_returns_empty(self):
         """Empty queryset returns empty result."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         queryset = Workspace.objects.none()
         result = filter_top_level_workspaces(queryset)
 
@@ -581,8 +570,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_multiple_branches_multiple_top_levels(self):
         """Workspaces from different branches are all top-level."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         # ws_a1 and ws_b are from different branches
         queryset = Workspace.objects.filter(id__in=[self.ws_a1.id, self.ws_b.id])
         result = filter_top_level_workspaces(queryset)
@@ -592,8 +579,6 @@ class FilterTopLevelWorkspacesTests(TransactionTestCase):
 
     def test_deep_hierarchy_with_gaps(self):
         """Workspace with ancestor in set is not top-level, even with gaps."""
-        from management.workspace.utils.access import filter_top_level_workspaces
-
         # default -> ws_a -> ws_a1 -> ws_a1a
         # Include default and ws_a1a (skip ws_a and ws_a1)
         queryset = Workspace.objects.filter(id__in=[self.default.id, self.ws_a1a.id])
