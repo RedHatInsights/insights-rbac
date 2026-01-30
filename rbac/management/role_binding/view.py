@@ -56,6 +56,10 @@ class RoleBindingViewSet(BaseV2ViewSet):
     )
     pagination_class = V2CursorPagination
 
+    def get_queryset(self):
+        """Not used - this ViewSet only exposes custom actions."""
+        return None
+
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
         """List role bindings grouped by subject.
