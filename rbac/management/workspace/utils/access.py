@@ -416,6 +416,16 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
                 workspace_id=target_workspace, principal_id=principal_id, relation=relation
             )
 
+        # If Kessel denied access for a 'view' operation, check if it's a fallback workspace
+        # (root, default, ungrouped). These workspaces should be accessible to all users for
+        # basic workspace structure visibility, but only for read operations.
+        # Write operations (create, edit, move, delete) still require explicit permissions.
+        if not result and required_operation == "view":
+            with record_timing(timings, "check_fallback_workspace"):
+                fallback_workspace_ids = get_fallback_workspace_ids(request.tenant)
+                if target_workspace in fallback_workspace_ids:
+                    result = True
+
         return result
 
     finally:
