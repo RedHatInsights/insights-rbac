@@ -21,7 +21,6 @@ import time
 from contextlib import contextmanager
 from uuid import UUID
 
-from django.db import connection
 from django.db.models.expressions import RawSQL
 from feature_flags import FEATURE_FLAGS
 from management.models import Access, Workspace
