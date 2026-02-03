@@ -19,6 +19,7 @@
 
 import logging
 
+from feature_flags import FEATURE_FLAGS
 from management.permissions.workspace_inventory_access import (
     WorkspaceInventoryAccessChecker,
 )
@@ -77,18 +78,30 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
     """
     Permission class for role binding access using Kessel Inventory API.
 
-    Checks if the user has role_binding_view permission on a resource
+    Checks if the user has role_binding_view or view permission on a resource
     using the Kessel Inventory API via WorkspaceInventoryAccessChecker.
+
+    The relation to check is controlled by the USE_ROLE_BINDING_VIEW_PERMISSION feature flag:
+    - When enabled (default): uses 'role_binding_view' relation
+    - When disabled: uses 'view' relation
 
     This permission class should be used after RoleBindingSystemUserAccessPermission
     which handles system user denial logic.
     """
 
-    # Relation to check for role binding access
+    # Relation to check for role binding access (specific permission)
     ROLE_BINDING_VIEW_RELATION = "role_binding_view"
+    # Fallback relation when feature flag is disabled (general permission)
+    VIEW_RELATION = "view"
 
     # Allowlist of valid resource types for role binding access checks
     ALLOWED_RESOURCE_TYPES = {"workspace"}
+
+    def _get_relation(self) -> str:
+        """Get the relation to check based on feature flag."""
+        if FEATURE_FLAGS.is_use_role_binding_view_permission_enabled():
+            return self.ROLE_BINDING_VIEW_RELATION
+        return self.VIEW_RELATION
 
     def has_permission(self, request, view):
         """
@@ -120,10 +133,11 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
             return False
 
         # Use WorkspaceInventoryAccessChecker for the Kessel permission check
+        relation = self._get_relation()
         checker = WorkspaceInventoryAccessChecker()
         return checker.check_resource_access(
             resource_type=resource_type,
             resource_id=resource_id,
             principal_id=principal_id,
-            relation=self.ROLE_BINDING_VIEW_RELATION,
+            relation=relation,
         )
