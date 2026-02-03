@@ -22,7 +22,7 @@ from management.role.v2_exceptions import (
     RoleAlreadyExistsError,
     RoleDatabaseError,
 )
-from management.role.v2_model import CustomRoleV2
+from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from rest_framework import serializers
 
@@ -32,37 +32,7 @@ class PermissionSerializer(serializers.Serializer):
 
     application = serializers.CharField(required=True, help_text="Application name")
     resource_type = serializers.CharField(required=True, help_text="Resource type")
-    operation = serializers.CharField(required=True, help_text="Operation/verb")
-
-
-class RoleV2CreateRequestSerializer(serializers.Serializer):
-    """
-    Serializer for role creation request.
-
-    Matches the OpenAPI spec: Roles.CreateOrUpdateRoleRequest
-    """
-
-    name = serializers.CharField(
-        required=True,
-        max_length=175,
-        help_text="A human readable name for the role.",
-    )
-    description = serializers.CharField(
-        required=True,
-        allow_blank=True,
-        help_text="A description of the role to help clarify its purpose.",
-    )
-    permissions = PermissionSerializer(
-        many=True,
-        required=True,
-        help_text="List of permissions to assign to this role",
-    )
-
-    def validate_permissions(self, value):
-        """Validate that at least one permission is provided."""
-        if not value:
-            raise serializers.ValidationError("At least one permission is required.")
-        return value
+    operation = serializers.CharField(required=True, source="verb", help_text="Operation/verb")
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
@@ -75,14 +45,14 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True)
-    permissions = serializers.SerializerMethodField()
+    permissions = PermissionSerializer(many=True, read_only=True)
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
     permissions_count = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
 
-        model = CustomRoleV2
+        model = RoleV2
         fields = (
             "id",
             "name",
@@ -92,23 +62,12 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
             "permissions_count",
         )
 
-    def get_permissions(self, obj):
-        """Get permissions in the API response format."""
-        return [
-            {
-                "application": p.application,
-                "resource_type": p.resource_type,
-                "operation": p.verb,
-            }
-            for p in obj.permissions.all()
-        ]
-
     def get_permissions_count(self, obj):
         """Get the count of permissions."""
         return obj.permissions.count()
 
 
-class RoleV2Serializer(serializers.ModelSerializer):
+class RoleSerializer(serializers.ModelSerializer):
     """
     Combined serializer for RoleV2 CRUD operations.
 
@@ -130,7 +89,7 @@ class RoleV2Serializer(serializers.ModelSerializer):
     class Meta:
         """Metadata for the serializer."""
 
-        model = CustomRoleV2
+        model = RoleV2
         fields = (
             "id",
             "name",

@@ -21,9 +21,9 @@ import logging
 import pgtransaction
 from django.db import OperationalError
 from management.base_viewsets import BaseV2ViewSet
-from management.permissions.role_access import RoleAccessPermission
-from management.role.v2_model import CustomRoleV2
-from management.role.v2_serializer import RoleV2Serializer
+from management.permissions import RoleAccessPermission
+from management.role.v2_model import RoleV2
+from management.role.v2_serializer import RoleSerializer
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import status
 from rest_framework.response import Response
@@ -32,33 +32,30 @@ logger = logging.getLogger(__name__)
 
 
 class RoleV2ViewSet(BaseV2ViewSet):
-    """
-    RoleV2 ViewSet.
-
-    Provides create, list, retrieve, update, and delete operations for custom roles.
-
-    Responsibilities (per DDD layering):
-    - Define mapping to HTTP semantics (verbs, pagination, etc.)
-    - Call Serializer (and rarely Service directly for operations like delete)
-    - Never throw validation errors directly - let Serializer handle that
-
-    Access control is handled by RoleAccessPermission.
-    """
+    """RoleV2 ViewSet."""
 
     permission_classes = (RoleAccessPermission,)
-    queryset = CustomRoleV2.objects.all()
-    serializer_class = RoleV2Serializer
+    queryset = RoleV2.objects.all()
+    serializer_class = RoleSerializer
     lookup_field = "uuid"
 
     def get_queryset(self):
-        """Get queryset filtered by tenant."""
-        return (
-            super()
-            .get_queryset()
-            .filter(tenant=self.request.tenant)
+        """
+        Return different querysets based on action.
+
+        - list/retrieve: All roles (custom, seeded, system) for the tenant
+        - create/update/destroy: Only custom roles (users can only modify custom roles)
+        """
+        base_qs = (
+            RoleV2.objects.filter(tenant=self.request.tenant)
             .prefetch_related("permissions")
             .order_by("name", "-modified")
         )
+
+        if self.action in ("list", "retrieve"):
+            return base_qs
+        else:
+            return base_qs.filter(type=RoleV2.Types.CUSTOM)
 
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
     def _create_atomic(self, request, *args, **kwargs):

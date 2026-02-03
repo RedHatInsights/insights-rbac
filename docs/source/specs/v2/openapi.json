@@ -240,6 +240,194 @@
             }
           }
         }
+      },
+      "get": {
+        "operationId": "RoleBindings_list",
+        "summary": "List role bindings",
+        "description": "List role bindings",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Limit",
+              "default": 10
+            },
+            "explode": false
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor for cursor-based pagination.",
+            "schema": {
+              "$ref": "#/components/schemas/Cursor"
+            },
+            "explode": false
+          },
+          {
+            "name": "role_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter by role ID",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Control which fields are included in the response to optimize payload size.",
+            "schema": {
+              "$ref": "#/components/schemas/FieldMask",
+              "default": "resource(id),role(id),subject(id, type)"
+            },
+            "explode": false
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "description": "Default sort is by the time the role was first created. Prefix with '-' for descending order.",
+            "schema": {
+              "$ref": "#/components/schemas/OrderBy",
+              "default": "role.id"
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "meta",
+                    "links",
+                    "data"
+                  ],
+                  "properties": {
+                    "meta": {
+                      "$ref": "#/components/schemas/CursorPaginationMeta"
+                    },
+                    "links": {
+                      "$ref": "#/components/schemas/CursorPaginationLinks"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RoleBindings.RoleBinding"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "meta": {
+                    "limit": 10
+                  },
+                  "links": {
+                    "next": "http://localhost:8000/api/rbac/v2/role-bindings/?cursor=cD0yMDI1LTA4LTE1",
+                    "previous": null
+                  },
+                  "data": [
+                    {
+                      "role": {
+                        "id": "550e8400-e29b-41d4-a716-446655440002"
+                      },
+                      "subject": {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        "type": "group"
+                      },
+                      "resource": {
+                        "id": "550e8400-e29b-41d4-a716-446655440001"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        401
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problems.Problem403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "$ref": "#/components/schemas/Problems.ProblemType"
+                    },
+                    "status": {
+                      "type": "number",
+                      "enum": [
+                        500
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Role Bindings"
+        ]
       }
     },
     "/role-bindings/by-subject/": {
@@ -820,7 +1008,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Roles.Role"
+                        "$ref": "#/components/schemas/Role"
                       }
                     }
                   }
@@ -967,7 +1155,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Roles.Role"
+                  "$ref": "#/components/schemas/Role"
                 },
                 "example": {
                   "id": "550e8400-e29b-41d4-a716-446655440002",
@@ -1134,7 +1322,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Roles.Role"
+                  "$ref": "#/components/schemas/Role"
                 },
                 "examples": {
                   "example0": {
@@ -1285,7 +1473,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Roles.Role"
+                  "$ref": "#/components/schemas/Role"
                 },
                 "example": {
                   "id": "550e8400-e29b-41d4-a716-446655440002",
@@ -1610,6 +1798,19 @@
             "description": "Case sensitive exact match of workspace by name.",
             "schema": {
               "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "description": "Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/UUID"
+              }
             },
             "explode": false
           },
@@ -2701,6 +2902,30 @@
         "type": "string",
         "description": "Sort order specification for list operations.\nUse comma to separate multiple fields, prefix with '-' for descending order.\n\n**Examples:**\n- `name` - Sort by name ascending\n- `-last_modified` - Sort by last_modified descending\n- `name,-created` - Sort by name ascending, then created descending"
       },
+      "Permission": {
+        "type": "object",
+        "required": [
+          "application",
+          "resource_type",
+          "operation"
+        ],
+        "properties": {
+          "application": {
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          }
+        },
+        "example": {
+          "application": "rbac",
+          "resource_type": "workspace",
+          "operation": "read"
+        }
+      },
       "Problems.Problem400": {
         "type": "object",
         "required": [
@@ -2884,6 +3109,63 @@
           }
         ]
       },
+      "Role": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              }
+            ],
+            "description": "UUID that uniquely identifies the role"
+          },
+          "name": {
+            "type": "string",
+            "description": "A human readable name for the role. Must be unique within a tenant."
+          },
+          "description": {
+            "type": "string",
+            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "description": "List of permissions assigned to this role"
+          },
+          "permissions_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of permissions assigned to this role"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of when the role was last modified"
+          }
+        },
+        "example": {
+          "id": "550e8400-e29b-41d4-a716-446655440002",
+          "name": "Workspace Admin",
+          "description": "Full administrative access to workspace",
+          "permissions": [
+            {
+              "application": "rbac",
+              "resource_type": "workspace",
+              "operation": "read"
+            },
+            {
+              "application": "rbac",
+              "resource_type": "workspace",
+              "operation": "write"
+            }
+          ],
+          "permissions_count": 2,
+          "last_modified": "2024-08-04T12:00:00Z"
+        }
+      },
       "RoleBindings.BaseSubject": {
         "type": "object",
         "required": [
@@ -3047,7 +3329,7 @@
           "roles": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RoleBindings.Role"
+              "$ref": "#/components/schemas/Role"
             },
             "description": "Roles that were assigned"
           },
@@ -3137,20 +3419,61 @@
           }
         }
       },
-      "RoleBindings.Role": {
+      "RoleBindings.RoleBinding": {
         "type": "object",
         "properties": {
-          "id": {
+          "role": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/UUID"
+                "$ref": "#/components/schemas/Role"
               }
             ],
-            "description": "Role identifier"
+            "description": "Role details"
           },
-          "name": {
-            "type": "string",
-            "description": "Name of the role"
+          "subject": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.UserSubject"
+              },
+              {
+                "$ref": "#/components/schemas/RoleBindings.GroupSubject"
+              }
+            ],
+            "description": "Subject assigned this role"
+          },
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource the role is assigned to"
+          }
+        },
+        "example": {
+          "role": {
+            "id": "550e8400-e29b-41d4-a716-446655440002",
+            "name": "Workspace Admin",
+            "permissions": [
+              {
+                "application": "rbac",
+                "resource_type": "workspace",
+                "operation": "read"
+              },
+              {
+                "application": "rbac",
+                "resource_type": "workspace",
+                "operation": "write"
+              }
+            ]
+          },
+          "subject": {
+            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "type": "group",
+            "group": {
+              "name": "Engineering Team",
+              "user_count": 25
+            }
           }
         }
       },
@@ -3176,7 +3499,7 @@
           "roles": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RoleBindings.Role"
+              "$ref": "#/components/schemas/Role"
             },
             "description": "Roles assigned to the subject"
           },
@@ -3335,7 +3658,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
+            "description": "A human readable name for the role. Must be unique within a tenant."
           },
           "description": {
             "type": "string",
@@ -3344,7 +3667,7 @@
           "permissions": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Roles.Permission"
+              "$ref": "#/components/schemas/Permission"
             },
             "description": "List of permissions to assign to this role"
           }
@@ -3365,90 +3688,6 @@
               "operation": "write"
             }
           ]
-        }
-      },
-      "Roles.Permission": {
-        "type": "object",
-        "required": [
-          "application",
-          "resource_type",
-          "operation"
-        ],
-        "properties": {
-          "application": {
-            "type": "string",
-            "description": "Application name"
-          },
-          "resource_type": {
-            "type": "string",
-            "description": "Resource type within the application"
-          },
-          "operation": {
-            "type": "string",
-            "description": "Operation for this permission"
-          }
-        },
-        "example": {
-          "application": "inventory",
-          "resource_type": "hosts",
-          "operation": "read"
-        }
-      },
-      "Roles.Role": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UUID"
-              }
-            ],
-            "description": "UUID that uniquely identifies the role"
-          },
-          "name": {
-            "type": "string",
-            "description": "A human readable name for the role. Does not need to be unique."
-          },
-          "description": {
-            "type": "string",
-            "description": "A description of the role to help clarify its purpose. Does not need to be unique."
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Roles.Permission"
-            },
-            "description": "List of permissions assigned to this role"
-          },
-          "permissions_count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Number of permissions assigned to this role"
-          },
-          "last_modified": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Timestamp of when the role was last modified"
-          }
-        },
-        "description": "Role with optional fields (supports field masking)",
-        "example": {
-          "id": "550e8400-e29b-41d4-a716-446655440002",
-          "name": "Custom Inventory Admin",
-          "description": "Custom role for inventory management",
-          "permissions": [
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "read"
-            },
-            {
-              "application": "inventory",
-              "resource_type": "hosts",
-              "operation": "write"
-            }
-          ],
-          "last_modified": "2024-08-04T12:00:00Z"
         }
       },
       "Timestamps": {

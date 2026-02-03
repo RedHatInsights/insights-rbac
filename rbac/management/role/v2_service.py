@@ -38,8 +38,7 @@ class RoleV2Service:
     """
     Domain service for RoleV2 operations.
 
-    This service encapsulates business logic for role management,
-    following DDD principles by keeping domain rules in the service layer.
+    This service encapsulates business logic for role management.
 
     Raises domain-specific exceptions that should be caught and converted
     to HTTP-level errors by the serializer layer.
