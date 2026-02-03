@@ -547,9 +547,9 @@ def _remove_incorrect_workspace_parent_relations(
     removed_count = 0
 
     for raw_workspaces in itertools.batched(Workspace.objects.filter(id__in=remote_ids).iterator(), 100):
-        to_remove = []
-
         with transaction.atomic():
+            to_remove = []
+
             # We need to lock the workspaces because their parents could change while we're working.
             workspaces = list(Workspace.objects.filter(pk__in=[w.pk for w in raw_workspaces]).select_for_update())
 
