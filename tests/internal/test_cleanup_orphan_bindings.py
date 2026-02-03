@@ -19,9 +19,10 @@ import uuid
 from unittest.mock import patch
 from django.test import override_settings
 from management.models import BindingMapping, Workspace
+from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.model import Role
-from management.role.v2_model import SeededRoleV2, CustomRoleV2
+from management.role.v2_model import SeededRoleV2, CustomRoleV2, RoleBinding
 from management.tenant_service import V2TenantBootstrapService
 from management.workspace.service import WorkspaceService
 from migration_tool.in_memory_tuples import (
@@ -200,6 +201,50 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             )
         )
         self.assertEqual(len(scope_binding_tuples), 1, "Scope binding tuples should be removed")
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_cleanup_orphaned_group_relationships(self, mock_replicate):
+        """Test that an orphaned role binding to principal subject relation is removed."""
+        self._enable_replicate_mock(mock_replicate)
+
+        role = self.given_v1_system_role(name="system role", permissions=["rbac:roles:read"])
+
+        # Create the user and assign the group to the role (to prevent the role binding from being fully deleted).
+        group, _ = self.given_group("group", ["u1"])
+        self.given_roles_assigned_to_group(group, [role])
+
+        car = self.given_car("u1", [role])
+        role_binding = RoleBinding.objects.filter(role__v1_source=role).get()
+
+        subject_relation = all_of(
+            resource("rbac", "role_binding", str(role_binding.uuid)),
+            relation("subject"),
+            subject("rbac", "principal", Principal.user_id_to_principal_resource_id("u1")),
+        )
+
+        self.assertEqual(self.tuples.count_tuples(subject_relation), 1, "Subject relation should have been replicated")
+
+        self.given_car_expired(car, replicator=NoopReplicator())
+
+        self.assertEqual(
+            self.tuples.count_tuples(subject_relation), 1, "Subject relation should not have been removed"
+        )
+
+        result = cleanup_tenant_orphaned_relationships(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            dry_run=False,
+        )
+
+        self.assertEqual(self.tuples.count_tuples(subject_relation), 0, "Subject relation should not been removed")
+
+        self.assertEqual(result["relations_removed_count"], 1, "Only the subject relation should have been removed")
+        self.assertEqual(result["ordinary_bindings_altered_count"], 1, "One role binding should have been altered")
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",

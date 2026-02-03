@@ -158,6 +158,16 @@ def _collect_remote_relations_for_binding(
         )
     )
 
+    result.add_relations(
+        read_tuples_typed(
+            resource_type="role_binding",
+            resource_id=binding_id,
+            relation="subject",
+            subject_type="principal",
+            subject_id="",
+        )
+    )
+
     # Add the relations from the underlying resource(s) to the role binding.
     for resource_type, resource_id in scope_relations:
         result.add_relations(

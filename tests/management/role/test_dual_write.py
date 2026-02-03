@@ -232,6 +232,15 @@ class DualWriteTestCase(TestCase):
         dual_write_handler.replicate()
         return car
 
+    def given_car_expired(self, car: CrossAccountRequest, replicator: Optional[RelationReplicator] = None):
+        dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+            car,
+            ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
+            replicator=self._get_replicator(replicator),
+        )
+        dual_write_handler.generate_relations_to_remove_roles(car.roles.all())
+        dual_write_handler.replicate()
+
     def given_additional_group_members(
         self, group: Group, users: list[str] = [], service_accounts: list[str] = []
     ) -> list[Principal]:
