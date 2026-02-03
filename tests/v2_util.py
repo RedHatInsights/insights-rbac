@@ -1,8 +1,12 @@
 from typing import Optional
 from unittest import TestCase
 
+from management.group.platform import GlobalPolicyIdService, DefaultGroupNotAvailableError
 from management.models import BindingMapping, CustomRoleV2, Permission, Role, RoleBinding, RoleV2
+from management.permission.scope_service import Scope
+from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import SeededRoleV2
+from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.in_memory_tuples import (
     resource,
     all_of,
@@ -155,12 +159,32 @@ def _assert_v2_names(test: TestCase, v1_role: Role):
 
 def _assert_no_phantom_roles(test: TestCase, tuples: InMemoryTuples):
     """Check that there are no roles referenced in tuples that do not exist in the database."""
+    # We are not consistent about actually creating PlatformRoleV2 models, so use the pre-configured values without
+    # consulting the database.
+    policy_service = GlobalPolicyIdService()
+
+    def _uuid_for(access_type: DefaultAccessType, scope: Scope) -> Optional[str]:
+        try:
+            return str(platform_v2_role_uuid_for(access_type, scope, policy_service=policy_service))
+        except DefaultGroupNotAvailableError:
+            return None
+
+    platform_role_uuids = {
+        r
+        for r in (_uuid_for(access_type, scope) for access_type in DefaultAccessType for scope in Scope)
+        if r is not None
+    }
+
     for v2_role_uuid in {
         *(t.resource_id for t in tuples.find_tuples(resource_type("rbac", "role"))),
         *(t.subject_id for t in tuples.find_tuples(subject_type("rbac", "role"))),
     }:
         if Role.objects.filter(system=True, uuid=v2_role_uuid).exists():
             # We are not interested in system roles here.
+            continue
+
+        if v2_role_uuid in platform_role_uuids:
+            # We are not interested in platform roles here.
             continue
 
         v2_role = CustomRoleV2.objects.filter(uuid=v2_role_uuid).first()
