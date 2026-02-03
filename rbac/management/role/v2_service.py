@@ -30,6 +30,7 @@ from management.role.v2_exceptions import (
     RoleDatabaseError,
 )
 from management.role.v2_model import CustomRoleV2
+from management.service_decorators import atomic
 
 from api.models import Tenant
 
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 class RoleV2Service:
     """
-    Domain service for RoleV2 operations.
+    Application service for RoleV2 operations.
 
     This service encapsulates business logic for role management.
 
@@ -46,6 +47,7 @@ class RoleV2Service:
     to HTTP-level errors by the serializer layer.
     """
 
+    @atomic
     def create(
         self,
         name: str,
@@ -54,17 +56,6 @@ class RoleV2Service:
         tenant: Tenant,
     ) -> CustomRoleV2:
         """
-        Create a new custom role with the given permissions.
-
-        Args:
-            name: Human-readable name for the role
-            description: Description of the role's purpose
-            permissions: Iterable of Permission objects to assign
-            tenant: The tenant this role belongs to
-
-        Returns:
-            The created CustomRoleV2 instance
-
         Raises:
             RoleAlreadyExistsError: If a role with the same name exists for this tenant
             RoleDatabaseError: If an unexpected database error occurs
@@ -77,17 +68,12 @@ class RoleV2Service:
             raise EmptyDescriptionError()
 
         try:
-            # Create the role using domain model constructor
-            # CustomRoleV2 encapsulates construction rules (type validation) in its __init__
             role = CustomRoleV2(
                 name=name,
                 description=description,
                 tenant=tenant,
             )
-            # save() triggers full_clean() which validates model constraints
             role.save()
-
-            # Set permissions through M2M relationship
             role.permissions.set(permissions)
 
             logger.info(
@@ -101,13 +87,11 @@ class RoleV2Service:
             return role
 
         except ValidationError as e:
-            # full_clean() raises ValidationError for unique constraint violations
             error_msg = str(e)
             if "name" in error_msg.lower() and "already exists" in error_msg.lower():
                 raise RoleAlreadyExistsError(name)
             raise
         except IntegrityError as e:
-            # DB-level constraint violations
             error_msg = str(e)
             if "unique role v2 name per tenant" in error_msg.lower() or "unique" in error_msg.lower():
                 raise RoleAlreadyExistsError(name)
@@ -119,14 +103,6 @@ class RoleV2Service:
         permission_data: list[dict],
     ) -> list[Permission]:
         """
-        Resolve permission dictionaries to Permission model instances.
-
-        Args:
-            permission_data: List of dicts with 'application', 'resource_type', 'operation' keys
-
-        Returns:
-            List of Permission instances
-
         Raises:
             EmptyPermissionsError: If no permissions are provided
             PermissionsNotFoundError: If any permission cannot be found
