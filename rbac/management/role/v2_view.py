@@ -48,10 +48,6 @@ class RoleV2ViewSet(BaseV2ViewSet):
     permission_classes = (RoleAccessPermission,)
     pagination_class = RoleV2CursorPagination
 
-    def get_queryset(self):
-        """Get queryset filtered by tenant."""
-        return super().get_queryset().filter(tenant=self.request.tenant)
-
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
         queryset = self.get_queryset()
