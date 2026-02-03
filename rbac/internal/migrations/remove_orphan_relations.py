@@ -757,7 +757,8 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
 
         migration_result = None
 
-        # If we removed any role binding relations, we need to re-replicate all role bindings for this tenant.
+        # If we removed any role binding relations, we need to re-replicate all role bindings for this tenant, since we
+        # don't know the change that was dropped to cause the error.
         # (We conservatively check whether any relations were removed at all.)
         if cleanup_result["relations_removed_count"] > 0:
             if not dry_run:
