@@ -202,6 +202,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
         self.assertEqual(len(scope_binding_tuples), 1, "Scope binding tuples should be removed")
 
+        self._expect_v2_consistent()
+
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
         TENANT_SCOPE_PERMISSIONS="",
@@ -245,6 +247,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
 
         self.assertEqual(result["relations_removed_count"], 1, "Only the subject relation should have been removed")
         self.assertEqual(result["ordinary_bindings_altered_count"], 1, "One role binding should have been altered")
+
+        self._expect_v2_consistent()
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
@@ -407,6 +411,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             1,
             "Migration should not have removed read permission.",
         )
+
+        self._expect_v2_consistent()
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
@@ -641,6 +647,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             result["builtin_bindings_scope_cleaned_count"], 0, "No built-in scope bindings should be cleaned"
         )
 
+        self._expect_v2_consistent()
+
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
         TENANT_SCOPE_PERMISSIONS="",
@@ -681,6 +689,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             0,
             "System role should NOT be counted as custom V2 role to clean",
         )
+
+        self._expect_v2_consistent()
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
@@ -862,6 +872,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
     )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_preserve_system(self, replicate):
+        """Test that the full migration does not break system role bindings with multiple groups."""
         replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
 
         r = self.given_v1_system_role("system_role", ["rbac:roles:read"])
@@ -881,6 +892,45 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         assert_v2_roles_consistent(test=self, tuples=self.tuples)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_miscellaneous_unchanged(self, replicate):
+        """Test that a state with several interesting cases (all properly replicated) is left unchanged."""
+        self._enable_replicate_mock(replicate)
+
+        workspace_service = WorkspaceService()
+        ws = workspace_service.create(validated_data={"name": "a workspace"}, request_tenant=self.tenant)
+
+        custom_role = self.given_v1_role(
+            "custom role", default=["rbac:roles:read"], **{str(ws.id): ["inventory:groups:read"]}
+        )
+
+        system_role = self.given_v1_system_role("system role", ["rbac:roles:read", "rbac:roles:write"])
+
+        group, _ = self.given_group("group", ["u1"])
+
+        self.given_car("u1", [system_role])
+        self.given_roles_assigned_to_group(group, [system_role, custom_role])
+
+        initial_tuples = set(self.tuples)
+
+        # Test the removal part of the script.
+        cleanup_tenant_orphaned_relationships(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            dry_run=True,
+        )
+
+        self.assertSetEqual(set(self.tuples), initial_tuples, "No relations should have been affected.")
+
+        # Test the full script (with both removal and addition).
+        cleanup_tenant_orphan_bindings(
+            org_id=self.tenant.org_id,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            dry_run=True,
+        )
+
+        self.assertSetEqual(set(self.tuples), initial_tuples, "No relations should have been affected.")
 
 
 class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
