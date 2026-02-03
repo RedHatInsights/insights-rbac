@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,30 +14,57 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Serializers for V2 Role API."""
+"""Serializers for RoleV2 API."""
 
+from management.role.v2_model import RoleV2
 from rest_framework import serializers
-
-from .v2_model import RoleV2
 
 
 class PermissionSerializer(serializers.Serializer):
     """Serializer for Permission objects."""
 
-    application = serializers.CharField()
-    resource_type = serializers.CharField()
-    operation = serializers.CharField(source="verb")
+    application = serializers.CharField(required=True, help_text="Application name")
+    resource_type = serializers.CharField(required=True, help_text="Resource type")
+    operation = serializers.CharField(required=True, source="verb", help_text="Operation/verb")
 
 
-class RoleSerializer(serializers.ModelSerializer):
-    """Serializer for V2 Role model."""
+class RoleV2ResponseSerializer(serializers.ModelSerializer):
+    """Serializer for RoleV2 response data."""
 
     id = serializers.UUIDField(source="uuid", read_only=True)
-    permissions = PermissionSerializer(many=True, required=False)
+    name = serializers.CharField(read_only=True)
+    description = serializers.CharField(read_only=True)
+    permissions = PermissionSerializer(many=True, read_only=True)
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
+    permissions_count = serializers.SerializerMethodField()
 
     class Meta:
-        """Metadata for the serializer."""
 
         model = RoleV2
-        fields = ("id", "name", "description", "permissions", "last_modified")
+        fields = (
+            "id",
+            "name",
+            "description",
+            "permissions",
+            "last_modified",
+            "permissions_count",
+        )
+
+    def __init__(self, *args, **kwargs):
+        """Initialize serializer with optional field filtering."""
+        super().__init__(*args, **kwargs)
+
+        # Apply field filtering based on 'fields' query parameter from context
+        fields_param = self.context.get("fields")
+        if fields_param is not None:
+            # Parse comma-separated fields
+            allowed = set(fields_param.split(","))
+            existing = set(self.fields.keys())
+
+            # Remove fields that are not in the allowed list
+            for field_name in existing - allowed:
+                self.fields.pop(field_name)
+
+    def get_permissions_count(self, obj):
+        """Get the count of permissions for the role."""
+        return obj.permissions.count()
