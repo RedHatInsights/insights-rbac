@@ -588,7 +588,7 @@ def _remove_incorrect_workspace_parent_relations(
 
 
 def cleanup_tenant_orphaned_relationships(
-    tenant,
+    tenant: Tenant,
     read_tuples_fn,
     dry_run: bool = False,
 ) -> dict:
@@ -627,6 +627,9 @@ def cleanup_tenant_orphaned_relationships(
     Returns:
         dict: Results including bindings found, relations to remove, etc.
     """
+    if tenant.tenant_name == "public":
+        raise ValueError("Cannot remove orphaned relationships from public tenant.")
+
     replicator = OutboxReplicator()
     removed_count = 0
 
