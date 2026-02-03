@@ -17,6 +17,7 @@
 """View for V2 Role management."""
 
 from django.db.models import Count
+from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role_binding.serializer import FieldSelectionValidationError
@@ -33,7 +34,16 @@ class RoleV2CursorPagination(V2CursorPagination):
     FIELD_MAPPING = {"name": "name", "last_modified": "modified"}
 
     def _convert_order_field(self, field: str) -> str | None:
-        """Map API field names to model field names."""
+        """Map API field names to model field names.
+
+        Accepts direct field names.
+
+        Args:
+            field: The field name (name, last_modified)
+
+        Returns:
+            The Django ORM field name or None if invalid
+        """
         descending = field.startswith("-")
         model_field = self.FIELD_MAPPING.get(field.lstrip("-"))
         if descending and model_field:
@@ -48,6 +58,8 @@ class RoleV2ViewSet(BaseV2ViewSet):
     serializer_class = RoleSerializer
     permission_classes = (RoleAccessPermission,)
     pagination_class = RoleV2CursorPagination
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_fields = {"name": ["exact"]}
 
     def get_queryset(self):
         """Return queryset based on requested fields."""
@@ -68,18 +80,4 @@ class RoleV2ViewSet(BaseV2ViewSet):
 
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
-        queryset = self.get_queryset()
-
-        # Handle name filter
-        name = request.query_params.get("name")
-        if name is not None:
-            if not name.strip():
-                name = None
-            elif "\x00" in name:
-                raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
-        if name:
-            queryset = queryset.filter(name__exact=name)
-
-        page = self.paginate_queryset(queryset)
-        serializer = self.get_serializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
+        return super().list(request, *args, **kwargs)
