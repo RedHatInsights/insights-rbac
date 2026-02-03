@@ -22,7 +22,7 @@ from typing import Protocol
 
 from api.models import Tenant
 from django.db import transaction
-from internal.utils import read_tuples_from_kessel, replicate_missing_binding_tuples
+from internal.utils import read_tuples_from_kessel, replicate_missing_binding_tuples, iterate_tuples_from_kessel
 from management.role.model import BindingMapping
 from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
@@ -767,7 +767,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
         # Clean orphaned relationships
         cleanup_result = cleanup_tenant_orphaned_relationships(
             tenant=tenant,
-            read_tuples_fn=(read_tuples_fn if read_tuples_fn is not None else read_tuples_from_kessel),
+            read_tuples_fn=(read_tuples_fn if read_tuples_fn is not None else iterate_tuples_from_kessel),
             dry_run=dry_run,
         )
 

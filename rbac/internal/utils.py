@@ -21,6 +21,7 @@ import json
 import logging
 import uuid
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional
 
@@ -174,6 +175,39 @@ def read_tuples_from_kessel(resource_type: str, resource_id: str, relation: str,
         subject_type=subject_type,
         subject_id=subject_id,
     )
+
+
+def iterate_tuples_from_kessel(
+    resource_type: str, resource_id: str, relation: str, subject_type: str, subject_id: str
+) -> Iterable[dict]:
+    """
+    Read tuples from Kessel Relations API while handling pagination.
+
+    This is similar to read_tuples_from_kessel, except that it also returns subsequent pages from Kessel, and it does
+    not necessarily return a list.
+    """
+    replicator = RelationsApiReplicator()
+
+    continuation_token = None
+    first = True
+
+    while (continuation_token not in (None, "")) or first:
+        batch = replicator.read_tuples(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            relation=relation,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            continuation_token=continuation_token,
+        )
+
+        if len(batch) == 0:
+            return
+
+        continuation_token = batch[-1]["pagination"]["continuation_token"]
+        first = False
+
+        yield from batch
 
 
 def _build_workspace_graph(tenant) -> tuple[list, dict]:
