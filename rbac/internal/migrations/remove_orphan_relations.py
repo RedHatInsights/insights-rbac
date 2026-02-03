@@ -368,8 +368,8 @@ def _remove_orphaned_custom_role_relations(
             to_remove = []
 
             # Paranoia.
-            if RoleV2.objects.filter(uuid__in=custom_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
-                raise AssertionError(f"Unexpected system role ID in {custom_role_ids}")
+            if RoleV2.objects.filter(uuid__in=batch_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
+                raise AssertionError(f"Unexpected system role ID in {batch_role_ids}")
 
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
