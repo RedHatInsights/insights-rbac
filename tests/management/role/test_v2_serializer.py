@@ -25,6 +25,7 @@ from management.models import (
     Permission,
 )
 from management.role.v2_serializer import RoleSerializer
+from rest_framework import serializers
 from tests.identity_request import IdentityRequest
 
 
@@ -111,14 +112,12 @@ class RoleSerializerTests(IdentityRequest):
         expected = {"id", "name", "description", "permissions_count", "last_modified", "permissions"}
         self.assertEqual(set(data.keys()), expected)
 
-    def test_invalid_fields_are_ignored(self):
-        """Test that invalid field names are silently ignored."""
+    def test_invalid_fields_raise_validation_error(self):
+        """Test that invalid field names raise a validation error."""
         role = self._get_annotated_role()
-        serializer = RoleSerializer(role, context={"request": self._mock_request("id,invalid_field,name")})
-        data = serializer.data
-
-        # Only valid fields are returned
-        self.assertEqual(set(data.keys()), {"id", "name"})
+        with self.assertRaises(serializers.ValidationError):
+            serializer = RoleSerializer(role, context={"request": self._mock_request("id,invalid_field,name")})
+            _ = serializer.data
 
     def test_multiple_permissions_serialization(self):
         """Test that role with multiple permissions serializes correctly."""

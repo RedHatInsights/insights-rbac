@@ -23,7 +23,7 @@ from rest_framework import serializers
 
 from api.common.pagination import V2CursorPagination
 from .v2_model import RoleV2
-from .v2_serializer import RoleSerializer, parse_fields_param
+from .v2_serializer import RoleSerializer
 
 
 class RoleV2CursorPagination(V2CursorPagination):
@@ -62,9 +62,8 @@ class RoleV2ViewSet(BaseV2ViewSet):
         if name:
             queryset = queryset.filter(name__exact=name)
 
-        # Prefetch permissions if requested
-        requested_fields = parse_fields_param(request.query_params.get("fields"))
-        if "permissions" in requested_fields:
+        fields_param = request.query_params.get("fields", "")
+        if "permissions" in fields_param:
             queryset = queryset.prefetch_related("permissions")
 
         page = self.paginate_queryset(queryset)

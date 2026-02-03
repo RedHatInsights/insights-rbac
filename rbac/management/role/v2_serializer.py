@@ -16,18 +16,26 @@
 #
 """Serializers for V2 Role API."""
 
+from management.role_binding.serializer import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
 from .v2_model import RoleV2
 
 
-def parse_fields_param(fields_param: str | None) -> set[str]:
-    """Parse and sanitize the fields query parameter."""
-    if not fields_param:
-        return set()
+class RoleFieldSelection(FieldSelection):
+    """Field selection for roles endpoint."""
 
-    sanitized = fields_param.replace("\x00", "")
-    return {f.strip() for f in sanitized.split(",") if f.strip()}
+    VALID_ROOT_FIELDS = {"id", "name", "description", "permissions", "permissions_count", "last_modified"}
+    VALID_SUBJECT_FIELDS: set = set()
+    VALID_ROLE_FIELDS: set = set()
+    VALID_RESOURCE_FIELDS: set = set()
+
+    @classmethod
+    def parse(cls, fields_param: str | None) -> "FieldSelection | None":
+        """Parse fields parameter with NUL byte sanitization."""
+        if fields_param:
+            fields_param = fields_param.replace("\x00", "")
+        return super().parse(fields_param)
 
 
 class PermissionSerializer(serializers.Serializer):
@@ -68,10 +76,13 @@ class RoleSerializer(serializers.ModelSerializer):
         if not request:
             return self.DEFAULT_LIST_FIELDS
 
-        requested = parse_fields_param(request.query_params.get("fields"))
-        if not requested:
+        try:
+            field_selection = RoleFieldSelection.parse(request.query_params.get("fields"))
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+        if not field_selection:
             return self.DEFAULT_LIST_FIELDS
 
-        # return the requested fields or default
-        valid_fields = set(self.Meta.fields)
-        return requested & valid_fields or self.DEFAULT_LIST_FIELDS
+        # return the valid requested fields or default
+        return field_selection.root_fields & set(self.Meta.fields) or self.DEFAULT_LIST_FIELDS

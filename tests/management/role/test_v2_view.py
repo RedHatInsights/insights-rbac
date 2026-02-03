@@ -310,16 +310,14 @@ class RoleV2ViewTests(IdentityRequest):
         role_data = response.data["data"][0]
         self.assertEqual(set(role_data.keys()), {"id"})
 
-    def test_list_roles_with_invalid_fields_returns_defaults(self):
-        """Test that requesting only invalid fields returns default fields."""
+    def test_list_roles_with_invalid_fields_raises_validation_error(self):
+        """Test that requesting only invalid fields raises a validation error."""
         url = f"{self.url}?fields=invalid_field,another_invalid"
         response = self.client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        role_data = response.data["data"][0]
-        # Should return default fields when all requested are invalid
-        expected = {"id", "name", "description", "last_modified"}
-        self.assertEqual(set(role_data.keys()), expected)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Unknown field: 'invalid_field'", str(response.data["detail"]))
+        self.assertIn("Unknown field: 'another_invalid'", str(response.data["detail"]))
 
     def test_list_roles_returns_empty_list_when_no_roles(self):
         """Test that empty list is returned when no roles exist for tenant."""
