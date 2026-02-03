@@ -670,8 +670,13 @@ def cleanup_tenant_orphaned_relationships(
     # Get system role UUIDs (same for V1 and V2)
     system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True))
 
+    tenant_resource_id = tenant.tenant_resource_id()
+
+    if tenant_resource_id is None:
+        raise ValueError("Expected tenant's resource ID to be present (i.e. for it to have an org_id).")
+
     kessel_workspace_data = _collect_remote_workspaces(
-        tenant_resource_id=tenant.tenant_resource_id(),
+        tenant_resource_id=tenant_resource_id,
         read_tuples_typed=read_tuples_typed,
     )
 
@@ -681,7 +686,7 @@ def cleanup_tenant_orphaned_relationships(
         f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r})."
     )
 
-    do_remove_role_bindings("tenant", tenant.tenant_resource_id())
+    do_remove_role_bindings("tenant", tenant_resource_id)
 
     for ws_id in workspace_ids_in_kessel:
         do_remove_role_bindings("workspace", ws_id)

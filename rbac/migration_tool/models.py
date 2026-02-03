@@ -229,6 +229,7 @@ def role_binding_user_subject_tuple(role_binding_id: str, user_id: str) -> Relat
 
 
 def role_permission_tuple(role_id: str, permission: str) -> Relationship:
+    """Create a relationship tuple for a role having a given permission."""
     return create_relationship(
         ("rbac", "role"),
         role_id,
