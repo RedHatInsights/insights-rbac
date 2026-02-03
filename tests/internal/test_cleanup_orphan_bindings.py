@@ -215,7 +215,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Verify cleanup found bindings
-        self.assertGreater(result["bindings_cleaned_count"], 0, "Should find bindings to clean")
+        self.assertGreater(result["ordinary_bindings_altered_count"], 0, "Should find bindings to clean")
 
         # Step 5: Verify orphaned group tuples are removed
         orphaned_group_tuples_after = self.tuples.find_tuples(
@@ -227,8 +227,8 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
         self.assertEqual(len(orphaned_group_tuples_after), 0, "Orphaned group tuples should be removed")
 
-        # Step 6: Verify scope binding relationships are also removed
-        # Check workspace → binding → role_binding tuples are gone
+        # Step 6: Verify scope binding relationships are preserved. Since the role is a custom role, these should be
+        # unaffected by the removal of the group.
         binding_id = binding.mappings["id"]
         default_workspace = Workspace.objects.default(tenant=self.tenant)
         scope_binding_tuples = self.tuples.find_tuples(
@@ -238,7 +238,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
                 subject("rbac", "role_binding", binding_id),
             )
         )
-        self.assertEqual(len(scope_binding_tuples), 0, "Scope binding tuples should be removed")
+        self.assertEqual(len(scope_binding_tuples), 1, "Scope binding tuples should be removed")
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
@@ -416,7 +416,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Verify cleanup found bindings
-        self.assertGreater(result["bindings_cleaned_count"], 0, "Should find bindings to clean")
+        self.assertGreater(result["ordinary_bindings_altered_count"], 0, "Should find bindings to clean")
 
         # Step 4: Verify orphaned scope binding tuples are removed
         scope_tuples_after = self.tuples.find_tuples(
@@ -581,7 +581,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Verify bindings are cleaned (now checking count)
-        self.assertGreater(result["bindings_cleaned_count"], 0, "Should have bindings cleaned")
+        self.assertGreater(result["ordinary_bindings_altered_count"], 0, "Should have bindings cleaned")
 
         # Verify ws2's parent tuple (ws2 -> parent -> ws1) is removed
         ws2_parent_after = self.tuples.find_tuples(

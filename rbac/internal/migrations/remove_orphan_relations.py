@@ -23,14 +23,13 @@ from typing import Protocol
 from api.models import Tenant
 from django.db import transaction
 from internal.utils import read_tuples_from_kessel, replicate_missing_binding_tuples
-from management.tenant_mapping.model import TenantMapping
-from management.models import Group, Role, Workspace
+from management.role.model import BindingMapping
+from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
-from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.models import V2boundresource
 from migration_tool.utils import create_relationship
 from kessel.relations.v1beta1.common_pb2 import Relationship
@@ -202,12 +201,12 @@ def _collect_custom_role_permission_relations(
 
 @dataclasses.dataclass
 class _RemoveRoleBindingsResult:
-    ordinary_bindings_removed_count: int
+    ordinary_bindings_altered_count: int
     default_access_bindings_removed_count: int
     custom_roles_removed_count: int
 
 
-def _remove_all_role_bindings(
+def _remove_orphaned_role_bindings(
     *,
     tenant: Tenant,
     resource_type: str,
@@ -217,7 +216,7 @@ def _remove_all_role_bindings(
     system_role_uuids: set[str],
 ) -> _RemoveRoleBindingsResult:
     """
-    Find and remove all bindings attached to a resource (tenant or workspace).
+    Find and remove orphaned relations for role bindings attached to a resource (tenant or workspace).
 
     For each binding found:
     - Collects binding->role, binding->group, and scope->binding relations to remove
@@ -240,10 +239,8 @@ def _remove_all_role_bindings(
     scope_relations = [(resource_type, resource_id)]
     custom_role_ids: set[str] = set()
 
-    bindings_cleaned_count = 0
+    bindings_altered_count = 0
     builtin_scope_cleaned_count = 0
-
-    # Here, we will remove *all* role bindings for the tenant. We will recreate them all later.
 
     binding_tuples = read_tuples_typed(
         resource_type=resource_type,
@@ -272,7 +269,28 @@ def _remove_all_role_bindings(
             bootstrap_lock: TenantBootstrapLock = lock_tenant_for_bootstrap(tenant)
             builtin_binding_ids: set[str] = bootstrap_lock.tenant_mapping.role_binding_ids()
 
+            # This will lock both the bindings and custom roles.
+            # See https://docs.djangoproject.com/en/5.2/ref/models/querysets/#select-for-update
+            custom_bindings: list[BindingMapping] = list(
+                BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=False)
+                .select_related("role")
+                .select_for_update()
+            )
+
+            # Only lock the bindings themselves here, not the associated system roles.
+            system_bindings: list[BindingMapping] = list(
+                BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=True)
+                .select_related("role")
+                .select_for_update(of=["self"])
+            )
+
+            bindings_by_id: dict[str, BindingMapping] = {
+                b.mappings["id"]: b for b in [*custom_bindings, *system_bindings]
+            }
+
             for binding_id in binding_ids:
+                binding = bindings_by_id.get(binding_id)
+
                 # Handle built-in bindings specially.
                 if binding_id in builtin_binding_ids:
                     # If there is a custom default group: remove only the resource->binding relation.
@@ -293,11 +311,21 @@ def _remove_all_role_bindings(
                     logger.debug(f"Processing binding {binding_id} on {resource_type}:{resource_id}")
 
                     lookup_result = lookup_result_by_binding[binding_id]
+                    actual_relations: set[RelationTuple] = lookup_result.relations()
 
-                    to_remove.extend(lookup_result.relations())
+                    expected_relations: set[RelationTuple] = (
+                        {_as_relation_tuple(r) for r in binding.get_role_binding().as_tuples()}
+                        if binding is not None
+                        else set()
+                    )
+
+                    orphan_relations = actual_relations - expected_relations
+
+                    if len(orphan_relations) > 0:
+                        to_remove.extend(orphan_relations)
+                        bindings_altered_count += 1
+
                     custom_role_ids.update(lookup_result.custom_role_ids())
-
-                    bindings_cleaned_count += 1
 
             commit_removal(to_remove)
 
@@ -312,7 +340,7 @@ def _remove_all_role_bindings(
         commit_removal(to_remove)
 
     return _RemoveRoleBindingsResult(
-        ordinary_bindings_removed_count=bindings_cleaned_count,
+        ordinary_bindings_altered_count=bindings_altered_count,
         default_access_bindings_removed_count=builtin_scope_cleaned_count,
         custom_roles_removed_count=len(custom_role_ids),
     )
@@ -545,7 +573,7 @@ def cleanup_tenant_orphaned_relationships(
 
     # Process bindings and collect relations to remove
     # Counters for results
-    bindings_cleaned_count = 0
+    ordinary_bindings_altered_count = 0
     builtin_scope_cleaned_count = 0
     custom_roles_count = 0
 
@@ -577,9 +605,9 @@ def cleanup_tenant_orphaned_relationships(
         removed_count += len(converted_relations)
 
     def do_remove_role_bindings(resource_type: str, resource_id: str):
-        nonlocal bindings_cleaned_count, builtin_scope_cleaned_count, custom_roles_count
+        nonlocal ordinary_bindings_altered_count, builtin_scope_cleaned_count, custom_roles_count
 
-        result = _remove_all_role_bindings(
+        result = _remove_orphaned_role_bindings(
             tenant=tenant,
             resource_type=resource_type,
             resource_id=resource_id,
@@ -588,7 +616,7 @@ def cleanup_tenant_orphaned_relationships(
             commit_removal=commit_removal,
         )
 
-        bindings_cleaned_count += result.ordinary_bindings_removed_count
+        ordinary_bindings_altered_count += result.ordinary_bindings_altered_count
         builtin_scope_cleaned_count += result.default_access_bindings_removed_count
         custom_roles_count += result.custom_roles_removed_count
 
@@ -606,8 +634,6 @@ def cleanup_tenant_orphaned_relationships(
         f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r})."
     )
 
-    # Remove all the role bindings. We will add them back later (in cleanup_tenant_orphan_bindings).
-
     do_remove_role_bindings("tenant", tenant.tenant_resource_id())
 
     for ws_id in workspace_ids_in_kessel:
@@ -615,7 +641,7 @@ def cleanup_tenant_orphaned_relationships(
 
     logger.info(
         f"Tenant {tenant.org_id} cleanup summary: "
-        f"bindings={bindings_cleaned_count}, builtin_scope={builtin_scope_cleaned_count}, "
+        f"bindings={ordinary_bindings_altered_count}, builtin_scope={builtin_scope_cleaned_count}, "
         f"custom_roles={custom_roles_count}, workspaces={len(workspace_ids_in_kessel)}, "
     )
 
@@ -638,7 +664,7 @@ def cleanup_tenant_orphaned_relationships(
     return {
         "org_id": tenant.org_id,
         "dry_run": dry_run,
-        "bindings_cleaned_count": bindings_cleaned_count,
+        "ordinary_bindings_altered_count": ordinary_bindings_altered_count,
         "builtin_bindings_scope_cleaned_count": builtin_scope_cleaned_count,
         "custom_v2_roles_cleaned_count": custom_roles_count,
         "workspaces_discovered_count": len(workspace_ids_in_kessel),
