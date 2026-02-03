@@ -176,9 +176,11 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_new_or_updated_role(role)
         return role
 
-    def given_update_to_v1_role(self, role: Role, default: list[str] = [], **kwargs: list[str]):
+    def given_update_to_v1_role(
+        self, role: Role, default: list[str] = [], replicator: Optional[RelationReplicator] = None, **kwargs: list[str]
+    ):
         """Update the given role with the given workspace permissions."""
-        dual_write = self.dual_write_handler(role, ReplicationEventType.UPDATE_CUSTOM_ROLE)
+        dual_write = self.dual_write_handler(role, ReplicationEventType.UPDATE_CUSTOM_ROLE, replicator=replicator)
         dual_write.prepare_for_update()
         role = self.fixture.update_custom_role(
             role,

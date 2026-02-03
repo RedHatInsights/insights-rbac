@@ -21,6 +21,7 @@ from django.test import override_settings
 from management.models import BindingMapping, Workspace
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.model import Role
+from management.role.v2_model import SeededRoleV2, CustomRoleV2
 from management.tenant_service import V2TenantBootstrapService
 from management.workspace.service import WorkspaceService
 from migration_tool.in_memory_tuples import (
@@ -272,7 +273,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
         # Verify cleanup found custom V2 roles to clean
-        self.assertEqual(result["custom_v2_roles_cleaned_count"], 1, "Should find custom V2 roles to clean")
+        self.assertEqual(result["custom_v2_roles_altered_count"], 1, "Should find custom V2 roles to clean")
 
         # Step 5: Verify orphaned tuples are removed
         # Role binding to role tuple should be gone
@@ -295,6 +296,72 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertEqual(len(scope_binding_tuples), 0, "Scope binding tuples should be removed")
 
         self._expect_v2_consistent()
+
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_custom_role_removed_permission(self, mock_replicate):
+        self._enable_replicate_mock(mock_replicate)
+
+        role_v1 = self.given_v1_role("custom role", default=["rbac:roles:read", "rbac:roles:write"])
+        role_v2 = CustomRoleV2.objects.filter(v1_source=role_v1).get()
+
+        read_permission_predicate = all_of(
+            resource("rbac", "role", str(role_v2.uuid)),
+            relation("rbac_roles_read"),
+            subject("rbac", "principal", "*"),
+        )
+
+        write_permission_predicate = all_of(
+            resource("rbac", "role", str(role_v2.uuid)),
+            relation("rbac_roles_write"),
+            subject("rbac", "principal", "*"),
+        )
+
+        self.assertEqual(
+            self.tuples.count_tuples(write_permission_predicate),
+            1,
+            "Write permission should have been replicated.",
+        )
+
+        self.assertEqual(
+            self.tuples.count_tuples(read_permission_predicate),
+            1,
+            "Read permission should have been replicated.",
+        )
+
+        # Remove the write permission without updating relations.
+        self.given_update_to_v1_role(role_v1, default=["rbac:roles:read"], replicator=NoopReplicator())
+
+        self.assertEqual(
+            self.tuples.count_tuples(write_permission_predicate),
+            1,
+            "Removal of write permission should not have been replicated.",
+        )
+
+        result = cleanup_tenant_orphaned_relationships(
+            tenant=self.tenant,
+            read_tuples_fn=self._create_kessel_read_tuples_mock(),
+            dry_run=False,
+        )
+
+        self.assertEqual(result["custom_v2_roles_altered_count"], 1, "The custom role should have been altered.")
+        self.assertEqual(result["relations_removed_count"], 1, "The write permission should have been removed.")
+
+        self.assertEqual(
+            self.tuples.count_tuples(write_permission_predicate),
+            0,
+            "Migration should have removed write permission.",
+        )
+
+        self.assertEqual(
+            self.tuples.count_tuples(read_permission_predicate),
+            1,
+            "Migration should not have removed read permission.",
+        )
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",
@@ -565,7 +632,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Verify system role is NOT counted as custom V2 role
         # System roles should be filtered out because they're in system_role_uuids
         self.assertEqual(
-            result["custom_v2_roles_cleaned_count"],
+            result["custom_v2_roles_altered_count"],
             0,
             "System role should NOT be counted as custom V2 role to clean",
         )
@@ -715,6 +782,9 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         group, _ = self.given_group("Test Group", ["user1"])
         self.given_roles_assigned_to_group(group, [role])
 
+        # Make a change that needs to be fixed.
+        self.given_group_removed(group, replicator=NoopReplicator())
+
         # Record tuple count before
         tuple_count_before = len(self.tuples)
 
@@ -728,13 +798,17 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         # Verify dry_run flag in result
         self.assertTrue(result["dry_run"])
 
+        # Nothing should have been replicated.
+        mock_replicate.assert_not_called()
+
         # Verify tuple count unchanged
         tuple_count_after = len(self.tuples)
         self.assertEqual(tuple_count_before, tuple_count_after, "Dry run should not modify tuples")
 
         # Should have relations_removed_count in result
         self.assertIn("relations_removed_count", result)
-        self.assertGreater(result["relations_removed_count"], 0, "Should have relations to remove")
+        self.assertEqual(result["relations_removed_count"], 1, "Should have removed one subject relations")
+        self.assertEqual(result["ordinary_bindings_altered_count"], 1, "Should have altered one role binding")
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="",

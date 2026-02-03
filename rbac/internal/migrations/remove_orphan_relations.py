@@ -28,9 +28,10 @@ from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
+from management.role.v2_model import RoleV2, SeededRoleV2
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
-from migration_tool.models import V2boundresource
+from migration_tool.models import V2boundresource, role_permission_tuple
 from migration_tool.utils import create_relationship
 from kessel.relations.v1beta1.common_pb2 import Relationship
 
@@ -203,7 +204,7 @@ def _collect_custom_role_permission_relations(
 class _RemoveRoleBindingsResult:
     ordinary_bindings_altered_count: int
     default_access_bindings_removed_count: int
-    custom_roles_removed_count: int
+    custom_roles_altered_count: int
 
 
 def _remove_orphaned_role_bindings(
@@ -329,21 +330,71 @@ def _remove_orphaned_role_bindings(
 
             commit_removal(to_remove)
 
-    with transaction.atomic():
-        to_remove = []
-
-        for role_id in custom_role_ids:
-            to_remove.extend(
-                _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
-            )
-
-        commit_removal(to_remove)
+    custom_roles_altered_count = _remove_orphaned_custom_role_relations(
+        custom_role_ids=custom_role_ids,
+        read_tuples_typed=read_tuples_typed,
+        commit_removal=commit_removal,
+    )
 
     return _RemoveRoleBindingsResult(
         ordinary_bindings_altered_count=bindings_altered_count,
         default_access_bindings_removed_count=builtin_scope_cleaned_count,
-        custom_roles_removed_count=len(custom_role_ids),
+        custom_roles_altered_count=custom_roles_altered_count,
     )
+
+
+def _remove_orphaned_custom_role_relations(
+    custom_role_ids: set[str], read_tuples_typed: _ReadTuplesTyped, commit_removal: _CommitRemoval
+) -> int:
+    """
+    Remove orphaned relations for custom roles with the specified UUIDs.
+
+    Returns the number of roles affected.
+    """
+    altered_count = 0
+
+    for batch_role_ids in itertools.batched(custom_role_ids, 100):
+        with transaction.atomic():
+            to_remove = []
+
+            # Paranoia.
+            if SeededRoleV2.objects.filter(uuid__in=custom_role_ids).exists():
+                raise AssertionError(f"Unexpected system role ID in {custom_role_ids}")
+
+            roles_by_id: dict[str, RoleV2] = {
+                str(r.uuid): r
+                for r in RoleV2.objects.filter(uuid__in=batch_role_ids)
+                .prefetch_related("permissions")
+                .select_for_update(of=["self"])
+            }
+
+            for role_id in batch_role_ids:
+                local_role = roles_by_id.get(role_id)
+
+                actual_relations: set[RelationTuple] = set(
+                    _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
+                )
+
+                expected_relations: set[RelationTuple] = (
+                    {
+                        _as_relation_tuple(role_permission_tuple(role_id=role_id, permission=p.v2_string()))
+                        for p in local_role.permissions.all()
+                    }
+                    if local_role is not None
+                    else set()
+                )
+
+                orphan_relations = actual_relations - expected_relations
+
+                if len(orphan_relations) > 0:
+                    logger.info(f"Removing {len(orphan_relations)} permission relations for role {role_id}")
+                    to_remove.extend(orphan_relations)
+
+                    altered_count += 1
+
+            commit_removal(to_remove)
+
+    return altered_count
 
 
 class _RemoteWorkspaceData:
@@ -575,7 +626,7 @@ def cleanup_tenant_orphaned_relationships(
     # Counters for results
     ordinary_bindings_altered_count = 0
     builtin_scope_cleaned_count = 0
-    custom_roles_count = 0
+    custom_roles_altered_count = 0
 
     def commit_removal(relations: Iterable[Relationship | RelationTuple]):
         nonlocal removed_count
@@ -605,7 +656,7 @@ def cleanup_tenant_orphaned_relationships(
         removed_count += len(converted_relations)
 
     def do_remove_role_bindings(resource_type: str, resource_id: str):
-        nonlocal ordinary_bindings_altered_count, builtin_scope_cleaned_count, custom_roles_count
+        nonlocal ordinary_bindings_altered_count, builtin_scope_cleaned_count, custom_roles_altered_count
 
         result = _remove_orphaned_role_bindings(
             tenant=tenant,
@@ -618,7 +669,7 @@ def cleanup_tenant_orphaned_relationships(
 
         ordinary_bindings_altered_count += result.ordinary_bindings_altered_count
         builtin_scope_cleaned_count += result.default_access_bindings_removed_count
-        custom_roles_count += result.custom_roles_removed_count
+        custom_roles_altered_count += result.custom_roles_altered_count
 
     # Get system role UUIDs (same for V1 and V2)
     system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True))
@@ -642,7 +693,7 @@ def cleanup_tenant_orphaned_relationships(
     logger.info(
         f"Tenant {tenant.org_id} cleanup summary: "
         f"bindings={ordinary_bindings_altered_count}, builtin_scope={builtin_scope_cleaned_count}, "
-        f"custom_roles={custom_roles_count}, workspaces={len(workspace_ids_in_kessel)}, "
+        f"custom_roles_altered_count={custom_roles_altered_count}, workspaces={len(workspace_ids_in_kessel)}, "
     )
 
     # Remove parent relations last so that if another step fails then we are still able to find all the workspaces
@@ -666,7 +717,7 @@ def cleanup_tenant_orphaned_relationships(
         "dry_run": dry_run,
         "ordinary_bindings_altered_count": ordinary_bindings_altered_count,
         "builtin_bindings_scope_cleaned_count": builtin_scope_cleaned_count,
-        "custom_v2_roles_cleaned_count": custom_roles_count,
+        "custom_v2_roles_altered_count": custom_roles_altered_count,
         "workspaces_discovered_count": len(workspace_ids_in_kessel),
         "orphaned_workspace_relations_cleaned_count": orphaned_workspace_parent_count,
         "stale_parent_workspace_relations_cleaned_count": incorrect_workspace_parent_count,
