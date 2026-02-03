@@ -210,7 +210,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         REPLICATION_TO_RELATION_ENABLED=True,
     )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_cleanup_orphaned_group_relationships(self, mock_replicate):
+    def test_cleanup_orphaned_principal_relationships(self, mock_replicate):
         """Test that an orphaned role binding to principal subject relation is removed."""
         self._enable_replicate_mock(mock_replicate)
 
