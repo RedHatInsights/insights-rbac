@@ -593,32 +593,15 @@ def cleanup_tenant_orphaned_relationships(
     dry_run: bool = False,
 ) -> dict:
     """
-    Clean up orphaned role binding relationships for a tenant.
+    Remove orphaned role binding relationships for a tenant.
 
-    This function:
-    1. Checks if tenant has a custom default group (platform_default or admin_default)
-    2. Uses DFS to discover all workspaces from Kessel starting from tenant
-       (tenant -> root workspace -> default workspace -> other workspaces)
-    3. Identifies orphaned workspaces (in Kessel but not in DB)
-    4. Identifies workspaces with stale parent (parent in Kessel differs from DB)
-    5. For each scope resource (tenant + all discovered workspaces), finds bindings
-    6. Handles built-in bindings (from TenantMapping) specially:
-       - If NO custom default group: skip built-in bindings entirely
-       - If HAS custom default group: only remove scope binding (resource→binding),
-         preserve binding→role and binding→group relationships
-    7. For non-built-in bindings, replicates DELETE for:
-       - binding→role relationships
-       - binding→group (subject) relationships
-       - workspace/tenant→binding relationships (scope bindings)
-       - orphaned workspace→parent relationships
-       - stale workspace→parent relationships (parent mismatch between Kessel and DB)
-    8. For custom V2 roles (not in system role UUIDs), also deletes role→permission tuples
+    This handles the following types of orphaned relation:
+    * Relations for role bindings that are incorrect or no longer exist.
+    * Parent relations for workspaces that no longer exist.
+    * Incorrect parent relations for workspaces that still exist.
 
     Args:
         tenant: The Tenant object to clean relationships for
-        root_workspace: The root workspace for the tenant
-        default_workspace: The default workspace for the tenant
-        tenant_mapping: The TenantMapping for the tenant
         read_tuples_fn: Function to read tuples from Kessel, signature:
                         (resource_type: str, resource_id: str, relation: str,
                          subject_type: str = "", subject_id: str = "") -> list[dict]
@@ -740,14 +723,12 @@ def cleanup_tenant_orphaned_relationships(
 
 def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_tuples_fn=None) -> dict:
     """
-    Clean up orphaned role binding relationships for a tenant and run migration.
+    Remove orphaned role binding relationships for a tenant and re-replicate all binding mappings.
 
-    This function:
-    1. Validates tenant, TenantMapping, and workspaces exist
-    2. Uses DFS to discover all workspaces from Kessel
-    3. Identifies orphaned/stale workspace relationships
-    4. Cleans orphaned binding relationships
-    5. Runs migrate_all_role_bindings() to recreate correct state (if not dry_run)
+    This handles the following types of orphaned relation:
+    * Relations for role bindings that are incorrect or no longer exist.
+    * Parent relations for workspaces that no longer exist.
+    * Incorrect parent relations for workspaces that still exist.
 
     Args:
         org_id (str): Organization ID for the tenant to clean up
