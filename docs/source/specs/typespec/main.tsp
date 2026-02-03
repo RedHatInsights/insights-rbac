@@ -122,7 +122,8 @@ scalar OrderBy extends string;
 const DefaultLimit: Limit = 10;
 const DefaultOffset: Offset = 0;
 
-model ListResponse<Item> {
+model ListResponse<Item, StatusCode extends int32 = 200> {
+    @statusCode _: StatusCode;
     meta: CursorPaginationMeta;
     links: CursorPaginationLinks;
     data: Item[];
@@ -749,17 +750,11 @@ namespace RoleBindings {
     @doc("Request body for creating role bindings")
     @example(#{
         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-        subjects: #[
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-            #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" }
-        ],
-        roles: #[
-            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
-        ]
+        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+        role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
     })
     model CreateRoleBindingsRequest {
-        @doc("Resource to bind roles to")
+        @doc("Resource to bind the role to")
         resource: {
             @doc("UUID that uniquely identifies the resource")
             id: UUID;
@@ -767,39 +762,48 @@ namespace RoleBindings {
             @example("workspace")
             type: string;
         };
-        @doc("Subjects to grant access to (at least one required)")
-        @minItems(1)
-        subjects: {
+        @doc("Subject to grant access to")
+        subject: {
             @doc("UUID that uniquely identifies the subject")
             id: UUID;
             @doc("Type of subject")
             type: "user" | "group";
-        }[];
-        @doc("Roles to assign (at least one required)")
-        @minItems(1)
-        roles: {
+        };
+        @doc("Role to assign")
+        role: {
             @doc("UUID that uniquely identifies the role")
             id: UUID;
-        }[];
+        };
     }
 
-    @doc("Response from creating role bindings - supports field masking with all optional fields")
-    model CreateRoleBindingsResponse {
+    @doc("Batch request to create multiple role bindings")
+    @example(#{
+        requests: #[
+            #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+            },
+            #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+            }
+        ]
+    })
+    model BatchCreateRoleBindingsRequest {
+        @doc("List of role bindings to create (maximum 100)")
+        @minItems(1)
+        @maxItems(100)
+        requests: CreateRoleBindingsRequest[];
+    }
+
+    @doc("Response containing the created role bindings")
+    model BatchCreateRoleBindingsResponse {
         @statusCode _: 201;
-        @doc("Resource the roles are bound to")
-        resource?: Resource;
-        @doc("Subjects that were granted access (includes group.user_count when applicable)")
-        subjects?: Subject[];
-        @doc("Roles that were assigned")
-        roles?: KesselRBAC.Role[];
-        @doc("Timestamp of when the role bindings were created")
-        last_modified?: offsetDateTime;
-        @doc("Number of subjects in the binding")
-        subject_count?: int32;
-        @doc("Number of roles assigned")
-        role_count?: int32;
+        @doc("The role bindings that were created")
+        role_bindings: RoleBinding[];
     }
-
 
     @example(#{
         last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
@@ -876,6 +880,7 @@ namespace RoleBindings {
             resource_type: "workspace"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -918,6 +923,7 @@ namespace RoleBindings {
             resource_type: "workspace"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -989,62 +995,44 @@ namespace RoleBindings {
 
     @doc("Grant access to a resource to a set of subjects with a set of roles")
     @summary("Grant access to a resource to a set of subjects with a set of roles")
+    @route(":batchCreate")
     @opExample(#{
         parameters: #{
             body: #{
-                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subjects: #[
-                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
-                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group" }
-                ],
-                roles: #[
-                    #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-                    #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                requests: #[
+                    #{
+                        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                        role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                    },
+                    #{
+                        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                        role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                    }
                 ]
             }
         },
         returnType: #{
             _: 201,
-            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
-            subjects: #[
-                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
-                #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "group", group: #{ name: "DevOps Team", user_count: 10 } }
-            ],
-            roles: #[
-                #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
-                #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
-            ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
-            subject_count: 2,
-            role_count: 2
+            role_bindings: #[
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                },
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                }
+            ]
         }
     })
-    @opExample(#{
-        parameters: #{
-            fields: "resource,subject_count,role_count",
-            body: #{
-                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subjects: #[
-                    #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" }
-                ],
-                roles: #[
-                    #{ id: "550e8400-e29b-41d4-a716-446655440002" }
-                ]
-            }
-        },
-        returnType: #{
-            _: 201,
-            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" },
-            subject_count: 1,
-            role_count: 1
-        }
-    })
-    @post op create(
-        @body body: CreateRoleBindingsRequest;
-
-        @example("resource(id),subjects(id),roles(id),last_modified")
-        @query fields?: FieldMask = "resource(id),subjects(id),roles(id),last_modified";
-    ): CreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
+    @post op batchCreate(
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
+        @body body: BatchCreateRoleBindingsRequest;
+    ): BatchCreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
     @example(#{
@@ -1166,11 +1154,11 @@ namespace RoleBindings {
         }
     })
     model RoleBinding {
-        @doc("Role details")
+        @doc("The role that grants permissions to the subject on the resource")
         role?: KesselRBAC.Role;
-        @doc("Subject assigned this role")
+        @doc("The subject (user or group) that is granted the role")
         subject?: Subject;
-        @doc("Resource the role is assigned to")
+        @doc("The resource on which the subject is granted the role")
         resource?: Resource;
     }
 
@@ -1181,6 +1169,7 @@ namespace RoleBindings {
             limit: 10
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -1215,7 +1204,7 @@ namespace RoleBindings {
         @query role_id?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "resource(id),role(id),subject(id, type)";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
 
         @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.id";
@@ -1263,6 +1252,7 @@ namespace Roles {
             limit: 10
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -1286,6 +1276,7 @@ namespace Roles {
             fields: "id,name,permissions_count"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
