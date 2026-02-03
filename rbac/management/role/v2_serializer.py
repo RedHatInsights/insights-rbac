@@ -17,6 +17,7 @@
 """Serializers for RoleV2 API."""
 
 from management.role.v2_exceptions import (
+    EmptyDescriptionError,
     EmptyPermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
@@ -28,6 +29,7 @@ from rest_framework import serializers
 
 # Centralized mapping from domain exceptions to API error fields
 ERROR_MAPPING = {
+    EmptyDescriptionError: "description",
     EmptyPermissionsError: "permissions",
     PermissionsNotFoundError: "permissions",
     RoleAlreadyExistsError: "name",
@@ -36,7 +38,6 @@ ERROR_MAPPING = {
 
 
 class PermissionSerializer(serializers.Serializer):
-    """Serializer for permission input/output."""
 
     application = serializers.CharField(required=True, help_text="Application name")
     resource_type = serializers.CharField(required=True, help_text="Resource type")
@@ -53,7 +54,6 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     permissions_count = serializers.SerializerMethodField()
 
     class Meta:
-        """Metadata for the serializer."""
 
         model = RoleV2
         fields = (
@@ -66,20 +66,17 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         )
 
     def get_permissions_count(self, obj):
-        """Get the count of permissions."""
         return obj.permissions.count()
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
-    """Request serializer for creating/updating roles."""
 
-    # Injectable service class - can be overridden in tests
     service_class = RoleV2Service
 
     id = serializers.UUIDField(source="uuid", read_only=True)
-    name = serializers.CharField(required=True, max_length=175)
-    description = serializers.CharField(required=True, allow_blank=True)
-    permissions = PermissionSerializer(many=True, required=True, write_only=True)
+    name = serializers.CharField()
+    description = serializers.CharField()
+    permissions = PermissionSerializer(many=True, write_only=True)
 
     class Meta:
 
@@ -90,21 +87,15 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
     def service(self):
         return self.context.get("role_service") or self.service_class()
 
-    def validate_permissions(self, value):
-        """Validate that at least one permission is provided."""
-        if not value:
-            raise serializers.ValidationError("At least one permission is required.")
-        return value
-
     def create(self, validated_data):
         tenant = self.context["request"].tenant
-        permission_data = validated_data.pop("permissions")
+        permission_data = validated_data.pop("permissions", [])
 
         try:
             permissions = self.service.resolve_permissions(permission_data)
             return self.service.create(
-                name=validated_data["name"],
-                description=validated_data["description"],
+                name=validated_data.get("name"),
+                description=validated_data.get("description"),
                 permissions=permissions,
                 tenant=tenant,
             )

@@ -23,6 +23,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from management.permission.model import Permission
 from management.role.v2_exceptions import (
+    EmptyDescriptionError,
     EmptyPermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
@@ -68,6 +69,13 @@ class RoleV2Service:
             RoleAlreadyExistsError: If a role with the same name exists for this tenant
             RoleDatabaseError: If an unexpected database error occurs
         """
+        # TODO: Move this validation to RoleV2 model once a migration is created
+        # to change description from TextField(null=True, blank=True) to
+        # TextField(null=False, blank=False). Currently enforced here because
+        # the API requires description but the model doesn't yet.
+        if not description or not description.strip():
+            raise EmptyDescriptionError()
+
         try:
             # Create the role using domain model constructor
             # CustomRoleV2 encapsulates construction rules (type validation) in its __init__

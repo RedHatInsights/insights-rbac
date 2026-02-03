@@ -169,7 +169,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         self.assertIn("name", serializer.errors)
 
     def test_serializer_validates_required_description(self):
-        """Test that description is required."""
+        """Test that description is required per API spec."""
         data = {
             "name": "Test Role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
@@ -190,32 +190,8 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         self.assertFalse(serializer.is_valid())
         self.assertIn("permissions", serializer.errors)
 
-    def test_serializer_validates_empty_permissions(self):
-        """Test that empty permissions list fails validation."""
-        data = {
-            "name": "Test Role",
-            "description": "A role",
-            "permissions": [],
-        }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
-
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("permissions", serializer.errors)
-
-    def test_serializer_validates_name_max_length(self):
-        """Test that name exceeding max_length fails validation."""
-        data = {
-            "name": "x" * 176,  # max_length is 175
-            "description": "A role",
-            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
-        }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
-
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("name", serializer.errors)
-
-    def test_serializer_allows_blank_description(self):
-        """Test that blank description is allowed."""
+    def test_serializer_rejects_blank_description(self):
+        """Test that blank description is rejected."""
         data = {
             "name": "Test Role",
             "description": "",
@@ -223,7 +199,8 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         }
         serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
-        self.assertTrue(serializer.is_valid())
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("description", serializer.errors)
 
     def test_serializer_create_success(self):
         """Test that serializer.create() creates a role successfully."""

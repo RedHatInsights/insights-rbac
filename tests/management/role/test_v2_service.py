@@ -18,6 +18,7 @@
 
 from management.models import Permission
 from management.role.v2_exceptions import (
+    EmptyDescriptionError,
     EmptyPermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
@@ -89,16 +90,25 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertIn(self.permission2, role.permissions.all())
         self.assertIn(self.permission3, role.permissions.all())
 
-    def test_create_role_with_empty_description(self):
-        """Test creating a role with an empty description."""
-        role = self.service.create(
-            name="No Description Role",
-            description="",
-            permissions=[self.permission1],
-            tenant=self.tenant,
-        )
+    def test_create_role_with_empty_description_raises_error(self):
+        """Test that creating a role with empty description raises EmptyDescriptionError."""
+        with self.assertRaises(EmptyDescriptionError):
+            self.service.create(
+                name="No Description Role",
+                description="",
+                permissions=[self.permission1],
+                tenant=self.tenant,
+            )
 
-        self.assertEqual(role.description, "")
+    def test_create_role_with_whitespace_only_description_raises_error(self):
+        """Test that whitespace-only description raises EmptyDescriptionError."""
+        with self.assertRaises(EmptyDescriptionError):
+            self.service.create(
+                name="Whitespace Description Role",
+                description="   ",
+                permissions=[self.permission1],
+                tenant=self.tenant,
+            )
 
     def test_create_role_with_duplicate_name_raises_error(self):
         """Test that creating a role with a duplicate name raises RoleAlreadyExistsError."""
@@ -208,16 +218,16 @@ class RoleV2ServiceTests(IdentityRequest):
     def test_resolve_permissions_multiple_not_found(self):
         """Test that multiple non-existent permissions are all reported."""
         permission_data = [
-            {"application": "fake1", "resource_type": "r1", "operation": "v1"},
-            {"application": "fake2", "resource_type": "r2", "operation": "v2"},
+            {"application": "fake1", "resource_type": "r1", "operation": "op1"},
+            {"application": "fake2", "resource_type": "r2", "operation": "op2"},
         ]
 
         with self.assertRaises(PermissionsNotFoundError) as cm:
             self.service.resolve_permissions(permission_data)
 
         self.assertEqual(len(cm.exception.missing_permissions), 2)
-        self.assertIn("fake1:r1:v1", cm.exception.missing_permissions)
-        self.assertIn("fake2:r2:v2", cm.exception.missing_permissions)
+        self.assertIn("fake1:r1:op1", cm.exception.missing_permissions)
+        self.assertIn("fake2:r2:op2", cm.exception.missing_permissions)
 
     def test_resolve_permissions_preserves_order(self):
         """Test that resolved permissions maintain the order of input."""

@@ -46,6 +46,13 @@ class EmptyPermissionsError(RoleV2Error):
         super().__init__("At least one permission is required.")
 
 
+class EmptyDescriptionError(RoleV2Error):
+    """Raised when description is empty or missing."""
+
+    def __init__(self):
+        super().__init__("Description is required and cannot be empty.")
+
+
 class RoleDatabaseError(RoleV2Error):
     """Raised when an unexpected database error occurs."""
 
