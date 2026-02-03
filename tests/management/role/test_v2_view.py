@@ -167,10 +167,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # Error can be in 'name' field or 'detail' depending on error format
-        self.assertTrue(
-            "name" in response.data or "already exists" in str(response.data.get("detail", ""))
-        )
+        self.assertIn("already exists", str(response.data.get("detail", "")))
 
     def test_create_role_returns_response_format(self):
         """Test that create returns proper response format with all fields."""

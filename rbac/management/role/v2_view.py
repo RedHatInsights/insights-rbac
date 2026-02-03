@@ -22,7 +22,6 @@ from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
-from rest_framework.response import Response
 
 
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):

@@ -26,7 +26,6 @@ from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from rest_framework import serializers
 
-
 # Centralized mapping from domain exceptions to API error fields
 ERROR_MAPPING = {
     EmptyPermissionsError: "permissions",
@@ -72,7 +71,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
-   
+    """Request serializer for creating/updating roles."""
 
     # Injectable service class - can be overridden in tests
     service_class = RoleV2Service
