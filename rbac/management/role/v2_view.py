@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,28 +16,29 @@
 #
 """View for RoleV2 management."""
 
-import logging
-
-import pgtransaction
-from django.db import OperationalError
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
-from management.role.v2_serializer import RoleSerializer
-from psycopg2.errors import DeadlockDetected, SerializationFailure
-from rest_framework import status
-from rest_framework.response import Response
-
-logger = logging.getLogger(__name__)
+from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.v2_mixins import AtomicOperationsMixin
 
 
-class RoleV2ViewSet(BaseV2ViewSet):
+class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
     permission_classes = (RoleAccessPermission,)
     queryset = RoleV2.objects.all()
-    serializer_class = RoleSerializer
+    serializer_class = RoleV2ResponseSerializer
     lookup_field = "uuid"
+    # Explicitly exclude PATCH - API only supports full replacement via PUT.
+    # Without this, UpdateModelMixin exposes partial_update() which would silently
+    # accept PATCH requests but do nothing (response serializer has read-only fields).
+    http_method_names = ["get", "post", "put", "delete", "head", "options"]
+
+    def get_serializer_class(self):
+        if self.action in ("create", "update"):
+            return RoleV2RequestSerializer
+        return RoleV2ResponseSerializer
 
     def get_queryset(self):
         """
@@ -56,66 +57,3 @@ class RoleV2ViewSet(BaseV2ViewSet):
             return base_qs
         else:
             return base_qs.filter(type=RoleV2.Types.CUSTOM)
-
-    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
-    def _create_atomic(self, request, *args, **kwargs):
-        """
-        Create a role atomically with SERIALIZABLE isolation level and automatic retries.
-
-        The SERIALIZABLE isolation level ensures the highest data consistency by preventing
-        concurrent transactions from interfering with each other. This is important for
-        role creation to ensure unique name constraints are properly enforced even under
-        concurrent requests.
-
-        When conflicts occur (e.g., two transactions trying to create roles with the same
-        name simultaneously), PostgreSQL raises SerializationFailure. The retry=3 parameter
-        automatically retries the transaction up to 3 times when SerializationFailure or
-        DeadlockDetected errors occur.
-        """
-        return super().create(request=request, args=args, kwargs=kwargs)
-
-    def create(self, request, *args, **kwargs):
-        """
-        Create a custom role.
-
-        POST /api/v2/roles/
-
-        Request body:
-            {
-                "name": "Custom Role Name",
-                "description": "Role description",
-                "permissions": [
-                    {
-                        "application": "inventory",
-                        "resource_type": "hosts",
-                        "operation": "read"
-                    }
-                ]
-            }
-
-        Returns:
-            201: Role created successfully
-            400: Validation error (invalid permissions, missing fields)
-            401: Unauthorized
-            403: Forbidden
-            409: Conflict (serialization failure after retries exhausted)
-            500: Server error
-        """
-        try:
-            return self._create_atomic(request, *args, **kwargs)
-        except OperationalError as e:
-            # Django wraps psycopg2 errors in OperationalError
-            if hasattr(e, "__cause__"):
-                if isinstance(e.__cause__, SerializationFailure):
-                    logger.exception("SerializationFailure in role creation operation")
-                    return Response(
-                        {"detail": "Too many concurrent updates. Please retry."},
-                        status=status.HTTP_409_CONFLICT,
-                    )
-                elif isinstance(e.__cause__, DeadlockDetected):
-                    logger.exception("DeadlockDetected in role creation operation")
-                    return Response(
-                        {"detail": "Internal server error in concurrent updates. Please try again later."},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
-            raise

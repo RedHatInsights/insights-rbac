@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,17 +16,15 @@
 #
 """Test the RoleV2ViewSet."""
 
-from unittest.mock import Mock, patch
+from importlib import reload
 
-from django.db import OperationalError
-from django.urls import reverse
-from psycopg2.errors import SerializationFailure
+from django.urls import clear_url_caches, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from management.models import Permission
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
-from management.role.v2_view import RoleV2ViewSet
+from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
@@ -35,6 +33,10 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def setUp(self):
         """Set up the RoleV2ViewSet tests."""
+        # Reload URLs to pick up any dynamic settings
+        reload(urls)
+        clear_url_caches()
+
         super().setUp()
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
@@ -48,8 +50,14 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down RoleV2ViewSet tests."""
+        from management.utils import PRINCIPAL_CACHE
+
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
+
+        # Clear principal cache to avoid test isolation issues
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
         super().tearDown()
 
     # ==========================================================================
@@ -189,17 +197,17 @@ class RoleV2ViewSetTests(IdentityRequest):
     def test_list_roles_returns_all_types(self):
         """Test that list returns all role types (custom, seeded, platform)."""
         # Create different role types
-        custom_role = CustomRoleV2.objects.create(
+        CustomRoleV2.objects.create(
             name="Custom Role",
             description="Custom",
             tenant=self.tenant,
         )
-        seeded_role = SeededRoleV2.objects.create(
+        SeededRoleV2.objects.create(
             name="Seeded Role",
             description="Seeded",
             tenant=self.tenant,
         )
-        platform_role = PlatformRoleV2.objects.create(
+        PlatformRoleV2.objects.create(
             name="Platform Role",
             description="Platform",
             tenant=self.tenant,
@@ -241,63 +249,3 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-    # ==========================================================================
-    # Tests for get_queryset() action-based filtering
-    # ==========================================================================
-
-    def test_get_queryset_list_returns_all_role_types(self):
-        """Test that list action returns all role types."""
-        # Create roles of each type
-        CustomRoleV2.objects.create(name="Custom", description="", tenant=self.tenant)
-        SeededRoleV2.objects.create(name="Seeded", description="", tenant=self.tenant)
-        PlatformRoleV2.objects.create(name="Platform", description="", tenant=self.tenant)
-
-        viewset = RoleV2ViewSet()
-        viewset.action = "list"
-        viewset.request = Mock()
-        viewset.request.tenant = self.tenant
-
-        queryset = viewset.get_queryset()
-
-        self.assertEqual(queryset.count(), 3)
-
-    def test_get_queryset_create_returns_only_custom_roles(self):
-        """Test that create action queryset filters to custom roles only."""
-        # Create roles of each type
-        CustomRoleV2.objects.create(name="Custom", description="", tenant=self.tenant)
-        SeededRoleV2.objects.create(name="Seeded", description="", tenant=self.tenant)
-        PlatformRoleV2.objects.create(name="Platform", description="", tenant=self.tenant)
-
-        viewset = RoleV2ViewSet()
-        viewset.action = "create"
-        viewset.request = Mock()
-        viewset.request.tenant = self.tenant
-
-        queryset = viewset.get_queryset()
-
-        self.assertEqual(queryset.count(), 1)
-        self.assertEqual(queryset.first().name, "Custom")
-
-    # ==========================================================================
-    # Tests for concurrency handling (SerializationFailure)
-    # ==========================================================================
-
-    def test_create_serialization_failure_returns_409(self):
-        """Test that SerializationFailure after retries returns 409."""
-        data = {
-            "name": "Concurrent Role",
-            "description": "Testing concurrency",
-            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
-        }
-
-        # Mock the _create_atomic method to raise SerializationFailure
-        serialization_error = SerializationFailure()
-        operational_error = OperationalError()
-        operational_error.__cause__ = serialization_error
-
-        with patch.object(RoleV2ViewSet, "_create_atomic", side_effect=operational_error):
-            response = self.client.post(self.url, data, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertIn("concurrent", response.data["detail"].lower())

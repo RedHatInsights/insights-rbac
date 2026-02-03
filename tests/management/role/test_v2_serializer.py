@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -24,7 +24,7 @@ from management.models import Permission
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_serializer import (
     PermissionSerializer,
-    RoleSerializer,
+    RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
 )
 from tests.identity_request import IdentityRequest
@@ -89,8 +89,14 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down serializer tests."""
+        from management.utils import PRINCIPAL_CACHE
+
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
+
+        # Clear principal cache to avoid test isolation issues
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
         super().tearDown()
 
     def test_response_serializer_output_fields(self):
@@ -127,8 +133,8 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
         self.assertIsNotNone(data["last_modified"])
 
 
-class RoleSerializerTests(IdentityRequest):
-    """Test the RoleSerializer (combined serializer for CRUD)."""
+class RoleV2RequestSerializerTests(IdentityRequest):
+    """Test the RoleV2RequestSerializer (request serializer for create/update)."""
 
     def setUp(self):
         """Set up the serializer tests."""
@@ -141,8 +147,14 @@ class RoleSerializerTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down serializer tests."""
+        from management.utils import PRINCIPAL_CACHE
+
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
+
+        # Clear principal cache to avoid test isolation issues
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
         super().tearDown()
 
     def test_serializer_validates_required_name(self):
@@ -151,7 +163,7 @@ class RoleSerializerTests(IdentityRequest):
             "description": "A role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("name", serializer.errors)
@@ -162,7 +174,7 @@ class RoleSerializerTests(IdentityRequest):
             "name": "Test Role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("description", serializer.errors)
@@ -173,7 +185,7 @@ class RoleSerializerTests(IdentityRequest):
             "name": "Test Role",
             "description": "A role",
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("permissions", serializer.errors)
@@ -185,7 +197,7 @@ class RoleSerializerTests(IdentityRequest):
             "description": "A role",
             "permissions": [],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("permissions", serializer.errors)
@@ -197,7 +209,7 @@ class RoleSerializerTests(IdentityRequest):
             "description": "A role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("name", serializer.errors)
@@ -209,7 +221,7 @@ class RoleSerializerTests(IdentityRequest):
             "description": "",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
 
@@ -220,7 +232,7 @@ class RoleSerializerTests(IdentityRequest):
             "description": "A new role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
         role = serializer.save()
@@ -245,7 +257,7 @@ class RoleSerializerTests(IdentityRequest):
             "description": "Second role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
         with self.assertRaises(serializers.ValidationError) as cm:
@@ -260,7 +272,7 @@ class RoleSerializerTests(IdentityRequest):
             "description": "Has invalid permission",
             "permissions": [{"application": "nonexistent", "resource_type": "resource", "operation": "action"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
         with self.assertRaises(serializers.ValidationError) as cm:
@@ -268,21 +280,28 @@ class RoleSerializerTests(IdentityRequest):
 
         self.assertIn("permissions", cm.exception.detail)
 
-    def test_serializer_to_representation_uses_response_serializer(self):
-        """Test that to_representation uses RoleV2ResponseSerializer format."""
+    def test_serializer_service_injectable_via_context(self):
+        """Test that service can be overridden via context."""
+        mock_service = Mock()
+        mock_service.resolve_permissions.return_value = []
+        mock_service.create.return_value = CustomRoleV2(
+            name="Injected",
+            description="Via context",
+            tenant=self.tenant,
+        )
+
         data = {
-            "name": "Representation Test",
-            "description": "Testing output",
+            "name": "Injected Role",
+            "description": "Test",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleV2RequestSerializer(
+            data=data,
+            context={"request": self.mock_request, "role_service": mock_service},
+        )
         serializer.is_valid()
-        role = serializer.save()
+        serializer.save()
 
-        # Get the representation
-        output = serializer.to_representation(role)
-
-        # Should have response serializer fields
-        self.assertIn("id", output)
-        self.assertIn("permissions_count", output)
-        self.assertEqual(output["permissions_count"], 1)
+        # Verify the injected service was used
+        mock_service.resolve_permissions.assert_called_once()
+        mock_service.create.assert_called_once()

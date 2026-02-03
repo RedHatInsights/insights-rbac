@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -27,6 +27,15 @@ from management.role.v2_service import RoleV2Service
 from rest_framework import serializers
 
 
+# Centralized mapping from domain exceptions to API error fields
+ERROR_MAPPING = {
+    EmptyPermissionsError: "permissions",
+    PermissionsNotFoundError: "permissions",
+    RoleAlreadyExistsError: "name",
+    RoleDatabaseError: "detail",
+}
+
+
 class PermissionSerializer(serializers.Serializer):
     """Serializer for permission input/output."""
 
@@ -36,11 +45,6 @@ class PermissionSerializer(serializers.Serializer):
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
-    """
-    Serializer for role response.
-
-    Matches the OpenAPI spec: Roles.Role
-    """
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
@@ -67,41 +71,25 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         return obj.permissions.count()
 
 
-class RoleSerializer(serializers.ModelSerializer):
-    """
-    Combined serializer for RoleV2 CRUD operations.
+class RoleV2RequestSerializer(serializers.ModelSerializer):
+   
 
-    Uses separate request/response serializers internally but provides
-    a unified interface for the viewset.
-
-    This serializer is responsible for:
-    - Validating HTTP-level concerns (field presence, format)
-    - Calling the Service layer for business logic
-    - Converting domain exceptions to HTTP-level ValidationErrors
-    """
+    # Injectable service class - can be overridden in tests
+    service_class = RoleV2Service
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(required=True, max_length=175)
     description = serializers.CharField(required=True, allow_blank=True)
     permissions = PermissionSerializer(many=True, required=True, write_only=True)
-    last_modified = serializers.DateTimeField(source="modified", read_only=True)
 
     class Meta:
-        """Metadata for the serializer."""
 
         model = RoleV2
-        fields = (
-            "id",
-            "name",
-            "description",
-            "permissions",
-            "last_modified",
-        )
+        fields = ("id", "name", "description", "permissions")
 
-    def __init__(self, *args, **kwargs):
-        """Initialize with service dependency."""
-        super().__init__(*args, **kwargs)
-        self._service = RoleV2Service()
+    @property
+    def service(self):
+        return self.context.get("role_service") or self.service_class()
 
     def validate_permissions(self, value):
         """Validate that at least one permission is provided."""
@@ -110,34 +98,17 @@ class RoleSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        """
-        Create the role using the domain service.
-
-        Catches domain exceptions and converts them to HTTP-level ValidationErrors.
-        """
         tenant = self.context["request"].tenant
         permission_data = validated_data.pop("permissions")
 
         try:
-            # Resolve permission dicts to Permission model instances
-            permissions = self._service.resolve_permissions(permission_data)
-
-            # Delegate to service for domain logic
-            return self._service.create(
+            permissions = self.service.resolve_permissions(permission_data)
+            return self.service.create(
                 name=validated_data["name"],
                 description=validated_data["description"],
                 permissions=permissions,
                 tenant=tenant,
             )
-        except EmptyPermissionsError as e:
-            raise serializers.ValidationError({"permissions": str(e)})
-        except PermissionsNotFoundError as e:
-            raise serializers.ValidationError({"permissions": str(e)})
-        except RoleAlreadyExistsError as e:
-            raise serializers.ValidationError({"name": str(e)})
-        except RoleDatabaseError as e:
-            raise serializers.ValidationError({"detail": str(e)})
-
-    def to_representation(self, instance):
-        """Use the response serializer for output."""
-        return RoleV2ResponseSerializer(instance, context=self.context).data
+        except tuple(ERROR_MAPPING.keys()) as e:
+            field = ERROR_MAPPING[type(e)]
+            raise serializers.ValidationError({field: str(e)})

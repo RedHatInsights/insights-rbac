@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -42,8 +42,14 @@ class RoleV2ServiceTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down RoleV2Service tests."""
+        from management.utils import PRINCIPAL_CACHE
+
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
+
+        # Clear principal cache to avoid test isolation issues
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
         super().tearDown()
 
     # ==========================================================================
