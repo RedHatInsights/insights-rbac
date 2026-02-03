@@ -36,6 +36,7 @@ from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
+    RelationReplicator,
     ReplicationEventType,
 )
 from management.role.model import (
@@ -135,9 +136,14 @@ class DualWriteTestCase(TestCase):
 
         return V2boundresource.for_model(tenant)
 
-    def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
+    def dual_write_handler(
+        self, role: Role, event_type: ReplicationEventType, replicator: Optional[RelationReplicator] = None
+    ) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
-        return RelationApiDualWriteHandler(role, event_type, replicator=InMemoryRelationReplicator(self.tuples))
+        return RelationApiDualWriteHandler(role, event_type, replicator=self._get_replicator(replicator))
+
+    def _get_replicator(self, replicator: Optional[RelationReplicator]) -> RelationReplicator:
+        return replicator if replicator is not None else InMemoryRelationReplicator(self.tuples)
 
     def given_v1_system_role(
         self,
@@ -181,9 +187,9 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_new_or_updated_role(role)
         return role
 
-    def given_v1_role_removed(self, role: Role):
+    def given_v1_role_removed(self, role: Role, replicator: Optional[RelationReplicator] = None):
         """Remove the given custom role."""
-        dual_write = self.dual_write_handler(role, ReplicationEventType.DELETE_CUSTOM_ROLE)
+        dual_write = self.dual_write_handler(role, ReplicationEventType.DELETE_CUSTOM_ROLE, replicator=replicator)
         dual_write.prepare_for_update()
         role.delete()
         dual_write.replicate_deleted_role()
@@ -250,13 +256,15 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_removed_principals(principals)
         return principals
 
-    def given_roles_assigned_to_group(self, group: Group, roles: list[Role]) -> Policy:
+    def given_roles_assigned_to_group(
+        self, group: Group, roles: list[Role], replicator: Optional[RelationReplicator] = None
+    ) -> Policy:
         """Assign the [roles] to the [group]."""
         assert roles, "Roles must not be empty"
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.ASSIGN_ROLE,
-            replicator=InMemoryRelationReplicator(self.tuples),
+            replicator=self._get_replicator(replicator),
         )
         policy: Policy
         for role in roles:
@@ -265,14 +273,16 @@ class DualWriteTestCase(TestCase):
         dual_write_handler.replicate()
         return policy
 
-    def given_roles_unassigned_from_group(self, group: Group, roles: list[Role]) -> Policy:
+    def given_roles_unassigned_from_group(
+        self, group: Group, roles: list[Role], replicator: Optional[RelationReplicator] = None
+    ) -> Policy:
         """Unassign the [roles] to the [group]."""
         assert roles, "Roles must not be empty"
         policy = self.fixture.remove_role_from_group(roles[0], group)
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.UNASSIGN_ROLE,
-            replicator=InMemoryRelationReplicator(self.tuples),
+            replicator=self._get_replicator(replicator),
         )
         policy: Policy
         for role in roles:
@@ -281,12 +291,12 @@ class DualWriteTestCase(TestCase):
         dual_write_handler.replicate()
         return policy
 
-    def given_group_removed(self, group: Group):
+    def given_group_removed(self, group: Group, replicator: Optional[RelationReplicator] = None):
         """Remove the given group."""
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.DELETE_GROUP,
-            replicator=InMemoryRelationReplicator(self.tuples),
+            replicator=self._get_replicator(replicator),
         )
         roles = Role.objects.filter(policies__group=group)
         dual_write_handler.prepare_to_delete_group(roles)
