@@ -19,11 +19,12 @@
 from django.db.models import Count
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.role_binding.serializer import FieldSelectionValidationError
 from rest_framework import serializers
 
 from api.common.pagination import V2CursorPagination
 from .v2_model import RoleV2
-from .v2_serializer import RoleSerializer
+from .v2_serializer import RoleFieldSelection, RoleSerializer
 
 
 class RoleV2CursorPagination(V2CursorPagination):
@@ -43,10 +44,27 @@ class RoleV2CursorPagination(V2CursorPagination):
 class RoleV2ViewSet(BaseV2ViewSet):
     """V2 Role ViewSet."""
 
-    queryset = RoleV2.objects.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+    queryset = RoleV2.objects.all()
     serializer_class = RoleSerializer
     permission_classes = (RoleAccessPermission,)
     pagination_class = RoleV2CursorPagination
+
+    def get_queryset(self):
+        """Return queryset based on requested fields."""
+        queryset = super().get_queryset()
+
+        try:
+            field_selection = RoleFieldSelection.parse(self.request.query_params.get("fields"))
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+        if field_selection:
+            if "permissions_count" in field_selection.root_fields:
+                queryset = queryset.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+            if "permissions" in field_selection.root_fields:
+                queryset = queryset.prefetch_related("permissions")
+
+        return queryset
 
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
@@ -61,10 +79,6 @@ class RoleV2ViewSet(BaseV2ViewSet):
                 raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
         if name:
             queryset = queryset.filter(name__exact=name)
-
-        fields_param = request.query_params.get("fields", "")
-        if "permissions" in fields_param:
-            queryset = queryset.prefetch_related("permissions")
 
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)
