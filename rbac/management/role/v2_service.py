@@ -19,6 +19,7 @@
 import logging
 from typing import Iterable
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from management.permission.model import Permission
 from management.role.v2_exceptions import (
@@ -91,7 +92,14 @@ class RoleV2Service:
 
             return role
 
+        except ValidationError as e:
+            # full_clean() raises ValidationError for unique constraint violations
+            error_msg = str(e)
+            if "name" in error_msg.lower() and "already exists" in error_msg.lower():
+                raise RoleAlreadyExistsError(name)
+            raise
         except IntegrityError as e:
+            # DB-level constraint violations
             error_msg = str(e)
             if "unique role v2 name per tenant" in error_msg.lower() or "unique" in error_msg.lower():
                 raise RoleAlreadyExistsError(name)
@@ -124,7 +132,8 @@ class RoleV2Service:
         for perm_dict in permission_data:
             application = perm_dict.get("application")
             resource_type = perm_dict.get("resource_type")
-            operation = perm_dict.get("operation")
+            # Accept both 'operation' (API/test) and 'verb' (serializer validated_data)
+            operation = perm_dict.get("operation") or perm_dict.get("verb")
 
             # Build the V1 permission string format: app:resource:verb
             permission_string = f"{application}:{resource_type}:{operation}"

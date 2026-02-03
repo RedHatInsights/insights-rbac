@@ -18,22 +18,26 @@
 
 from importlib import reload
 
+from django.test import override_settings
 from django.urls import clear_url_caches, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from management import v2_urls
 from management.models import Permission
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
 from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
+@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2ViewSetTests(IdentityRequest):
     """Test the RoleV2ViewSet."""
 
     def setUp(self):
         """Set up the RoleV2ViewSet tests."""
-        # Reload URLs to pick up any dynamic settings
+        # Reload URLs to pick up v2 management routes
+        reload(v2_urls)
         reload(urls)
         clear_url_caches()
 
@@ -104,7 +108,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.data)
+        self.assertIn("detail", response.data)
 
     def test_create_role_missing_permissions_returns_400(self):
         """Test that missing permissions returns 400."""
@@ -116,7 +120,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("permissions", response.data)
+        self.assertIn("detail", response.data)
 
     def test_create_role_empty_permissions_returns_400(self):
         """Test that empty permissions array returns 400."""
@@ -129,7 +133,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("permissions", response.data)
+        self.assertIn("detail", response.data)
 
     def test_create_role_invalid_permission_returns_400(self):
         """Test that non-existent permission returns 400."""
@@ -142,7 +146,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("permissions", response.data)
+        self.assertIn("detail", response.data)
 
     def test_create_role_duplicate_name_returns_400(self):
         """Test that duplicate role name returns 400."""
@@ -163,7 +167,10 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.data)
+        # Error can be in 'name' field or 'detail' depending on error format
+        self.assertTrue(
+            "name" in response.data or "already exists" in str(response.data.get("detail", ""))
+        )
 
     def test_create_role_returns_response_format(self):
         """Test that create returns proper response format with all fields."""

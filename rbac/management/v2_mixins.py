@@ -19,6 +19,7 @@
 import logging
 
 import pgtransaction
+from django.conf import settings
 from django.db import OperationalError
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import status
@@ -31,20 +32,12 @@ class AtomicOperationsMixin:
     """
     Mixin providing atomic create/update/destroy with SERIALIZABLE isolation.
 
-    Wraps write operations in PostgreSQL SERIALIZABLE transactions with automatic
-    retry (up to 3 times) for transient concurrency errors. Converts exhausted
-    retries into appropriate HTTP responses:
-    - SerializationFailure → 409 Conflict
-    - DeadlockDetected → 500 Internal Server Error
-
-    Usage:
-        class MyViewSet(AtomicOperationsMixin, BaseV2ViewSet):
-            ...
-            # create(), update(), destroy() are automatically wrapped
+    Set ATOMIC_RETRY_DISABLED=True in settings to skip the transaction wrapper entirely.
     """
 
+    atomic_retry = 3
+
     def _handle_concurrency_error(self, e, operation_name):
-        """Convert PostgreSQL concurrency errors to HTTP responses."""
         if hasattr(e, "__cause__"):
             if isinstance(e.__cause__, SerializationFailure):
                 logger.exception("SerializationFailure in %s operation", operation_name)
@@ -60,22 +53,22 @@ class AtomicOperationsMixin:
                 )
         return None
 
-    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
-    def _atomic_create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+    def _should_use_atomic(self):
+        return not getattr(settings, "ATOMIC_RETRY_DISABLED", False)
 
-    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
-    def _atomic_update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
+    def _run_atomic(self, operation, request, *args, **kwargs):
+        if not self._should_use_atomic():
+            return operation(request, *args, **kwargs)
 
-    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
-    def _atomic_destroy(self, request, *args, **kwargs):
-        return super().destroy(request, *args, **kwargs)
+        @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=self.atomic_retry)
+        def atomic_operation():
+            return operation(request, *args, **kwargs)
+
+        return atomic_operation()
 
     def create(self, request, *args, **kwargs):
-        """Create with SERIALIZABLE isolation and automatic retry."""
         try:
-            return self._atomic_create(request, *args, **kwargs)
+            return self._run_atomic(super().create, request, *args, **kwargs)
         except OperationalError as e:
             response = self._handle_concurrency_error(e, "create")
             if response:
@@ -83,9 +76,8 @@ class AtomicOperationsMixin:
             raise
 
     def update(self, request, *args, **kwargs):
-        """Update with SERIALIZABLE isolation and automatic retry."""
         try:
-            return self._atomic_update(request, *args, **kwargs)
+            return self._run_atomic(super().update, request, *args, **kwargs)
         except OperationalError as e:
             response = self._handle_concurrency_error(e, "update")
             if response:
@@ -93,9 +85,8 @@ class AtomicOperationsMixin:
             raise
 
     def destroy(self, request, *args, **kwargs):
-        """Destroy with SERIALIZABLE isolation and automatic retry."""
         try:
-            return self._atomic_destroy(request, *args, **kwargs)
+            return self._run_atomic(super().destroy, request, *args, **kwargs)
         except OperationalError as e:
             response = self._handle_concurrency_error(e, "destroy")
             if response:

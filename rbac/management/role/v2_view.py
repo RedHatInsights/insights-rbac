@@ -21,6 +21,8 @@ from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
 from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import status
+from rest_framework.response import Response
 
 
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
@@ -30,9 +32,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     queryset = RoleV2.objects.all()
     serializer_class = RoleV2ResponseSerializer
     lookup_field = "uuid"
-    # Explicitly exclude PATCH - API only supports full replacement via PUT.
-    # Without this, UpdateModelMixin exposes partial_update() which would silently
-    # accept PATCH requests but do nothing (response serializer has read-only fields).
     http_method_names = ["get", "post", "put", "delete", "head", "options"]
 
     def get_serializer_class(self):
@@ -41,12 +40,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         return RoleV2ResponseSerializer
 
     def get_queryset(self):
-        """
-        Return different querysets based on action.
-
-        - list/retrieve: All roles (custom, seeded, system) for the tenant
-        - create/update/destroy: Only custom roles (users can only modify custom roles)
-        """
         base_qs = (
             RoleV2.objects.filter(tenant=self.request.tenant)
             .prefetch_related("permissions")
@@ -57,3 +50,10 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             return base_qs
         else:
             return base_qs.filter(type=RoleV2.Types.CUSTOM)
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == status.HTTP_201_CREATED:
+            role = RoleV2.objects.prefetch_related("permissions").get(uuid=response.data["id"])
+            response.data = RoleV2ResponseSerializer(role).data
+        return response

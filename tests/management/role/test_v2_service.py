@@ -208,16 +208,16 @@ class RoleV2ServiceTests(IdentityRequest):
     def test_resolve_permissions_multiple_not_found(self):
         """Test that multiple non-existent permissions are all reported."""
         permission_data = [
-            {"application": "fake1", "resource_type": "r1", "operation": "op1"},
-            {"application": "fake2", "resource_type": "r2", "operation": "op2"},
+            {"application": "fake1", "resource_type": "r1", "operation": "v1"},
+            {"application": "fake2", "resource_type": "r2", "operation": "v2"},
         ]
 
         with self.assertRaises(PermissionsNotFoundError) as cm:
             self.service.resolve_permissions(permission_data)
 
         self.assertEqual(len(cm.exception.missing_permissions), 2)
-        self.assertIn("fake1:r1:op1", cm.exception.missing_permissions)
-        self.assertIn("fake2:r2:op2", cm.exception.missing_permissions)
+        self.assertIn("fake1:r1:v1", cm.exception.missing_permissions)
+        self.assertIn("fake2:r2:v2", cm.exception.missing_permissions)
 
     def test_resolve_permissions_preserves_order(self):
         """Test that resolved permissions maintain the order of input."""
