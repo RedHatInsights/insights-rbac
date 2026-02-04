@@ -39,9 +39,9 @@ ERROR_MAPPING = {
 
 class PermissionSerializer(serializers.Serializer):
 
-    application = serializers.CharField(required=True, help_text="Application name")
-    resource_type = serializers.CharField(required=True, help_text="Resource type")
-    operation = serializers.CharField(required=True, source="verb", help_text="Operation/verb")
+    application = serializers.CharField(help_text="Application name")
+    resource_type = serializers.CharField(help_text="Resource type")
+    operation = serializers.CharField(source="verb", help_text="Operation/verb")
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):

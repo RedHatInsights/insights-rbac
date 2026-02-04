@@ -577,8 +577,17 @@ def api_path_prefix():
     return path_prefix
 
 
+PROBLEM_TITLES = {
+    400: "The request payload contains invalid syntax.",
+    401: "Authentication credentials were not provided or are invalid.",
+    403: "You do not have permission to perform this action.",
+    404: "Not found.",
+    409: "Conflict.",
+    500: "Unexpected error occurred.",
+}
+
+
 def v2response_error_from_errors(errors, exc=None, context=None):
-    """Convert v1 error format to v2."""
     detail = ""
     status_code = 0
     if errors and any(isinstance(error, dict) and "detail" in error for error in errors):
@@ -587,10 +596,11 @@ def v2response_error_from_errors(errors, exc=None, context=None):
 
     response = {
         "status": status_code,
+        "title": PROBLEM_TITLES.get(status_code, "An error occurred."),
         "detail": detail,
     }
 
-    if context.get("request").method in ["PUT", "PATCH", "DELETE"]:
+    if context and context.get("request") and context.get("request").method in ["PUT", "PATCH", "DELETE"]:
         response["instance"] = context.get("request").path
 
     return response

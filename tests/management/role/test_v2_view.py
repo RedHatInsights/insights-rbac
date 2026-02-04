@@ -167,7 +167,44 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("already exists", str(response.data.get("detail", "")))
+        self.assertIn("status", response.data)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("already exists", response.data["detail"])
+
+    def test_create_role_missing_permissions_returns_problem_details(self):
+        """Test that missing permissions returns ProblemDetails format."""
+        data = {
+            "name": "No Permissions Role",
+            "description": "Missing permissions",
+            "permissions": [],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+
+    def test_create_role_invalid_permission_returns_problem_details(self):
+        """Test that invalid permission returns ProblemDetails format."""
+        data = {
+            "name": "Invalid Permission Role",
+            "description": "Invalid permission",
+            "permissions": [{"application": "nonexistent", "resource_type": "foo", "operation": "bar"}],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("do not exist", response.data["detail"])
 
     def test_create_role_returns_response_format(self):
         """Test that create returns proper response format with all fields."""
