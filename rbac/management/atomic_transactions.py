@@ -22,22 +22,28 @@ import pgtransaction
 from django.conf import settings
 from django.db import transaction
 
+# Shared isolation level configuration
+ISOLATION_LEVEL = pgtransaction.SERIALIZABLE
+
+
+def is_atomic_disabled():
+    """Check if atomic transactions should be disabled (for tests)."""
+    return getattr(settings, "ATOMIC_RETRY_DISABLED", False)
+
 
 def atomic(func):
     """
     Decorator to wrap service methods in a SERIALIZABLE transaction.
     If already inside a transaction (e.g., from view layer), creates a savepoint.
-
-    Set ATOMIC_RETRY_DISABLED=True in settings to use standard atomic (for tests).
     """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if getattr(settings, "ATOMIC_RETRY_DISABLED", False):
+        if is_atomic_disabled():
             with transaction.atomic():
                 return func(*args, **kwargs)
         else:
-            with pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE):
+            with pgtransaction.atomic(isolation_level=ISOLATION_LEVEL):
                 return func(*args, **kwargs)
 
     return wrapper

@@ -30,7 +30,7 @@ from management.role.v2_exceptions import (
     RoleDatabaseError,
 )
 from management.role.v2_model import CustomRoleV2
-from management.service_decorators import atomic
+from management.atomic_transactions import atomic
 
 from api.models import Tenant
 

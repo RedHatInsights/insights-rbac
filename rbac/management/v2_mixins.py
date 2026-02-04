@@ -19,11 +19,12 @@
 import logging
 
 import pgtransaction
-from django.conf import settings
 from django.db import OperationalError
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import status
 from rest_framework.response import Response
+
+from management.atomic_transactions import ISOLATION_LEVEL, is_atomic_disabled
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +54,11 @@ class AtomicOperationsMixin:
                 )
         return None
 
-    def _should_use_atomic(self):
-        return not getattr(settings, "ATOMIC_RETRY_DISABLED", False)
-
     def _run_atomic(self, operation, request, *args, **kwargs):
-        if not self._should_use_atomic():
+        if is_atomic_disabled():
             return operation(request, *args, **kwargs)
 
-        @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=self.atomic_retry)
+        @pgtransaction.atomic(isolation_level=ISOLATION_LEVEL, retry=self.atomic_retry)
         def atomic_operation():
             return operation(request, *args, **kwargs)
 
