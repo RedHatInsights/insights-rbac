@@ -110,7 +110,7 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
         self.assertIn("description", data)
         self.assertIn("permissions", data)
         self.assertIn("last_modified", data)
-        self.assertIn("permissions_count", data)
+        # permissions_count not included until field masking is implemented
 
     def test_response_serializer_uuid_mapping(self):
         """Test that 'id' field maps to model's 'uuid'."""
@@ -118,13 +118,6 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
         data = serializer.data
 
         self.assertEqual(str(self.role.uuid), data["id"])
-
-    def test_response_serializer_permissions_count(self):
-        """Test that permissions_count is correct."""
-        serializer = RoleV2ResponseSerializer(self.role)
-        data = serializer.data
-
-        self.assertEqual(data["permissions_count"], 1)
 
     def test_response_serializer_last_modified_mapping(self):
         """Test that 'last_modified' field maps to model's 'modified'."""

@@ -96,7 +96,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["permissions_count"], 2)
+        self.assertEqual(len(response.data["permissions"]), 2)
 
     def test_create_role_missing_name_returns_400(self):
         """Test that missing name returns 400."""
@@ -222,7 +222,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("description", response.data)
         self.assertIn("permissions", response.data)
         self.assertIn("last_modified", response.data)
-        self.assertIn("permissions_count", response.data)
+        # permissions_count not included until field masking is implemented
 
     # ==========================================================================
     # Tests for GET /api/v2/roles/ (list)

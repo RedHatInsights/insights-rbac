@@ -51,7 +51,8 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     description = serializers.CharField(read_only=True)
     permissions = PermissionSerializer(many=True, read_only=True)
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
-    permissions_count = serializers.SerializerMethodField()
+    # permissions_count - uncomment when field masking is implemented
+    # permissions_count = serializers.SerializerMethodField()
 
     class Meta:
 
@@ -62,10 +63,11 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
             "description",
             "permissions",
             "last_modified",
-            "permissions_count",
+            # "permissions_count" - available via get_permissions_count when field masking is implemented
         )
 
     def get_permissions_count(self, obj):
+        """Available for field masking - not included in default response."""
         return obj.permissions.count()
 
 
