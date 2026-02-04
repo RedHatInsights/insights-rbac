@@ -65,45 +65,69 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         else:
             return base_qs.filter(type=RoleV2.Types.CUSTOM)
 
+    def _validate_and_get_fields_param(self, request):
+        """
+        Validate and return the fields parameter.
+
+        Args:
+            request: The HTTP request
+
+        Returns:
+            str: The validated fields parameter
+
+        Raises:
+            ValidationError: If invalid fields are requested
+        """
+        fields_param = request.query_params.get("fields", DEFAULT_ROLE_FIELD_MASK)
+        if fields_param:
+            # Validate requested fields
+            requested_fields = set(fields_param.split(","))
+            invalid_fields = requested_fields - VALID_ROLE_FIELDS
+
+            if invalid_fields:
+                raise serializers.ValidationError(
+                    {
+                        "fields": f"Invalid field(s): {', '.join(sorted(invalid_fields))}. "
+                        f"Valid fields are: {', '.join(sorted(VALID_ROLE_FIELDS))}"
+                    }
+                )
+
+        return fields_param
+
     def get_serializer_context(self):
         """Add fields parameter to serializer context for retrieve/list operations."""
         context = super().get_serializer_context()
 
         # Only apply field filtering for retrieve and list actions
         if self.action in ("retrieve", "list"):
-            # Parse and validate fields parameter
             fields_param = self.request.query_params.get("fields", DEFAULT_ROLE_FIELD_MASK)
-            if fields_param:
-                # Validate requested fields
-                requested_fields = set(fields_param.split(","))
-                invalid_fields = requested_fields - VALID_ROLE_FIELDS
-
-                if invalid_fields:
-                    raise serializers.ValidationError(
-                        {
-                            "fields": f"Invalid field(s): {', '.join(sorted(invalid_fields))}. "
-                            f"Valid fields are: {', '.join(sorted(VALID_ROLE_FIELDS))}"
-                        }
-                    )
-
-                context["fields"] = fields_param
+            context["fields"] = fields_param
 
         return context
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve a single role by UUID."""
-        uuid = kwargs.get("uuid")
+        # Validate fields parameter first (will raise ValidationError if invalid)
+        self._validate_and_get_fields_param(request)
+
+        uuid_str = kwargs.get("uuid")
 
         # Initialize service with tenant
         service = RoleV2Service(tenant=request.tenant)
 
         try:
+            # Convert string to UUID
+            uuid_obj = UUID(uuid_str)
+
             # Get role via service
-            role = service.get_role(UUID(uuid))
+            role = service.get_role(uuid_obj)
 
             # Serialize with field filtering
             serializer = self.get_serializer(role)
             return Response(serializer.data)
 
+        except ValueError:
+            # Invalid UUID format
+            raise Http404(f"Invalid UUID format: {uuid_str}")
         except RoleNotFoundError as e:
             raise Http404(str(e))

@@ -172,9 +172,11 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         data = response.json()
 
-        self.assertIn("fields", data)
-        self.assertIn("invalid_field", data["fields"])
-        self.assertIn("Invalid field(s)", data["fields"])
+        # V2 API error response format: {status, detail}
+        self.assertEqual(data["status"], 400)
+        self.assertIn("invalid_field", data["detail"])
+        self.assertIn("Invalid field(s)", data["detail"])
+        self.assertIn("Valid fields are:", data["detail"])
 
     def test_retrieve_role_with_multiple_invalid_fields(self):
         """Test retrieving a role with multiple invalid fields."""
@@ -184,10 +186,11 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         data = response.json()
 
-        self.assertIn("fields", data)
-        error_message = data["fields"]
-        self.assertIn("another_bad_field", error_message)
-        self.assertIn("bad_field", error_message)
+        # V2 API error response format: {status, detail}
+        self.assertEqual(data["status"], 400)
+        self.assertIn("another_bad_field", data["detail"])
+        self.assertIn("bad_field", data["detail"])
+        self.assertIn("Invalid field(s)", data["detail"])
 
     def test_retrieve_role_not_found(self):
         """Test retrieving a non-existent role."""
@@ -267,7 +270,8 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         )
 
         url = self._get_role_url(empty_role.uuid)
-        response = self.client.get(url, **self.headers)
+        # Request permissions_count explicitly since it's not in default fields
+        response = self.client.get(f"{url}?fields=permissions,permissions_count", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()

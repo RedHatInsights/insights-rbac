@@ -165,8 +165,8 @@ class RoleV2ServiceGetRoleTest(TestCase):
         role = service.get_role(self.custom_role.uuid)
 
         self.assertIsInstance(role, RoleV2)
-        # Should also be instance of CustomRoleV2 (proxy model)
-        self.assertIsInstance(role, CustomRoleV2)
+        # Verify it's a custom role by checking the type field
+        self.assertEqual(role.type, RoleV2.Types.CUSTOM)
 
     def test_get_role_with_no_permissions(self):
         """Test retrieving a role with no permissions."""
