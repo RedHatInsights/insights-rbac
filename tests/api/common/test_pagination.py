@@ -368,42 +368,55 @@ class V2CursorPaginationTest(TestCase):
 
     def test_convert_order_field_rejects_simple_field(self):
         """Test _convert_order_field rejects simple field names without dot notation."""
-        self.assertIsNone(self.paginator._convert_order_field("name"))
-        self.assertIsNone(self.paginator._convert_order_field("modified"))
-        self.assertIsNone(self.paginator._convert_order_field("uuid"))
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("name", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("modified", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("uuid", field_mapping))
 
     def test_convert_order_field_rejects_descending_simple_field(self):
         """Test _convert_order_field rejects descending simple field names."""
-        self.assertIsNone(self.paginator._convert_order_field("-name"))
-        self.assertIsNone(self.paginator._convert_order_field("-modified"))
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("-name", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("-modified", field_mapping))
 
     def test_convert_order_field_dot_notation_group(self):
         """Test _convert_order_field with group dot notation."""
-        self.assertEqual(self.paginator._convert_order_field("group.name"), "name")
-        self.assertEqual(self.paginator._convert_order_field("group.description"), "description")
-        self.assertEqual(self.paginator._convert_order_field("group.user_count"), "principalCount")
-        self.assertEqual(self.paginator._convert_order_field("group.uuid"), "uuid")
-        self.assertEqual(self.paginator._convert_order_field("group.modified"), "modified")
-        self.assertEqual(self.paginator._convert_order_field("group.created"), "created")
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertEqual(self.paginator._convert_order_field("group.name", field_mapping), "name")
+        self.assertEqual(self.paginator._convert_order_field("group.description", field_mapping), "description")
+        self.assertEqual(self.paginator._convert_order_field("group.user_count", field_mapping), "principalCount")
+        self.assertEqual(self.paginator._convert_order_field("group.uuid", field_mapping), "uuid")
+        self.assertEqual(self.paginator._convert_order_field("group.modified", field_mapping), "modified")
+        self.assertEqual(self.paginator._convert_order_field("group.created", field_mapping), "created")
 
     def test_convert_order_field_dot_notation_group_descending(self):
         """Test _convert_order_field with group dot notation and descending prefix."""
-        self.assertEqual(self.paginator._convert_order_field("-group.name"), "-name")
-        self.assertEqual(self.paginator._convert_order_field("-group.user_count"), "-principalCount")
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertEqual(self.paginator._convert_order_field("-group.name", field_mapping), "-name")
+        self.assertEqual(self.paginator._convert_order_field("-group.user_count", field_mapping), "-principalCount")
 
     def test_convert_order_field_dot_notation_role(self):
         """Test _convert_order_field with role dot notation."""
-        self.assertEqual(self.paginator._convert_order_field("role.name"), "role_binding_entries__binding__role__name")
-        self.assertEqual(self.paginator._convert_order_field("role.uuid"), "role_binding_entries__binding__role__uuid")
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
         self.assertEqual(
-            self.paginator._convert_order_field("-role.modified"), "-role_binding_entries__binding__role__modified"
+            self.paginator._convert_order_field("role.name", field_mapping),
+            "role_binding_entries__binding__role__name",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("role.uuid", field_mapping),
+            "role_binding_entries__binding__role__uuid",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("-role.modified", field_mapping),
+            "-role_binding_entries__binding__role__modified",
         )
 
     def test_convert_order_field_rejects_unknown_dot_notation(self):
         """Test _convert_order_field rejects unknown dot notation fields."""
-        self.assertIsNone(self.paginator._convert_order_field("foo.bar"))
-        self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz"))
-        self.assertIsNone(self.paginator._convert_order_field("unknown.field"))
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("foo.bar", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("unknown.field", field_mapping))
 
     def test_get_ordering_with_group_name(self):
         """Test get_ordering converts group.name to name."""

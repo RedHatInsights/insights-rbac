@@ -424,8 +424,11 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         if isinstance(obj, dict):
             return obj.get("roles", [])
 
-        if not isinstance(obj, Group) or not hasattr(obj, "filtered_bindings"):
+        if not isinstance(obj, Group):
             return None
+
+        if not hasattr(obj, "filtered_bindings"):
+            return []
 
         field_selection = self._get_field_selection()
 

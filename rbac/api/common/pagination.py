@@ -178,6 +178,24 @@ class V2CursorPagination(CursorPagination):
     # Default mapping for backwards compatibility
     FIELD_MAPPING = SUBJECT_FIELD_MAPPING
 
+    # Default orderings per model
+    SUBJECT_DEFAULT_ORDERING = "-modified"
+    ROLE_BINDING_DEFAULT_ORDERING = "-id"
+
+    def _get_default_ordering(self, queryset):
+        """Get the appropriate default ordering based on queryset model.
+
+        Args:
+            queryset: The queryset being paginated
+
+        Returns:
+            The appropriate default ordering field
+        """
+        model = queryset.model
+        if model == RoleBinding:
+            return self.ROLE_BINDING_DEFAULT_ORDERING
+        return self.SUBJECT_DEFAULT_ORDERING
+
     def _get_field_mapping(self, queryset):
         """Get the appropriate field mapping based on queryset model.
 
@@ -231,12 +249,13 @@ class V2CursorPagination(CursorPagination):
         """
         order_by_list = request.query_params.getlist("order_by")
 
-        # Get appropriate field mapping based on queryset model
+        # Get appropriate field mapping and default ordering based on queryset model
         field_mapping = self._get_field_mapping(queryset)
+        default_ordering = self._get_default_ordering(queryset)
 
         # No order_by provided, use default
         if not order_by_list:
-            return (self.ordering,)
+            return (default_ordering,)
 
         # Collect all fields from all order_by parameters (supports both comma-separated and multiple params)
         order_fields = []
@@ -244,7 +263,7 @@ class V2CursorPagination(CursorPagination):
             order_fields.extend([f.strip() for f in order_by.split(",") if f.strip()])
 
         if not order_fields:
-            return (self.ordering,)
+            return (default_ordering,)
 
         # Convert dot notation to Django ORM fields
         converted_fields = []
