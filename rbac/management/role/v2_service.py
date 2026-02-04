@@ -71,6 +71,8 @@ class RoleV2Service:
         if not description or not description.strip():
             raise EmptyDescriptionError()
 
+        permissions = list(permissions)
+
         try:
             role = CustomRoleV2(
                 name=name,
@@ -84,7 +86,7 @@ class RoleV2Service:
                 "Created custom role '%s' (uuid=%s) with %d permissions for tenant %s",
                 role.name,
                 role.uuid,
-                len(list(permissions)),
+                len(permissions),
                 tenant.org_id,
             )
 

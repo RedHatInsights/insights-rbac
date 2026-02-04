@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-from management.models import Permission
+from management.permission.model import Permission, PermissionValue
 from management.role.v2_exceptions import EmptyPermissionsError, PermissionsNotFoundError
 
 
@@ -24,10 +24,6 @@ class PermissionService:
 
     def resolve(self, permission_data: list[dict]) -> list[Permission]:
         """
-        Resolve permission dictionaries to Permission model instances.
-
-        Args:
-            permission_data: List of dicts with 'application', 'resource_type', and 'operation'/'verb'
 
         Raises:
             EmptyPermissionsError: If no permissions are provided
@@ -40,11 +36,12 @@ class PermissionService:
         not_found = []
 
         for perm_dict in permission_data:
-            application = perm_dict.get("application")
-            resource_type = perm_dict.get("resource_type")
-            operation = perm_dict.get("operation") or perm_dict.get("verb")
-
-            permission_string = f"{application}:{resource_type}:{operation}"
+            perm_value = PermissionValue(
+                application=perm_dict.get("application"),
+                resource_type=perm_dict.get("resource_type"),
+                verb=perm_dict.get("operation") or perm_dict.get("verb"),
+            )
+            permission_string = perm_value.v1_string()
 
             try:
                 permission = Permission.objects.get(permission=permission_string)
