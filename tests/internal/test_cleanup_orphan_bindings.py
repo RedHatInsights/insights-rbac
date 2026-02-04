@@ -200,7 +200,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
                 subject("rbac", "role_binding", binding_id),
             )
         )
-        self.assertEqual(len(scope_binding_tuples), 1, "Scope binding tuples should be removed")
+        self.assertEqual(len(scope_binding_tuples), 1, "Scope binding tuples should not have been removed")
 
         self._expect_v2_consistent()
 
