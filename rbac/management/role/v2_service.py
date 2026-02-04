@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -21,16 +21,15 @@ from typing import Iterable
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from management.atomic_transactions import atomic
 from management.permission.model import Permission
+from management.permission.service import PermissionService
 from management.role.v2_exceptions import (
     EmptyDescriptionError,
-    EmptyPermissionsError,
-    PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
 )
 from management.role.v2_model import CustomRoleV2
-from management.atomic_transactions import atomic
 
 from api.models import Tenant
 
@@ -41,11 +40,16 @@ class RoleV2Service:
     """
     Application service for RoleV2 operations.
 
-    This service encapsulates business logic for role management.
-
     Raises domain-specific exceptions that should be caught and converted
     to HTTP-level errors by the serializer layer.
     """
+
+    def __init__(self):
+        self.permission_service = PermissionService()
+
+    def resolve_permissions(self, permission_data: list[dict]) -> list[Permission]:
+        """Delegate to PermissionService."""
+        return self.permission_service.resolve(permission_data)
 
     @atomic
     def create(
@@ -97,38 +101,3 @@ class RoleV2Service:
                 raise RoleAlreadyExistsError(name)
             logger.exception("Database error creating role '%s'", name)
             raise RoleDatabaseError()
-
-    def resolve_permissions(
-        self,
-        permission_data: list[dict],
-    ) -> list[Permission]:
-        """
-        Raises:
-            EmptyPermissionsError: If no permissions are provided
-            PermissionsNotFoundError: If any permission cannot be found
-        """
-        if not permission_data:
-            raise EmptyPermissionsError()
-
-        permissions = []
-        not_found = []
-
-        for perm_dict in permission_data:
-            application = perm_dict.get("application")
-            resource_type = perm_dict.get("resource_type")
-            # Accept both 'operation' (API/test) and 'verb' (serializer validated_data)
-            operation = perm_dict.get("operation") or perm_dict.get("verb")
-
-            # Build the V1 permission string format: app:resource:verb
-            permission_string = f"{application}:{resource_type}:{operation}"
-
-            try:
-                permission = Permission.objects.get(permission=permission_string)
-                permissions.append(permission)
-            except Permission.DoesNotExist:
-                not_found.append(permission_string)
-
-        if not_found:
-            raise PermissionsNotFoundError(not_found)
-
-        return permissions
