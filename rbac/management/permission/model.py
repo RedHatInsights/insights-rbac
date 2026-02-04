@@ -112,11 +112,18 @@ class PermissionValue:
 
         When DB column is renamed from 'verb' to 'operation', update this method.
         """
-        return cls(
-            application=data.get("application"),
-            resource_type=data.get("resource_type"),
-            verb=data.get("operation") or data.get("verb"),
-        )
+        application = data.get("application")
+        resource_type = data.get("resource_type")
+        verb = data.get("operation") or data.get("verb")
+
+        if application is None:
+            raise ValueError("application is required")
+        if resource_type is None:
+            raise ValueError("resource_type is required")
+        if verb is None:
+            raise ValueError("operation (verb) is required")
+
+        return cls(application=application, resource_type=resource_type, verb=verb)
 
     def with_verb_as_operation(self) -> dict:
         """
