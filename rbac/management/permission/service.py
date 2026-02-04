@@ -24,7 +24,6 @@ class PermissionService:
 
     def resolve(self, permission_data: list[dict]) -> list[Permission]:
         """
-
         Raises:
             EmptyPermissionsError: If no permissions are provided
             PermissionsNotFoundError: If any permission cannot be found
@@ -32,22 +31,20 @@ class PermissionService:
         if not permission_data:
             raise EmptyPermissionsError()
 
+        permission_strings = [
+            PermissionValue.with_operation_as_verb(perm_dict).v1_string() for perm_dict in permission_data
+        ]
+
+        found_permissions = Permission.objects.filter(permission__in=permission_strings)
+        found_map = {p.permission: p for p in found_permissions}
+
         permissions = []
         not_found = []
-
-        for perm_dict in permission_data:
-            perm_value = PermissionValue(
-                application=perm_dict.get("application"),
-                resource_type=perm_dict.get("resource_type"),
-                verb=perm_dict.get("operation") or perm_dict.get("verb"),
-            )
-            permission_string = perm_value.v1_string()
-
-            try:
-                permission = Permission.objects.get(permission=permission_string)
-                permissions.append(permission)
-            except Permission.DoesNotExist:
-                not_found.append(permission_string)
+        for perm in permission_strings:
+            if perm in found_map:
+                permissions.append(found_map[perm])
+            else:
+                not_found.append(perm)
 
         if not_found:
             raise PermissionsNotFoundError(not_found)

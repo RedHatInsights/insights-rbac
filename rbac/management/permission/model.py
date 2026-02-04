@@ -105,6 +105,31 @@ class PermissionValue:
         """Return the V1 representation of this permission: app:resource:verb."""
         return f"{self.application}:{self.resource_type}:{self.verb}"
 
+    @classmethod
+    def with_operation_as_verb(cls, data: dict) -> "PermissionValue":
+        """
+        Create from API dict where 'operation' maps to internal 'verb'.
+
+        When DB column is renamed from 'verb' to 'operation', update this method.
+        """
+        return cls(
+            application=data.get("application"),
+            resource_type=data.get("resource_type"),
+            verb=data.get("operation") or data.get("verb"),
+        )
+
+    def with_verb_as_operation(self) -> dict:
+        """
+        Convert to API dict where internal 'verb' maps to 'operation'.
+
+        When DB column is renamed from 'verb' to 'operation', update this method.
+        """
+        return {
+            "application": self.application,
+            "resource_type": self.resource_type,
+            "operation": self.verb,
+        }
+
 
 class Permission(TenantAwareModel):
     """A Permission."""
