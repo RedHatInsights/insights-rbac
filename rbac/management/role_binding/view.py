@@ -56,10 +56,6 @@ class RoleBindingViewSet(BaseV2ViewSet):
     )
     pagination_class = V2CursorPagination
 
-    def get_queryset(self):
-        """Get queryset override."""
-        return super().get_queryset()
-
     def list(self, request, *args, **kwargs):
         """Get a list of role bindings.
 
