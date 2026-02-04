@@ -22,7 +22,7 @@ from typing import Protocol
 
 from api.models import Tenant
 from django.db import transaction
-from internal.utils import read_tuples_from_kessel, replicate_missing_binding_tuples, iterate_tuples_from_kessel
+from internal.utils import replicate_missing_binding_tuples, iterate_tuples_from_kessel
 from management.role.model import BindingMapping
 from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
