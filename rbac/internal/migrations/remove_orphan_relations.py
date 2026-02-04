@@ -69,7 +69,7 @@ class _ReadTuplesTyped(Protocol):
     ) -> Iterable[RelationTuple]: ...
 
 
-def _make_read_tuples_typed(read_tuples) -> _ReadTuplesTyped:
+def _make_read_tuples_typed(read_tuples: Callable[[str, str, str, str, str], Iterable[dict]]) -> _ReadTuplesTyped:
     def impl(
         resource_type: str, resource_id: str, relation: str, subject_type: str, subject_id: str
     ) -> Iterable[RelationTuple]:
