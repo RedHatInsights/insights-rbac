@@ -23,11 +23,13 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
 )
+from django.test import override_settings
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_service import RoleV2Service
 from tests.identity_request import IdentityRequest
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class RoleV2ServiceTests(IdentityRequest):
     """Test the RoleV2Service domain service."""
 

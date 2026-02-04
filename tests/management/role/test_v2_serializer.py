@@ -18,6 +18,7 @@
 
 from unittest.mock import Mock
 
+from django.test import override_settings
 from rest_framework import serializers
 
 from management.models import Permission
@@ -133,6 +134,7 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
         self.assertIsNotNone(data["last_modified"])
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class RoleV2RequestSerializerTests(IdentityRequest):
     """Test the RoleV2RequestSerializer (request serializer for create/update)."""
 

@@ -14,23 +14,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Base utilities for v2 services."""
+"""Decorators for v2 services."""
 
 import functools
 
+import pgtransaction
+from django.conf import settings
 from django.db import transaction
 
 
 def atomic(func):
     """
-    Decorator to wrap service methods in a database transaction.
-
+    Decorator to wrap service methods in a SERIALIZABLE transaction.
     If already inside a transaction (e.g., from view layer), creates a savepoint.
+
+    Set ATOMIC_RETRY_DISABLED=True in settings to use standard atomic (for tests).
     """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        with transaction.atomic():
-            return func(*args, **kwargs)
+        if getattr(settings, "ATOMIC_RETRY_DISABLED", False):
+            with transaction.atomic():
+                return func(*args, **kwargs)
+        else:
+            with pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE):
+                return func(*args, **kwargs)
 
     return wrapper
