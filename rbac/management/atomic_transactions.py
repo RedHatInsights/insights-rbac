@@ -32,10 +32,7 @@ def is_atomic_disabled():
 
 
 def atomic(func):
-    """
-    Decorator to wrap service methods in a SERIALIZABLE transaction.
-    If already inside a transaction (e.g., from view layer), creates a savepoint.
-    """
+    """Wrap service methods in a SERIALIZABLE transaction."""
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):

@@ -588,6 +588,7 @@ PROBLEM_TITLES = {
 
 
 def v2response_error_from_errors(errors, exc=None, context=None):
+    """Build a ProblemDetails-formatted error response from errors."""
     detail = ""
     status_code = 0
     if errors and any(isinstance(error, dict) and "detail" in error for error in errors):

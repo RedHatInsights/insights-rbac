@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+"""Application service for Permission operations."""
 
 from management.permission.model import Permission, PermissionValue
 from management.role.v2_exceptions import EmptyPermissionsError, PermissionsNotFoundError
@@ -23,11 +24,7 @@ class PermissionService:
     """Application service for Permission operations."""
 
     def resolve(self, permission_data: list[dict]) -> list[Permission]:
-        """
-        Raises:
-            EmptyPermissionsError: If no permissions are provided
-            PermissionsNotFoundError: If any permission cannot be found
-        """
+        """Resolve permission dicts to Permission objects."""
         if not permission_data:
             raise EmptyPermissionsError()
 

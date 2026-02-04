@@ -38,6 +38,7 @@ ERROR_MAPPING = {
 
 
 class PermissionSerializer(serializers.Serializer):
+    """Serializer for permission data."""
 
     application = serializers.CharField(help_text="Application name")
     resource_type = serializers.CharField(help_text="Resource type")
@@ -45,6 +46,7 @@ class PermissionSerializer(serializers.Serializer):
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
+    """Serializer for RoleV2 API responses."""
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
@@ -72,6 +74,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
+    """Serializer for RoleV2 create/update requests."""
 
     service_class = RoleV2Service
 
@@ -87,9 +90,11 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
 
     @property
     def service(self):
+        """Return the service instance from context or create a new one."""
         return self.context.get("role_service") or self.service_class()
 
     def create(self, validated_data):
+        """Create a new RoleV2 using the service layer."""
         tenant = self.context["request"].tenant
         permission_data = validated_data.pop("permissions", [])
 

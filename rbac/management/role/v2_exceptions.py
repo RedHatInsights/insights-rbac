@@ -27,6 +27,7 @@ class RoleAlreadyExistsError(RoleV2Error):
     """Raised when attempting to create a role with a name that already exists for the tenant."""
 
     def __init__(self, name: str):
+        """Initialize with the duplicate role name."""
         self.name = name
         super().__init__(f"A role with name '{name}' already exists for this tenant.")
 
@@ -35,6 +36,7 @@ class PermissionsNotFoundError(RoleV2Error):
     """Raised when one or more permissions cannot be found."""
 
     def __init__(self, missing_permissions: list[str]):
+        """Initialize with the list of missing permission strings."""
         self.missing_permissions = missing_permissions
         super().__init__(f"The following permissions do not exist: {', '.join(missing_permissions)}")
 
@@ -43,6 +45,7 @@ class EmptyPermissionsError(RoleV2Error):
     """Raised when no permissions are provided for a role."""
 
     def __init__(self):
+        """Initialize the exception."""
         super().__init__("At least one permission is required.")
 
 
@@ -50,6 +53,7 @@ class EmptyDescriptionError(RoleV2Error):
     """Raised when description is empty or missing."""
 
     def __init__(self):
+        """Initialize the exception."""
         super().__init__("Description is required and cannot be empty.")
 
 
@@ -57,4 +61,5 @@ class RoleDatabaseError(RoleV2Error):
     """Raised when an unexpected database error occurs."""
 
     def __init__(self, message: str = "An unexpected database error occurred."):
+        """Initialize with optional custom message."""
         super().__init__(message)

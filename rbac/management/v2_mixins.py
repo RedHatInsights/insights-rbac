@@ -24,7 +24,7 @@ from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import status
 from rest_framework.response import Response
 
-from management.atomic_transactions import ISOLATION_LEVEL, is_atomic_disabled
+from management.atomic_transactions import ISOLATION_LEVEL, is_atomic_disabled  # noqa: I100, I202
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,7 @@ class AtomicOperationsMixin:
         return atomic_operation()
 
     def create(self, request, *args, **kwargs):
+        """Create with atomic transaction and concurrency handling."""
         try:
             return self._run_atomic(super().create, request, *args, **kwargs)
         except OperationalError as e:
@@ -74,6 +75,7 @@ class AtomicOperationsMixin:
             raise
 
     def update(self, request, *args, **kwargs):
+        """Update with atomic transaction and concurrency handling."""
         try:
             return self._run_atomic(super().update, request, *args, **kwargs)
         except OperationalError as e:
@@ -83,6 +85,7 @@ class AtomicOperationsMixin:
             raise
 
     def destroy(self, request, *args, **kwargs):
+        """Destroy with atomic transaction and concurrency handling."""
         try:
             return self._run_atomic(super().destroy, request, *args, **kwargs)
         except OperationalError as e:

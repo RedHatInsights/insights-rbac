@@ -45,6 +45,7 @@ class RoleV2Service:
     """
 
     def __init__(self):
+        """Initialize the service with its dependencies."""
         self.permission_service = PermissionService()
 
     def resolve_permissions(self, permission_data: list[dict]) -> list[Permission]:
@@ -59,11 +60,7 @@ class RoleV2Service:
         permissions: Iterable[Permission],
         tenant: Tenant,
     ) -> CustomRoleV2:
-        """
-        Raises:
-            RoleAlreadyExistsError: If a role with the same name exists for this tenant
-            RoleDatabaseError: If an unexpected database error occurs
-        """
+        """Create a new custom role with the given attributes."""
         # TODO: Move this validation to RoleV2 model once a migration is created
         # to change description from TextField(null=True, blank=True) to
         # TextField(null=False, blank=False). Currently enforced here because
