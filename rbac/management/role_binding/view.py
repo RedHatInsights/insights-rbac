@@ -56,6 +56,36 @@ class RoleBindingViewSet(BaseV2ViewSet):
     )
     pagination_class = V2CursorPagination
 
+    def get_queryset(self):
+        """Get queryset override."""
+        return super().get_queryset()
+
+    def list(self, request, *args, **kwargs):
+        """Get a list of role bindings.
+
+        Optional query parameters:
+            - role_id: Filter by role ID (UUID)
+            - fields: Control which fields are included in the response
+            - order_by: Sort by specified field(s), prefix with '-' for descending
+        """
+        # Validate and parse query parameters using input serializer
+        input_serializer = RoleBindingInputSerializer(data=request.query_params, context={"endpoint": "list"})
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
+
+        service = RoleBindingService(tenant=request.tenant)
+        queryset = service.get_role_bindings(validated_params)
+
+        # Build context for output serializer
+        context = {
+            "request": request,
+            "field_selection": validated_params.get("fields"),
+        }
+
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True, context=context)
+        return self.get_paginated_response(serializer.data)
+
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
         """List role bindings grouped by subject.
@@ -71,7 +101,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
         # Validate and parse query parameters using input serializer
-        input_serializer = RoleBindingInputSerializer(data=request.query_params)
+        input_serializer = RoleBindingInputSerializer(data=request.query_params, context={"endpoint": "by_subject"})
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 

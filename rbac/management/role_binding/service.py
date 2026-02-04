@@ -87,6 +87,31 @@ class RoleBindingService:
 
         return queryset
 
+    def get_role_bindings(self, params: dict) -> QuerySet:
+        """Get role bindings from a dictionary of parameters.
+
+        Args:
+            params: Dictionary of validated query parameters (from input serializer)
+                - role_id: Optional UUID to filter by role
+
+        Returns:
+            QuerySet of RoleBinding objects
+
+        Note:
+            Ordering is handled by V2CursorPagination.get_ordering() to ensure
+            cursor pagination works correctly with the requested order_by parameter.
+        """
+        role_id = params.get("role_id")
+
+        # Build base queryset for RoleBinding objects
+        queryset = RoleBinding.objects.filter(tenant=self.tenant).select_related("role")
+
+        # Apply optional role_id filter
+        if role_id:
+            queryset = queryset.filter(role__uuid=role_id)
+
+        return queryset
+
     def get_resource_name(self, resource_id: str, resource_type: str) -> Optional[str]:
         """Get the name of a resource by ID and type.
 

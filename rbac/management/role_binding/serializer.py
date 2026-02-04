@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from management.models import Group
-from management.role.v2_model import RoleV2
+from management.role.v2_model import RoleBinding, RoleV2
 from rest_framework import serializers
 
 
@@ -154,18 +154,28 @@ class FieldSelection:
 class RoleBindingInputSerializer(serializers.Serializer):
     """Input serializer for role binding query parameters.
 
-    Handles validation of query parameters for the role binding API.
+    Handles validation of query parameters for both:
+    - GET /role-bindings/ (list endpoint)
+    - GET /role-bindings/by-subject/ (by-subject endpoint)
+
+    Use context={'endpoint': 'by_subject'} to enforce resource_id/resource_type requirements.
     """
 
-    resource_id = serializers.CharField(required=True, help_text="Filter by resource ID")
-    resource_type = serializers.CharField(required=True, help_text="Filter by resource type")
+    # List endpoint parameters
+    role_id = serializers.UUIDField(required=False, allow_null=True, help_text="Filter by role ID")
+
+    # By-subject endpoint parameters (required when endpoint='by_subject')
+    resource_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by resource ID")
+    resource_type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject type")
     subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
-    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
-    order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
     parent_role_bindings = serializers.BooleanField(
         required=False, allow_null=True, help_text="Include role bindings inherited from parent resources"
     )
+
+    # Common parameters
+    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+    order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
 
     def to_internal_value(self, data):
         """Sanitize input data by stripping NUL bytes before field validation."""
@@ -174,19 +184,33 @@ class RoleBindingInputSerializer(serializers.Serializer):
         }
         return super().to_internal_value(sanitized)
 
+    def validate(self, attrs):
+        """Validate fields based on endpoint context."""
+        endpoint = self.context.get("endpoint")
+
+        if endpoint == "by_subject":
+            if not attrs.get("resource_id"):
+                raise serializers.ValidationError(
+                    {"resource_id": "resource_id is required to identify the resource for role bindings."}
+                )
+            if not attrs.get("resource_type"):
+                raise serializers.ValidationError(
+                    {"resource_type": "resource_type is required to specify the type of resource (e.g., 'workspace')."}
+                )
+
+        return attrs
+
+    def validate_role_id(self, value):
+        """Return None for empty values."""
+        return value or None
+
     def validate_resource_id(self, value):
-        """Validate resource_id is provided."""
-        if not value:
-            raise serializers.ValidationError("resource_id is required to identify the resource for role bindings.")
-        return value
+        """Return None for empty values."""
+        return value or None
 
     def validate_resource_type(self, value):
-        """Validate resource_type is provided."""
-        if not value:
-            raise serializers.ValidationError(
-                "resource_type is required to specify the type of resource (e.g., 'workspace')."
-            )
-        return value
+        """Return None for empty values."""
+        return value or None
 
     def validate_subject_type(self, value):
         """Return None for empty values."""
@@ -215,10 +239,11 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
 
 class RoleBindingOutputSerializer(serializers.Serializer):
-    """Serializer for role bindings by group.
+    """Serializer for role bindings.
 
-    This serializer formats Group objects that have been annotated with
-    role binding information via the service layer.
+    Handles both:
+    - RoleBinding objects (list endpoint): returns {role, subject, resource}
+    - Group objects (by-subject endpoint): returns {roles, subject, resource, last_modified}
 
     Supports dynamic field selection through the 'field_selection' context parameter.
     Fields are accessed directly on the model using dot notation from the query parameter.
@@ -227,11 +252,12 @@ class RoleBindingOutputSerializer(serializers.Serializer):
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name, description) - accesses role.name, role.description
     - resource(name, type) - accesses resource name and type from context
-    - last_modified - include root-level field
+    - last_modified - include root-level field (by-subject only)
     """
 
     last_modified = serializers.SerializerMethodField()
     subject = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
 
@@ -239,27 +265,40 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         """Get field selection from context."""
         return self.context.get("field_selection")
 
-    def to_representation(self, instance):
-        """Override to support field selection.
+    def _is_role_binding(self, instance):
+        """Check if instance is a RoleBinding object."""
+        return isinstance(instance, RoleBinding)
 
-        Default (no fields param): Returns only basic required fields.
-        With fields param: Only explicitly requested fields are included,
-        except subject.type which is always included.
+    def to_representation(self, instance):
+        """Override to support field selection and different object types.
+
+        For RoleBinding objects (list endpoint):
+            Returns {role, subject, resource}
+        For Group objects (by-subject endpoint):
+            Returns {roles, subject, resource} plus last_modified if requested
         """
         ret = super().to_representation(instance)
 
         field_selection = self._get_field_selection()
 
-        # Base response always includes core objects
-        filtered = {
-            "subject": ret.get("subject"),
-            "roles": ret.get("roles"),
-            "resource": ret.get("resource"),
-        }
+        if self._is_role_binding(instance):
+            # List endpoint: RoleBinding objects
+            filtered = {
+                "role": ret.get("role"),
+                "subject": ret.get("subject"),
+                "resource": ret.get("resource"),
+            }
+        else:
+            # By-subject endpoint: Group objects
+            filtered = {
+                "subject": ret.get("subject"),
+                "roles": ret.get("roles"),
+                "resource": ret.get("resource"),
+            }
 
-        # Include last_modified only if explicitly requested
-        if field_selection and "last_modified" in field_selection.root_fields:
-            filtered["last_modified"] = ret.get("last_modified")
+            # Include last_modified only if explicitly requested
+            if field_selection and "last_modified" in field_selection.root_fields:
+                filtered["last_modified"] = ret.get("last_modified")
 
         return filtered
 
@@ -270,16 +309,38 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         return getattr(obj, "latest_modified", None)
 
     def get_subject(self, obj):
-        """Extract subject information from the Group.
+        """Extract subject information.
+
+        For RoleBinding: gets subject from bound groups.
+        For Group: gets subject from the Group object itself.
 
         Default (no fields param): Returns only id and type.
         With fields param: Only type is always included. Other fields
         (including id) are only included if explicitly requested.
         """
+        field_selection = self._get_field_selection()
+
+        # Handle RoleBinding objects
+        if self._is_role_binding(obj):
+            # Get the first group from the binding
+            group = obj.bound_groups().first()
+            if not group:
+                return {"type": "group"}
+
+            if field_selection is None:
+                return {
+                    "id": group.uuid,
+                    "type": "group",
+                }
+
+            subject = {"type": "group"}
+            if "id" in field_selection.subject_fields:
+                subject["id"] = group.uuid
+            return subject
+
+        # Handle Group objects
         if not isinstance(obj, Group):
             return None
-
-        field_selection = self._get_field_selection()
 
         # Default behavior: only basic fields
         if field_selection is None:
@@ -340,8 +401,20 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
         return role_data
 
+    def get_role(self, obj):
+        """Extract role information from a RoleBinding (list endpoint only).
+
+        Default (no fields param): Returns only role id.
+        With fields param: id is always included, plus explicitly requested fields.
+        """
+        if not self._is_role_binding(obj) or not obj.role:
+            return None
+
+        field_selection = self._get_field_selection()
+        return self._build_role_data(obj.role, field_selection)
+
     def get_roles(self, obj):
-        """Extract roles from the prefetched role bindings.
+        """Extract roles from the prefetched role bindings (by-subject endpoint only).
 
         Default (no fields param): Returns only role id.
         With fields param: id is always included, plus explicitly requested fields.
@@ -352,7 +425,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             return obj.get("roles", [])
 
         if not isinstance(obj, Group) or not hasattr(obj, "filtered_bindings"):
-            return []
+            return None
 
         field_selection = self._get_field_selection()
 
@@ -389,24 +462,36 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         return roles
 
     def get_resource(self, obj):
-        """Extract resource information from the request context.
+        """Extract resource information.
+
+        For RoleBinding: gets resource from the object itself.
+        For Group: gets resource from the request context.
 
         Default (no fields param): Returns only resource id.
         With fields param: id is always included, plus explicitly requested fields.
-        Returns None if context has no resource information.
         """
         if isinstance(obj, dict):
             return obj.get("resource", {})
 
-        # Check if context has any resource information
+        field_selection = self._get_field_selection()
+
+        # Handle RoleBinding objects
+        if self._is_role_binding(obj):
+            resource_data = {"id": obj.resource_id}
+
+            if field_selection is not None:
+                if "type" in field_selection.resource_fields:
+                    resource_data["type"] = obj.resource_type
+
+            return resource_data
+
+        # Handle Group objects - get resource from context
         resource_id = self.context.get("resource_id")
         resource_name = self.context.get("resource_name")
         resource_type = self.context.get("resource_type")
 
         if not any([resource_id, resource_name, resource_type]):
             return None
-
-        field_selection = self._get_field_selection()
 
         # id is always included
         resource_data = {"id": resource_id}
