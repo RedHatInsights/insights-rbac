@@ -16,9 +16,8 @@
 #
 """Serializers for RoleV2 API."""
 
+from management.exceptions import RequiredFieldError
 from management.role.v2_exceptions import (
-    EmptyDescriptionError,
-    EmptyPermissionsError,
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
@@ -30,8 +29,6 @@ from rest_framework import serializers
 
 # Centralized mapping from domain exceptions to API error fields
 ERROR_MAPPING = {
-    EmptyDescriptionError: "description",
-    EmptyPermissionsError: "permissions",
     InvalidRolePermissionsError: "permissions",
     PermissionsNotFoundError: "permissions",
     RoleAlreadyExistsError: "name",
@@ -123,6 +120,8 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
                 permission_data=permission_data,
                 tenant=tenant,
             )
+        except RequiredFieldError as e:
+            raise serializers.ValidationError({e.field_name: str(e)})
         except tuple(ERROR_MAPPING.keys()) as e:
             field = ERROR_MAPPING[type(e)]
             raise serializers.ValidationError({field: str(e)})

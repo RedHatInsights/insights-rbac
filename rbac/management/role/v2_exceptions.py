@@ -41,22 +41,6 @@ class PermissionsNotFoundError(RoleV2Error):
         super().__init__(f"The following permissions do not exist: {', '.join(missing_permissions)}")
 
 
-class EmptyPermissionsError(RoleV2Error):
-    """Raised when no permissions are provided for a role."""
-
-    def __init__(self):
-        """Initialize the exception."""
-        super().__init__("At least one permission is required.")
-
-
-class EmptyDescriptionError(RoleV2Error):
-    """Raised when description is empty or missing."""
-
-    def __init__(self):
-        """Initialize the exception."""
-        super().__init__("Description is required and cannot be empty.")
-
-
 class RoleDatabaseError(RoleV2Error):
     """Raised when an unexpected database error occurs."""
 

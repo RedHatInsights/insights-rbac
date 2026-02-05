@@ -16,12 +16,10 @@
 #
 """Test the RoleV2Service domain service."""
 
-from management.models import Permission
-from management.role.v2_exceptions import (
-    EmptyDescriptionError,
-    RoleAlreadyExistsError,
-)
 from django.test import override_settings
+from management.exceptions import RequiredFieldError
+from management.models import Permission
+from management.role.v2_exceptions import RoleAlreadyExistsError
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_service import RoleV2Service
 from tests.identity_request import IdentityRequest
@@ -99,12 +97,12 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertIn(self.permission3, role.permissions.all())
 
     def test_create_role_with_empty_description_raises_error(self):
-        """Test that creating a role with empty description raises EmptyDescriptionError."""
+        """Test that creating a role with empty description raises RequiredFieldError."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(EmptyDescriptionError):
+        with self.assertRaises(RequiredFieldError) as context:
             self.service.create(
                 name="No Description Role",
                 description="",
@@ -112,19 +110,51 @@ class RoleV2ServiceTests(IdentityRequest):
                 tenant=self.tenant,
             )
 
+        self.assertEqual(context.exception.field_name, "description")
+
     def test_create_role_with_whitespace_only_description_raises_error(self):
-        """Test that whitespace-only description raises EmptyDescriptionError."""
+        """Test that whitespace-only description raises RequiredFieldError."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(EmptyDescriptionError):
+        with self.assertRaises(RequiredFieldError) as context:
             self.service.create(
                 name="Whitespace Description Role",
                 description="   ",
                 permission_data=permission_data,
                 tenant=self.tenant,
             )
+
+        self.assertEqual(context.exception.field_name, "description")
+
+    def test_create_role_with_empty_permissions_raises_error(self):
+        """Test that creating a role with empty permissions raises RequiredFieldError."""
+        with self.assertRaises(RequiredFieldError) as context:
+            self.service.create(
+                name="Empty Permissions Role",
+                description="Valid description",
+                permission_data=[],
+                tenant=self.tenant,
+            )
+
+        self.assertEqual(context.exception.field_name, "permissions")
+
+    def test_create_role_with_missing_name_raises_error(self):
+        """Test that creating a role with blank name raises RequiredFieldError."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        with self.assertRaises(RequiredFieldError) as context:
+            self.service.create(
+                name="",
+                description="Valid description",
+                permission_data=permission_data,
+                tenant=self.tenant,
+            )
+
+        self.assertEqual(context.exception.field_name, "name")
 
     def test_create_role_with_duplicate_name_raises_error(self):
         """Test that creating a role with a duplicate name raises RoleAlreadyExistsError."""

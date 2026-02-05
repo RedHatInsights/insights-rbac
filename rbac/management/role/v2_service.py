@@ -26,8 +26,6 @@ from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
 from management.role.v2_exceptions import (
-    EmptyDescriptionError,
-    EmptyPermissionsError,
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
@@ -66,10 +64,10 @@ class RoleV2Service:
         # TextField(null=False, blank=False). Currently enforced here because
         # the API requires description but the model doesn't yet.
         if not description or not description.strip():
-            raise EmptyDescriptionError()
+            raise RequiredFieldError("description")
 
         if not permission_data:
-            raise EmptyPermissionsError()
+            raise RequiredFieldError("permissions")
 
         try:
             permissions = self.permission_service.resolve(permission_data)
