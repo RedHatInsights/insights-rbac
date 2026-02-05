@@ -1,0 +1,26 @@
+#
+# Copyright 2026 Red Hat, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+"""Shared domain exceptions for the management module."""
+
+
+class RequiredFieldError(Exception):
+    """Raised when a required field is missing."""
+
+    def __init__(self, field_name: str):
+        """Initialize with the missing field name."""
+        super().__init__(f"{field_name} is required")
+        self.field_name = field_name
