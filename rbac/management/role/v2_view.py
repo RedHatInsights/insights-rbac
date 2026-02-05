@@ -25,7 +25,6 @@ from management.role.v2_exceptions import RoleNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleV2ResponseSerializer
 from management.role.v2_service import RoleV2Service
-from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import serializers
 from rest_framework.response import Response
 
@@ -43,7 +42,7 @@ VALID_ROLE_FIELDS = {
 }
 
 
-class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
+class RoleV2ViewSet(BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
     permission_classes = (RoleAccessPermission,)
@@ -100,7 +99,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         # Only apply field filtering for retrieve and list actions
         if self.action in ("retrieve", "list"):
-            fields_param = self.request.query_params.get("fields", DEFAULT_ROLE_FIELD_MASK)
+            fields_param = self._validate_and_get_fields_param(self.request)
             context["fields"] = fields_param
 
         return context

@@ -37,12 +37,12 @@ class RoleV2Service:
     to HTTP-level errors by the view layer.
     """
 
-    def __init__(self, tenant: Tenant | None = None):
+    def __init__(self, tenant: Tenant):
         """
-        Initialize the service with an optional tenant.
+        Initialize the service with a tenant.
 
         Args:
-            tenant: The tenant context for operations. Required for get_role.
+            tenant: The tenant context for operations.
         """
         self.tenant = tenant
 
@@ -58,11 +58,7 @@ class RoleV2Service:
 
         Raises:
             RoleNotFoundError: If role not found for this tenant
-            ValueError: If tenant is not set
         """
-        if not self.tenant:
-            raise ValueError("Tenant must be set to retrieve a role")
-
         try:
             role = RoleV2.objects.filter(tenant=self.tenant, uuid=uuid).prefetch_related("permissions").get()
             logger.debug(f"Retrieved role {uuid} for tenant {self.tenant.org_id}")

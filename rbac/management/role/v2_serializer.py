@@ -67,4 +67,4 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
 
     def get_permissions_count(self, obj):
         """Get the count of permissions for the role."""
-        return obj.permissions.count()
+        return len(obj.permissions.all())
