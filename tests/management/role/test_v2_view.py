@@ -69,7 +69,7 @@ class RoleV2ViewSetTests(IdentityRequest):
     # ==========================================================================
 
     def test_create_role_success(self):
-        """Test creating a role via API returns 201."""
+        """Test creating a role via API returns 201 """
         data = {
             "name": "API Test Role",
             "description": "Created via API",
@@ -82,8 +82,14 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.data["name"], "API Test Role")
         self.assertIn("id", response.data)
 
+        # Verify permissions are returned in response
+        self.assertEqual(
+            response.data["permissions"],
+            [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        )
+
     def test_create_role_multiple_permissions(self):
-        """Test creating a role with multiple permissions."""
+        """Test creating a role with multiple permissions returns all permissions."""
         data = {
             "name": "Multi Permission API Role",
             "description": "Has multiple permissions",
@@ -96,7 +102,15 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(len(response.data["permissions"]), 2)
+
+        # Verify permissions match (order-independent)
+        self.assertCountEqual(
+            response.data["permissions"],
+            [
+                {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+            ],
+        )
 
     def test_create_role_missing_name_returns_400(self):
         """Test that missing name returns 400."""

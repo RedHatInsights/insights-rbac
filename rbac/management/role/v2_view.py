@@ -22,6 +22,7 @@ from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
+from rest_framework.response import Response
 
 
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
@@ -41,8 +42,8 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""
-        response = super().create(request, *args, **kwargs)
-        if response.status_code == status.HTTP_201_CREATED:
-            role = RoleV2.objects.prefetch_related("permissions").get(uuid=response.data["id"])
-            response.data = RoleV2ResponseSerializer(role).data
-        return response
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = serializer.save()
+        response_data = RoleV2ResponseSerializer(role).data
+        return Response(response_data, status=status.HTTP_201_CREATED)
