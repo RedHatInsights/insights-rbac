@@ -35,7 +35,7 @@ class RoleV2Service:
 
     def list(self, params: dict) -> QuerySet:
         """Get a list of roles for the tenant."""
-        queryset = RoleV2.objects.filter(tenant=self.tenant).order_by("name", "-modified")
+        queryset = RoleV2.objects.filter(tenant=self.tenant)
 
         name = params.get("name")
         if name:
@@ -49,7 +49,3 @@ class RoleV2Service:
                 queryset = queryset.prefetch_related("permissions")
 
         return queryset
-
-    def build_context(self, params: dict) -> dict:
-        """Build serializer context."""
-        return {"field_selection": params.get("fields")}

@@ -28,6 +28,7 @@ from .v2_service import RoleV2Service
 class RoleV2CursorPagination(V2CursorPagination):
     """Cursor pagination for roles."""
 
+    ordering = "name"
     FIELD_MAPPING = {"name": "name", "last_modified": "modified"}
 
     def _convert_order_field(self, field: str) -> str | None:
@@ -69,7 +70,7 @@ class RoleV2ViewSet(BaseV2ViewSet):
         # Build context for output serializer
         context = {
             "request": request,
-            **service.build_context(params),
+            "field_selection": params.get("fields"),
         }
 
         page = self.paginate_queryset(queryset)
