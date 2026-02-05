@@ -930,15 +930,6 @@ class RoleBindingViewSetTest(IdentityRequest):
 class DefaultBindingsAPITests(TestCase):
     """Test lazy creation of default role bindings via API calls."""
 
-    @classmethod
-    def setUpClass(cls):
-        """Set up test fixtures once for all tests in this class."""
-        super().setUpClass()
-        # Seed platform roles and default groups (required for default bindings)
-        # This must be in setUpClass so the data is committed before tests run
-        seed_roles()
-        seed_group()
-
     def setUp(self):
         """Set up test data for each test."""
         super().setUp()
@@ -948,6 +939,11 @@ class DefaultBindingsAPITests(TestCase):
         # Clear caches to ensure fresh state - other tests might have modified these
         GlobalPolicyIdService.clear_shared()
         Tenant._public_tenant = None  # Clear the public tenant cache
+
+        # Seed platform roles and default groups (required for default bindings)
+        # Moved to setUp() instead of setUpClass() to avoid race conditions in parallel test execution
+        seed_roles()
+        seed_group()
 
         # Use V2 bootstrap to create tenant with TenantMapping
         # Use a unique org_id to avoid conflicts when running tests in parallel
