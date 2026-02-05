@@ -14,18 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Application service for Permission operations."""
-
-from management.permission.model import Permission, PermissionValue
+"""Shared domain exceptions for the management module."""
 
 
-class PermissionService:
-    """Application service for Permission operations."""
+class RequiredFieldError(Exception):
+    """Raised when a required field is missing."""
 
-    def resolve(self, permission_data: list[dict]) -> list[Permission]:
-        """Resolve permission dicts to Permission objects."""
-        if not permission_data:
-            return []
-
-        permission_strings = [PermissionValue.from_v2_dict(perm_dict).v1_string() for perm_dict in permission_data]
-        return list(Permission.objects.filter(permission__in=permission_strings))
+    def __init__(self, field_name: str):
+        """Initialize with the missing field name."""
+        super().__init__(f"{field_name} is required")
+        self.field_name = field_name

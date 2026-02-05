@@ -14,18 +14,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Application service for Permission operations."""
+"""Domain exceptions for Permission operations."""
 
-from management.permission.model import Permission, PermissionValue
+from management.exceptions import RequiredFieldError
+
+__all__ = ["PermissionError", "InvalidPermissionDataError", "RequiredFieldError"]
 
 
-class PermissionService:
-    """Application service for Permission operations."""
+class PermissionError(Exception):
+    """Base exception for Permission domain errors."""
 
-    def resolve(self, permission_data: list[dict]) -> list[Permission]:
-        """Resolve permission dicts to Permission objects."""
-        if not permission_data:
-            return []
+    pass
 
-        permission_strings = [PermissionValue.from_v2_dict(perm_dict).v1_string() for perm_dict in permission_data]
-        return list(Permission.objects.filter(permission__in=permission_strings))
+
+class InvalidPermissionDataError(PermissionError):
+    """Raised when permission data is malformed (e.g., conflicting fields)."""
+
+    def __init__(self, message: str):
+        """Initialize with the validation error message."""
+        super().__init__(message)

@@ -21,9 +21,15 @@ import logging
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from management.atomic_transactions import atomic
+from management.exceptions import RequiredFieldError
+from management.permission.exceptions import InvalidPermissionDataError
+from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
 from management.role.v2_exceptions import (
     EmptyDescriptionError,
+    EmptyPermissionsError,
+    InvalidRolePermissionsError,
+    PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
 )
@@ -62,7 +68,19 @@ class RoleV2Service:
         if not description or not description.strip():
             raise EmptyDescriptionError()
 
-        permissions = self.permission_service.resolve(permission_data)
+        if not permission_data:
+            raise EmptyPermissionsError()
+
+        try:
+            permissions = self.permission_service.resolve(permission_data)
+            requested = {PermissionValue.from_v2_dict(p).v1_string() for p in permission_data}
+        except (InvalidPermissionDataError, RequiredFieldError) as e:
+            raise InvalidRolePermissionsError(str(e))
+
+        found = {p.permission for p in permissions}
+        not_found = requested - found
+        if not_found:
+            raise PermissionsNotFoundError(list(not_found))
 
         try:
             role = CustomRoleV2(

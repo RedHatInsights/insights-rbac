@@ -17,9 +17,9 @@
 """Tests for PermissionService."""
 
 from django.test import override_settings
+from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import Permission
 from management.permission.service import PermissionService
-from management.role.v2_exceptions import EmptyPermissionsError, PermissionsNotFoundError
 from tests.identity_request import IdentityRequest
 
 
@@ -76,10 +76,37 @@ class PermissionServiceTests(IdentityRequest):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0], self.permission1)
 
-    def test_resolve_operation_takes_precedence_over_verb(self):
-        """Test that 'operation' takes precedence when both keys are present."""
+    def test_resolve_both_operation_and_verb_raises_error(self):
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read", "verb": "write"},
+        ]
+
+        with self.assertRaises(InvalidPermissionDataError) as context:
+            self.service.resolve(permission_data)
+
+        self.assertIn("Cannot specify both", str(context.exception))
+
+    def test_resolve_empty_list_returns_empty(self):
+        """Test that empty permission list returns empty list."""
+        result = self.service.resolve([])
+
+        self.assertEqual(result, [])
+
+    def test_resolve_not_found_returns_empty(self):
+        """Test that non-existent permissions return empty list."""
+        permission_data = [
+            {"application": "nonexistent", "resource_type": "foo", "operation": "bar"},
+        ]
+
+        result = self.service.resolve(permission_data)
+
+        self.assertEqual(result, [])
+
+    def test_resolve_partial_returns_only_found(self):
+        """Test that only found permissions are returned."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            {"application": "nonexistent", "resource_type": "foo", "operation": "bar"},
         ]
 
         result = self.service.resolve(permission_data)
@@ -87,36 +114,8 @@ class PermissionServiceTests(IdentityRequest):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0], self.permission1)
 
-    def test_resolve_empty_list_raises_error(self):
-        """Test that empty permission list raises EmptyPermissionsError."""
-        with self.assertRaises(EmptyPermissionsError):
-            self.service.resolve([])
-
-    def test_resolve_not_found_raises_error(self):
-        """Test that non-existent permission raises PermissionsNotFoundError."""
-        permission_data = [
-            {"application": "nonexistent", "resource_type": "foo", "operation": "bar"},
-        ]
-
-        with self.assertRaises(PermissionsNotFoundError) as context:
-            self.service.resolve(permission_data)
-
-        self.assertIn("nonexistent:foo:bar", str(context.exception))
-
-    def test_resolve_partial_not_found_raises_error(self):
-        """Test that if some permissions exist and some don't, it raises error with missing ones."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-            {"application": "nonexistent", "resource_type": "foo", "operation": "bar"},
-        ]
-
-        with self.assertRaises(PermissionsNotFoundError) as context:
-            self.service.resolve(permission_data)
-
-        self.assertIn("nonexistent:foo:bar", str(context.exception))
-        self.assertNotIn("inventory:hosts:read", str(context.exception))
-
-    def test_resolve_returns_all_requested(self):
+    def test_resolve_returns_all_found(self):
+        """Test that all found permissions are returned."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "write"},
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},

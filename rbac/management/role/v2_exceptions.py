@@ -63,3 +63,11 @@ class RoleDatabaseError(RoleV2Error):
     def __init__(self, message: str = "An unexpected database error occurred."):
         """Initialize with optional custom message."""
         super().__init__(message)
+
+
+class InvalidRolePermissionsError(RoleV2Error):
+    """Raised when permission data for a role is malformed or invalid."""
+
+    def __init__(self, message: str):
+        """Initialize with the validation error message."""
+        super().__init__(message)

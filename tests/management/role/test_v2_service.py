@@ -19,8 +19,6 @@
 from management.models import Permission
 from management.role.v2_exceptions import (
     EmptyDescriptionError,
-    EmptyPermissionsError,
-    PermissionsNotFoundError,
     RoleAlreadyExistsError,
 )
 from django.test import override_settings
@@ -186,92 +184,3 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
-
-    # ==========================================================================
-    # Tests for PermissionService.resolve()
-    # ==========================================================================
-
-    def test_resolve_permissions_single(self):
-        """Test resolving a single permission."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-        ]
-
-        permissions = self.service.permission_service.resolve(permission_data)
-
-        self.assertEqual(len(permissions), 1)
-        self.assertEqual(permissions[0], self.permission1)
-
-    def test_resolve_permissions_multiple(self):
-        """Test resolving multiple permissions."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
-            {"application": "cost", "resource_type": "reports", "operation": "read"},
-        ]
-
-        permissions = self.service.permission_service.resolve(permission_data)
-
-        self.assertEqual(len(permissions), 3)
-        self.assertIn(self.permission1, permissions)
-        self.assertIn(self.permission2, permissions)
-        self.assertIn(self.permission3, permissions)
-
-    def test_resolve_permissions_empty_raises_error(self):
-        """Test that empty permission list raises EmptyPermissionsError."""
-        with self.assertRaises(EmptyPermissionsError):
-            self.service.permission_service.resolve([])
-
-    def test_resolve_permissions_not_found_raises_error(self):
-        """Test that non-existent permission raises PermissionsNotFoundError."""
-        permission_data = [
-            {"application": "nonexistent", "resource_type": "resource", "operation": "action"},
-        ]
-
-        with self.assertRaises(PermissionsNotFoundError) as cm:
-            self.service.permission_service.resolve(permission_data)
-
-        self.assertIn("nonexistent:resource:action", str(cm.exception))
-        self.assertIn("nonexistent:resource:action", cm.exception.missing_permissions)
-
-    def test_resolve_permissions_partial_not_found_raises_error(self):
-        """Test that if some permissions are found and some are not, it raises PermissionsNotFoundError."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},  # exists
-            {"application": "nonexistent", "resource_type": "resource", "operation": "action"},  # doesn't exist
-        ]
-
-        with self.assertRaises(PermissionsNotFoundError) as cm:
-            self.service.permission_service.resolve(permission_data)
-
-        self.assertIn("nonexistent:resource:action", cm.exception.missing_permissions)
-        # Should only contain the one that doesn't exist
-        self.assertEqual(len(cm.exception.missing_permissions), 1)
-
-    def test_resolve_permissions_multiple_not_found(self):
-        """Test that multiple non-existent permissions are all reported."""
-        permission_data = [
-            {"application": "fake1", "resource_type": "r1", "operation": "op1"},
-            {"application": "fake2", "resource_type": "r2", "operation": "op2"},
-        ]
-
-        with self.assertRaises(PermissionsNotFoundError) as cm:
-            self.service.permission_service.resolve(permission_data)
-
-        self.assertEqual(len(cm.exception.missing_permissions), 2)
-        self.assertIn("fake1:r1:op1", cm.exception.missing_permissions)
-        self.assertIn("fake2:r2:op2", cm.exception.missing_permissions)
-
-    def test_resolve_permissions_returns_all_requested(self):
-        """Test that all requested permissions are returned."""
-        permission_data = [
-            {"application": "cost", "resource_type": "reports", "operation": "read"},
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
-        ]
-
-        permissions = self.service.permission_service.resolve(permission_data)
-
-        # Order is not guaranteed - view layer handles presentation order
-        self.assertEqual(len(permissions), 3)
-        self.assertCountEqual(permissions, [self.permission1, self.permission2, self.permission3])

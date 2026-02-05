@@ -19,6 +19,7 @@
 from management.role.v2_exceptions import (
     EmptyDescriptionError,
     EmptyPermissionsError,
+    InvalidRolePermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
@@ -31,6 +32,7 @@ from rest_framework import serializers
 ERROR_MAPPING = {
     EmptyDescriptionError: "description",
     EmptyPermissionsError: "permissions",
+    InvalidRolePermissionsError: "permissions",
     PermissionsNotFoundError: "permissions",
     RoleAlreadyExistsError: "name",
     RoleDatabaseError: "detail",
