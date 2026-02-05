@@ -16,16 +16,13 @@
 #
 """View for RoleV2 management."""
 
-from django.db.models import Count
-from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
-from management.role_binding.serializer import FieldSelectionValidationError
-from rest_framework import serializers
 
 from api.common.pagination import V2CursorPagination
 from .v2_model import RoleV2
-from .v2_serializer import RoleFieldSelection, RoleSerializer
+from .v2_serializer import RoleV2InputSerializer, RoleV2ResponseSerializer
+from .v2_service import RoleV2Service
 
 
 class RoleV2CursorPagination(V2CursorPagination):
@@ -52,32 +49,29 @@ class RoleV2CursorPagination(V2CursorPagination):
 
 
 class RoleV2ViewSet(BaseV2ViewSet):
-    """V2 Role ViewSet."""
+    """RoleV2 ViewSet."""
 
     queryset = RoleV2.objects.all()
-    serializer_class = RoleSerializer
     permission_classes = (RoleAccessPermission,)
+    serializer_class = RoleV2ResponseSerializer
     pagination_class = RoleV2CursorPagination
-    filter_backends = (filters.DjangoFilterBackend,)
-    filterset_fields = {"name": ["exact"]}
-
-    def get_queryset(self):
-        """Return queryset based on requested fields."""
-        queryset = super().get_queryset()
-
-        try:
-            field_selection = RoleFieldSelection.parse(self.request.query_params.get("fields"))
-        except FieldSelectionValidationError as e:
-            raise serializers.ValidationError(e.message)
-
-        if field_selection:
-            if "permissions_count" in field_selection.root_fields:
-                queryset = queryset.annotate(permissions_count_annotation=Count("permissions", distinct=True))
-            if "permissions" in field_selection.root_fields:
-                queryset = queryset.prefetch_related("permissions")
-
-        return queryset
+    http_method_names = ["get"]
 
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
-        return super().list(request, *args, **kwargs)
+        input_serializer = RoleV2InputSerializer(data=request.query_params)
+        input_serializer.is_valid(raise_exception=True)
+        params = input_serializer.validated_data
+
+        service = RoleV2Service(tenant=request.tenant)
+        queryset = service.list(params)
+
+        # Build context for output serializer
+        context = {
+            "request": request,
+            **service.build_context(params),
+        }
+
+        page = self.paginate_queryset(queryset)
+        serializer = RoleV2ResponseSerializer(page, many=True, context=context)
+        return self.get_paginated_response(serializer.data)
