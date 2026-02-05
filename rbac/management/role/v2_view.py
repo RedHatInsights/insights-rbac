@@ -28,29 +28,16 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
     permission_classes = (RoleAccessPermission,)
-    queryset = RoleV2.objects.all()
+    queryset = RoleV2.objects.none()
     serializer_class = RoleV2ResponseSerializer
     lookup_field = "uuid"
-    http_method_names = ["get", "post", "put", "delete", "head", "options"]
+    http_method_names = ["post", "head", "options"]
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
-        if self.action in ("create", "update"):
+        if self.action == "create":
             return RoleV2RequestSerializer
         return RoleV2ResponseSerializer
-
-    def get_queryset(self):
-        """Return the filtered queryset for the current tenant."""
-        base_qs = (
-            RoleV2.objects.filter(tenant=self.request.tenant)
-            .prefetch_related("permissions")
-            .order_by("name", "-modified")
-        )
-
-        if self.action in ("list", "retrieve"):
-            return base_qs
-        else:
-            return base_qs.filter(type=RoleV2.Types.CUSTOM)
 
     def create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""

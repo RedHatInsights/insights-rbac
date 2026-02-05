@@ -25,7 +25,7 @@ from rest_framework.test import APIClient
 
 from management import v2_urls
 from management.models import Permission
-from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2
 from rbac import urls
 from tests.identity_request import IdentityRequest
 
@@ -224,69 +224,3 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("last_modified", response.data)
         # permissions_count not included until field masking is implemented
 
-    # ==========================================================================
-    # Tests for GET /api/v2/roles/ (list)
-    # ==========================================================================
-
-    def test_list_roles_empty(self):
-        """Test listing roles when none exist."""
-        response = self.client.get(self.url)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 0)
-
-    def test_list_roles_returns_all_types(self):
-        """Test that list returns all role types (custom, seeded, platform)."""
-        # Create different role types
-        CustomRoleV2.objects.create(
-            name="Custom Role",
-            description="Custom",
-            tenant=self.tenant,
-        )
-        SeededRoleV2.objects.create(
-            name="Seeded Role",
-            description="Seeded",
-            tenant=self.tenant,
-        )
-        PlatformRoleV2.objects.create(
-            name="Platform Role",
-            description="Platform",
-            tenant=self.tenant,
-        )
-
-        response = self.client.get(self.url)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 3)
-
-        role_names = [r["name"] for r in response.data["data"]]
-        self.assertIn("Custom Role", role_names)
-        self.assertIn("Seeded Role", role_names)
-        self.assertIn("Platform Role", role_names)
-
-    # ==========================================================================
-    # Tests for GET /api/v2/roles/{uuid}/ (retrieve)
-    # ==========================================================================
-
-    def test_retrieve_role_success(self):
-        """Test retrieving a single role by UUID."""
-        role = CustomRoleV2.objects.create(
-            name="Retrieve Test",
-            description="Test retrieve",
-            tenant=self.tenant,
-        )
-        role.permissions.add(self.permission1)
-
-        url = reverse("v2_management:roles-detail", args=[str(role.uuid)])
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["name"], "Retrieve Test")
-        self.assertEqual(str(role.uuid), response.data["id"])
-
-    def test_retrieve_role_not_found(self):
-        """Test retrieving a non-existent role returns 404."""
-        url = reverse("v2_management:roles-detail", args=["00000000-0000-0000-0000-000000000000"])
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
