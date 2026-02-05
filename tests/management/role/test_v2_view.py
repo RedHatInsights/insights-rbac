@@ -223,4 +223,3 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("permissions", response.data)
         self.assertIn("last_modified", response.data)
         # permissions_count not included until field masking is implemented
-

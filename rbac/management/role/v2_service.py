@@ -14,13 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Service for RoleV2 management"""
+"""Service for RoleV2 management."""
 
 import logging
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from management.atomic_transactions import atomic
-from management.permission.model import Permission
 from management.permission.service import PermissionService
 from management.role.v2_exceptions import (
     EmptyDescriptionError,
