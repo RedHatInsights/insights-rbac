@@ -33,8 +33,6 @@ class PermissionSerializer(serializers.Serializer):
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
     """Response serializer for RoleV2 model."""
 
-    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
-
     id = serializers.UUIDField(source="uuid", read_only=True)
     permissions_count = serializers.IntegerField(source="permissions_count_annotation", read_only=True)
     permissions = PermissionSerializer(many=True, required=False)
@@ -47,20 +45,13 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "description", "permissions_count", "permissions", "last_modified")
 
     def __init__(self, *args, **kwargs):
-        """Initialize with dynamic field selection from request."""
+        """Initialize with dynamic field selection from context."""
         super().__init__(*args, **kwargs)
 
-        allowed = self._get_allowed_fields()
-        for field_name in set(self.fields) - allowed:
-            self.fields.pop(field_name)
-
-    def _get_allowed_fields(self) -> set:
-        """Get allowed fields from serializer context."""
-        field_selection = self.context.get("field_selection")
-        if not field_selection:
-            return self.DEFAULT_LIST_FIELDS
-
-        return field_selection.root_fields & set(self.Meta.fields) or self.DEFAULT_LIST_FIELDS
+        allowed = self.context.get("fields")
+        if allowed is not None:
+            for field_name in set(self.fields) - allowed:
+                self.fields.pop(field_name)
 
 
 class RoleFieldSelection(FieldSelection):
@@ -82,8 +73,10 @@ class RoleFieldSelection(FieldSelection):
 class RoleV2InputSerializer(serializers.Serializer):
     """Input serializer for RoleV2 query parameters."""
 
+    DEFAULT_FIELDS = {"id", "name", "description", "last_modified"}
+
     name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
-    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
 
     def to_internal_value(self, data):
@@ -98,13 +91,19 @@ class RoleV2InputSerializer(serializers.Serializer):
         return value or None
 
     def validate_fields(self, value):
-        """Parse and validate fields parameter into FieldSelection object."""
+        """Parse, validate, and resolve fields parameter into a set of field names."""
         if not value:
-            return None
+            return self.DEFAULT_FIELDS
         try:
-            return RoleFieldSelection.parse(value)
+            field_selection = RoleFieldSelection.parse(value)
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
+
+        if not field_selection:
+            return self.DEFAULT_FIELDS
+
+        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+        return resolved or self.DEFAULT_FIELDS
 
     def validate_order_by(self, value):
         """Return None for empty values."""

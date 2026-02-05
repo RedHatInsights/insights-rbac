@@ -22,7 +22,7 @@ from management.models import (
     RoleV2,
     Permission,
 )
-from management.role.v2_serializer import RoleFieldSelection, RoleV2ResponseSerializer
+from management.role.v2_serializer import RoleFieldSelection, RoleV2InputSerializer, RoleV2ResponseSerializer
 from management.role_binding.serializer import FieldSelectionValidationError
 from tests.identity_request import IdentityRequest
 
@@ -54,9 +54,12 @@ class RoleV2SerializerTests(IdentityRequest):
         )
 
     def _build_context(self, fields=None):
-        """Build serializer context with parsed field_selection."""
-        field_selection = RoleFieldSelection.parse(fields) if fields else None
-        return {"field_selection": field_selection}
+        """Build serializer context with resolved field set."""
+        if not fields:
+            return {"fields": RoleV2InputSerializer.DEFAULT_FIELDS}
+        field_selection = RoleFieldSelection.parse(fields)
+        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+        return {"fields": resolved or RoleV2InputSerializer.DEFAULT_FIELDS}
 
     def test_default_fields_when_no_field_selection(self):
         """Test that default fields are returned when no fields param is provided."""
@@ -188,11 +191,11 @@ class RoleV2SerializerTests(IdentityRequest):
         self.assertEqual(set(data.keys()), {"permissions_count"})
         self.assertEqual(data["permissions_count"], 1)
 
-    def test_serializer_without_request_uses_default_fields(self):
-        """Test that serializer without request context uses default fields."""
+    def test_serializer_without_context_returns_all_fields(self):
+        """Test that serializer without context keeps all fields."""
         role = self._get_annotated_role()
         serializer = RoleV2ResponseSerializer(role)
         data = serializer.data
 
-        expected = {"id", "name", "description", "last_modified"}
+        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
         self.assertEqual(set(data.keys()), expected)

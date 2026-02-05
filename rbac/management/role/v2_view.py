@@ -52,7 +52,7 @@ class RoleV2CursorPagination(V2CursorPagination):
 class RoleV2ViewSet(BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
-    queryset = RoleV2.objects.all()
+    queryset = RoleV2.objects.none()
     permission_classes = (RoleAccessPermission,)
     serializer_class = RoleV2ResponseSerializer
     pagination_class = RoleV2CursorPagination
@@ -70,7 +70,7 @@ class RoleV2ViewSet(BaseV2ViewSet):
         # Build context for output serializer
         context = {
             "request": request,
-            "field_selection": params.get("fields"),
+            "fields": params.get("fields"),
         }
 
         page = self.paginate_queryset(queryset)

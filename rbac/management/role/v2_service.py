@@ -41,11 +41,11 @@ class RoleV2Service:
         if name:
             queryset = queryset.filter(name__exact=name)
 
-        field_selection = params.get("fields")
-        if field_selection:
-            if "permissions_count" in field_selection.root_fields:
+        fields = params.get("fields")
+        if fields:
+            if "permissions_count" in fields:
                 queryset = queryset.annotate(permissions_count_annotation=Count("permissions", distinct=True))
-            if "permissions" in field_selection.root_fields:
+            if "permissions" in fields:
                 queryset = queryset.prefetch_related("permissions")
 
         return queryset
