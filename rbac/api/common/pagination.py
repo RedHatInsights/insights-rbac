@@ -166,6 +166,7 @@ class V2CursorPagination(CursorPagination):
     # For role binding list endpoint, the queryset is on RoleBinding model
     ROLE_BINDING_FIELD_MAPPING = {
         # Role fields (direct access from RoleBinding)
+        "role.id": "role__uuid",
         "role.name": "role__name",
         "role.uuid": "role__uuid",
         "role.modified": "role__modified",
@@ -180,7 +181,7 @@ class V2CursorPagination(CursorPagination):
 
     # Default orderings per model
     SUBJECT_DEFAULT_ORDERING = "-modified"
-    ROLE_BINDING_DEFAULT_ORDERING = "-id"
+    ROLE_BINDING_DEFAULT_ORDERING = "role__uuid"
 
     def _get_default_ordering(self, queryset):
         """Get the appropriate default ordering based on queryset model.
