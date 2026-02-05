@@ -69,7 +69,7 @@ class RoleV2ViewSetTests(IdentityRequest):
     # ==========================================================================
 
     def test_create_role_success(self):
-        """Test creating a role via API returns 201 """
+        """Test creating a role via API returns 201"""
         data = {
             "name": "API Test Role",
             "description": "Created via API",
