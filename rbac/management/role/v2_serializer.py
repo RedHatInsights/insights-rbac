@@ -51,7 +51,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True)
-    permissions = PermissionSerializer(many=True, read_only=True)
+    permissions = serializers.SerializerMethodField()
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
     # permissions_count - uncomment when field masking is implemented
     # permissions_count = serializers.SerializerMethodField()
@@ -67,6 +67,22 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
             "last_modified",
             # "permissions_count" - available via get_permissions_count when field masking is implemented
         )
+
+    def get_permissions(self, obj):
+        """Return permissions, ordered by input order if available."""
+        permissions = list(obj.permissions.all())
+        input_permissions = self.context.get("input_permissions")
+
+        if input_permissions:
+            order_map = {}
+            for i, p in enumerate(input_permissions):
+                key = f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}"
+                order_map[key] = i
+
+            # Sort permissions by input order
+            permissions.sort(key=lambda p: order_map.get(p.permission, float("inf")))
+
+        return PermissionSerializer(permissions, many=True).data
 
     def get_permissions_count(self, obj):
         """Available for field masking - not included in default response."""

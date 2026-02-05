@@ -32,18 +32,11 @@ class PermissionService:
             PermissionValue.with_operation_as_verb(perm_dict).v1_string() for perm_dict in permission_data
         ]
 
-        found_permissions = Permission.objects.filter(permission__in=permission_strings)
-        found_map = {p.permission: p for p in found_permissions}
+        found_permissions = list(Permission.objects.filter(permission__in=permission_strings))
+        found_set = {p.permission for p in found_permissions}
 
-        permissions = []
-        not_found = []
-        for perm in permission_strings:
-            if perm in found_map:
-                permissions.append(found_map[perm])
-            else:
-                not_found.append(perm)
-
+        not_found = [p for p in permission_strings if p not in found_set]
         if not_found:
             raise PermissionsNotFoundError(not_found)
 
-        return permissions
+        return found_permissions

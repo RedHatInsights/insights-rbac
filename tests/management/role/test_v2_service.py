@@ -262,8 +262,8 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertIn("fake1:r1:op1", cm.exception.missing_permissions)
         self.assertIn("fake2:r2:op2", cm.exception.missing_permissions)
 
-    def test_resolve_permissions_preserves_order(self):
-        """Test that resolved permissions maintain the order of input."""
+    def test_resolve_permissions_returns_all_requested(self):
+        """Test that all requested permissions are returned."""
         permission_data = [
             {"application": "cost", "resource_type": "reports", "operation": "read"},
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
@@ -272,6 +272,6 @@ class RoleV2ServiceTests(IdentityRequest):
 
         permissions = self.service.permission_service.resolve(permission_data)
 
-        self.assertEqual(permissions[0], self.permission3)  # cost:reports:read
-        self.assertEqual(permissions[1], self.permission1)  # inventory:hosts:read
-        self.assertEqual(permissions[2], self.permission2)  # inventory:hosts:write
+        # Order is not guaranteed - view layer handles presentation order
+        self.assertEqual(len(permissions), 3)
+        self.assertCountEqual(permissions, [self.permission1, self.permission2, self.permission3])

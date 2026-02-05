@@ -45,5 +45,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         role = serializer.save()
-        response_data = RoleV2ResponseSerializer(role).data
-        return Response(response_data, status=status.HTTP_201_CREATED)
+        input_permissions = request.data.get("permissions", [])
+        response_serializer = RoleV2ResponseSerializer(role, context={"input_permissions": input_permissions})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)

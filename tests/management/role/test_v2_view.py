@@ -48,6 +48,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Create test permissions
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
         self.permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
+        self.permission3 = Permission.objects.create(permission="cost:reports:read", tenant=self.tenant)
 
         # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
@@ -109,6 +110,33 @@ class RoleV2ViewSetTests(IdentityRequest):
             [
                 {"application": "inventory", "resource_type": "hosts", "operation": "read"},
                 {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+            ],
+        )
+
+    def test_create_role_preserves_permission_order(self):
+        """Test that response permissions are returned in input order."""
+        # Request permissions in specific order (cost first, then inventory)
+        data = {
+            "name": "Order Test Role",
+            "description": "Testing permission order preservation",
+            "permissions": [
+                {"application": "cost", "resource_type": "reports", "operation": "read"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            ],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Verify permissions are returned in the same order as input
+        self.assertEqual(
+            response.data["permissions"],
+            [
+                {"application": "cost", "resource_type": "reports", "operation": "read"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "read"},
             ],
         )
 
