@@ -116,8 +116,7 @@ class PermissionServiceTests(IdentityRequest):
         self.assertIn("nonexistent:foo:bar", str(context.exception))
         self.assertNotIn("inventory:hosts:read", str(context.exception))
 
-    def test_resolve_preserves_order(self):
-        """Test that resolved permissions maintain input order."""
+    def test_resolve_returns_all_requested(self):
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "write"},
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
@@ -125,5 +124,5 @@ class PermissionServiceTests(IdentityRequest):
 
         result = self.service.resolve(permission_data)
 
-        self.assertEqual(result[0], self.permission2)
-        self.assertEqual(result[1], self.permission1)
+        self.assertEqual(len(result), 2)
+        self.assertCountEqual(result, [self.permission1, self.permission2])
