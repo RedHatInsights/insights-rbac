@@ -98,6 +98,7 @@ urlpatterns = [
     path("api/utils/resource_definitions/", views.correct_resource_definitions),
     path("api/utils/principal/", views.principal_removal),
     path("api/utils/user_lookup/", views.user_lookup),
+    path("api/utils/migrate_role/<role_uuid>/", views.migrate_role),
     path("api/relations/lookup_resource/", views.lookup_resource),
     path("api/relations/check_relation/", views.check_relation),
     path("api/relations/read_tuples/", views.read_tuples),
