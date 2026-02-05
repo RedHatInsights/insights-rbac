@@ -16,30 +16,46 @@
 #
 """Serializers for RoleV2 API."""
 
+from management.exceptions import RequiredFieldError
+from management.role.v2_exceptions import (
+    InvalidRolePermissionsError,
+    PermissionsNotFoundError,
+    RoleAlreadyExistsError,
+    RoleDatabaseError,
+)
+from management.role.v2_model import RoleV2
+from management.role.v2_service import RoleV2Service
 from management.role_binding.serializer import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
-from .v2_model import RoleV2
+# Centralized mapping from domain exceptions to API error fields
+ERROR_MAPPING = {
+    InvalidRolePermissionsError: "permissions",
+    PermissionsNotFoundError: "permissions",
+    RoleAlreadyExistsError: "name",
+    RoleDatabaseError: "detail",
+}
 
 
 class PermissionSerializer(serializers.Serializer):
-    """Serializer for Permission objects."""
+    """Serializer for permission data."""
 
-    application = serializers.CharField()
-    resource_type = serializers.CharField()
-    operation = serializers.CharField(source="verb")
+    application = serializers.CharField(help_text="Application name")
+    resource_type = serializers.CharField(help_text="Resource type")
+    operation = serializers.CharField(source="verb", help_text="Operation/verb")
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
-    """Response serializer for RoleV2 model."""
+    """Serializer for RoleV2 API responses."""
 
     id = serializers.UUIDField(source="uuid", read_only=True)
+    name = serializers.CharField(read_only=True)
+    description = serializers.CharField(read_only=True)
     permissions_count = serializers.IntegerField(source="permissions_count_annotation", read_only=True)
-    permissions = PermissionSerializer(many=True, required=False)
+    permissions = serializers.SerializerMethodField()
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
 
     class Meta:
-        """Metadata for the serializer."""
 
         model = RoleV2
         fields = ("id", "name", "description", "permissions_count", "permissions", "last_modified")
@@ -52,6 +68,29 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         if allowed is not None:
             for field_name in set(self.fields) - allowed:
                 self.fields.pop(field_name)
+
+    def get_permissions(self, obj):
+        """Return permissions, ordered by input order if available."""
+        permissions = list(obj.permissions.all())
+        input_permissions = self.context.get("input_permissions")
+
+        if input_permissions:
+            order_map = {}
+            for i, p in enumerate(input_permissions):
+                key = f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}"
+                order_map[key] = i
+
+            # Sort permissions by input order
+            permissions.sort(key=lambda p: order_map.get(p.permission, float("inf")))
+
+        return PermissionSerializer(permissions, many=True).data
+
+    def get_permissions_count(self, obj):
+        """Return permissions count, using annotation if available."""
+        count = getattr(obj, "permissions_count_annotation", None)
+        if count is not None:
+            return count
+        return obj.permissions.count()
 
 
 class RoleFieldSelection(FieldSelection):
@@ -108,3 +147,42 @@ class RoleV2InputSerializer(serializers.Serializer):
     def validate_order_by(self, value):
         """Return None for empty values."""
         return value or None
+
+
+class RoleV2RequestSerializer(serializers.ModelSerializer):
+    """Serializer for RoleV2 create/update requests."""
+
+    service_class = RoleV2Service
+
+    id = serializers.UUIDField(source="uuid", read_only=True)
+    name = serializers.CharField()
+    description = serializers.CharField()
+    permissions = PermissionSerializer(many=True, write_only=True)
+
+    class Meta:
+
+        model = RoleV2
+        fields = ("id", "name", "description", "permissions")
+
+    @property
+    def service(self):
+        """Return the service instance from context or create a new one."""
+        return self.context.get("role_service") or self.service_class()
+
+    def create(self, validated_data):
+        """Create a new RoleV2 using the service layer."""
+        tenant = self.context["request"].tenant
+        permission_data = validated_data.pop("permissions", [])
+
+        try:
+            return self.service.create(
+                name=validated_data.get("name"),
+                description=validated_data.get("description"),
+                permission_data=permission_data,
+                tenant=tenant,
+            )
+        except RequiredFieldError as e:
+            raise serializers.ValidationError({e.field_name: str(e)})
+        except tuple(ERROR_MAPPING.keys()) as e:
+            field = ERROR_MAPPING[type(e)]
+            raise serializers.ValidationError({field: str(e)})

@@ -26,7 +26,7 @@ from rest_framework.routers import DefaultRouter
 ROUTER = DefaultRouter()
 ROUTER.register(r"workspaces", WorkspaceViewSet, basename="workspace")
 ROUTER.register(r"role-bindings", RoleBindingViewSet, basename="role-bindings")
-ROUTER.register(r"roles", RoleV2ViewSet, basename="role")
+ROUTER.register(r"roles", RoleV2ViewSet, basename="roles")
 
 # pylint: disable=invalid-name
 urlpatterns = [
