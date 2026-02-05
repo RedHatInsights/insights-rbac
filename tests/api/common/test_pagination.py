@@ -17,6 +17,7 @@
 """Test the API pagination module."""
 
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlparse
 
 from django.test import TestCase
 from django.contrib.auth.models import User
@@ -169,13 +170,15 @@ class V2CursorPaginationTest(TestCase):
     def tearDown(self):
         User.objects.filter(username__startswith="cursor_user_").delete()
 
-    def test_default_page_size(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_default_page_size(self, mock_ordering):
         """Test the default page size."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
         paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
         self.assertEqual(len(paginated_queryset), 10)
 
-    def test_explicit_limit(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_explicit_limit(self, mock_ordering):
         """Test an explicit limit via page_size_query_param."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
         paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
@@ -189,7 +192,8 @@ class V2CursorPaginationTest(TestCase):
         """Test that cursor query param is set correctly."""
         self.assertEqual(self.paginator.cursor_query_param, "cursor")
 
-    def test_get_paginated_response_structure(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_get_paginated_response_structure(self, mock_ordering):
         """Test the paginated response structure."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -203,7 +207,8 @@ class V2CursorPaginationTest(TestCase):
         self.assertIn("next", response.data["links"])
         self.assertIn("previous", response.data["links"])
 
-    def test_get_paginated_response_uses_actual_limit(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_get_paginated_response_uses_actual_limit(self, mock_ordering):
         """Test that paginated response uses the actual limit from request."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=25"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -266,7 +271,8 @@ class V2CursorPaginationTest(TestCase):
         link = self.paginator.get_previous_link()
         self.assertEqual(link, "/api/rbac/v2/role-bindings/by-subject/?cursor=abc")
 
-    def test_empty_queryset(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_empty_queryset(self, mock_ordering):
         """Test pagination with empty queryset."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -280,7 +286,8 @@ class V2CursorPaginationTest(TestCase):
         self.assertIsNone(response.data["links"]["next"])
         self.assertIsNone(response.data["links"]["previous"])
 
-    def test_max_page_size_enforced(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_max_page_size_enforced(self, mock_ordering):
         """Test that requests exceeding max_page_size are capped."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=2000"))
         paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
@@ -288,7 +295,8 @@ class V2CursorPaginationTest(TestCase):
         # Should be capped to max_page_size (1000) or queryset size if smaller
         self.assertLessEqual(len(paginated_queryset), self.paginator.max_page_size)
 
-    def test_first_page_has_no_previous(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_first_page_has_no_previous(self, mock_ordering):
         """Test that first page has no previous link."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -297,7 +305,8 @@ class V2CursorPaginationTest(TestCase):
 
         self.assertIsNone(response.data["links"]["previous"])
 
-    def test_last_page_has_no_next(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_last_page_has_no_next(self, mock_ordering):
         """Test that last page has no next link."""
         # Request all items in one page
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=100"))
@@ -307,7 +316,8 @@ class V2CursorPaginationTest(TestCase):
 
         self.assertIsNone(response.data["links"]["next"])
 
-    def test_middle_page_has_both_links(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_middle_page_has_both_links(self, mock_ordering):
         """Test that middle pages have both next and previous links."""
         # First, get the first page to obtain cursor for next page
         request1 = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
@@ -320,8 +330,6 @@ class V2CursorPaginationTest(TestCase):
         self.assertIsNotNone(next_link)
 
         # Extract cursor from link and make second request
-        from urllib.parse import parse_qs, urlparse
-
         parsed = urlparse(next_link)
         cursor = parse_qs(parsed.query).get("cursor", [None])[0]
         self.assertIsNotNone(cursor)
@@ -338,26 +346,25 @@ class V2CursorPaginationTest(TestCase):
         self.assertIsNotNone(response2.data["links"]["previous"])
         self.assertIsNotNone(response2.data["links"]["next"])
 
-    def test_cursor_navigation_returns_different_results(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_cursor_navigation_returns_different_results(self, mock_ordering):
         """Test that navigating with cursor returns different results."""
         # Get first page
+        paginator1 = V2CursorPagination()
         request1 = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
         request1.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
-        page1 = self.paginator.paginate_queryset(self.queryset, request1)
+        page1 = paginator1.paginate_queryset(self.queryset, request1)
         page1_ids = [u.id for u in page1]
 
         # Get cursor for next page
-        response1 = self.paginator.get_paginated_response([])
+        response1 = paginator1.get_paginated_response([])
         next_link = response1.data["links"]["next"]
-
-        from urllib.parse import parse_qs, urlparse
 
         parsed = urlparse(next_link)
         cursor = parse_qs(parsed.query).get("cursor", [None])[0]
 
         # Get second page
         paginator2 = V2CursorPagination()
-        paginator2.ordering = "-date_joined"
         request2 = Request(self.factory.get(f"/api/rbac/v2/role-bindings/by-subject/?limit=5&cursor={cursor}"))
         request2.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
         page2 = paginator2.paginate_queryset(self.queryset, request2)
