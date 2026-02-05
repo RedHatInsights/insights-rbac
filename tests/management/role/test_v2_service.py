@@ -61,10 +61,14 @@ class RoleV2ServiceTests(IdentityRequest):
 
     def test_create_role_with_single_permission(self):
         """Test creating a role with a single permission."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
         role = self.service.create(
             name="Test Role",
             description="A test role",
-            permissions=[self.permission1],
+            permission_data=permission_data,
             tenant=self.tenant,
         )
 
@@ -78,12 +82,16 @@ class RoleV2ServiceTests(IdentityRequest):
 
     def test_create_role_with_multiple_permissions(self):
         """Test creating a role with multiple permissions."""
-        permissions = [self.permission1, self.permission2, self.permission3]
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+            {"application": "cost", "resource_type": "reports", "operation": "read"},
+        ]
 
         role = self.service.create(
             name="Multi Permission Role",
             description="Role with multiple permissions",
-            permissions=permissions,
+            permission_data=permission_data,
             tenant=self.tenant,
         )
 
@@ -94,31 +102,46 @@ class RoleV2ServiceTests(IdentityRequest):
 
     def test_create_role_with_empty_description_raises_error(self):
         """Test that creating a role with empty description raises EmptyDescriptionError."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
         with self.assertRaises(EmptyDescriptionError):
             self.service.create(
                 name="No Description Role",
                 description="",
-                permissions=[self.permission1],
+                permission_data=permission_data,
                 tenant=self.tenant,
             )
 
     def test_create_role_with_whitespace_only_description_raises_error(self):
         """Test that whitespace-only description raises EmptyDescriptionError."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
         with self.assertRaises(EmptyDescriptionError):
             self.service.create(
                 name="Whitespace Description Role",
                 description="   ",
-                permissions=[self.permission1],
+                permission_data=permission_data,
                 tenant=self.tenant,
             )
 
     def test_create_role_with_duplicate_name_raises_error(self):
         """Test that creating a role with a duplicate name raises RoleAlreadyExistsError."""
+        permission_data1 = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+        permission_data2 = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+        ]
+
         # Create first role
         self.service.create(
             name="Duplicate Name",
             description="First role",
-            permissions=[self.permission1],
+            permission_data=permission_data1,
             tenant=self.tenant,
         )
 
@@ -127,7 +150,7 @@ class RoleV2ServiceTests(IdentityRequest):
             self.service.create(
                 name="Duplicate Name",
                 description="Second role",
-                permissions=[self.permission2],
+                permission_data=permission_data2,
                 tenant=self.tenant,
             )
 
@@ -136,10 +159,14 @@ class RoleV2ServiceTests(IdentityRequest):
 
     def test_create_role_generates_uuid(self):
         """Test that creating a role auto-generates a UUID."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
         role = self.service.create(
             name="UUID Test Role",
             description="Testing UUID generation",
-            permissions=[self.permission1],
+            permission_data=permission_data,
             tenant=self.tenant,
         )
 
@@ -147,17 +174,21 @@ class RoleV2ServiceTests(IdentityRequest):
 
     def test_create_role_sets_type_to_custom(self):
         """Test that created roles are always of type CUSTOM."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
         role = self.service.create(
             name="Custom Type Role",
             description="Should be custom",
-            permissions=[self.permission1],
+            permission_data=permission_data,
             tenant=self.tenant,
         )
 
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
 
     # ==========================================================================
-    # Tests for resolve_permissions()
+    # Tests for PermissionService.resolve()
     # ==========================================================================
 
     def test_resolve_permissions_single(self):
@@ -166,7 +197,7 @@ class RoleV2ServiceTests(IdentityRequest):
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        permissions = self.service.resolve_permissions(permission_data)
+        permissions = self.service.permission_service.resolve(permission_data)
 
         self.assertEqual(len(permissions), 1)
         self.assertEqual(permissions[0], self.permission1)
@@ -179,7 +210,7 @@ class RoleV2ServiceTests(IdentityRequest):
             {"application": "cost", "resource_type": "reports", "operation": "read"},
         ]
 
-        permissions = self.service.resolve_permissions(permission_data)
+        permissions = self.service.permission_service.resolve(permission_data)
 
         self.assertEqual(len(permissions), 3)
         self.assertIn(self.permission1, permissions)
@@ -189,7 +220,7 @@ class RoleV2ServiceTests(IdentityRequest):
     def test_resolve_permissions_empty_raises_error(self):
         """Test that empty permission list raises EmptyPermissionsError."""
         with self.assertRaises(EmptyPermissionsError):
-            self.service.resolve_permissions([])
+            self.service.permission_service.resolve([])
 
     def test_resolve_permissions_not_found_raises_error(self):
         """Test that non-existent permission raises PermissionsNotFoundError."""
@@ -198,7 +229,7 @@ class RoleV2ServiceTests(IdentityRequest):
         ]
 
         with self.assertRaises(PermissionsNotFoundError) as cm:
-            self.service.resolve_permissions(permission_data)
+            self.service.permission_service.resolve(permission_data)
 
         self.assertIn("nonexistent:resource:action", str(cm.exception))
         self.assertIn("nonexistent:resource:action", cm.exception.missing_permissions)
@@ -211,7 +242,7 @@ class RoleV2ServiceTests(IdentityRequest):
         ]
 
         with self.assertRaises(PermissionsNotFoundError) as cm:
-            self.service.resolve_permissions(permission_data)
+            self.service.permission_service.resolve(permission_data)
 
         self.assertIn("nonexistent:resource:action", cm.exception.missing_permissions)
         # Should only contain the one that doesn't exist
@@ -225,7 +256,7 @@ class RoleV2ServiceTests(IdentityRequest):
         ]
 
         with self.assertRaises(PermissionsNotFoundError) as cm:
-            self.service.resolve_permissions(permission_data)
+            self.service.permission_service.resolve(permission_data)
 
         self.assertEqual(len(cm.exception.missing_permissions), 2)
         self.assertIn("fake1:r1:op1", cm.exception.missing_permissions)
@@ -239,7 +270,7 @@ class RoleV2ServiceTests(IdentityRequest):
             {"application": "inventory", "resource_type": "hosts", "operation": "write"},
         ]
 
-        permissions = self.service.resolve_permissions(permission_data)
+        permissions = self.service.permission_service.resolve(permission_data)
 
         self.assertEqual(permissions[0], self.permission3)  # cost:reports:read
         self.assertEqual(permissions[1], self.permission1)  # inventory:hosts:read

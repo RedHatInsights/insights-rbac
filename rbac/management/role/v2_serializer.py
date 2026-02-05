@@ -99,11 +99,10 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         permission_data = validated_data.pop("permissions", [])
 
         try:
-            permissions = self.service.resolve_permissions(permission_data)
             return self.service.create(
                 name=validated_data.get("name"),
                 description=validated_data.get("description"),
-                permissions=permissions,
+                permission_data=permission_data,
                 tenant=tenant,
             )
         except tuple(ERROR_MAPPING.keys()) as e:

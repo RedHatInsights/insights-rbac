@@ -255,7 +255,6 @@ class RoleV2RequestSerializerTests(IdentityRequest):
     def test_serializer_service_injectable_via_context(self):
         """Test that service can be overridden via context."""
         mock_service = Mock()
-        mock_service.resolve_permissions.return_value = []
         mock_service.create.return_value = CustomRoleV2(
             name="Injected",
             description="Via context",
@@ -275,5 +274,4 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         serializer.save()
 
         # Verify the injected service was used
-        mock_service.resolve_permissions.assert_called_once()
         mock_service.create.assert_called_once()

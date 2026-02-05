@@ -14,11 +14,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Service for RoleV2 management following DDD principles."""
+"""Service for RoleV2 management"""
 
 import logging
-from typing import Iterable
-
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from management.atomic_transactions import atomic
@@ -48,16 +46,12 @@ class RoleV2Service:
         """Initialize the service with its dependencies."""
         self.permission_service = PermissionService()
 
-    def resolve_permissions(self, permission_data: list[dict]) -> list[Permission]:
-        """Delegate to PermissionService."""
-        return self.permission_service.resolve(permission_data)
-
     @atomic
     def create(
         self,
         name: str,
         description: str,
-        permissions: Iterable[Permission],
+        permission_data: list[dict],
         tenant: Tenant,
     ) -> CustomRoleV2:
         """Create a new custom role with the given attributes."""
@@ -68,7 +62,7 @@ class RoleV2Service:
         if not description or not description.strip():
             raise EmptyDescriptionError()
 
-        permissions = list(permissions)
+        permissions = self.permission_service.resolve(permission_data)
 
         try:
             role = CustomRoleV2(
