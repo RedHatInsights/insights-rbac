@@ -151,6 +151,8 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", response.data)
+        self.assertIn("errors", response.data)
+        self.assertTrue(any(e.get("field") == "name" for e in response.data["errors"]))
 
     def test_create_role_missing_permissions_returns_400(self):
         """Test that missing permissions returns 400."""
@@ -163,6 +165,8 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", response.data)
+        self.assertIn("errors", response.data)
+        self.assertTrue(any(e.get("field") == "permissions" for e in response.data["errors"]))
 
     def test_create_role_empty_permissions_returns_400(self):
         """Test that empty permissions array returns 400."""
@@ -247,6 +251,18 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("detail", response.data)
         self.assertEqual(response.data["status"], 400)
         self.assertIn("do not exist", response.data["detail"])
+
+    def test_create_role_empty_body_returns_all_required_field_errors(self):
+        """Test that empty request body returns errors array with all required fields."""
+        response = self.client.post(self.url, {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("errors", response.data)
+
+        error_fields = {e.get("field") for e in response.data["errors"]}
+        self.assertIn("name", error_fields)
+        self.assertIn("description", error_fields)
+        self.assertIn("permissions", error_fields)
 
     def test_create_role_returns_response_format(self):
         """Test that create returns proper response format with all fields."""
