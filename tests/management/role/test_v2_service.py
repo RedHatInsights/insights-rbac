@@ -140,6 +140,22 @@ class RoleV2ServiceTests(IdentityRequest):
 
         self.assertEqual(context.exception.field_name, "permissions")
 
+    def test_create_role_with_permission_missing_required_field_raises_error(self):
+        """Test that permission missing a required field raises RequiredFieldError."""
+        permission_data = [
+            {"resource_type": "hosts", "operation": "read"},  # Missing 'application'
+        ]
+
+        with self.assertRaises(RequiredFieldError) as context:
+            self.service.create(
+                name="Missing App Permission Role",
+                description="Valid description",
+                permission_data=permission_data,
+                tenant=self.tenant,
+            )
+
+        self.assertEqual(context.exception.field_name, "application")
+
     def test_create_role_with_missing_name_raises_error(self):
         """Test that creating a role with blank name raises RequiredFieldError."""
         permission_data = [
