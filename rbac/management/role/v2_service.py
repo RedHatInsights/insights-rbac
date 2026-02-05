@@ -72,7 +72,7 @@ class RoleV2Service:
         try:
             permissions = self.permission_service.resolve(permission_data)
             requested = {PermissionValue.from_v2_dict(p).v1_string() for p in permission_data}
-        except (InvalidPermissionDataError, RequiredFieldError) as e:
+        except InvalidPermissionDataError as e:
             raise InvalidRolePermissionsError(str(e))
 
         found = {p.permission for p in permissions}
