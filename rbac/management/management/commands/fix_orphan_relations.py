@@ -19,9 +19,7 @@
 import logging
 
 from django.core.management import BaseCommand, CommandError
-from django.db.models import Count, OuterRef, Subquery
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
-from management.models import Group, Role
 
 from api.models import Tenant
 
@@ -57,18 +55,7 @@ class Command(BaseCommand):
                 returncode=2,
             )
 
-        # This doesn't semantically affect the result, but operate on tenants that have groups and roles first because
-        # (a) they are more likely to actually have issues that this script can fix, and (b) operating on them first
-        # will bring up any issues/errors in the script earlier in the run.
-        tenants_query = (
-            Tenant.objects.exclude(tenant_name="public")
-            .filter(org_id__isnull=False)
-            .annotate(
-                group_count=Count(Subquery(Group.objects.filter(tenant=OuterRef("pk")).values("pk"))),
-                roles_count=Count(Subquery(Role.objects.filter(system=False, tenant=OuterRef("pk")).values("pk"))),
-            )
-            .order_by("-group_count", "-roles_count", "id")
-        )
+        tenants_query = Tenant.objects.exclude(tenant_name="public").filter(org_id__isnull=False)
 
         success_count = 0
         failed_orgs = []
