@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,18 +14,37 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""View for V2 Role management."""
+"""View for RoleV2 management."""
 
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.role.v2_model import RoleV2
+from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import status
+from rest_framework.response import Response
 
-from .v2_model import RoleV2
-from .v2_serializer import RoleSerializer
 
+class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
+    """RoleV2 ViewSet."""
 
-class RoleV2ViewSet(BaseV2ViewSet):
-    """V2 Role ViewSet."""
-
-    queryset = RoleV2.objects.prefetch_related("permissions")
-    serializer_class = RoleSerializer
     permission_classes = (RoleAccessPermission,)
+    queryset = RoleV2.objects.none()
+    serializer_class = RoleV2ResponseSerializer
+    lookup_field = "uuid"
+    http_method_names = ["post", "head", "options"]
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        if self.action == "create":
+            return RoleV2RequestSerializer
+        return RoleV2ResponseSerializer
+
+    def create(self, request, *args, **kwargs):
+        """Create a role and return the full response representation."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = serializer.save()
+        input_permissions = request.data.get("permissions", [])
+        response_serializer = RoleV2ResponseSerializer(role, context={"input_permissions": input_permissions})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
