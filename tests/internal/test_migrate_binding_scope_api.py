@@ -48,7 +48,7 @@ from migration_tool.migrate_binding_scope import (
 )
 from migration_tool.utils import create_relationship
 from api.models import Tenant
-from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
+from tests.management.role.v1.test_dual_write import DualWriteTestCase, RbacFixture
 from tests.v2_util import seed_v2_role_from_v1, assert_v2_roles_consistent
 
 

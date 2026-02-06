@@ -49,7 +49,7 @@ from migration_tool.in_memory_tuples import (
 from migration_tool.migrate import migrate_data, migrate_groups_for_tenant
 
 from management.group.definer import seed_group, clone_default_group_in_public_schema
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 from tests.v2_util import seed_v2_role_from_v1
 
 

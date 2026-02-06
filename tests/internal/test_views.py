@@ -73,7 +73,7 @@ from kessel.inventory.v1beta2 import (
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from tests.identity_request import IdentityRequest
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
 
 

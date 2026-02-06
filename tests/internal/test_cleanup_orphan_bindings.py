@@ -41,7 +41,7 @@ from internal.migrations.remove_orphan_relations import (
     cleanup_tenant_orphan_bindings,
 )
 from internal.utils import rebuild_tenant_workspace_relations
-from tests.management.role.test_dual_write import DualWriteTestCase
+from tests.management.role.v1.test_dual_write import DualWriteTestCase
 from tests.v2_util import assert_v2_roles_consistent
 
 

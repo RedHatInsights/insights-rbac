@@ -6,7 +6,7 @@ from management.tenant_service.v2 import (
     try_lock_tenants_for_bootstrap,
     TenantNotBootstrappedError,
 )
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 
 
 class V2TenantBootstrapTests(TestCase):

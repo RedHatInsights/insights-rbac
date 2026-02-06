@@ -54,7 +54,7 @@ from migration_tool.in_memory_tuples import (
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 
 
 def _role_resource(role_uuid: str | UUID):

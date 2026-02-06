@@ -65,8 +65,8 @@ from migration_tool.in_memory_tuples import (
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from tests.management.role.test_dual_write import RbacFixture
-from tests.management.role.test_view import find_in_list, relation_api_tuple
+from tests.management.role.v1.test_dual_write import RbacFixture
+from tests.management.role.v1.test_view import find_in_list, relation_api_tuple
 from tests.v2_util import assert_v2_custom_roles_consistent, seed_v2_role_from_v1
 
 

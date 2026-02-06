@@ -30,7 +30,7 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 
 from tests.identity_request import IdentityRequest
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 
 URL_LIST = reverse("v1_api:cross-list")
 
