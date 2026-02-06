@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleV2 serializers."""
+"""Test the Role serializers."""
 
 from unittest.mock import Mock
 
@@ -25,8 +25,8 @@ from management.models import Permission
 from management.role.model import CustomRoleV2, RoleV2
 from management.role.serializer import (
     PermissionSerializer,
-    RoleV2RequestSerializer,
-    RoleV2ResponseSerializer,
+    RoleInputSerializer,
+    RoleOutputSerializer,
 )
 from tests.identity_request import IdentityRequest
 
@@ -74,8 +74,8 @@ class PermissionSerializerTests(IdentityRequest):
         self.assertIn("operation", serializer.errors)
 
 
-class RoleV2ResponseSerializerTests(IdentityRequest):
-    """Test the RoleV2ResponseSerializer (output serializer)."""
+class RoleOutputSerializerTests(IdentityRequest):
+    """Test the RoleOutputSerializer."""
 
     def setUp(self):
         """Set up the serializer tests."""
@@ -102,7 +102,7 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
 
     def test_response_serializer_output_fields(self):
         """Test that response serializer includes all expected fields."""
-        serializer = RoleV2ResponseSerializer(self.role)
+        serializer = RoleOutputSerializer(self.role)
         data = serializer.data
 
         self.assertIn("id", data)
@@ -114,22 +114,22 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
 
     def test_response_serializer_uuid_mapping(self):
         """Test that 'id' field maps to model's 'uuid'."""
-        serializer = RoleV2ResponseSerializer(self.role)
+        serializer = RoleOutputSerializer(self.role)
         data = serializer.data
 
         self.assertEqual(str(self.role.uuid), data["id"])
 
     def test_response_serializer_last_modified_mapping(self):
         """Test that 'last_modified' field maps to model's 'modified'."""
-        serializer = RoleV2ResponseSerializer(self.role)
+        serializer = RoleOutputSerializer(self.role)
         data = serializer.data
 
         self.assertIsNotNone(data["last_modified"])
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
-class RoleV2RequestSerializerTests(IdentityRequest):
-    """Test the RoleV2RequestSerializer (request serializer for create/update)."""
+class RoleInputSerializerTests(IdentityRequest):
+    """Test the RoleInputSerializer."""
 
     def setUp(self):
         """Set up the serializer tests."""
@@ -158,7 +158,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "description": "A role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleInputSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("name", serializer.errors)
@@ -169,7 +169,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "name": "Test Role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleInputSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("description", serializer.errors)
@@ -180,7 +180,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "name": "Test Role",
             "description": "A role",
         }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleInputSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("permissions", serializer.errors)
@@ -192,7 +192,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "description": "",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleInputSerializer(data=data, context={"request": self.mock_request})
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("description", serializer.errors)
@@ -204,7 +204,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "description": "A new role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleInputSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
         role = serializer.save()
@@ -229,7 +229,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "description": "Second role",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleInputSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
         with self.assertRaises(serializers.ValidationError) as cm:
@@ -244,7 +244,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "description": "Has invalid permission",
             "permissions": [{"application": "nonexistent", "resource_type": "resource", "operation": "action"}],
         }
-        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+        serializer = RoleInputSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
         with self.assertRaises(serializers.ValidationError) as cm:
@@ -266,7 +266,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             "description": "Test",
             "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         }
-        serializer = RoleV2RequestSerializer(
+        serializer = RoleInputSerializer(
             data=data,
             context={"request": self.mock_request, "role_service": mock_service},
         )

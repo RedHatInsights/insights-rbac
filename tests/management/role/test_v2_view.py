@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleV2ViewSet."""
+"""Test the RoleViewSet."""
 
 from importlib import reload
 
@@ -31,11 +31,11 @@ from tests.identity_request import IdentityRequest
 
 
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
-class RoleV2ViewSetTests(IdentityRequest):
-    """Test the RoleV2ViewSet."""
+class RoleViewSetTests(IdentityRequest):
+    """Test the RoleViewSet."""
 
     def setUp(self):
-        """Set up the RoleV2ViewSet tests."""
+        """Set up the RoleViewSet tests."""
         # Reload URLs to pick up v2 management routes
         reload(v2_urls)
         reload(urls)
@@ -54,7 +54,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.url = reverse("v2_management:roles-list")
 
     def tearDown(self):
-        """Tear down RoleV2ViewSet tests."""
+        """Tear down RoleViewSet tests."""
         from management.utils import PRINCIPAL_CACHE
 
         RoleV2.objects.all().delete()

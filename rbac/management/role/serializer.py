@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Serializers for RoleV2 API."""
+"""Serializers for Role API."""
 
 from management.exceptions import RequiredFieldError
 from management.role.exceptions import (
@@ -24,7 +24,7 @@ from management.role.exceptions import (
     RoleDatabaseError,
 )
 from management.role.model import RoleV2
-from management.role.service import RoleV2Service
+from management.role.service import RoleService
 from rest_framework import serializers
 
 # Centralized mapping from domain exceptions to API error fields
@@ -44,8 +44,8 @@ class PermissionSerializer(serializers.Serializer):
     operation = serializers.CharField(source="verb", help_text="Operation/verb")
 
 
-class RoleV2ResponseSerializer(serializers.ModelSerializer):
-    """Serializer for RoleV2 API responses."""
+class RoleOutputSerializer(serializers.ModelSerializer):
+    """Serializer for Role API responses."""
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
@@ -88,10 +88,10 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         return obj.permissions.count()
 
 
-class RoleV2RequestSerializer(serializers.ModelSerializer):
-    """Serializer for RoleV2 create/update requests."""
+class RoleInputSerializer(serializers.ModelSerializer):
+    """Serializer for Role create/update requests."""
 
-    service_class = RoleV2Service
+    service_class = RoleService
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField()
@@ -109,7 +109,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         return self.context.get("role_service") or self.service_class()
 
     def create(self, validated_data):
-        """Create a new RoleV2 using the service layer."""
+        """Create a new Role using the service layer."""
         tenant = self.context["request"].tenant
         permission_data = validated_data.pop("permissions", [])
 

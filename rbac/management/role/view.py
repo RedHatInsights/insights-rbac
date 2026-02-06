@@ -14,31 +14,31 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""View for RoleV2 management."""
+"""View for Role management."""
 
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.model import RoleV2
-from management.role.serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.role.serializer import RoleInputSerializer, RoleOutputSerializer
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.response import Response
 
 
-class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
-    """RoleV2 ViewSet."""
+class RoleViewSet(AtomicOperationsMixin, BaseV2ViewSet):
+    """Role ViewSet for V2 API."""
 
     permission_classes = (RoleAccessPermission,)
     queryset = RoleV2.objects.none()
-    serializer_class = RoleV2ResponseSerializer
+    serializer_class = RoleOutputSerializer
     lookup_field = "uuid"
     http_method_names = ["post", "head", "options"]
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
         if self.action == "create":
-            return RoleV2RequestSerializer
-        return RoleV2ResponseSerializer
+            return RoleInputSerializer
+        return RoleOutputSerializer
 
     def create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""
@@ -46,5 +46,5 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer.is_valid(raise_exception=True)
         role = serializer.save()
         input_permissions = request.data.get("permissions", [])
-        response_serializer = RoleV2ResponseSerializer(role, context={"input_permissions": input_permissions})
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        output_serializer = RoleOutputSerializer(role, context={"input_permissions": input_permissions})
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)

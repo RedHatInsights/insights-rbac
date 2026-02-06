@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Service for RoleV2 management."""
+"""Service for Role management."""
 
 import logging
 
@@ -38,9 +38,9 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)
 
 
-class RoleV2Service:
+class RoleService:
     """
-    Application service for RoleV2 operations.
+    Application service for Role operations.
 
     Raises domain-specific exceptions that should be caught and converted
     to HTTP-level errors by the serializer layer.

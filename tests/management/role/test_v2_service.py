@@ -14,25 +14,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleV2Service domain service."""
+"""Test the RoleService domain service."""
 
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
 from management.models import Permission
 from management.role.exceptions import RoleAlreadyExistsError
 from management.role.model import CustomRoleV2, RoleV2
-from management.role.service import RoleV2Service
+from management.role.service import RoleService
 from tests.identity_request import IdentityRequest
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
-class RoleV2ServiceTests(IdentityRequest):
-    """Test the RoleV2Service domain service."""
+class RoleServiceTests(IdentityRequest):
+    """Test the RoleService domain service."""
 
     def setUp(self):
-        """Set up the RoleV2Service tests."""
+        """Set up the RoleService tests."""
         super().setUp()
-        self.service = RoleV2Service()
+        self.service = RoleService()
 
         # Create test permissions
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
@@ -40,7 +40,7 @@ class RoleV2ServiceTests(IdentityRequest):
         self.permission3 = Permission.objects.create(permission="cost:reports:read", tenant=self.tenant)
 
     def tearDown(self):
-        """Tear down RoleV2Service tests."""
+        """Tear down RoleService tests."""
         from management.utils import PRINCIPAL_CACHE
 
         RoleV2.objects.all().delete()
