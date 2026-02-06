@@ -100,6 +100,24 @@ class RelationTuple:
         self._validate_object_id("subject_id", allow_asterisk=True)
 
     @classmethod
+    def from_message_dict(cls, relationship: dict):
+        """Create a RelationTuple from a Relationship message."""
+
+        def as_optional(value: str) -> Optional[str]:
+            return value if value != "" else None
+
+        return RelationTuple(
+            resource_type_namespace=relationship["resource"]["type"]["namespace"],
+            resource_type_name=relationship["resource"]["type"]["name"],
+            resource_id=relationship["resource"]["id"],
+            relation=relationship["relation"],
+            subject_type_namespace=relationship["subject"]["subject"]["type"]["namespace"],
+            subject_type_name=relationship["subject"]["subject"]["type"]["name"],
+            subject_id=relationship["subject"]["subject"]["id"],
+            subject_relation=as_optional(relationship["subject"]["relation"]),
+        )
+
+    @classmethod
     def from_message(cls, relationship: Relationship):
         """Create a RelationTuple from a Relationship message."""
 
