@@ -33,10 +33,10 @@ from management.relation_replicator.relation_replicator import DualWriteExceptio
 from management.relation_replicator.relation_replicator import RelationReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import BindingMapping, Role
+from management.role.model import CustomRoleV2, RoleBinding
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.relations import deduplicate_role_permission_relationships, role_child_relationship
-from management.role.v2_model import CustomRoleV2, RoleBinding
+from management.role.v1.model import BindingMapping, Role
+from management.role.v1.relations import deduplicate_role_permission_relationships, role_child_relationship
 from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.migrate_role import migrate_role, relation_tuples_for_bindings
 from migration_tool.models import V2boundresource

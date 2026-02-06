@@ -29,8 +29,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
-from management.role.model import Role
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.v1.model import Role
+from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
 
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import CrossAccountRequest, Tenant

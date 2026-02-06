@@ -32,13 +32,13 @@ from management.notifications.notification_handlers import role_obj_change_notif
 from management.permission.model import Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
+from management.role.model import PlatformRoleV2, SeededRoleV2
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.relation_api_dual_write_handler import (
+from management.role.v1.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
+from management.role.v1.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v2_model import PlatformRoleV2, SeededRoleV2
 from management.tenant_mapping.model import DefaultAccessType
 
 from api.models import Tenant

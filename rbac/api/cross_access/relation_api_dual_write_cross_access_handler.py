@@ -30,7 +30,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.model import BindingMapping, Role
+from management.role.v1.model import BindingMapping, Role
 
 from api.models import CrossAccountRequest, Tenant
 

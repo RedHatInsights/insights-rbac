@@ -39,7 +39,7 @@ from management.notifications.notification_handlers import (
 from management.policy.model import Policy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import Role
+from management.role.v1.model import Role
 from management.role_binding.service import RoleBindingService
 from management.tenant_service.v2 import V2TenantBootstrapService, lock_tenant_for_bootstrap
 from management.utils import clear_pk

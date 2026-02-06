@@ -22,8 +22,8 @@ from django.test import override_settings
 from rest_framework import serializers
 
 from management.models import Permission
-from management.role.v2_model import CustomRoleV2, RoleV2
-from management.role.v2_serializer import (
+from management.role.model import CustomRoleV2, RoleV2
+from management.role.serializer import (
     PermissionSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,

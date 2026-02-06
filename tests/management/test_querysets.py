@@ -25,7 +25,7 @@ from django.urls import reverse
 from management.group.model import Group
 from management.policy.model import Policy
 from management.principal.model import Principal
-from management.role.model import Role
+from management.role.v1.model import Role
 from management.models import Permission, Access
 from management.querysets import (
     PRINCIPAL_SCOPE,

@@ -14,16 +14,4 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
-"""API views for import organization"""
-
-# flake8: noqa
-# pylint: disable=unused-import
-from management.principal.view import PrincipalView
-from management.group.view import GroupViewSet
-from management.role.v1.view import RoleViewSet
-from management.access.view import AccessView
-from management.permission.view import PermissionViewSet
-from management.audit_log.view import AuditLogViewSet
-from management.workspace.view import WorkspaceViewSet
-from management.role_binding.view import RoleBindingViewSet
+"""V1 Role API - Deprecated."""

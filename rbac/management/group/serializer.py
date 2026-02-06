@@ -21,7 +21,7 @@ from management.group.model import Group
 from management.notifications.notification_handlers import group_obj_change_notification_handler
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalInputSerializer, PrincipalSerializer
-from management.role.serializer import RoleMinimumSerializer
+from management.role.v1.serializer import RoleMinimumSerializer
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers, status
 

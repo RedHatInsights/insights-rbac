@@ -36,9 +36,9 @@ from management.models import (
 )
 from management.permission.scope_service import Scope
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
-from management.role.definer import seed_roles, seed_permissions, _seed_platform_roles
+from management.role.v1.definer import seed_roles, seed_permissions, _seed_platform_roles
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.relation_api_dual_write_handler import (
+from management.role.v1.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
@@ -328,7 +328,7 @@ class RoleDefinerTests(IdentityRequest):
         self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    @patch("management.role.definer.destructive_ok")
+    @patch("management.role.v1.definer.destructive_ok")
     def test_seed_permissions_delete_permission(self, _, replicate):
         """Test permission seeding delete permission."""
         self.assertFalse(len(Permission.objects.all()))
@@ -434,7 +434,7 @@ class RoleDefinerTests(IdentityRequest):
         )
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    @patch("management.role.definer.destructive_ok")
+    @patch("management.role.v1.definer.destructive_ok")
     @patch("builtins.open", new_callable=mock_open, read_data='{"roles": []}')
     @patch("os.listdir")
     @patch("os.path.isfile")
@@ -511,7 +511,7 @@ class RoleDefinerTests(IdentityRequest):
             patch("os.path.isfile") as mock_isfile,
             patch("os.listdir") as mock_listdir,
             patch("builtins.open", mock_open(read_data='{"roles": []}')) as mock_file,
-            patch("management.role.definer.destructive_ok") as mock_destructive_ok,
+            patch("management.role.v1.definer.destructive_ok") as mock_destructive_ok,
         ):
             # mock files
             mock_destructive_ok.return_value = True
@@ -951,7 +951,7 @@ class V2RoleSeedingTests(IdentityRequest):
 
         self.assertTrue(found_child, "At least one admin platform role should have children")
 
-    @patch("management.role.definer.seed_group")
+    @patch("management.role.v1.definer.seed_group")
     def test_seed_platform_roles_calls_seed_group_when_needed(self, mock_seed_group):
         """Test that _seed_platform_roles calls seed_group when default groups are missing."""
         # Configure mock to create the groups

@@ -547,7 +547,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
         dict: Results with roles_checked, resource_definitions_fixed, and changes list.
     """
     logger = logging.getLogger(__name__)
-    from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+    from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
     from management.relation_replicator.relation_replicator import ReplicationEventType
 
     roles_checked = 0

@@ -16,7 +16,7 @@
 """Describes the urls and patterns for the management application."""
 
 from django.urls import include, path
-from management.role.v2_view import RoleV2ViewSet
+from management.role.view import RoleV2ViewSet
 from management.views import (
     RoleBindingViewSet,
     WorkspaceViewSet,

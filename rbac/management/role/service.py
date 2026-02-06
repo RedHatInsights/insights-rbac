@@ -25,13 +25,13 @@ from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
-from management.role.v2_exceptions import (
+from management.role.exceptions import (
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
 )
-from management.role.v2_model import CustomRoleV2
+from management.role.model import CustomRoleV2
 
 from api.models import Tenant
 

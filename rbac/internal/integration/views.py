@@ -25,7 +25,7 @@ from management.cache import TenantCache
 from management.filters import CommonFilters
 from management.group.view import GroupViewSet
 from management.permissions.admin_access import AdminAccessPermission
-from management.role.view import RoleViewSet
+from management.role.v1.view import RoleViewSet
 from rest_framework import mixins, viewsets
 
 from api.models import Tenant

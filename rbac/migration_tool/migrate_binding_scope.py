@@ -24,8 +24,8 @@ from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
-from management.role.model import Role
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.v1.model import Role
+from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
 
 from api.models import Tenant
 

@@ -25,7 +25,7 @@ from rest_framework.test import APIClient
 
 from management import v2_urls
 from management.models import Permission
-from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role.model import CustomRoleV2, RoleV2
 from rbac import urls
 from tests.identity_request import IdentityRequest
 

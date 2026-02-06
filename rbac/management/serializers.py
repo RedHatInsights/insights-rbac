@@ -20,5 +20,5 @@
 # pylint: disable=unused-import
 from management.principal.serializer import PrincipalSerializer
 from management.group.serializer import GroupSerializer
-from management.role.serializer import RoleSerializer
+from management.role.v1.serializer import RoleSerializer
 from management.audit_log.serializer import AuditLogSerializer

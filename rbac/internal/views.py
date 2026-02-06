@@ -78,13 +78,13 @@ from management.principal.proxy import (
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
-from management.role.definer import delete_permission
-from management.role.model import Access
-from management.role.relation_api_dual_write_handler import (
+from management.role.v1.definer import delete_permission
+from management.role.v1.model import Access
+from management.role.v1.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.serializer import BindingMappingSerializer
+from management.role.v1.serializer import BindingMappingSerializer
 from management.tasks import (
     clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,

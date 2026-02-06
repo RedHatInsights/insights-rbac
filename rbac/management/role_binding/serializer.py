@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from management.models import Group
-from management.role.v2_model import RoleV2
+from management.role.model import RoleV2
 from rest_framework import serializers
 
 

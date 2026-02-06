@@ -1,5 +1,5 @@
 #
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2025 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -15,333 +15,334 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""Model for role management."""
+"""Model for role V2 management."""
 
-import logging
-from typing import Optional, Union
-from uuid import uuid4
+from typing import Iterable, Optional
 
-from django.conf import settings
-from django.db import models
-from django.db.models import signals
+from django.db import models, transaction
+from django.db.models import Q, QuerySet, signals
 from django.utils import timezone
-from internal.integration import sync_handlers
-from kessel.relations.v1beta1.common_pb2 import Relationship
-from management.cache import AccessCache, skip_purging_cache_for_public_tenant
-from management.models import Permission, Principal
+from management.exceptions import RequiredFieldError
+from management.models import Group, Permission, Principal, Role
 from management.rbac_fields import AutoDateTimeField
-from management.role.user_source import SourceKey
-from migration_tool.models import (
-    V2boundresource,
-    V2role,
-    V2rolebinding,
-    role_binding_group_subject_tuple,
-    role_binding_user_subject_tuple,
-)
+from migration_tool.models import V2boundresource, V2role, V2rolebinding
+from rest_framework import serializers
+from uuid_utils.compat import UUID, uuid7
 
-from api.models import FilterQuerySet, TenantAwareModel
-
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+from api.models import TenantAwareModel
 
 
-class Role(TenantAwareModel):
-    """A role."""
+class RoleV2(TenantAwareModel):
+    """V2 Role model."""
 
-    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=150)
-    display_name = models.CharField(default="", max_length=150)
-    description = models.TextField(null=True)
-    system = models.BooleanField(default=False)
-    platform_default = models.BooleanField(default=False)
-    version = models.PositiveIntegerField(default=1)
+    class Types(models.TextChoices):
+        CUSTOM = "custom"
+        SEEDED = "seeded"
+        PLATFORM = "platform"
+
+    uuid = models.UUIDField(default=uuid7, editable=False, unique=True, null=False)
+    name = models.CharField(max_length=175, null=False, blank=False)
+    description = models.TextField(null=True, blank=True)
+    type = models.CharField(
+        choices=Types.choices, max_length=20, null=False, blank=False, db_index=True, default=Types.CUSTOM
+    )
+    permissions = models.ManyToManyField(Permission, related_name="v2_roles")
+    children = models.ManyToManyField("self", related_name="parents", symmetrical=False)
+    v1_source = models.ForeignKey(Role, null=True, blank=True, related_name="v2_roles", on_delete=models.CASCADE)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
-    admin_default = models.BooleanField(default=False)
-    objects = FilterQuerySet.as_manager()
-
-    @property
-    def role(self):
-        """Get role for self."""
-        return self
 
     class Meta:
         ordering = ["name", "modified"]
         constraints = [
-            models.UniqueConstraint(fields=["name", "tenant"], name="unique role name per tenant"),
-            models.UniqueConstraint(fields=["display_name", "tenant"], name="unique role display name per tenant"),
+            models.UniqueConstraint(fields=["name", "tenant"], name="unique role v2 name per tenant"),
         ]
 
+    def clean(self):
+        """Validate required fields with domain exceptions."""
+        super().clean()
+        if not self.name or not self.name.strip():
+            raise RequiredFieldError("name")
+
     def save(self, *args, **kwargs):
-        """Ensure that display_name is populated on save."""
-        if not self.display_name:
-            self.display_name = self.name
-        super(Role, self).save(*args, **kwargs)
+        """Save the model and run all validations from the model."""
+        self.full_clean()
+        super().save(*args, **kwargs)
 
-    def external_role_id(self):
-        """Return external role id."""
-        return self.ext_relation.ext_id if hasattr(self, "ext_relation") else None
+    def as_migration_value(self) -> V2role:
+        """Get the V2role representing to this role's daya."""
+        if self.type == RoleV2.Types.PLATFORM:
+            raise ValueError("V2roles are not supported for PLATFORM roles.")
 
-    def external_tenant_name(self):
-        """Return external tenant name."""
-        return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
+        if self.type == RoleV2.Types.SEEDED:
+            return V2role.for_system_role(id=str(self.uuid))
 
+        if self.type == RoleV2.Types.CUSTOM:
+            return V2role(
+                id=str(self.uuid),
+                is_system=False,
+                permissions=frozenset(p.v2_string() for p in self.permissions.all()),
+            )
 
-class Access(TenantAwareModel):
-    """An access object."""
-
-    permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="accesses")
-    role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
-
-    def permission_application(self):
-        """Return the application name from the permission."""
-        return self.permission.application
+        raise ValueError(f"Unexpected type of role: {self.type} for {self}")
 
 
-class ResourceDefinition(TenantAwareModel):
-    """A resource definition."""
+class TypedRoleV2Manager(models.Manager):
+    """Manager for RoleV2 with a specific type."""
 
-    attributeFilter = models.JSONField(default=dict)
-    access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE, related_name="resourceDefinitions")
+    _role_type: str
 
-    @property
-    def role(self):
-        """Get role for RD."""
-        if self.access:
-            return self.access.role
+    def __init__(self, role_type: str):
+        """Initialize the manager."""
+        super().__init__()
+        self._role_type = role_type
 
-    @property
-    def application(self):
-        """Get the corresponding application."""
-        if self.access and self.access.permission:
-            return self.access.permission.application
-
-    @property
-    def resource_type(self):
-        """Get the corresponding resource type."""
-        if self.access and self.access.permission:
-            return self.access.permission.resource_type
-
-    @property
-    def tenant_id(self):
-        """Get the tenant_id of the RD."""
-        if self.tenant:
-            return self.tenant.id
+    def get_queryset(self):
+        """Get the queryset for the specific type."""
+        return super().get_queryset().filter(type=self._role_type)
 
 
-class ExtTenant(models.Model):
-    """External tenant."""
+class TypeValidatedRoleV2Mixin:
+    """Mixin for role types that validates type on init and save."""
 
-    name = models.CharField(max_length=20, null=False, unique=True)
+    _expected_type: str = ""
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the model with type validation."""
+        type_provided = "type" in kwargs
+        provided_type = kwargs.get("type") if type_provided else None
+
+        super().__init__(*args, **kwargs)
+
+        if not self.pk:
+            if type_provided and provided_type != self._expected_type:
+                raise serializers.ValidationError(
+                    f"Expected role to have type {self._expected_type}, but found {provided_type}"
+                )
+            else:
+                self.type = self._expected_type
+        elif self.type != self._expected_type:
+            raise serializers.ValidationError(
+                f"Expected role to have type {self._expected_type}, but found {self.type}"
+            )
+
+    def save(self, **kwargs):
+        """Save the model with type validation."""
+        if self.type and self.type != self._expected_type:
+            raise serializers.ValidationError(
+                f"Expected role to have type {self._expected_type}, but found {self.type}"
+            )
+        else:
+            self.type = self._expected_type
+
+        if (update_fields := kwargs.get("update_fields")) is not None:
+            kwargs["update_fields"] = {"type", *update_fields}
+
+        self.full_clean()
+        super().save(**kwargs)
 
 
-class ExtRoleRelation(models.Model):
-    """External relation info of role."""
+class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
+    """V2 Custom role model."""
 
-    ext_tenant = models.ForeignKey(ExtTenant, null=True, on_delete=models.CASCADE, related_name="ext_role_relation")
-    ext_id = models.CharField(max_length=20, null=False)
-    role = models.OneToOneField(Role, on_delete=models.CASCADE, null=False, related_name="ext_relation")
+    class Meta:
+        proxy = True
+
+    _expected_type = RoleV2.Types.CUSTOM
+    objects = TypedRoleV2Manager(role_type=_expected_type)
+
+
+class SeededRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
+    """V2 Seeded role model."""
+
+    class Meta:
+        proxy = True
+
+    _expected_type = RoleV2.Types.SEEDED
+    objects = TypedRoleV2Manager(role_type=_expected_type)
+
+
+class PlatformRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
+    """V2 Platform role model."""
+
+    class Meta:
+        proxy = True
+
+    _expected_type = RoleV2.Types.PLATFORM
+    objects = TypedRoleV2Manager(role_type=_expected_type)
+
+
+class RoleBinding(TenantAwareModel):
+    """A role binding."""
+
+    uuid = models.UUIDField(default=uuid7, editable=False, unique=True, null=False)
+    role = models.ForeignKey(RoleV2, on_delete=models.CASCADE, related_name="bindings")
+
+    resource_type = models.CharField(max_length=256, null=False)
+    resource_id = models.CharField(max_length=256, null=False)
+
+    def bound_groups(self) -> QuerySet:
+        """Get a QuerySet for all groups bound to this RoleBinding."""
+        return Group.objects.filter(role_binding_entries__in=self.group_entries.all())
+
+    def update_groups(self, groups: Iterable[Group]):
+        """Update the groups bound to this RoleBinding."""
+        with transaction.atomic():
+            self.group_entries.all().delete()
+            RoleBindingGroup.objects.bulk_create([RoleBindingGroup(binding=self, group=g) for g in set(groups)])
+
+    def update_groups_by_uuid(self, uuids: Iterable[UUID | str]):
+        """
+        Update the groups bound to this RoleBinding by UUID.
+
+        Raises a ValueError if one of the UUIDs cannot be found.
+        """
+        uuids = set(str(u) for u in uuids)
+
+        groups = Group.objects.filter(uuid__in=uuids).only("id", "uuid")
+        found_uuids = {str(g.uuid) for g in groups}
+
+        if found_uuids != uuids:
+            missing_uuids = uuids.difference(found_uuids)
+            raise ValueError(f"Not all expected groups could be found. Missing UUIDs: {missing_uuids}")
+
+        # Group.uuid is unique, so at most one Group will be found per UUID, and len(groups) <= len(uuids).
+        # By construction, len(found_uuids) <= len(groups).
+        # We have just checked that found_uuids = uuids, so len(found_uuids) = len(uuids) <= len(groups) <= len(uuids).
+        # Thus, len(groups) = len(uuids), and we have found one group for each specified UUID.
+
+        self.update_groups(groups)
+
+    def bound_principals(self) -> QuerySet:
+        """Get a QuerySet for all principals bound to this RoleBinding."""
+        return Principal.objects.filter(role_binding_entries__in=self.principal_entries.all()).distinct()
+
+    def update_principals(self, principals_by_source: Iterable[tuple[str, Principal]]):
+        """
+        Update the principals bound to this RoleBinding.
+
+        principals_by_source is an iterable of pairs of the source string and the principal added from that source.
+        """
+        with transaction.atomic():
+            self.principal_entries.all().delete()
+
+            RoleBindingPrincipal.objects.bulk_create(
+                [RoleBindingPrincipal(binding=self, principal=p, source=s) for s, p in set(principals_by_source)]
+            )
+
+    def update_principals_by_user_id(self, user_ids_by_source: Iterable[tuple[str, str]]):
+        """
+        Update the principals bound to this RoleBinding by user_id.
+
+        principals_by_source is an iterable of pairs of the source string and the user_id of the principal added from
+        that source.
+
+        A ValueError is raised if one of the user IDs cannot be found or if multiple principals are associated with
+        one of the provided user IDs.
+        """
+        user_ids_by_source = set(user_ids_by_source)
+        user_ids = set(entry[1] for entry in user_ids_by_source)
+
+        if None in user_ids:
+            raise TypeError("None user IDs are not supported.")
+
+        principals = Principal.objects.filter(user_id__in=user_ids)
+        found_user_ids: set[str] = {p.user_id for p in principals}
+
+        if found_user_ids != user_ids:
+            missing_user_ids = user_ids.difference(found_user_ids)
+            raise ValueError(f"Not all expected principals could be found. Missing user IDs: {missing_user_ids}")
+
+        # Principal.user_id is unique, so at most one Principal will be found per user ID, and we have:
+        #   len(principals) <= len(user_ids).
+        # By construction, len(found_user_ids) <= len(principals).
+        # We have just checked that found_user_ids = user_ids, so we have:
+        #   len(found_user_ids) = len(user_ids) <= len(principals) <= len(user_ids).
+        # Thus, len(user_ids) = len(principals), and we have found one group for each specified UUID.
+
+        principals_by_id = {p.user_id: p for p in principals}
+        self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
+
+    def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
+        """
+        Return the V2rolebinding equivalent of this role binding.
+
+        group_uuids is provided in the case where
+        """
+        if force_group_uuids is None:
+            force_group_uuids = [str(u) for u in self.bound_groups().values_list("uuid", flat=True)]
+
+        return V2rolebinding(
+            id=str(self.uuid),
+            role=self.role.as_migration_value(),
+            resource=V2boundresource(
+                # TODO: we currently assume all resources types are in namespace "rbac". This is currently true for
+                #  all the types we care about, but is not necessarily true in general. The semantics of the
+                #  Inventory API (which we will eventually have to migrate to) are different and do not have a
+                #  resource type namespace, per se.
+                resource_type=("rbac", self.resource_type),
+                resource_id=self.resource_id,
+            ),
+            groups=force_group_uuids,
+            users={},
+        )
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["ext_tenant", "ext_id"], name="unique external id per external tenant")
+            models.UniqueConstraint(
+                fields=["role", "resource_type", "resource_id", "tenant"],
+                name="unique role binding per role resource pair per tenant",
+            ),
         ]
 
 
-class BindingMapping(models.Model):
-    """V2 binding Mapping definition."""
+class RoleBindingGroup(models.Model):
+    """The relationship between a RoleBinding and one of its group subjects."""
 
-    # JSON encoding of migration_tool.models.V2rolebinding
-    mappings = models.JSONField(default=dict)
-    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="binding_mappings")
-    resource_type_namespace = models.CharField(max_length=256, null=False)
-    resource_type_name = models.CharField(max_length=256, null=False)
-    resource_id = models.CharField(max_length=256, null=False)
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="role_binding_entries")
+    binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="group_entries")
 
-    def save(self, *args, **kwargs):
-        """Validate and save this BindingMapping."""
-        users = self.mappings.get("users", None)
-
-        if (users is not None) and not isinstance(users, dict):
-            raise TypeError("users must be a dict. Support for representing users as a list has been removed.")
-
-        super().save(*args, **kwargs)
-
-    @classmethod
-    def for_role_binding(cls, role_binding: V2rolebinding, v1_role: Union[Role, str]):
-        """Create a new BindingMapping for a V2rolebinding."""
-        mappings = role_binding.as_minimal_dict()
-        resource = role_binding.resource
-        resource_type_namespace = resource.resource_type[0]
-        resource_type_name = resource.resource_type[1]
-        resource_id = resource.resource_id
-        role_arg: dict[str, Union[Role, str]] = (
-            {"role": v1_role} if isinstance(v1_role, Role) else {"role_id": v1_role}
-        )
-        return cls(
-            mappings=mappings,
-            **role_arg,
-            resource_type_namespace=resource_type_namespace,
-            resource_type_name=resource_type_name,
-            resource_id=resource_id,
-        )
-
-    def as_tuples(self) -> list[Relationship]:
-        """Create tuples from BindingMapping model."""
-        v2_role_binding = self.get_role_binding()
-        return v2_role_binding.as_tuples()
-
-    def is_unassigned(self):
-        """Return true if mapping is not assigned to any groups or users."""
-        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", {})) == 0
-
-    def unassign_group(self, group_uuid) -> Optional[Relationship]:
-        """
-        Completely unassign this group from the mapping, even if it is assigned more than once.
-
-        Returns the Relationship for this Group.
-        """
-        relationship = None
-        while True:
-            relationship = self.pop_group_from_bindings(group_uuid)
-            if relationship is not None:
-                break
-        return relationship
-
-    def pop_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
-        """
-        Pop the group from mappings.
-
-        The group may still be bound to the role in other ways, so the group may still be included in the binding
-        more than once after this method returns.
-
-        If the group is no longer assigned at all, the Relationship is returned to be removed.
-
-        If you wish to remove the group entirely (and know it is safe to do so!), use [unassign_group].
-        """
-        if group_uuid in self.mappings["groups"]:
-            self.mappings["groups"].remove(group_uuid)
-        if group_uuid in self.mappings["groups"]:
-            return None
-        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
-
-    def assign_group_to_bindings(self, group_uuid: str) -> Optional[Relationship]:
-        """
-        Assign group to mappings.
-
-        If the group entry already exists, skip it.
-        """
-        if group_uuid in self.mappings["groups"]:
-            return None
-        self.mappings["groups"].append(group_uuid)
-        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
-
-    # TODO: This can be deleted after the migration
-    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
-        """
-        Add group to mappings.
-
-        This adds an additional entry for the group, even if the group is already assigned, to account for multiple
-        possible sources that may have assigned the group for the same role and resource.
-        """
-        self.mappings["groups"].append(group_uuid)
-        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
-
-    def unassign_user_from_bindings(self, user_id: str, source: SourceKey) -> Optional[Relationship]:
-        """Unassign user from mappings."""
-        self._require_source(source)
-        self.mappings["users"].pop(str(source), None)
-        users_list = self.mappings["users"].values()
-        if user_id in users_list:
-            logging.info(
-                f"[Dual Write] user {user_id} still in mappings of bindingmapping {self.pk}, "
-                "therefore, no relation to remove. "
-            )
-            return None
-        return role_binding_user_subject_tuple(self.mappings["id"], user_id)
-
-    def assign_user_to_bindings(self, user_id: str, source: SourceKey) -> Relationship:
-        """Assign user to mappings."""
-        self._require_source(source)
-        self.mappings["users"][str(source)] = user_id
-        return role_binding_user_subject_tuple(self.mappings["id"], user_id)
-
-    def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
-        """Set mappings."""
-        # Validate resource and v1 role match
-        resource = role_binding.resource
-        if (
-            resource.resource_type[0] != self.resource_type_namespace
-            or resource.resource_type[1] != self.resource_type_name
-            or resource.resource_id != self.resource_id
-        ):
-            raise Exception(
-                "Resource mismatch."
-                f"Expected: {self.resource_type_namespace}:{self.resource_type_name}:{self.resource_id} "
-                f"but got: {resource.resource_type[0]}:{resource.resource_type[1]}:{resource.resource_id} "
-            )
-
-        self.mappings = role_binding.as_minimal_dict()
-
-    def get_role_binding(self) -> V2rolebinding:
-        """Get role binding."""
-        args = {**self.mappings}
-        args["resource"] = V2boundresource(
-            resource_type=(self.resource_type_namespace, self.resource_type_name), resource_id=self.resource_id
-        )
-        args["role"] = V2role(
-            id=args["role"]["id"],
-            is_system=args["role"]["is_system"],
-            permissions=frozenset(args["role"]["permissions"]),
-        )
-        return V2rolebinding(**args)
-
-    @staticmethod
-    def _require_source(source) -> SourceKey:
-        if not isinstance(source, SourceKey):
-            raise TypeError(f"Expected SourceKey, but got: {source!r}")
-
-        return source
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["group", "binding"], name="unique group binding pair")]
 
 
-def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
-    """Signal handler for invalidating Principal cache on Role object change."""
-    if skip_purging_cache_for_public_tenant(instance.tenant):
+class RoleBindingPrincipal(models.Model):
+    """The relationship between a RoleBinding and one of its principal subjects."""
+
+    principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
+    binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
+    source = models.CharField(max_length=128, null=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["principal", "binding", "source"], name="unique principal binding source triple"
+            ),
+            models.CheckConstraint(condition=~Q(source=""), name="role binding principal has source"),
+        ]
+
+
+def validate_role_children_on_m2m_change(sender, instance, action, pk_set, **kwargs):
+    """
+    Signal handler to validate role children relationships on M2M changes.
+
+    This validates BEFORE the M2M relationship is written to the database.
+    """
+    if action != "pre_add":
         return
-    logger.info(
-        "Handling signal for added/removed/changed role-related object %s - "
-        "invalidating associated user cache keys",
-        instance,
-    )
-    cache = AccessCache(instance.tenant.org_id)
-    if instance.role:
-        for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):
-            cache.delete_policy(principal.uuid)
+
+    parent_type = instance.type
+
+    if parent_type == RoleV2.Types.PLATFORM:
+        if pk_set:
+            invalid_children = RoleV2.objects.filter(pk__in=pk_set).exclude(type=RoleV2.Types.SEEDED)
+            if invalid_children.exists():
+                raise serializers.ValidationError(
+                    {"children": "Platform roles can only have seeded roles as children."}
+                )
+    else:
+        raise serializers.ValidationError({"children": f"{parent_type.capitalize()} roles cannot have children."})
 
 
-def role_related_obj_change_sync_handler(sender=None, instance=None, using=None, **kwargs):
-    """Signal handler for informing external sync of Role object changes."""
-    logger.info(
-        "Handling signal for added/removed/changed role-related object %s - " "informing sync topic",
-        instance,
-    )
-    if instance.role:
-        sync_handlers.send_sync_message(
-            event_type="role_modified", payload={"role": {"name": instance.role.name, "uuid": str(instance.role.uuid)}}
-        )
-
-
-if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
-    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
-    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
-    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
-    signals.post_save.connect(role_related_obj_change_cache_handler, sender=Role)
-    signals.post_save.connect(role_related_obj_change_cache_handler, sender=Access)
-    signals.post_save.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
-
-if settings.KAFKA_ENABLED:
-    signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=Role)
-    signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=Access)
-    signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=ResourceDefinition)
-    signals.post_save.connect(role_related_obj_change_sync_handler, sender=Role)
-    signals.post_save.connect(role_related_obj_change_sync_handler, sender=Access)
-    signals.post_save.connect(role_related_obj_change_sync_handler, sender=ResourceDefinition)
+# Connect the signal handler to the RoleV2.children through model
+signals.m2m_changed.connect(validate_role_children_on_m2m_change, sender=RoleV2.children.through)

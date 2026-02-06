@@ -4,7 +4,7 @@ from django.db import migrations, models
 import django.db.models.deletion
 import django.utils.timezone
 import management.rbac_fields
-import management.role.v2_model
+import management.role.model
 import uuid_utils.compat
 
 
@@ -91,7 +91,7 @@ class Migration(migrations.Migration):
                 "constraints": [],
             },
             bases=(
-                management.role.v2_model.TypeValidatedRoleV2Mixin,
+                management.role.model.TypeValidatedRoleV2Mixin,
                 "management.rolev2",
             ),
         ),
@@ -104,7 +104,7 @@ class Migration(migrations.Migration):
                 "constraints": [],
             },
             bases=(
-                management.role.v2_model.TypeValidatedRoleV2Mixin,
+                management.role.model.TypeValidatedRoleV2Mixin,
                 "management.rolev2",
             ),
         ),
@@ -117,7 +117,7 @@ class Migration(migrations.Migration):
                 "constraints": [],
             },
             bases=(
-                management.role.v2_model.TypeValidatedRoleV2Mixin,
+                management.role.model.TypeValidatedRoleV2Mixin,
                 "management.rolev2",
             ),
         ),

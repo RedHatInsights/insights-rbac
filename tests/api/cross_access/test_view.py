@@ -31,7 +31,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import BindingMapping
+from management.role.v1.model import BindingMapping
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     all_of,

@@ -19,9 +19,9 @@
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
 from management.models import Permission
-from management.role.v2_exceptions import RoleAlreadyExistsError
-from management.role.v2_model import CustomRoleV2, RoleV2
-from management.role.v2_service import RoleV2Service
+from management.role.exceptions import RoleAlreadyExistsError
+from management.role.model import CustomRoleV2, RoleV2
+from management.role.service import RoleV2Service
 from tests.identity_request import IdentityRequest
 
 

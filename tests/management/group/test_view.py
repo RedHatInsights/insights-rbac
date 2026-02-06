@@ -51,8 +51,8 @@ from management.models import (
 )
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
-from management.role.v2_model import CustomRoleV2
+from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.model import CustomRoleV2
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (

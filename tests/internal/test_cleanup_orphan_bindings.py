@@ -21,8 +21,8 @@ from django.test import override_settings
 from management.models import BindingMapping, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.role.model import Role
-from management.role.v2_model import SeededRoleV2, CustomRoleV2, RoleBinding
+from management.role.v1.model import Role
+from management.role.model import SeededRoleV2, CustomRoleV2, RoleBinding
 from management.tenant_service import V2TenantBootstrapService
 from management.workspace.service import WorkspaceService
 from migration_tool.in_memory_tuples import (

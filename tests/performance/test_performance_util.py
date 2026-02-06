@@ -3,7 +3,7 @@ import time
 from base64 import b64encode
 from json import dumps as json_dumps
 from unittest.mock import Mock
-from management.role.model import ExtRoleRelation, ExtTenant
+from management.role.v1.model import ExtRoleRelation, ExtTenant
 
 from api.models import Tenant
 from api.common import RH_IDENTITY_HEADER

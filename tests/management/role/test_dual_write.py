@@ -39,7 +39,7 @@ from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEventType,
 )
-from management.role.model import (
+from management.role.v1.model import (
     Access,
     BindingMapping,
     ResourceDefinition,
@@ -47,11 +47,11 @@ from management.role.model import (
     SourceKey,
 )
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.relation_api_dual_write_handler import (
+from management.role.v1.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v2_model import RoleV2, CustomRoleV2, RoleBinding, SeededRoleV2
+from management.role.model import RoleV2, CustomRoleV2, RoleBinding, SeededRoleV2
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -215,7 +215,7 @@ class DualWriteTestCase(TestCase):
         return group, principals
 
     def given_custom_default_group(self) -> Group:
-        with patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate") as replicate:
+        with patch("management.role.v1.relation_api_dual_write_handler.OutboxReplicator.replicate") as replicate:
             replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
             return self.fixture.custom_default_group(self.tenant)
 
@@ -2284,7 +2284,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             self.assertEqual(0, self.tuples.count_tuples(resource("rbac", "role_binding", role_binding_uuid)))
             self.assertEqual(0, self.tuples.count_tuples(subject("rbac", "role_binding", role_binding_uuid)))
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
+    @patch("management.role.v1.relation_api_dual_write_handler.OutboxReplicator.replicate")
     def test_create_role_with_empty_access(self, replicate_mock):
         """Create a role and its bindings when creating a custom role."""
         self.given_v1_role("role_without_access", [])

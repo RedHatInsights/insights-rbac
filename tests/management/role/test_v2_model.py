@@ -34,8 +34,8 @@ from management.models import (
     SeededRoleV2,
 )
 from management.principal.model import Principal
-from management.role.model import Access
-from management.role.v2_model import RoleBindingPrincipal
+from management.role.v1.model import Access
+from management.role.model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
 
 

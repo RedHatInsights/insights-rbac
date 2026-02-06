@@ -21,7 +21,7 @@ from django.db.models import Prefetch
 from management.cache import AccessCache
 from management.models import Access, ResourceDefinition
 from management.querysets import get_access_queryset
-from management.role.serializer import AccessSerializer
+from management.role.v1.serializer import AccessSerializer
 from management.utils import (
     APPLICATION_KEY,
     get_principal_from_request,
