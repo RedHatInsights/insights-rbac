@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleV2 viewset."""
+"""Test the RoleV2ViewSet."""
 
 from importlib import reload
 
@@ -34,7 +34,7 @@ from tests.identity_request import IdentityRequest
 
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2ViewSetTests(IdentityRequest):
-    """Test the RoleV2 viewset."""
+    """Test the RoleV2ViewSet."""
 
     def setUp(self):
         """Set up the RoleV2ViewSet tests."""
@@ -46,6 +46,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         super().setUp()
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
+        # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
 
         # Create test permissions

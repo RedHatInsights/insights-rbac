@@ -19,8 +19,7 @@
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
-from management.role.v2_serializer import RoleV2InputSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
-from management.role.v2_service import RoleV2Service
+from management.role.v2_serializer import RoleV2ListSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.response import Response
@@ -70,17 +69,14 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
-        input_serializer = RoleV2InputSerializer(data=request.query_params)
+        input_serializer = RoleV2ListSerializer(data=request.query_params, context={"request": request})
         input_serializer.is_valid(raise_exception=True)
-        params = input_serializer.validated_data
 
-        service = RoleV2Service(tenant=request.tenant)
-        queryset = service.list(params)
+        queryset = input_serializer.list()
 
-        # Build context for output serializer
         context = {
             "request": request,
-            "fields": params.get("fields"),
+            "fields": input_serializer.validated_data.get("fields"),
         }
 
         page = self.paginate_queryset(queryset)

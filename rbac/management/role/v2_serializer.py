@@ -25,7 +25,7 @@ from management.role.v2_exceptions import (
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
-from management.role_binding.serializer import FieldSelection, FieldSelectionValidationError
+from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
 # Centralized mapping from domain exceptions to API error fields
@@ -97,26 +97,23 @@ class RoleFieldSelection(FieldSelection):
     """Field selection for roles endpoint."""
 
     VALID_ROOT_FIELDS = set(RoleV2ResponseSerializer.Meta.fields)
-    VALID_SUBJECT_FIELDS: set = set()
-    VALID_ROLE_FIELDS: set = set()
-    VALID_RESOURCE_FIELDS: set = set()
-
-    @classmethod
-    def parse(cls, fields_param: str | None) -> "FieldSelection | None":
-        """Parse fields parameter with NUL byte sanitization."""
-        if fields_param:
-            fields_param = fields_param.replace("\x00", "")
-        return super().parse(fields_param)
 
 
-class RoleV2InputSerializer(serializers.Serializer):
-    """Input serializer for RoleV2 query parameters."""
+class RoleV2ListSerializer(serializers.Serializer):
+    """Input serializer for RoleV2 list query parameters."""
+
+    service_class = RoleV2Service
 
     DEFAULT_FIELDS = {"id", "name", "description", "last_modified"}
 
     name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
+
+    @property
+    def service(self):
+        """Return the service instance from context or create a new one."""
+        return self.context.get("role_service") or self.service_class(tenant=self.context["request"].tenant)
 
     def to_internal_value(self, data):
         """Sanitize input data by stripping NUL bytes before field validation."""
@@ -147,6 +144,10 @@ class RoleV2InputSerializer(serializers.Serializer):
     def validate_order_by(self, value):
         """Return None for empty values."""
         return value or None
+
+    def list(self):
+        """Get a list of roles using the service layer."""
+        return self.service.list(self.validated_data)
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):

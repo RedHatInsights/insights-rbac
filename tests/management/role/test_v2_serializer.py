@@ -27,11 +27,11 @@ from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_serializer import (
     PermissionSerializer,
     RoleFieldSelection,
-    RoleV2InputSerializer,
+    RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
 )
-from management.role_binding.serializer import FieldSelectionValidationError
+from management.utils import FieldSelectionValidationError
 from management.utils import PRINCIPAL_CACHE
 from tests.identity_request import IdentityRequest
 
@@ -160,10 +160,11 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
     def _build_context(self, fields=None):
         """Build serializer context with resolved field set."""
         if not fields:
-            return {"fields": RoleV2InputSerializer.DEFAULT_FIELDS}
+            return {"fields": RoleV2ListSerializer.DEFAULT_FIELDS}
+        fields = fields.replace("\x00", "")
         field_selection = RoleFieldSelection.parse(fields)
         resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return {"fields": resolved or RoleV2InputSerializer.DEFAULT_FIELDS}
+        return {"fields": resolved or RoleV2ListSerializer.DEFAULT_FIELDS}
 
     def test_default_fields_when_no_field_selection(self):
         """Test that default fields are returned when no fields param is provided."""
@@ -303,6 +304,84 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
 
         expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
         self.assertEqual(set(data.keys()), expected)
+
+
+class RoleV2ListSerializerListTests(IdentityRequest):
+    """Test the RoleV2ListSerializer.list() method."""
+
+    def setUp(self):
+        """Set up the serializer tests."""
+        super().setUp()
+        self.permission = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
+        self.role = RoleV2.objects.create(
+            name="test_role",
+            description="Test role description",
+            tenant=self.tenant,
+        )
+        self.role.permissions.add(self.permission)
+
+        self.mock_request = Mock()
+        self.mock_request.tenant = self.tenant
+
+    def tearDown(self):
+        """Tear down serializer tests."""
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+        super().tearDown()
+
+    def test_list_returns_queryset(self):
+        """Test that list() returns a queryset of roles for the tenant."""
+        serializer = RoleV2ListSerializer(data={}, context={"request": self.mock_request})
+        serializer.is_valid(raise_exception=True)
+
+        queryset = serializer.list()
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "test_role")
+
+    def test_list_filters_by_name(self):
+        """Test that list() filters by name when provided."""
+        RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
+
+        serializer = RoleV2ListSerializer(
+            data={"name": "test_role"},
+            context={"request": self.mock_request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        queryset = serializer.list()
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "test_role")
+
+    def test_list_with_permissions_count_field(self):
+        """Test that list() annotates permissions_count when requested."""
+        serializer = RoleV2ListSerializer(
+            data={"fields": "id,permissions_count"},
+            context={"request": self.mock_request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        queryset = serializer.list()
+        role = queryset.first()
+
+        self.assertTrue(hasattr(role, "permissions_count_annotation"))
+        self.assertEqual(role.permissions_count_annotation, 1)
+
+    def test_list_service_injectable_via_context(self):
+        """Test that service can be overridden via context."""
+        mock_service = Mock()
+        mock_service.list.return_value = RoleV2.objects.none()
+
+        serializer = RoleV2ListSerializer(
+            data={},
+            context={"request": self.mock_request, "role_service": mock_service},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.list()
+
+        mock_service.list.assert_called_once()
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
