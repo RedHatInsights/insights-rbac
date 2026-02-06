@@ -21,7 +21,7 @@ from typing import Iterable, Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Max, Prefetch, Q, QuerySet
+from django.db.models import F, Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
 from google.protobuf import json_format
 from internal.jwt_utils import JWTManager, JWTProvider
@@ -104,7 +104,12 @@ class RoleBindingService:
         role_id = params.get("role_id")
 
         # Build base queryset for RoleBinding objects
-        queryset = RoleBinding.objects.filter(tenant=self.tenant).select_related("role")
+        # Annotate role_created for cursor pagination (cursor pagination needs direct attribute access)
+        queryset = (
+            RoleBinding.objects.filter(tenant=self.tenant)
+            .select_related("role")
+            .annotate(role_created=F("role__created"))
+        )
 
         # Apply optional role_id filter
         if role_id:

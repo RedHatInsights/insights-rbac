@@ -170,7 +170,7 @@ class V2CursorPagination(CursorPagination):
         "role.name": "role__name",
         "role.uuid": "role__uuid",
         "role.modified": "role__modified",
-        "role.created": "role__created",
+        "role.created": "role_created",  # Annotated for cursor pagination
         # Resource fields
         "resource.id": "resource_id",
         "resource.type": "resource_type",
@@ -181,7 +181,7 @@ class V2CursorPagination(CursorPagination):
 
     # Default orderings per model
     SUBJECT_DEFAULT_ORDERING = "-modified"
-    ROLE_BINDING_DEFAULT_ORDERING = "role__uuid"
+    ROLE_BINDING_DEFAULT_ORDERING = "role_created"
 
     def _get_default_ordering(self, queryset):
         """Get the appropriate default ordering based on queryset model.
