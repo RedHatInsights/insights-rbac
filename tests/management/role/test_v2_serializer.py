@@ -19,15 +19,11 @@
 from unittest.mock import Mock
 
 from django.test import override_settings
-from rest_framework import serializers
 
+from management.exceptions import AlreadyExistsError, InvalidFieldError
 from management.models import Permission
 from management.role.v2_model import CustomRoleV2, RoleV2
-from management.role.v2_serializer import (
-    PermissionSerializer,
-    RoleV2RequestSerializer,
-    RoleV2ResponseSerializer,
-)
+from management.role.v2_serializer import PermissionSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
 from tests.identity_request import IdentityRequest
 
 
@@ -214,8 +210,8 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         self.assertEqual(role.description, "A new role")
         self.assertEqual(role.permissions.count(), 1)
 
-    def test_serializer_create_duplicate_name_raises_validation_error(self):
-        """Test that creating a role with duplicate name raises ValidationError."""
+    def test_serializer_create_duplicate_name_raises_already_exists_error(self):
+        """Test that creating a role with duplicate name raises AlreadyExistsError."""
         # Create first role
         CustomRoleV2.objects.create(
             name="Duplicate Role",
@@ -232,13 +228,14 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
-        with self.assertRaises(serializers.ValidationError) as cm:
+        with self.assertRaises(AlreadyExistsError) as cm:
             serializer.save()
 
-        self.assertIn("name", cm.exception.detail)
+        self.assertEqual(cm.exception.resource_type, "role")
+        self.assertEqual(cm.exception.identifier, "Duplicate Role")
 
-    def test_serializer_create_invalid_permission_raises_validation_error(self):
-        """Test that non-existent permission raises ValidationError."""
+    def test_serializer_create_invalid_permission_raises_invalid_field_error(self):
+        """Test that non-existent permission raises InvalidFieldError."""
         data = {
             "name": "Role with Bad Permission",
             "description": "Has invalid permission",
@@ -247,10 +244,11 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
-        with self.assertRaises(serializers.ValidationError) as cm:
+        with self.assertRaises(InvalidFieldError) as cm:
             serializer.save()
 
-        self.assertIn("permissions", cm.exception.detail)
+        self.assertEqual(cm.exception.field, "permissions")
+        self.assertIn("do not exist", str(cm.exception))
 
     def test_serializer_service_injectable_via_context(self):
         """Test that service can be overridden via context."""

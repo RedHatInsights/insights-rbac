@@ -194,8 +194,8 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", response.data)
 
-    def test_create_role_duplicate_name_returns_400(self):
-        """Test that duplicate role name returns 400."""
+    def test_create_role_duplicate_name_returns_409(self):
+        """Test that duplicate role name returns 409 Conflict."""
         # Create first role
         CustomRoleV2.objects.create(
             name="Duplicate API Role",
@@ -212,12 +212,13 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         response = self.client.post(self.url, data, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("status", response.data)
         self.assertIn("title", response.data)
         self.assertIn("detail", response.data)
-        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(response.data["status"], 409)
         self.assertIn("already exists", response.data["detail"])
+        self.assertIn("Create Role:", response.data["detail"])
 
     def test_create_role_missing_permissions_returns_problem_details(self):
         """Test that missing permissions returns ProblemDetails format."""
@@ -234,6 +235,9 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("title", response.data)
         self.assertIn("detail", response.data)
         self.assertEqual(response.data["status"], 400)
+        self.assertIn("Create Role:", response.data["detail"])
+        self.assertIn("errors", response.data)
+        self.assertEqual(response.data["errors"][0]["field"], "permissions")
 
     def test_create_role_invalid_permission_returns_problem_details(self):
         """Test that invalid permission returns ProblemDetails format."""
@@ -250,7 +254,10 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("title", response.data)
         self.assertIn("detail", response.data)
         self.assertEqual(response.data["status"], 400)
+        self.assertIn("Create Role:", response.data["detail"])
         self.assertIn("do not exist", response.data["detail"])
+        self.assertIn("errors", response.data)
+        self.assertEqual(response.data["errors"][0]["field"], "permissions")
 
     def test_create_role_empty_body_returns_all_required_field_errors(self):
         """Test that empty request body returns errors array with all required fields."""
