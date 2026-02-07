@@ -76,7 +76,10 @@ class RoleV2Service:
             # Convert permission-level exceptions to role context with "permissions" as the field
             field = getattr(e, "field", None)
             message = str(e) if field == "permissions" else f"Permission field error: {e}"
-            raise InvalidFieldError("permissions", message, OPERATION_CREATE_ROLE)
+            rejected_value = getattr(e, "rejected_value", None)
+            raise InvalidFieldError(
+                "permissions", message, OPERATION_CREATE_ROLE, rejected_value=rejected_value
+            ) from e
 
         found = {p.permission for p in permissions}
         not_found = requested - found

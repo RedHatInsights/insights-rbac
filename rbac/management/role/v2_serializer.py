@@ -94,6 +94,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         return self.context.get("role_service") or self.service_class()
 
     def create(self, validated_data):
+        """Create a new Role using the service layer."""
         tenant = self.context["request"].tenant
         permission_data = validated_data.pop("permissions", [])
 
