@@ -14,36 +14,36 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Service for RoleV2 management."""
+"""Service for Role management."""
 
 import logging
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from management.atomic_transactions import atomic
-from management.exceptions import RequiredFieldError
-from management.permission.exceptions import InvalidPermissionDataError
+from management.exceptions import (
+    AlreadyExistsError,
+    DatabaseError,
+    InvalidFieldError,
+    MissingRequiredFieldError,
+)
 from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
-from management.role.v2_exceptions import (
-    InvalidRolePermissionsError,
-    PermissionsNotFoundError,
-    RoleAlreadyExistsError,
-    RoleDatabaseError,
-)
 from management.role.v2_model import CustomRoleV2
 
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
 
+OPERATION_CREATE_ROLE = "Create Role"
+
 
 class RoleV2Service:
     """
-    Application service for RoleV2 operations.
+    Application service for Role operations.
 
     Raises domain-specific exceptions that should be caught and converted
-    to HTTP-level errors by the serializer layer.
+    to HTTP-level errors by the exception handler.
     """
 
     def __init__(self):
@@ -64,21 +64,29 @@ class RoleV2Service:
         # TextField(null=False, blank=False). Currently enforced here because
         # the API requires description but the model doesn't yet.
         if not description or not description.strip():
-            raise RequiredFieldError("description")
+            raise MissingRequiredFieldError("description", OPERATION_CREATE_ROLE)
 
         if not permission_data:
-            raise RequiredFieldError("permissions")
+            raise MissingRequiredFieldError("permissions", OPERATION_CREATE_ROLE)
 
         try:
             permissions = self.permission_service.resolve(permission_data)
             requested = {PermissionValue.from_v2_dict(p).v1_string() for p in permission_data}
-        except InvalidPermissionDataError as e:
-            raise InvalidRolePermissionsError(str(e))
+        except (InvalidFieldError, MissingRequiredFieldError) as e:
+            # Convert permission-level exceptions to role context with "permissions" as the field
+            field = getattr(e, "field", None)
+            message = str(e) if field == "permissions" else f"Permission field error: {e}"
+            raise InvalidFieldError("permissions", message, OPERATION_CREATE_ROLE)
 
         found = {p.permission for p in permissions}
         not_found = requested - found
         if not_found:
-            raise PermissionsNotFoundError(list(not_found))
+            missing_list = ", ".join(sorted(not_found))
+            raise InvalidFieldError(
+                "permissions",
+                f"The following permissions do not exist: {missing_list}",
+                OPERATION_CREATE_ROLE,
+            )
 
         try:
             role = CustomRoleV2(
@@ -102,11 +110,11 @@ class RoleV2Service:
         except ValidationError as e:
             error_msg = str(e)
             if "name" in error_msg.lower() and "already exists" in error_msg.lower():
-                raise RoleAlreadyExistsError(name)
+                raise AlreadyExistsError("role", name, OPERATION_CREATE_ROLE)
             raise
         except IntegrityError as e:
             error_msg = str(e)
             if "unique role v2 name per tenant" in error_msg.lower() or "unique" in error_msg.lower():
-                raise RoleAlreadyExistsError(name)
+                raise AlreadyExistsError("role", name, OPERATION_CREATE_ROLE)
             logger.exception("Database error creating role '%s'", name)
-            raise RoleDatabaseError()
+            raise DatabaseError(OPERATION_CREATE_ROLE)

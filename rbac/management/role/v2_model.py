@@ -22,7 +22,7 @@ from typing import Iterable, Optional
 from django.db import models, transaction
 from django.db.models import Q, QuerySet, signals
 from django.utils import timezone
-from management.exceptions import RequiredFieldError
+from management.exceptions import MissingRequiredFieldError
 from management.models import Group, Permission, Principal, Role
 from management.rbac_fields import AutoDateTimeField
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
@@ -62,7 +62,7 @@ class RoleV2(TenantAwareModel):
         """Validate required fields with domain exceptions."""
         super().clean()
         if not self.name or not self.name.strip():
-            raise RequiredFieldError("name")
+            raise MissingRequiredFieldError("name")
 
     def save(self, *args, **kwargs):
         """Save the model and run all validations from the model."""

@@ -20,8 +20,7 @@
 import dataclasses
 
 from django.db import models
-from management.exceptions import RequiredFieldError
-from management.permission.exceptions import InvalidPermissionDataError
+from management.exceptions import InvalidFieldError, MissingRequiredFieldError
 from migration_tool.models import cleanNameForV2SchemaCompatibility
 
 from api.models import TenantAwareModel
@@ -120,16 +119,16 @@ class PermissionValue:
         verb = data.get("verb")
 
         if operation and verb:
-            raise InvalidPermissionDataError("Cannot specify both 'operation' and 'verb'")
+            raise InvalidFieldError("operation", "Cannot specify both 'operation' and 'verb'")
 
         if application is None:
-            raise RequiredFieldError("application")
+            raise MissingRequiredFieldError("application")
         if resource_type is None:
-            raise RequiredFieldError("resource_type")
+            raise MissingRequiredFieldError("resource_type")
 
         verb_value = operation or verb
         if verb_value is None:
-            raise RequiredFieldError("operation")
+            raise MissingRequiredFieldError("operation")
 
         return cls(application=application, resource_type=resource_type, verb=verb_value)
 
