@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from unittest.mock import Mock
 
 from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
+from management.api.v2.role_binding.serializers import FieldSelection, RoleBindingByGroupSerializer
 from tests.identity_request import IdentityRequest
 
 

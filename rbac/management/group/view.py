@@ -29,6 +29,7 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.api.v1.role.views import RoleViewSet
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
@@ -65,7 +66,6 @@ from management.querysets import (
     get_role_queryset,
 )
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.v1.view import RoleViewSet
 from management.role_binding.service import RoleBindingService
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets

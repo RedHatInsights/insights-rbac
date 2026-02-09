@@ -57,6 +57,8 @@ from kessel.inventory.v1beta2 import (
 from kessel.relations.v1beta1 import check_pb2, lookup_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import check_pb2_grpc, lookup_pb2_grpc, relation_tuples_pb2_grpc
 from kessel.relations.v1beta1 import common_pb2
+from management.api.v1.role.serializers import BindingMappingSerializer
+from management.api.v2.workspace.serializers import WorkspaceSerializer
 from management.cache import JWTCache, TenantCache
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.inventory_checker.inventory_api_check import (
@@ -84,7 +86,6 @@ from management.role.v1.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v1.serializer import BindingMappingSerializer
 from management.tasks import (
     clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,
@@ -105,7 +106,6 @@ from management.utils import (
 )
 from management.workspace.model import Workspace
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
-from management.workspace.serializer import WorkspaceSerializer
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 from rest_framework import status
 

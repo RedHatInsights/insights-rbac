@@ -17,10 +17,9 @@
 
 """Serializer for workspace management."""
 
+from management.workspace.model import Workspace
 from management.workspace.service import WorkspaceService
 from rest_framework import serializers
-
-from .model import Workspace
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):

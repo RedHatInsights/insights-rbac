@@ -19,11 +19,11 @@
 
 # flake8: noqa
 # pylint: disable=unused-import
-from management.principal.view import PrincipalView
-from management.group.view import GroupViewSet
-from management.role.v1.view import RoleViewSet
-from management.access.view import AccessView
-from management.permission.view import PermissionViewSet
-from management.audit_log.view import AuditLogViewSet
-from management.workspace.view import WorkspaceViewSet
-from management.role_binding.view import RoleBindingViewSet
+from management.api.v1.access.views import AccessView
+from management.api.v1.audit_log.views import AuditLogViewSet
+from management.api.v1.group.views import GroupViewSet
+from management.api.v1.permission.views import PermissionViewSet
+from management.api.v1.principal.views import PrincipalView
+from management.api.v1.role.views import RoleViewSet
+from management.api.v2.role_binding.views import RoleBindingViewSet
+from management.api.v2.workspace.views import WorkspaceViewSet

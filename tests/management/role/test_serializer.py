@@ -23,7 +23,7 @@ from rest_framework import serializers
 
 from management.models import Permission
 from management.role.model import CustomRoleV2, RoleV2
-from management.role.serializer import (
+from management.api.v2.role.serializers import (
     PermissionSerializer,
     RoleInputSerializer,
     RoleOutputSerializer,

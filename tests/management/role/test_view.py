@@ -23,7 +23,7 @@ from django.urls import clear_url_caches, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from management import v2_urls
+from management.api.v2 import urls as v2_urls
 from management.models import Permission
 from management.role.model import CustomRoleV2, RoleV2
 from rbac import urls

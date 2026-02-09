@@ -32,16 +32,22 @@ from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from internal.utils import get_workspace_ids_from_resource_definition, is_resource_a_workspace
+from management.api.v1.role.serializers import (
+    AccessSerializer,
+    RoleDynamicSerializer,
+    RolePatchSerializer,
+    RoleSerializer,
+)
 from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset, user_has_perm
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
+from management.role.v1.model import Role
 from management.role.v1.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
 )
-from management.role.v1.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
 from management.workspace.model import Workspace
 from rest_framework import mixins, serializers, status, viewsets
@@ -51,8 +57,6 @@ from rest_framework.response import Response
 
 from api.models import Tenant
 from rbac.env import ENVIRONMENT
-from .model import Role
-from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
 ADDITIONAL_FIELDS_KEY = "add_fields"

@@ -18,7 +18,7 @@ from django.test import TestCase
 from unittest.mock import Mock
 from api.models import Tenant
 from management.models import Workspace
-from management.workspace.serializer import (
+from management.api.v2.workspace.serializers import (
     WorkspaceAncestrySerializer,
     WorkspaceSerializer,
     WorkspaceWithAncestrySerializer,

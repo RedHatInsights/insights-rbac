@@ -16,10 +16,10 @@
 #
 """View for Role management."""
 
+from management.api.v2.role.serializers import RoleInputSerializer, RoleOutputSerializer
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.model import RoleV2
-from management.role.serializer import RoleInputSerializer, RoleOutputSerializer
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.response import Response

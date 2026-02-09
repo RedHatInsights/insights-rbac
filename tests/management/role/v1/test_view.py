@@ -3013,7 +3013,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.request_mock.data = request_data
 
         # Create viewset instance and call validate_role
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3046,7 +3046,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.request_mock.data = request_data
 
         # Create viewset instance and call validate_role
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3079,7 +3079,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.request_mock.data = request_data
 
         from rest_framework import serializers
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3123,7 +3123,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.request_mock.data = request_data
 
         from rest_framework import serializers
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3161,7 +3161,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         self.request_mock.data = request_data
 
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3198,7 +3198,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         self.request_mock.data = request_data
 
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3238,7 +3238,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.request_mock.data = request_data
 
         from rest_framework import serializers
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3259,7 +3259,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         self.request_mock.data = request_data
 
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3288,7 +3288,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.request_mock.data = request_data
 
         from rest_framework import serializers
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 
@@ -3301,7 +3301,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.assertIn("attributeFilter", error_dict["resourceDefinitions"][0])
         self.assertIn("This field is required.", error_dict["resourceDefinitions"][0]["attributeFilter"][0])
 
-    @patch("management.role.v1.view.is_resource_a_workspace")
+    @patch("management.api.v1.role.views.is_resource_a_workspace")
     def test_workspace_validation_is_resource_workspace_called(self, mock_is_resource_workspace):
         """Test that is_resource_a_workspace is called with correct parameters."""
         mock_is_resource_workspace.return_value = False  # Make it return False to skip validation
@@ -3326,7 +3326,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         self.request_mock.data = request_data
 
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
         viewset.validate_role(self.request_mock)
@@ -3338,7 +3338,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
             {"key": "group.id", "operation": "equal", "value": str(self.tenant1_workspace.id)},
         )
 
-    @patch("management.role.v1.view.get_workspace_ids_from_resource_definition")
+    @patch("management.api.v1.role.views.get_workspace_ids_from_resource_definition")
     def test_workspace_validation_get_workspace_id_called(self, mock_get_workspace_ids):
         """Test that get_workspace_ids_from_resource_definition is called with correct parameters."""
         mock_get_workspace_ids.return_value = [self.tenant1_workspace.id]
@@ -3363,7 +3363,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         self.request_mock.data = request_data
 
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
         viewset.validate_role(self.request_mock)
@@ -3392,7 +3392,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.request_mock.data = request_data
 
         from rest_framework import serializers
-        from management.role.v1.view import RoleViewSet
+        from management.api.v1.role.views import RoleViewSet
 
         viewset = RoleViewSet()
 

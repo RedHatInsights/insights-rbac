@@ -19,7 +19,7 @@ from django.test.utils import override_settings
 from unittest.mock import Mock
 from api.models import Tenant
 from management.models import Permission, Workspace
-from management.role.v1.serializer import RoleSerializer, ResourceDefinitionSerializer
+from management.api.v1.role.serializers import RoleSerializer, ResourceDefinitionSerializer
 
 import random
 

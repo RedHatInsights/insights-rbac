@@ -20,7 +20,7 @@ from django.test import TestCase
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.model import RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
+from management.api.v2.role_binding.serializers import FieldSelection, RoleBindingByGroupSerializer
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import TenantMapping
 
@@ -98,7 +98,7 @@ class FieldSelectionTests(TestCase):
 
     def test_parse_raises_error_for_invalid_subject_field(self):
         """Test that parse raises error for invalid subject field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
+        from management.api.v2.role_binding.serializers import FieldSelectionValidationError
 
         with self.assertRaises(FieldSelectionValidationError) as context:
             FieldSelection.parse("subject(invalid_field)")
@@ -106,7 +106,7 @@ class FieldSelectionTests(TestCase):
 
     def test_parse_raises_error_for_invalid_role_field(self):
         """Test that parse raises error for invalid role field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
+        from management.api.v2.role_binding.serializers import FieldSelectionValidationError
 
         with self.assertRaises(FieldSelectionValidationError) as context:
             FieldSelection.parse("role(invalid_field)")
@@ -114,7 +114,7 @@ class FieldSelectionTests(TestCase):
 
     def test_parse_raises_error_for_invalid_resource_field(self):
         """Test that parse raises error for invalid resource field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
+        from management.api.v2.role_binding.serializers import FieldSelectionValidationError
 
         with self.assertRaises(FieldSelectionValidationError) as context:
             FieldSelection.parse("resource(invalid_field)")
@@ -122,7 +122,7 @@ class FieldSelectionTests(TestCase):
 
     def test_parse_raises_error_for_unknown_object_type(self):
         """Test that parse raises error for unknown object type."""
-        from management.role_binding.serializer import FieldSelectionValidationError
+        from management.api.v2.role_binding.serializers import FieldSelectionValidationError
 
         with self.assertRaises(FieldSelectionValidationError) as context:
             FieldSelection.parse("unknown(field)")
@@ -130,7 +130,7 @@ class FieldSelectionTests(TestCase):
 
     def test_parse_raises_error_for_invalid_root_field(self):
         """Test that parse raises error for invalid root field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
+        from management.api.v2.role_binding.serializers import FieldSelectionValidationError
 
         with self.assertRaises(FieldSelectionValidationError) as context:
             FieldSelection.parse("invalid_root_field")

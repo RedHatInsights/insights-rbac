@@ -13,28 +13,19 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Describes the urls and patterns for the management application."""
+"""URL configuration for the V1 management API.
+
+This module aggregates all V1 resource-level URL configurations.
+Each resource (role, group, etc.) defines its own urls.py with its routes.
+"""
 
 from django.urls import include, path
-from management.views import (
-    AccessView,
-    AuditLogViewSet,
-    GroupViewSet,
-    PermissionViewSet,
-    PrincipalView,
-    RoleViewSet,
-)
-from rest_framework.routers import DefaultRouter
 
-ROUTER = DefaultRouter()
-ROUTER.register(r"groups", GroupViewSet)
-ROUTER.register(r"roles", RoleViewSet)
-ROUTER.register(r"permissions", PermissionViewSet)
-ROUTER.register(r"auditlogs", AuditLogViewSet)
-
-# pylint: disable=invalid-name
 urlpatterns = [
-    path("principals/", PrincipalView.as_view(), name="principals"),
-    path("access/", AccessView.as_view(), name="access"),
-    path("", include(ROUTER.urls)),
+    path("", include("management.api.v1.role.urls")),
+    path("", include("management.api.v1.group.urls")),
+    path("", include("management.api.v1.permission.urls")),
+    path("", include("management.api.v1.audit_log.urls")),
+    path("", include("management.api.v1.principal.urls")),
+    path("", include("management.api.v1.access.urls")),
 ]

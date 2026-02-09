@@ -72,8 +72,9 @@ class RoleService:
         try:
             permissions = self.permission_service.resolve(permission_data)
             requested = {PermissionValue.from_v2_dict(p).v1_string() for p in permission_data}
-        except InvalidPermissionDataError as e:
-            raise InvalidRolePermissionsError(str(e))
+        except (InvalidPermissionDataError, RequiredFieldError, ValueError) as e:
+            # Convert permission-level validation errors to role-level error
+            raise InvalidRolePermissionsError(str(e)) from e
 
         found = {p.permission for p in permissions}
         not_found = requested - found

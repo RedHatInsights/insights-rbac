@@ -36,7 +36,7 @@ from api.cross_access.util import check_cross_request_expiry
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.definer import add_roles
-from management.group.serializer import GroupInputSerializer
+from management.api.v1.group.serializers import GroupInputSerializer
 from management.models import (
     Access,
     BindingMapping,

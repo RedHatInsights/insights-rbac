@@ -23,10 +23,12 @@ import pgtransaction
 from django.core.exceptions import ValidationError
 from django.db import OperationalError, transaction
 from django_filters import rest_framework as filters
+from management.api.v2.workspace.serializers import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
-from management.utils import validate_and_get_key
+from management.utils import flatten_validation_error, validate_and_get_key, validate_uuid
 from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
+from management.workspace.model import Workspace
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
@@ -37,9 +39,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from api.common.pagination import V2ResultsSetPagination
-from .model import Workspace
-from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
-from ..utils import flatten_validation_error, validate_uuid
 
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]

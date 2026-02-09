@@ -82,7 +82,7 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
 
     def _replicate(self, skip_ws_events: bool = False):
         # To avoid Circular Dependency
-        from management.workspace.serializer import WorkspaceEventSerializer
+        from management.api.v2.workspace.serializers import WorkspaceEventSerializer
 
         if not self.replication_enabled():
             return

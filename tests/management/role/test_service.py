@@ -19,7 +19,7 @@
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
 from management.models import Permission
-from management.role.exceptions import RoleAlreadyExistsError
+from management.role.exceptions import InvalidRolePermissionsError, RoleAlreadyExistsError
 from management.role.model import CustomRoleV2, RoleV2
 from management.role.service import RoleService
 from tests.identity_request import IdentityRequest
@@ -141,12 +141,15 @@ class RoleServiceTests(IdentityRequest):
         self.assertEqual(context.exception.field_name, "permissions")
 
     def test_create_role_with_permission_missing_required_field_raises_error(self):
-        """Test that permission missing a required field raises RequiredFieldError."""
+        """Test that permission missing a required field raises InvalidRolePermissionsError.
+
+        Permission-level validation errors are wrapped in role-level exceptions.
+        """
         permission_data = [
             {"resource_type": "hosts", "operation": "read"},  # Missing 'application'
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
+        with self.assertRaises(InvalidRolePermissionsError) as context:
             self.service.create(
                 name="Missing App Permission Role",
                 description="Valid description",
@@ -154,7 +157,7 @@ class RoleServiceTests(IdentityRequest):
                 tenant=self.tenant,
             )
 
-        self.assertEqual(context.exception.field_name, "application")
+        self.assertIn("application", str(context.exception))
 
     def test_create_role_with_missing_name_raises_error(self):
         """Test that creating a role with blank name raises RequiredFieldError."""

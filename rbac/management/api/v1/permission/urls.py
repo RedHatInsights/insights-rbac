@@ -1,4 +1,4 @@
-# Copyright 2024 Red Hat, Inc.
+# Copyright 2019 Red Hat, Inc.
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU Affero General Public License as
@@ -13,22 +13,12 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Describes the urls and patterns for the management application."""
+"""URL configuration for V1 Permission API."""
 
-from django.urls import include, path
-from management.role.view import RoleViewSet
-from management.views import (
-    RoleBindingViewSet,
-    WorkspaceViewSet,
-)
+from management.api.v1.permission.views import PermissionViewSet
 from rest_framework.routers import DefaultRouter
 
-ROUTER = DefaultRouter()
-ROUTER.register(r"workspaces", WorkspaceViewSet, basename="workspace")
-ROUTER.register(r"role-bindings", RoleBindingViewSet, basename="role-bindings")
-ROUTER.register(r"roles", RoleViewSet, basename="roles")
+router = DefaultRouter()
+router.register(r"permissions", PermissionViewSet, basename="permission")
 
-# pylint: disable=invalid-name
-urlpatterns = [
-    path("", include(ROUTER.urls)),
-]
+urlpatterns = router.urls

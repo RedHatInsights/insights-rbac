@@ -2597,7 +2597,7 @@ class PrincipalViewsetAllTypesTests(IdentityRequest):
 
         self.assertEqual(response.data.get("meta").get("count"), 6)
 
-    @patch("management.principal.view.PrincipalView.users_from_proxy")
+    @patch("management.api.v1.principal.views.PrincipalView.users_from_proxy")
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_all_pagination(self, mock_sa, mock_user):
         """Test the pagination when we read both principal types in one request."""
