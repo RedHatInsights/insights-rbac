@@ -143,7 +143,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
         response_serializer = RoleV2ResponseSerializer(
-            role, context={"input_permissions": input_permissions, "fields": fields}
+            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
         )
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
@@ -160,7 +160,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
         response_serializer = RoleV2ResponseSerializer(
-            role, context={"input_permissions": input_permissions, "fields": fields}
+            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
         )
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
