@@ -64,8 +64,8 @@ class RoleV2Service:
     to HTTP-level errors by the view layer.
     """
 
-    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
-    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
+    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified", "org_id"}
+    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified", "org_id"}
 
     def __init__(
         self,
