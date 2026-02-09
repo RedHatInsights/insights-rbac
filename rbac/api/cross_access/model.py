@@ -23,7 +23,7 @@ from uuid import uuid4
 from django.db import models
 from django.utils import timezone
 from management.rbac_fields import AutoDateTimeField
-from management.role.user_source import SourceKey
+from management.role.v1.user_source import SourceKey
 from rest_framework.serializers import ValidationError
 
 STATUS_LIST = ["pending", "cancelled", "approved", "denied", "expired"]

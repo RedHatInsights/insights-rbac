@@ -21,7 +21,7 @@
 from management.permission.model import Permission
 from management.principal.model import Principal
 from management.group.model import Group
-from management.role.model import (
+from management.role.v1.model import (
     Access,
     ExtRoleRelation,
     ExtTenant,
@@ -29,7 +29,7 @@ from management.role.model import (
     Role,
     BindingMapping,
 )
-from management.role.v2_model import (
+from management.role.model import (
     RoleV2,
     CustomRoleV2,
     SeededRoleV2,

@@ -26,12 +26,12 @@ from management.group.relation_api_dual_write_group_handler import RelationApiDu
 from management.models import BindingMapping, Workspace, Access, Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
 from management.policy.model import Policy
-from management.role.model import ResourceDefinition
+from management.role.v1.model import ResourceDefinition
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.definer import seed_roles
-from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, RoleBinding, SeededRoleV2
+from management.role.v1.definer import seed_roles
+from management.role.v1.model import Role
+from management.role.model import CustomRoleV2, RoleBinding, SeededRoleV2
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -48,7 +48,7 @@ from migration_tool.migrate_binding_scope import (
 )
 from migration_tool.utils import create_relationship
 from api.models import Tenant
-from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
+from tests.management.role.v1.test_dual_write import DualWriteTestCase, RbacFixture
 from tests.v2_util import seed_v2_role_from_v1, assert_v2_roles_consistent
 
 

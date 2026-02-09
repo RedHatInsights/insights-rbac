@@ -38,7 +38,7 @@ from api.models import Tenant
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role, Workspace
 from management.permissions.workspace_access import TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.workspace.serializer import WorkspaceEventSerializer
+from management.api.v2.workspace.serializers import WorkspaceEventSerializer
 from management.workspace.service import WorkspaceService
 from migration_tool.in_memory_tuples import (
     all_of,
@@ -208,7 +208,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         # Patch get_queryset to not use select_for_update during tests
         # SERIALIZABLE isolation level already provides necessary locking
         from unittest.mock import patch
-        from management.workspace.view import WorkspaceViewSet
+        from management.api.v2.workspace.views import WorkspaceViewSet
 
         original_get_queryset = WorkspaceViewSet.get_queryset
 
@@ -2338,7 +2338,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         # The error message should come from our PermissionDenied exception
         self.assertIn(TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE, str(response.data))
 
-    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    @patch("management.api.v2.workspace.serializers.WorkspaceSerializer.move")
     def test_move_retry_success_after_serialization_failure(self, mock_serializer_move):
         """
         Test that move operation succeeds after SerializationFailure on first attempt.
@@ -2375,7 +2375,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         # Verify the method was called twice (initial + 1 retry)
         self.assertEqual(mock_serializer_move.call_count, 2)
 
-    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    @patch("management.api.v2.workspace.serializers.WorkspaceSerializer.move")
     def test_move_retry_exhausted_after_three_failures(self, mock_serializer_move):
         """
         Test that move operation returns 409 CONFLICT after all retry attempts fail.
@@ -2403,7 +2403,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         # Verify the method was called 4 times (1 initial + 3 retries)
         self.assertEqual(mock_serializer_move.call_count, 4)
 
-    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    @patch("management.api.v2.workspace.serializers.WorkspaceSerializer.move")
     def test_move_retry_success_on_third_attempt(self, mock_serializer_move):
         """
         Test that move succeeds on the 4th and final attempt (3rd retry).
@@ -2441,7 +2441,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         # Verify the method was called 4 times before succeeding
         self.assertEqual(mock_serializer_move.call_count, 4)
 
-    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    @patch("management.api.v2.workspace.serializers.WorkspaceSerializer.move")
     def test_move_retry_deadlock_detected(self, mock_serializer_move):
         """
         Test that DeadlockDetected errors are also retried by the retry mechanism.
@@ -2473,7 +2473,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         # Verify retry happened
         self.assertEqual(mock_serializer_move.call_count, 2)
 
-    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    @patch("management.api.v2.workspace.serializers.WorkspaceSerializer.move")
     def test_move_retry_deadlock_exhausted(self, mock_serializer_move):
         """
         Test that DeadlockDetected returns 500 error after all retries exhausted.
@@ -2500,7 +2500,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         # Verify all retry attempts were made (1 initial + 3 retries = 4 total)
         self.assertEqual(mock_serializer_move.call_count, 4)
 
-    @patch("management.workspace.serializer.WorkspaceSerializer.move")
+    @patch("management.api.v2.workspace.serializers.WorkspaceSerializer.move")
     def test_move_no_retry_on_validation_error(self, mock_serializer_move):
         """
         Test that ValidationError does not trigger retries.

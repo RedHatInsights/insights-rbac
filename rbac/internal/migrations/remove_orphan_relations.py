@@ -23,12 +23,12 @@ from typing import Protocol
 from api.models import Tenant
 from django.db import transaction
 from internal.utils import replicate_missing_binding_tuples, iterate_tuples_from_kessel
-from management.role.model import BindingMapping
+from management.role.v1.model import BindingMapping
 from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
-from management.role.v2_model import RoleV2, SeededRoleV2
+from management.role.model import RoleV2, SeededRoleV2
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple

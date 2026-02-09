@@ -29,7 +29,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
     WorkspaceEvent,
 )
-from management.role.relation_api_dual_write_handler import BaseRelationApiDualWriteHandler
+from management.role.v1.relation_api_dual_write_handler import BaseRelationApiDualWriteHandler
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -82,7 +82,7 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
 
     def _replicate(self, skip_ws_events: bool = False):
         # To avoid Circular Dependency
-        from management.workspace.serializer import WorkspaceEventSerializer
+        from management.api.v2.workspace.serializers import WorkspaceEventSerializer
 
         if not self.replication_enabled():
             return

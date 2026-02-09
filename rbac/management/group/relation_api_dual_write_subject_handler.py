@@ -31,8 +31,8 @@ from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEventType,
 )
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
-from management.role.v2_model import SeededRoleV2
+from management.role.model import SeededRoleV2
+from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 from api.models import Tenant

@@ -20,7 +20,7 @@ from django.test import TestCase
 
 from management.permission.scope_service import Scope
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 
 
 class TenantMappingTests(TestCase):

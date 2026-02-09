@@ -36,7 +36,7 @@ from api.cross_access.util import check_cross_request_expiry
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.definer import add_roles
-from management.group.serializer import GroupInputSerializer
+from management.api.v1.group.serializers import GroupInputSerializer
 from management.models import (
     Access,
     BindingMapping,
@@ -51,8 +51,8 @@ from management.models import (
 )
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
-from management.role.v2_model import CustomRoleV2
+from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.model import CustomRoleV2
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
@@ -65,8 +65,8 @@ from migration_tool.in_memory_tuples import (
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from tests.management.role.test_dual_write import RbacFixture
-from tests.management.role.test_view import find_in_list, relation_api_tuple
+from tests.management.role.v1.test_dual_write import RbacFixture
+from tests.management.role.v1.test_view import find_in_list, relation_api_tuple
 from tests.v2_util import assert_v2_custom_roles_consistent, seed_v2_role_from_v1
 
 

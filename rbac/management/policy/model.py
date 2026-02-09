@@ -29,7 +29,7 @@ from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.group.model import Group
 from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
-from management.role.model import Role
+from management.role.v1.model import Role
 
 from api.models import TenantAwareModel
 

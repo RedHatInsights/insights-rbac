@@ -20,7 +20,7 @@ from migration_tool.in_memory_tuples import (
     RelationPredicate,
     subject,
 )
-from tests.management.role.test_dual_write import DualWriteTestCase
+from tests.management.role.v1.test_dual_write import DualWriteTestCase
 
 from api.models import Tenant
 from management.models import Group, Role

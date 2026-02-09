@@ -151,7 +151,7 @@ from rest_framework import serializers
 from api.models import Tenant
 from management.models import Access, BindingMapping, Group, Permission, Policy, ResourceDefinition, Role, Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.workspace.service import WorkspaceService
 from django.conf import settings
 from django.core.exceptions import ValidationError

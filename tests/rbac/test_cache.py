@@ -198,7 +198,7 @@ class AccessCacheTest(TestCase):
         cache.asset_called_once()
         cache.asset_called_once_with(self.principal_b.uuid)
 
-    @patch("management.role.model.AccessCache.delete_policy")
+    @patch("management.role.v1.model.AccessCache.delete_policy")
     def test_policy_cache_change_delete_roles_signals(self, cache):
         self.group_a.principals.add(self.principal_a)
         self.group_b.principals.add(self.principal_b)

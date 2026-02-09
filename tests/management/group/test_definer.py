@@ -27,7 +27,7 @@ from management.group.definer import (
     remove_roles,
     _roles_by_query_or_ids,
 )
-from management.role.definer import seed_roles
+from management.role.v1.definer import seed_roles
 from tests.identity_request import IdentityRequest
 from tests.core.test_kafka import copy_call_args
 from management.models import Group, Role, Policy

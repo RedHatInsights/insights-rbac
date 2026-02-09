@@ -27,7 +27,7 @@ from management.group.model import Group
 from management.permissions.role_access import RoleAccessPermission
 from management.policy.model import Policy
 from management.principal.it_service import ITService
-from management.role.model import Access, Role
+from management.role.v1.model import Access, Role
 from management.utils import (
     APPLICATION_KEY,
     access_for_principal,

@@ -21,11 +21,11 @@ import logging
 
 from django_filters import rest_framework as filters
 from internal.integration.serializers import TenantSerializer
+from management.api.v1.group.views import GroupViewSet
+from management.api.v1.role.views import RoleViewSet
 from management.cache import TenantCache
 from management.filters import CommonFilters
-from management.group.view import GroupViewSet
 from management.permissions.admin_access import AdminAccessPermission
-from management.role.view import RoleViewSet
 from rest_framework import mixins, viewsets
 
 from api.models import Tenant

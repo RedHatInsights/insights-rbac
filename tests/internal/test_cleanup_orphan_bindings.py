@@ -21,8 +21,8 @@ from django.test import override_settings
 from management.models import BindingMapping, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.role.model import Role
-from management.role.v2_model import SeededRoleV2, CustomRoleV2, RoleBinding
+from management.role.v1.model import Role
+from management.role.model import SeededRoleV2, CustomRoleV2, RoleBinding
 from management.tenant_service import V2TenantBootstrapService
 from management.workspace.service import WorkspaceService
 from migration_tool.in_memory_tuples import (
@@ -41,7 +41,7 @@ from internal.migrations.remove_orphan_relations import (
     cleanup_tenant_orphan_bindings,
 )
 from internal.utils import rebuild_tenant_workspace_relations
-from tests.management.role.test_dual_write import DualWriteTestCase
+from tests.management.role.v1.test_dual_write import DualWriteTestCase
 from tests.v2_util import assert_v2_roles_consistent
 
 

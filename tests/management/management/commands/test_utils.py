@@ -5,7 +5,7 @@ from django.db.utils import IntegrityError
 from django.test import TestCase
 
 from api.models import Tenant
-from management.group.view import SERVICE_ACCOUNT_USERNAME_FORMAT
+from management.api.v1.group.views import SERVICE_ACCOUNT_USERNAME_FORMAT
 from management.management.commands.utils import (
     populate_tenant_user_data,
     populate_service_account_data,

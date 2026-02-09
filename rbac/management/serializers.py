@@ -18,7 +18,7 @@
 
 # flake8: noqa
 # pylint: disable=unused-import
-from management.principal.serializer import PrincipalSerializer
-from management.group.serializer import GroupSerializer
-from management.role.serializer import RoleSerializer
-from management.audit_log.serializer import AuditLogSerializer
+from management.api.v1.group.serializers import GroupSerializer
+from management.api.v1.principal.serializers import PrincipalSerializer
+from management.api.v1.role.serializers import RoleSerializer
+from management.api.v1.audit_log.serializers import AuditLogSerializer

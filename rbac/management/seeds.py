@@ -47,7 +47,7 @@ def _run_seeds(seed_type, **kwargs):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from management.group.definer import seed_group
-    from management.role.definer import seed_roles, seed_permissions
+    from management.role.v1.definer import seed_roles, seed_permissions
 
     seed_functions = {"role": seed_roles, "group": seed_group, "permission": seed_permissions}
 

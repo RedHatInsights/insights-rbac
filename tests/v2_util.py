@@ -5,7 +5,7 @@ from management.group.platform import GlobalPolicyIdService, DefaultGroupNotAvai
 from management.models import BindingMapping, CustomRoleV2, Permission, Role, RoleBinding, RoleV2
 from management.permission.scope_service import Scope
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import SeededRoleV2
+from management.role.model import SeededRoleV2
 from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.in_memory_tuples import (
     resource,

@@ -20,7 +20,7 @@ import uuid
 
 from api.models import Tenant, User
 from management.models import Access, Group, Permission, Principal, Policy, Role
-from management.principal.view import VALID_PRINCIPAL_TYPE_VALUE
+from management.api.v1.principal.views import VALID_PRINCIPAL_TYPE_VALUE
 from management.utils import (
     access_for_principal,
     get_principal_from_request,

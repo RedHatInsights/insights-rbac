@@ -44,12 +44,12 @@ from management.models import BindingMapping, Group, Permission, Policy, Role, W
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.model import Access, ResourceDefinition
-from management.role.relation_api_dual_write_handler import (
+from management.role.v1.model import Access, ResourceDefinition
+from management.role.v1.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.user_source import SourceKey
+from management.role.v1.user_source import SourceKey
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -73,7 +73,7 @@ from kessel.inventory.v1beta2 import (
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from tests.identity_request import IdentityRequest
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
 
 

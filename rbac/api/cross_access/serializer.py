@@ -18,9 +18,9 @@
 """Serializer for CrossAccountRequest."""
 
 from django.db import transaction
+from management.api.v1.permission.serializers import PermissionSerializer
 from management.models import Role
 from management.notifications.notification_handlers import cross_account_access_handler
-from management.permission.serializer import PermissionSerializer
 from management.utils import raise_validation_error
 from rest_framework import serializers
 

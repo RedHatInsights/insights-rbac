@@ -21,7 +21,7 @@ from django.test import TestCase, override_settings
 from management.group.model import Group
 from management.models import BindingMapping, Workspace, Access, Permission
 from management.policy.model import Policy
-from management.role.model import Role, ResourceDefinition
+from management.role.v1.model import Role, ResourceDefinition
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
     InMemoryRelationReplicator,

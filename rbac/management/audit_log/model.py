@@ -21,7 +21,7 @@ from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from management.group.model import Group
-from management.role.model import Role
+from management.role.v1.model import Role
 
 from api.models import Tenant, TenantAwareModel
 

@@ -38,7 +38,7 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 from migration_tool.models import V2boundresource
-from tests.management.role.test_dual_write import RbacFixture
+from tests.management.role.v1.test_dual_write import RbacFixture
 
 from api.models import Tenant, User
 

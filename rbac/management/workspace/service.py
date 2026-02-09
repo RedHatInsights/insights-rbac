@@ -31,7 +31,7 @@ from feature_flags import FEATURE_FLAGS
 from internal.utils import get_workspace_ids_from_resource_definition, is_resource_a_workspace
 from management.models import ResourceDefinition, Role, Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.v1.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from prometheus_client import Counter, Histogram
 from psycopg2 import sql
