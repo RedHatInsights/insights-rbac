@@ -25,6 +25,7 @@ https://docs.djangoproject.com/en/2.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.0/ref/settings/
 """
+
 import os
 
 import datetime
@@ -38,7 +39,6 @@ from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics, DependencyEndpoints
 from feature_flags import FEATURE_FLAGS
-
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -583,6 +583,8 @@ ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
 V2_READ_ONLY_API_MODE = ENVIRONMENT.bool("V2_READ_ONLY_API_MODE", default=False)
 WORKSPACE_ACCESS_CHECK_V2_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_CHECK_V2_ENABLED", default=False)
+# When True, use 'role_binding_view' permission; when False, use 'view' permission for role binding access
+USE_ROLE_BINDING_VIEW_PERMISSION = ENVIRONMENT.bool("USE_ROLE_BINDING_VIEW_PERMISSION", default=True)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
 V1_ROLE_PERMISSION_BLOCK_LIST = [
     permission.strip()

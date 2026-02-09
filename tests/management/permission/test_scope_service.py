@@ -17,6 +17,7 @@
 """
 Tests for permission scope functionality.
 """
+
 from django.test import TestCase, override_settings
 from typing import Tuple
 

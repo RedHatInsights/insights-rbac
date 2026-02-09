@@ -14,17 +14,19 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Describes the urls and patterns for the management application."""
+
 from django.urls import include, path
+from management.role.v2_view import RoleV2ViewSet
 from management.views import (
     RoleBindingViewSet,
     WorkspaceViewSet,
 )
 from rest_framework.routers import DefaultRouter
 
-
 ROUTER = DefaultRouter()
 ROUTER.register(r"workspaces", WorkspaceViewSet, basename="workspace")
 ROUTER.register(r"role-bindings", RoleBindingViewSet, basename="role-bindings")
+ROUTER.register(r"roles", RoleV2ViewSet, basename="roles")
 
 # pylint: disable=invalid-name
 urlpatterns = [

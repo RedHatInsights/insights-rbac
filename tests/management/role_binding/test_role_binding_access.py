@@ -518,6 +518,72 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         call_kwargs = mock_checker.check_resource_access.call_args[1]
         self.assertEqual(call_kwargs["resource_type"], "workspace")
 
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_kessel_permission_uses_view_relation_when_feature_flag_disabled(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """Kessel permission should use 'view' relation when feature flag is disabled."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertTrue(result)
+        mock_checker.check_resource_access.assert_called_once()
+        call_kwargs = mock_checker.check_resource_access.call_args[1]
+        self.assertEqual(call_kwargs["relation"], "view")
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_kessel_permission_uses_role_binding_view_relation_when_feature_flag_enabled(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """Kessel permission should use 'role_binding_view' relation when feature flag is enabled."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = True
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertTrue(result)
+        mock_checker.check_resource_access.assert_called_once()
+        call_kwargs = mock_checker.check_resource_access.call_args[1]
+        self.assertEqual(call_kwargs["relation"], "role_binding_view")
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIdentityRequest):

@@ -200,7 +200,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         )
 
         # Mock StreamedListObjects to return accessible workspaces
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -248,7 +248,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         )
 
         # Mock StreamedListObjects to return all accessible workspaces
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -294,7 +294,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         )
 
         # Mock StreamedListObjects to return only specific workspace and its children
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -342,7 +342,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         )
 
         # Mock StreamedListObjects to return all workspaces for admin
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -381,7 +381,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         )
 
         # Mock StreamedListObjects to return all workspaces
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -704,18 +704,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_list_with_non_existent_workspace_in_attribute_filter(self, mock_flag, mock_channel):
         """Test workspace list with attribute filter containing non-existent workspace ID.
 
-        Returns root/default/ungrouped.
+        Returns 200 with fallback workspaces since user has no real workspace access.
         """
         # Mock Inventory API
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
         # Mock StreamedListObjects to return empty (no access to non-existent workspace)
-        def stream_side_effect(request):
-            # Return empty - non-existent workspace means no access
-            return iter([])  # Return empty iterator
-
-        mock_stub.StreamedListObjects.return_value = stream_side_effect(None)
+        mock_stub.StreamedListObjects.return_value = iter([])
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -739,12 +735,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 200 with at least root, default, and ungrouped workspaces (new v2 behavior)
-            # Even though the user has no access to any real workspace, they get root/default/ungrouped
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
             self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
@@ -763,6 +757,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         # Create mock response objects for only the valid workspace
         # The Inventory API will only return workspaces that actually exist and user has access to
+        # Use side_effect to return fresh iterator each time StreamedListObjects is called
         mock_responses = self._create_mock_workspace_responses(
             [
                 self.standard_workspace.id,
@@ -770,7 +765,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         )
 
         # Mock StreamedListObjects to return only valid workspaces
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1191,10 +1186,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_user_without_permissions(self, mock_flag, mock_channel):
-        """Test workspace list for user without any permissions.
-
-        Returns at least root, default, and ungrouped workspaces.
-        """
+        """Test workspace list for user without any permissions returns fallback workspaces."""
         # Mock Inventory API to return no workspaces (user has no permissions)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1217,11 +1209,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 200 with at least root, default, and ungrouped workspaces (new v2 behavior)
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
             self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
@@ -1267,7 +1258,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
         # Mock StreamedListObjects to return accessible workspaces for admin
         mock_responses = self._create_mock_workspace_responses([self.default_workspace.id])
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1302,9 +1293,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Mock StreamedListObjects to return only the standard sub-workspace
         # Since standard_sub_workspace is the only accessible workspace, it's the top-level one
         # The code should add all its ancestors (standard_workspace, default_workspace, root_workspace)
+        # Use side_effect to return fresh iterator each time StreamedListObjects is called
         mock_responses = self._create_mock_workspace_responses([self.standard_sub_workspace.id])
 
-        mock_stub.StreamedListObjects.return_value = iter(mock_responses)
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
 
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
@@ -1344,8 +1336,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_returns_root_default_and_ungrouped_when_no_access(self, mock_flag, mock_channel):
-        """Test that workspace list returns at least root, default, and ungrouped workspaces when user has no access."""
+    def test_workspace_list_returns_fallback_workspaces_when_no_access(self, mock_flag, mock_channel):
+        """Test that workspace list returns fallback workspaces when user has no real workspace access in V2 mode."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1373,11 +1365,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return at least root, default, and ungrouped workspaces
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify root, default, and ungrouped workspaces are returned
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
             self.assertIn(str(self.root_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
@@ -1650,9 +1641,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         second_page_responses = self._create_mock_workspace_responses(second_page_workspaces)
 
         # Use side_effect list to return different responses on each call (no conditionals)
+        # Note: 2 calls expected - only FilterBackend does StreamedListObjects:
+        #   1. FilterBackend page 1
+        #   2. FilterBackend page 2 (follows continuation token)
         mock_stub.StreamedListObjects.side_effect = [
-            iter(first_page_responses),
-            iter(second_page_responses),
+            iter(first_page_responses),  # FilterBackend page 1 (has continuation token)
+            iter(second_page_responses),  # FilterBackend page 2
         ]
 
         with patch(
@@ -1678,10 +1672,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify StreamedListObjects was called twice (for two pages)
+            # Verify StreamedListObjects was called 2 times (FilterBackend pagination only)
             self.assertEqual(mock_stub.StreamedListObjects.call_count, 2)
 
-            # Verify the second call included the continuation token
+            # Verify the second call (second FilterBackend page) included the continuation token
             second_call_args = mock_stub.StreamedListObjects.call_args_list[1]
             request_arg = second_call_args[0][0]
             self.assertEqual(request_arg.pagination.continuation_token, "next_page_token_123")
@@ -2484,3 +2478,268 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_workspace_objects.filter.assert_called_once_with(id=nonexistent_workspace_id, tenant=self.tenant)
         # Permission message should be set
         self.assertEqual(permission.message, TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_type_standard_returns_empty_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=standard returns 200 with empty list when user has no real workspace access in V2 mode."""
+        # Mock Inventory API to return empty list (no accessible workspaces)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Mock StreamedListObjects to return empty iterator (user has no real access)
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+
+            # Query with type=standard - should return 200 with empty data
+            # (fallback workspaces are root/default/ungrouped, none are type=standard)
+            response = client.get(f"{url}?type=standard", format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+            self.assertEqual(len(response.data["data"]), 0)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_type_all_returns_fallback_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=all returns 200 with fallback workspaces when user has no real workspace access in V2 mode."""
+        # Mock Inventory API to return empty list (no accessible workspaces)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Mock StreamedListObjects to return empty iterator (user has no real access)
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+
+            # Query with type=all - should return 200 with fallback workspaces
+            response = client.get(f"{url}?type=all", format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+            self.assertIn(str(self.default_workspace.id), returned_ids)
+            self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_type_standard_returns_200_with_real_access(self, mock_flag, mock_channel):
+        """Test that type=standard returns 200 when user has real workspace access in V2 mode."""
+        # Mock Inventory API to return accessible workspaces
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Create mock response objects with standard workspace access
+        mock_responses = self._create_mock_workspace_responses(
+            [
+                self.standard_workspace.id,
+            ]
+        )
+
+        # Mock StreamedListObjects to return accessible workspaces
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access for principal
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:read",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+
+            # Query with type=standard - should return 200 since user has real access
+            response = client.get(f"{url}?type=standard", format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+            # Verify only standard workspaces are returned
+            for workspace in response.data.get("data", []):
+                self.assertEqual(workspace.get("type"), "standard")
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_type_all_returns_200_with_real_access(self, mock_flag, mock_channel):
+        """Test that type=all returns 200 when user has real workspace access in V2 mode."""
+        # Mock Inventory API to return accessible workspaces
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Create mock response objects with all workspace types
+        mock_responses = self._create_mock_workspace_responses(
+            [
+                self.root_workspace.id,
+                self.default_workspace.id,
+                self.standard_workspace.id,
+            ]
+        )
+
+        # Mock StreamedListObjects to return accessible workspaces
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access for principal
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:read",
+                platform_default=True,
+            )
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+
+            # Query with type=all - should return 200 since user has real access
+            response = client.get(f"{url}?type=all", format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_no_type_returns_fallback_without_real_access(self, mock_flag, mock_channel):
+        """Test that default list (no type filter) returns fallback workspaces when user has no real workspace access."""
+        # Mock Inventory API to return empty list (no accessible workspaces)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Mock StreamedListObjects to return empty iterator (user has no real access)
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+
+            # Query without type filter - should return 200 with fallback workspaces
+            response = client.get(url, format="json", **headers)
+
+            # Default type filter is 'standard', so fallback workspaces (root, default, ungrouped)
+            # are filtered out, resulting in empty data
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_type_root_returns_root_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=root returns root workspace when user has no real workspace access in V2 mode."""
+        # Mock Inventory API to return empty list (no accessible workspaces)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Mock StreamedListObjects to return empty iterator (user has no real access)
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+
+            # Query with type=root - should return root workspace from fallback
+            response = client.get(f"{url}?type=root", format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_type_default_returns_default_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=default returns default workspace when user has no real workspace access in V2 mode."""
+        # Mock Inventory API to return empty list (no accessible workspaces)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Mock StreamedListObjects to return empty iterator (user has no real access)
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+
+            # Query with type=default - should return default workspace from fallback
+            response = client.get(f"{url}?type=default", format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.default_workspace.id), returned_ids)

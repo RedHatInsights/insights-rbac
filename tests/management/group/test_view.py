@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group viewset."""
+
 import json
 import random
 from datetime import timedelta
@@ -66,7 +67,7 @@ from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.management.role.test_view import find_in_list, relation_api_tuple
-from tests.v2_util import assert_v2_custom_roles_consistent
+from tests.v2_util import assert_v2_custom_roles_consistent, seed_v2_role_from_v1
 
 
 def generate_group_member_relation_entry(group_uuid, principal_user_id):
@@ -196,6 +197,7 @@ class GroupViewsetTests(IdentityRequest):
             system=True,
             tenant=self.tenant,
         )
+        seed_v2_role_from_v1(self.role)
         self.ext_tenant = ExtTenant.objects.create(name="foo")
         self.ext_role_relation = ExtRoleRelation.objects.create(role=self.role, ext_tenant=self.ext_tenant)
         self.policy = Policy.objects.create(name="policyA", group=self.group, tenant=self.tenant)
@@ -1479,7 +1481,7 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             org_id = self.customer_data["org_id"]
 
-            default_role = Role.objects.create(
+            default_role: Role = Role.objects.create(
                 name="default_role",
                 description="A default role for a group.",
                 platform_default=True,
@@ -1496,13 +1498,16 @@ class GroupViewsetTests(IdentityRequest):
             # We use a system role for this test because the test roles created in setUp do not go through the normal
             # role creation machinery, and thus are not in the expected state for use with relations (e.g. the custom
             # roles will have no BindingMappings created).
-            system_role = Role.objects.create(
+            system_role: Role = Role.objects.create(
                 name="system_role",
                 description="A default role for a group.",
                 platform_default=False,
                 system=True,
                 tenant=self.public_tenant,
             )
+
+            seed_v2_role_from_v1(default_role)
+            seed_v2_role_from_v1(system_role)
 
             self.defGroup.policies.first().roles.add(default_role)
 
@@ -1702,6 +1707,9 @@ class GroupViewsetTests(IdentityRequest):
                 permission=Permission.objects.create(tenant=self.public_tenant, permission="tenant:resource:verb"),
             )
 
+            seed_v2_role_from_v1(default_role)
+            seed_v2_role_from_v1(default_role_to_keep_in_group)
+
             self.defGroup.policies.first().roles.add(default_role)
             self.defGroup.policies.first().roles.add(default_role_to_keep_in_group)
 
@@ -1841,6 +1849,9 @@ class GroupViewsetTests(IdentityRequest):
                 system=True,
                 tenant=self.public_tenant,
             )
+
+            seed_v2_role_from_v1(default_role)
+
             self.defGroup.policies.first().roles.add(default_role)
             self.assertTrue(self.defGroup.system)
 
@@ -4573,6 +4584,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role.version = 3
         user_access_admin_role.save()
 
+        seed_v2_role_from_v1(user_access_admin_role)
+
         # Associate the role and the permission.
         access = Access()
         access.permission = rbac_user_access_admin_permission
@@ -7194,6 +7207,8 @@ class GroupReplicationTests(IdentityRequest):
         self.associate_admin_request = self.associate_admin_request_context["request"]
 
         self.fixture.bootstrap_tenant(self.tenant)
+
+        self.fixture.new_principals_in_tenant(["2222222"], self.fixture.new_tenant("car_source").tenant)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_remove_role_does_not_remove_binding_if_cross_account_granted(self, replicate):

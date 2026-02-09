@@ -27,7 +27,7 @@ from google.protobuf import json_format
 from google.rpc import error_details_pb2
 from grpc_status import rpc_status
 from internal.jwt_utils import JWTManager, JWTProvider
-from kessel.relations.v1beta1 import relation_tuples_pb2
+from kessel.relations.v1beta1 import common_pb2, relation_tuples_pb2
 from kessel.relations.v1beta1 import relation_tuples_pb2_grpc
 from management.cache import JWTCacheOptimized
 from management.relation_replicator.relation_replicator import (
@@ -35,7 +35,6 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
 )
 from management.utils import create_client_channel_relation
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -241,6 +240,7 @@ class RelationsApiReplicator(RelationReplicator):
         subject_relation: Optional[str] = None,
         resource_namespace: str = "rbac",
         subject_namespace: str = "rbac",
+        continuation_token: Optional[str] = None,
     ) -> list[dict]:
         """Read tuples from the Relations API.
 
@@ -279,7 +279,12 @@ class RelationsApiReplicator(RelationReplicator):
                         subject_id=subject_id,
                         relation=subject_relation,
                     ),
-                )
+                ),
+                pagination=(
+                    common_pb2.RequestPagination(continuation_token=continuation_token)
+                    if continuation_token is not None
+                    else None
+                ),
             )
 
             responses = execute_grpc_call(

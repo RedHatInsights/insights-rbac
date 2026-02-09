@@ -30,10 +30,114 @@ model Timestamps {
 @format("uuid")
 scalar UUID extends string;
 
+@example(#{
+    application: "rbac",
+    resource_type: "workspace",
+    operation: "read"
+})
+model Permission {
+    application: string;
+    resource_type: string;
+    operation: string;
+}
+
+@example(#{
+    id: "550e8400-e29b-41d4-a716-446655440002",
+    name: "Workspace Admin",
+    description: "Full administrative access to workspace",
+    permissions: #[
+        #{
+            application: "rbac",
+            resource_type: "workspace",
+            operation: "read"
+        },
+        #{
+            application: "rbac",
+            resource_type: "workspace",
+            operation: "write"
+        }
+    ],
+    permissions_count: 2,
+    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+})
+model Role {
+    @doc("UUID that uniquely identifies the role")
+    id?: UUID;
+    @doc("A human readable name for the role. Must be unique within a tenant.")
+    name?: string;
+    @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
+    description?: string;
+    @doc("List of permissions assigned to this role")
+    permissions?: KesselRBAC.Permission[];
+    @doc("Number of permissions assigned to this role")
+    permissions_count?: int32;
+    @doc("Timestamp of when the role was last modified")
+    last_modified?: offsetDateTime;
+}
+
+/**
+ * Field mask used by the `fields` query parameter to control which fields
+ * are included in the response.
+ *
+ * **Syntax:**
+ * - Use comma to separate multiple fields: `id,name,description`
+ * - Use parentheses for nested objects: `subject(id,name),resource(type)`
+ *
+ * **Examples:**
+ * - `id,name`
+ * - `subject(group.name),role(name)`
+ */
+scalar FieldMask extends string;
+
+/**
+ * Limit for pagination. Controls the maximum number of items returned.
+ * Use -1 to return all objects.
+ */
+scalar Limit extends int64;
+
+/**
+ * Cursor for cursor-based pagination.
+ * An opaque string that points to the next/previous page of results.
+ */
+scalar Cursor extends string;
+
+/**
+ * Offset for offset-based pagination.
+ * The number of items to skip before starting to return results.
+ */
+scalar Offset extends int64;
+
+/**
+ * Sort order specification for list operations.
+ * Use comma to separate multiple fields, prefix with '-' for descending order.
+ *
+ * **Examples:**
+ * - `name` - Sort by name ascending
+ * - `-last_modified` - Sort by last_modified descending
+ * - `name,-created` - Sort by name ascending, then created descending
+ */
+scalar OrderBy extends string;
+
+// Default pagination values
+const DefaultLimit: Limit = 10;
+const DefaultOffset: Offset = 0;
+
+model ListResponse<Item, StatusCode extends int32 = 200> {
+    @statusCode _: StatusCode;
+    meta: CursorPaginationMeta;
+    links: CursorPaginationLinks;
+    data: Item[];
+}
+
+model ItemResponse<Item, StatusCode extends int32> {
+    @statusCode _: StatusCode;
+    ...Item;
+}
+
 model CursorPaginationMeta {
     @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
-    limit: int64 = 10;
+    limit: Limit = DefaultLimit;
 }
 
 model CursorPaginationLinks {
@@ -55,11 +159,11 @@ model OffsetPaginationMeta {
 
     @doc("Limit of returned objects. Use -1 to return all objects.")
     @example(10)
-    limit: int64 = 10;
+    limit: Limit = DefaultLimit;
 
     @doc("Offset of returned objects")
     @example(0)
-    offset: int64 = 0;
+    offset: Offset = DefaultOffset;
 }
 
 model OffsetPaginationLinks {
@@ -391,15 +495,21 @@ namespace Workspaces {
       }
     )
     @get op list(
-        @query limit?: int64 = 10;
+        @query limit?: Limit = DefaultLimit;
 
         @doc("Offset for offset-based pagination.")
-        @query offset?: int64 = 0;
+        @query offset?: Offset = DefaultOffset;
 
         @doc("Defaults to all when param is not supplied.")
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
+        @doc("Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.")
+        @query(#{explode: false}) ids?: UUID[];
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, created, modified, type.")
+        @example("-created")
+        @query order_by?: string = "name";
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
@@ -584,6 +694,9 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id),last_modified";
+
+
     @discriminator("type")
     model BaseSubject {
         @doc("Subject identifier")
@@ -634,11 +747,62 @@ namespace RoleBindings {
         type?: string;
     }
 
-    model Role {
-        @doc("Role identifier")
-        id?: UUID;
-        @doc("Name of the role")
-        name?: string;
+    @doc("Request body for creating role bindings")
+    @example(#{
+        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+        role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+    })
+    model CreateRoleBindingsRequest {
+        @doc("Resource to bind the role to")
+        resource: {
+            @doc("UUID that uniquely identifies the resource")
+            id: UUID;
+            @doc("Type of resource")
+            @example("workspace")
+            type: string;
+        };
+        @doc("Subject to grant access to")
+        subject: {
+            @doc("UUID that uniquely identifies the subject")
+            id: UUID;
+            @doc("Type of subject")
+            type: "user" | "group";
+        };
+        @doc("Role to assign")
+        role: {
+            @doc("UUID that uniquely identifies the role")
+            id: UUID;
+        };
+    }
+
+    @doc("Batch request to create multiple role bindings")
+    @example(#{
+        requests: #[
+            #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+            },
+            #{
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+            }
+        ]
+    })
+    model BatchCreateRoleBindingsRequest {
+        @doc("List of role bindings to create (maximum 100)")
+        @minItems(1)
+        @maxItems(100)
+        requests: CreateRoleBindingsRequest[];
+    }
+
+    @doc("Response containing the created role bindings")
+    model BatchCreateRoleBindingsResponse {
+        @statusCode _: 201;
+        @doc("The role bindings that were created")
+        role_bindings: RoleBinding[];
     }
 
     @example(#{
@@ -698,20 +862,11 @@ namespace RoleBindings {
         @doc("Subject of the role binding")
         subject?: Subject;
         @doc("Roles assigned to the subject")
-        roles?: Role[];
+        roles?: KesselRBAC.Role[];
         @doc("Resource the roles apply to")
         resource?: Resource;
         @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
         inherited_from?: Resource;
-    }
-
-    model RoleBindingBySubjectListResponse {
-        @doc("Pagination metadata")
-        meta: CursorPaginationMeta;
-        @doc("Pagination links")
-        links: CursorPaginationLinks;
-        @doc("List of role bindings grouped by subject")
-        data: RoleBindingBySubject[];
     }
 
     @doc("List role bindings grouped by subject")
@@ -725,6 +880,7 @@ namespace RoleBindings {
             resource_type: "workspace"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -767,6 +923,7 @@ namespace RoleBindings {
             resource_type: "workspace"
         },
         returnType: #{
+            _: 200,
             meta: #{
                 limit: 10
             },
@@ -807,10 +964,10 @@ namespace RoleBindings {
         }
     })
     @get op listBySubject(
-        @query limit?: int64 = 10;
+        @query limit?: Limit = DefaultLimit;
 
         @doc("Cursor for cursor-based pagination.")
-        @query cursor?: string;
+        @query cursor?: Cursor;
 
         @doc("Filter by resource ID")
         @example("550e8400-e29b-41d4-a716-446655440001")
@@ -828,65 +985,231 @@ namespace RoleBindings {
         @doc("Include role bindings inherited from parent resources")
         @query parent_role_bindings?: boolean = false;
 
-        @doc("""
-        Control which fields are included in the response to optimize payload size and improve performance.
-
-        **Default Behavior (no fields parameter):**
-        Basic required fields are always included: subject.id, subject.type, role.id, resource.id
-
-        **When fields parameter is provided:**
-        Only explicitly specified fields are included in the response. Subject type field (subject.type) is always required and included even if not specified.
-
-        **Syntax:**
-        - Use parentheses to specify fields for nested objects: `object(field1,field2)`
-        - Use comma to separate multiple field specifications: `subject(name),resource(name),last_modified`
-        - Fields not in parentheses apply to the root level
-
-        **Available Fields:**
-
-        **subject object (polymorphic - available fields depend on type):**
-        - id (UUID) - always included
-        - type (string) - always included, cannot be excluded (determines which additional fields are available)
-
-        *When type = "user":*
-        - user.username (string) - username of the user
-
-        *When type = "group":*
-        - group.name (string) - name of the group
-        - group.description (string) - description of the group
-        - group.user_count (integer) - number of users in the group
-
-        **role object:**
-        - id (UUID) - always included
-        - name (string) - role display name
-
-        **resource object:**
-        - id (UUID) - always included
-        - name (string) - resource name
-        - type (string) - resource type
-
-        **root level:**
-        - last_modified (datetime) - timestamp of last modification
-        - inherited_from (object) - resource from which this role binding is inherited (only present when parent_role_bindings=true)
-
-        **Examples:**
-        - `subject(group.name,group.user_count)` - Include group name and user count (only for group subjects)
-        - `subject(user.username)` - Include username (only for user subjects)
-        - `role(name)` - Include role name
-        - `resource(name,type)` - Include resource name and type
-        - `subject(group.name),role(name),resource(name)` - Combine multiple object field specifications
-        - `subject(user.username),role(name),last_modified` - Include user details, role name, and modification timestamp
-        - `last_modified` - Include only modification timestamp (plus required fields)
-        - `subject(group.name,group.user_count),resource(name,type)` - Mix group and resource specific fields
-        - `inherited_from(name,type)` - Include inherited resource name and type (only relevant when parent_role_bindings=true)
-        """)
+        @doc("Control which fields are included in the response to optimize payload size and improve performance.")
         @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
-        @query fields?: string;
+        @query fields?: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
-        @query order_by?: string;
+        @query order_by?: OrderBy = "subject_name";
+    ): ListResponse<RoleBindingBySubject> | Problems.CommonProblems;
 
-    ): RoleBindingBySubjectListResponse | Problems.CommonProblems;
+    @doc("Grant access to a resource to a set of subjects with a set of roles")
+    @summary("Grant access to a resource to a set of subjects with a set of roles")
+    @route(":batchCreate")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                requests: #[
+                    #{
+                        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                        role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                    },
+                    #{
+                        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                        role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                    }
+                ]
+            }
+        },
+        returnType: #{
+            _: 201,
+            role_bindings: #[
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
+                },
+                #{
+                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                    subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                    role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                }
+            ]
+        }
+    })
+    @post op batchCreate(
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
+        @body body: BatchCreateRoleBindingsRequest;
+    ): BatchCreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
+
+    @doc("Request body for updating role bindings - contains the new roles to assign")
+    @example(#{
+        roles: #[
+            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+        ]
+    })
+    model UpdateRoleBindingsRequest {
+        @doc("Roles to assign (replaces existing roles for the target binding)")
+        @minItems(1)
+        roles: {
+            @doc("Role identifier")
+            id: UUID;
+        }[];
+    }
+
+    @doc("Update roles for a specific subject on a resource. Replaces all existing roles with the provided roles.")
+    @summary("Update role bindings")
+    @route("by-subject/")
+    @opExample(#{
+        parameters: #{
+            resource_id: "550e8400-e29b-41d4-a716-446655440001",
+            resource_type: "workspace",
+            subject_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            subject_type: "group",
+            body: #{
+                roles: #[
+                    #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+                    #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 200,
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
+            subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
+            roles: #[
+                #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
+                #{ id: "550e8400-e29b-41d4-a716-446655440003", name: "Viewer" }
+            ],
+            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace", name: "Engineering Workspace" }
+        }
+    })
+    @put op update(
+        @doc("Identify the resource ID for the set of role bindings to replace")
+        @example("550e8400-e29b-41d4-a716-446655440001")
+        @query resource_id: string;
+
+        @doc("Identify the resource type for the set of role bindings to replace")
+        @example("workspace")
+        @query resource_type: string;
+
+        @doc("Identify the subject ID for the set of role bindings to replace")
+        @example("550e8400-e29b-41d4-a716-446655440004")
+        @query subject_id: string;
+
+        @doc("Identify the subject type for the set of role bindings to replace")
+        @example("group")
+        @query subject_type: string;
+
+        @body body: UpdateRoleBindingsRequest;
+
+        @query fields?: FieldMask = DefaultRoleBindingBySubjectFieldMask;
+    ): ItemResponse<RoleBindingBySubject, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+
+    @example(#{
+        role: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            description: "Full administrative access to workspace",
+            permissions: #[
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "read"
+                },
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "write"
+                }
+            ]
+        },
+        subject: #{
+            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            type: "group",
+            group: #{
+                name: "Engineering Team",
+                description: "Development and engineering team",
+                user_count: 25
+            }
+        }
+    })
+    @example(#{
+        role: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            permissions: #[
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "read"
+                },
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "write"
+                }
+            ]
+        },
+        subject: #{
+            id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            type: "group",
+            group: #{
+                name: "Engineering Team",
+                user_count: 25
+            }
+        }
+    })
+    model RoleBinding {
+        @doc("The role that grants permissions to the subject on the resource")
+        role?: KesselRBAC.Role;
+        @doc("The subject (user or group) that is granted the role")
+        subject?: Subject;
+        @doc("The resource on which the subject is granted the role")
+        resource?: Resource;
+    }
+
+    @doc("List role bindings")
+    @summary("List role bindings")
+    @opExample(#{
+        parameters: #{
+            limit: 10
+        },
+        returnType: #{
+            _: 200,
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/?cursor=cD0yMDI1LTA4LTE1",
+                previous: null
+            },
+            data: #[
+                #{
+                    role: #{
+                        id: "550e8400-e29b-41d4-a716-446655440002"
+                    },
+                    subject: #{
+                        id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        type: "group"
+                    },
+                    resource: #{
+                        id: "550e8400-e29b-41d4-a716-446655440001"
+                    }
+                }
+            ]
+        }
+    })
+    @get op list(
+        @query limit?: Limit = DefaultLimit;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: Cursor;
+
+        @doc("Filter by role ID")
+        @example("550e8400-e29b-41d4-a716-446655440002")
+        @query role_id?: string;
+
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
+
+        @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
+        @query order_by?: OrderBy = "role.id";
+
+    ): ListResponse<RoleBinding> | Problems.CommonProblems;
 }
 
 @route("/roles/")
@@ -894,48 +1217,243 @@ namespace RoleBindings {
 @doc("Operations about roles")
 namespace Roles {
 
-    @example(#{
-        application: "inventory",
-        resource_type: "hosts",
-        operation: "read"
-    })
-    model Permission {
-        @doc("Application name")
-        application: string;
-        @doc("Resource type within the application")
-        resource_type: string;
-        @doc("Operation for this permission")
-        operation: string;
-    }
+    /**
+     * Default fields returned for role detail operations (get/create/update)
+     */
+    const DefaultRoleFieldMask: FieldMask = "id,name,description,permissions,last_modified";
 
+    @doc("Role data for create and update operations")
     @example(#{
-        id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Workspace Admin",
-    })
-    @example(#{
-        id: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Workspace Admin",
-        description: "description",
-        permissions_count: 2,
+        name: "Host Inventory Admin",
+        description: "Custom role for host inventory management",
         permissions: #[
             #{ application: "inventory", resource_type: "hosts", operation: "read" },
             #{ application: "inventory", resource_type: "hosts", operation: "write" }
-        ],
-        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        ]
     })
-    model Role {
-        @doc("Role identifier")
-        @key id: UUID;
-        @doc("Role name")
+    model CreateOrUpdateRoleRequest {
+        @doc("A human readable name for the role. Must be unique within a tenant.")
         name: string;
-        @doc("Role description")
-        description?: string;
-        @doc("Number of permissions assigned to this role")
-        permissions_count?: int32;
-        @doc("List of permissions assigned to this role")
-        permissions?: Permission[];
-        @doc("Last modification timestamp")
-        last_modified?: offsetDateTime;
+        @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
+        description: string;
+        @doc("List of permissions to assign to this role")
+        permissions: Permission[];
     }
 
+    model RoleResponse<StatusCode extends int32> {
+        @statusCode _: StatusCode;
+        ...KesselRBAC.Role;
+    }
+
+    @doc("List the roles for a tenant")
+    @summary("List the roles for a tenant")
+    @opExample(#{
+        parameters: #{
+            limit: 10
+        },
+        returnType: #{
+            _: 200,
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "/api/rbac/v2/roles/?limit=10&cursor=eyJpZCI6IjEyMyJ9",
+                previous: null
+            },
+            data: #[
+                #{
+                    id: "550e8400-e29b-41d4-a716-446655440002",
+                    name: "Workspace Admin",
+                    description: "description",
+                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+                }
+            ]
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            limit: 10,
+            fields: "id,name,permissions_count"
+        },
+        returnType: #{
+            _: 200,
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "/api/rbac/v2/roles/?limit=10&fields=id,name,permissions_count&cursor=eyJpZCI6IjEyMyJ9",
+                previous: null
+            },
+            data: #[
+                #{
+                    id: "550e8400-e29b-41d4-a716-446655440002",
+                    name: "Workspace Admin",
+                    permissions_count: 2
+                }
+            ]
+        }
+    })
+    @get op list(
+        @query limit?: Limit = DefaultLimit;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: Cursor;
+
+        @doc("Filter by role name using case sensitive exact match.")
+        @query name?: string;
+
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = "id,name,description,last_modified";
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.")
+        @query order_by?: OrderBy = "name";
+    ): ListResponse<Role> | Problems.CommonProblems;
+
+
+    @doc("Create a custom role in tenant")
+    @summary("Create a custom role in tenant")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                name: "Custom Inventory Admin",
+                description: "Custom role for inventory management",
+                permissions: #[
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 201,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Custom Inventory Admin",
+            description: "Custom role for inventory management",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @post op create(
+        @body body: CreateOrUpdateRoleRequest;
+
+        @doc("""
+        Control which fields are included in the response to optimize payload size.
+
+        **When fields parameter is provided:**
+        Only explicitly specified fields are returned. All response fields become optional.
+
+        **Examples:**
+        - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
+        - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        """)
+        @example("id,name,permissions_count")
+        @query fields?: string = DefaultRoleFieldMask;
+    ): ItemResponse<Role, 201> | Problems.CommonProblems | Problems.Problem400;
+
+
+
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002"
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Workspace Admin",
+            description: "Full administrative access to workspace resources",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            fields: "name"
+        },
+        returnType: #{
+            _: 200,
+            name: "Workspace Admin"
+        }
+    })
+    @get op read(
+        @path id: UUID;
+
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = DefaultRoleFieldMask;
+    ): ItemResponse<Role, 200> | Problems.CommonProblems | Problems.Problem404;
+
+    @doc("Update a custom role in tenant")
+    @summary("Update a custom role in tenant")
+    @route("{id}/")
+    @opExample(#{
+        parameters: #{
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            body: #{
+                name: "Updated Inventory Admin",
+                description: "Updated role for inventory management",
+                permissions: #[
+                    #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "write" },
+                    #{ application: "inventory", resource_type: "hosts", operation: "delete" }
+                ]
+            }
+        },
+        returnType: #{
+            _: 200,
+            id: "550e8400-e29b-41d4-a716-446655440002",
+            name: "Updated Inventory Admin",
+            description: "Updated role for inventory management",
+            permissions: #[
+                #{ application: "inventory", resource_type: "hosts", operation: "read" },
+                #{ application: "inventory", resource_type: "hosts", operation: "write" },
+                #{ application: "inventory", resource_type: "hosts", operation: "delete" }
+            ],
+            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        }
+    })
+    @put op update(
+        @doc("UUID that uniquely identifies the role")
+        @path id: UUID;
+        @body body: CreateOrUpdateRoleRequest;
+
+        @doc("Control which fields are included in the response to optimize payload size.")
+        @query fields?: FieldMask = DefaultRoleFieldMask;
+    ): ItemResponse<Role, 200> | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
+
+    @doc("Data for request to delete multiple roles by ID.")
+    model BatchDeleteRolesRequest {
+        @doc("The IDs of the roles to delete. A maximum of 100 roles can be deleted in one batch.")
+        @minItems(1)
+        @maxItems(100)
+        @example(#["3a780e8d-da23-4a2c-a457-c9d31d8a6df0", "4fc3eb8e-2675-4807-8072-c69bd2a66482"])
+        ids: UUID[];
+    }
+
+    @example(#{ statusCode: 204 })
+    model BatchDeleteRolesResponse {
+        @statusCode
+        statusCode: 204,
+    }
+
+    @doc("Delete multiple roles by ID atomically.")
+    @route(":batchDelete")
+    @opExample(#{
+        parameters: #{
+            body: #{
+                ids: #["3a780e8d-da23-4a2c-a457-c9d31d8a6df0", "4fc3eb8e-2675-4807-8072-c69bd2a66482"],
+            }
+        },
+        returnType: #{
+            statusCode: 204
+        }
+    })
+    @post op batchDelete(
+        @body body: BatchDeleteRolesRequest
+    ): BatchDeleteRolesResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 }

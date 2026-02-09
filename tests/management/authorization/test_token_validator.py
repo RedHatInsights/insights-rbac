@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the token validator class."""
+
 import requests
 
 from django.conf import settings
@@ -29,7 +30,6 @@ from tests.identity_request import IdentityRequest
 from unittest import mock
 
 from tests.management.authorization.token_fixtures import InMemoryIssuer
-
 
 # IT path to fetch the service accounts.
 IT_PATH_GET_SERVICE_ACCOUNTS = "/service_accounts/v1"

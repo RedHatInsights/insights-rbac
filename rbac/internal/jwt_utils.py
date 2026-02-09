@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Classes to handle JWT token generation and management."""
+
 import base64
 import http.client
 import json

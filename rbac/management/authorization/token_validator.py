@@ -16,6 +16,7 @@
 #
 
 """A token introspector class which validates that the given token is valid."""
+
 import logging
 import re
 from abc import ABC, abstractmethod

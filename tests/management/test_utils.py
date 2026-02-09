@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the utils module."""
+
 import uuid
 
 from api.models import Tenant, User

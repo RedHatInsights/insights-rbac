@@ -26,6 +26,7 @@ from unittest.mock import Mock
 
 from api.common.exception_handler import custom_exception_handler
 from api.common.exception_handler import _generate_errors_from_dict, _generate_error_data_payload_response
+from management.utils import v2response_error_from_errors, PROBLEM_TITLES
 
 
 class ExceptionHandlerTest(TestCase):
@@ -270,3 +271,136 @@ class ExceptionHandlerTest(TestCase):
         self.assertEqual(
             str(http_status_code), only_error.get("status"), f"unexpected status code in the payload: {result}"
         )
+
+
+class V2ProblemDetailsTest(TestCase):
+    """Tests for v2 ProblemDetails format conformance."""
+
+    def _mock_context(self, method="POST"):
+        """Create a mock context with request."""
+        mock_request = Mock()
+        mock_request.method = method
+        mock_request.path = "/api/v2/roles/"
+        return {"request": mock_request}
+
+    def test_v2response_includes_status_title_detail(self):
+        """Test that v2 response includes all ProblemDetails fields."""
+        errors = [{"detail": "Test error message", "status": "400"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertIn("status", result)
+        self.assertIn("title", result)
+        self.assertIn("detail", result)
+        self.assertEqual(result["status"], 400)
+        self.assertEqual(result["detail"], "Test error message")
+
+    def test_v2response_400_has_correct_title(self):
+        """Test that 400 errors have the correct title."""
+        errors = [{"detail": "Invalid input", "status": "400"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertEqual(result["title"], PROBLEM_TITLES[400])
+
+    def test_v2response_401_has_correct_title(self):
+        """Test that 401 errors have the correct title."""
+        errors = [{"detail": "Not authenticated", "status": "401"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertEqual(result["title"], PROBLEM_TITLES[401])
+
+    def test_v2response_403_has_correct_title(self):
+        """Test that 403 errors have the correct title."""
+        errors = [{"detail": "Permission denied", "status": "403"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertEqual(result["title"], PROBLEM_TITLES[403])
+
+    def test_v2response_404_has_correct_title(self):
+        """Test that 404 errors have the correct title."""
+        errors = [{"detail": "Resource not found", "status": "404"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertEqual(result["title"], PROBLEM_TITLES[404])
+
+    def test_v2response_409_has_correct_title(self):
+        """Test that 409 errors have the correct title."""
+        errors = [{"detail": "Concurrent update conflict", "status": "409"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertEqual(result["title"], PROBLEM_TITLES[409])
+
+    def test_v2response_500_has_correct_title(self):
+        """Test that 500 errors have the correct title."""
+        errors = [{"detail": "Internal error", "status": "500"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertEqual(result["title"], PROBLEM_TITLES[500])
+
+    def test_v2response_unknown_status_has_fallback_title(self):
+        """Test that unknown status codes get a fallback title."""
+        errors = [{"detail": "Some error", "status": "418"}]
+        context = self._mock_context()
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertEqual(result["title"], "An error occurred.")
+
+    def test_v2response_includes_instance_for_put(self):
+        """Test that PUT requests include instance field."""
+        errors = [{"detail": "Update failed", "status": "400"}]
+        context = self._mock_context(method="PUT")
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertIn("instance", result)
+        self.assertEqual(result["instance"], "/api/v2/roles/")
+
+    def test_v2response_includes_instance_for_patch(self):
+        """Test that PATCH requests include instance field."""
+        errors = [{"detail": "Patch failed", "status": "400"}]
+        context = self._mock_context(method="PATCH")
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertIn("instance", result)
+
+    def test_v2response_includes_instance_for_delete(self):
+        """Test that DELETE requests include instance field."""
+        errors = [{"detail": "Delete failed", "status": "400"}]
+        context = self._mock_context(method="DELETE")
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertIn("instance", result)
+
+    def test_v2response_excludes_instance_for_post(self):
+        """Test that POST requests do not include instance field."""
+        errors = [{"detail": "Create failed", "status": "400"}]
+        context = self._mock_context(method="POST")
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertNotIn("instance", result)
+
+    def test_v2response_excludes_instance_for_get(self):
+        """Test that GET requests do not include instance field."""
+        errors = [{"detail": "Get failed", "status": "400"}]
+        context = self._mock_context(method="GET")
+
+        result = v2response_error_from_errors(errors, context=context)
+
+        self.assertNotIn("instance", result)

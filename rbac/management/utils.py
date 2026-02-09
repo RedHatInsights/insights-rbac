@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper utilities for management module."""
+
 import logging
 import os
 import uuid
@@ -576,20 +577,43 @@ def api_path_prefix():
     return path_prefix
 
 
+PROBLEM_TITLES = {
+    400: "The request payload contains invalid syntax.",
+    401: "Authentication credentials were not provided or are invalid.",
+    403: "You do not have permission to perform this action.",
+    404: "Not found.",
+    409: "Conflict.",
+    500: "Unexpected error occurred.",
+}
+
+
 def v2response_error_from_errors(errors, exc=None, context=None):
-    """Convert v1 error format to v2."""
+    """Build a ProblemDetails-formatted error response from errors."""
     detail = ""
     status_code = 0
+    field_errors = []
+
     if errors and any(isinstance(error, dict) and "detail" in error for error in errors):
         detail = str(errors[0]["detail"])
         status_code = int(errors[0]["status"])
 
+        for error in errors:
+            if isinstance(error, dict) and "detail" in error:
+                field_error = {"message": str(error["detail"])}
+                if error.get("source"):
+                    field_error["field"] = error["source"]
+                field_errors.append(field_error)
+
     response = {
         "status": status_code,
+        "title": PROBLEM_TITLES.get(status_code, "An error occurred."),
         "detail": detail,
     }
 
-    if context.get("request").method in ["PUT", "PATCH", "DELETE"]:
+    if field_errors:
+        response["errors"] = field_errors
+
+    if context and context.get("request") and context.get("request").method in ["PUT", "PATCH", "DELETE"]:
         response["instance"] = context.get("request").path
 
     return response
