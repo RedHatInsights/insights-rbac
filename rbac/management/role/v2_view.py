@@ -40,16 +40,23 @@ VALID_ROLE_FIELDS = {
     "permissions_count",
     "last_modified",
 }
+from management.role.v2_model import RoleV2
+from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import status
+from rest_framework.response import Response
 
+
+class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
+    """RoleV2 ViewSet."""
 
 class RoleV2ViewSet(BaseV2ViewSet):
     """RoleV2 ViewSet."""
-
     permission_classes = (RoleAccessPermission,)
-    queryset = RoleV2.objects.all()
+    queryset = RoleV2.objects.none()
     serializer_class = RoleV2ResponseSerializer
     lookup_field = "uuid"
-    http_method_names = ["get", "head", "options"]
+    http_method_names = ["post", "head", "options"]
 
     def get_queryset(self):
         """Get the queryset for roles filtered by tenant."""
@@ -130,3 +137,19 @@ class RoleV2ViewSet(BaseV2ViewSet):
             raise Http404(f"Invalid UUID format: {uuid_str}")
         except RoleNotFoundError as e:
             raise Http404(str(e))
+
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        if self.action == "create":
+            return RoleV2RequestSerializer
+        return RoleV2ResponseSerializer
+
+    def create(self, request, *args, **kwargs):
+        """Create a role and return the full response representation."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = serializer.save()
+        input_permissions = request.data.get("permissions", [])
+        response_serializer = RoleV2ResponseSerializer(role, context={"input_permissions": input_permissions})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)

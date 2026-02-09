@@ -25,6 +25,8 @@ from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import status
 from rest_framework.response import Response
 
+from management.atomic_transactions import ISOLATION_LEVEL, is_atomic_disabled  # noqa: I100, I202
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,21 +55,18 @@ class AtomicOperationsMixin:
                 )
         return None
 
-    def _should_use_atomic(self):
-        return not getattr(settings, "ATOMIC_RETRY_DISABLED", False)
-
     def _run_atomic(self, operation, request, *args, **kwargs):
-        if not self._should_use_atomic():
+        if is_atomic_disabled():
             return operation(request, *args, **kwargs)
 
-        @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=self.atomic_retry)
+        @pgtransaction.atomic(isolation_level=ISOLATION_LEVEL, retry=self.atomic_retry)
         def atomic_operation():
             return operation(request, *args, **kwargs)
 
         return atomic_operation()
 
     def create(self, request, *args, **kwargs):
-        """Create a new object with atomic transaction and concurrency handling."""
+        """Create with atomic transaction and concurrency handling."""
         try:
             return self._run_atomic(super().create, request, *args, **kwargs)
         except OperationalError as e:
@@ -77,7 +76,7 @@ class AtomicOperationsMixin:
             raise
 
     def update(self, request, *args, **kwargs):
-        """Update an existing object with atomic transaction and concurrency handling."""
+        """Update with atomic transaction and concurrency handling."""
         try:
             return self._run_atomic(super().update, request, *args, **kwargs)
         except OperationalError as e:
@@ -87,7 +86,7 @@ class AtomicOperationsMixin:
             raise
 
     def destroy(self, request, *args, **kwargs):
-        """Delete an object with atomic transaction and concurrency handling."""
+        """Destroy with atomic transaction and concurrency handling."""
         try:
             return self._run_atomic(super().destroy, request, *args, **kwargs)
         except OperationalError as e:

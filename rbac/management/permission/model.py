@@ -20,6 +20,8 @@
 import dataclasses
 
 from django.db import models
+from management.exceptions import RequiredFieldError
+from management.permission.exceptions import InvalidPermissionDataError
 from migration_tool.models import cleanNameForV2SchemaCompatibility
 
 from api.models import TenantAwareModel
@@ -104,6 +106,44 @@ class PermissionValue:
     def v1_string(self) -> str:
         """Return the V1 representation of this permission: app:resource:verb."""
         return f"{self.application}:{self.resource_type}:{self.verb}"
+
+    @classmethod
+    def from_v2_dict(cls, data: dict) -> "PermissionValue":
+        """
+        Create from API dict where 'operation' maps to internal 'verb'.
+
+        When DB column is renamed from 'verb' to 'operation', update this method.
+        """
+        application = data.get("application")
+        resource_type = data.get("resource_type")
+        operation = data.get("operation")
+        verb = data.get("verb")
+
+        if operation and verb:
+            raise InvalidPermissionDataError("Cannot specify both 'operation' and 'verb'")
+
+        if application is None:
+            raise RequiredFieldError("application")
+        if resource_type is None:
+            raise RequiredFieldError("resource_type")
+
+        verb_value = operation or verb
+        if verb_value is None:
+            raise RequiredFieldError("operation")
+
+        return cls(application=application, resource_type=resource_type, verb=verb_value)
+
+    def to_v2_dict(self) -> dict:
+        """
+        Convert to API dict where internal 'verb' maps to 'operation'.
+
+        When DB column is renamed from 'verb' to 'operation', update this method.
+        """
+        return {
+            "application": self.application,
+            "resource_type": self.resource_type,
+            "operation": self.verb,
+        }
 
 
 class Permission(TenantAwareModel):
