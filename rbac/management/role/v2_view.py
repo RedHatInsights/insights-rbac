@@ -33,23 +33,6 @@ class RoleV2CursorPagination(V2CursorPagination):
     ordering = "name"
     FIELD_MAPPING = {"name": "name", "last_modified": "modified"}
 
-    def _convert_order_field(self, field: str) -> str | None:
-        """Map API field names to model field names.
-
-        Accepts direct field names.
-
-        Args:
-            field: The field name (name, last_modified)
-
-        Returns:
-            The Django ORM field name or None if invalid
-        """
-        descending = field.startswith("-")
-        model_field = self.FIELD_MAPPING.get(field.lstrip("-"))
-        if descending and model_field:
-            return f"-{model_field}"
-        return model_field
-
 
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
