@@ -51,7 +51,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True)
-    permissions_count = serializers.IntegerField(source="permissions_count_annotation", read_only=True)
+    permissions_count = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
 
@@ -108,7 +108,6 @@ class RoleV2ListSerializer(serializers.Serializer):
 
     name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
-    order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
 
     @property
     def service(self):
@@ -140,10 +139,6 @@ class RoleV2ListSerializer(serializers.Serializer):
 
         resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
         return resolved or self.DEFAULT_FIELDS
-
-    def validate_order_by(self, value):
-        """Return None for empty values."""
-        return value or None
 
     def list(self):
         """Get a list of roles using the service layer."""
