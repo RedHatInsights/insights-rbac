@@ -736,19 +736,17 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
 
     # get_roles tests for user (Principal)
 
-    def test_roles_extracts_roles_from_user_groups(self):
-        """Test get_roles with Principal having prefetched groups with bindings."""
+    def test_roles_extracts_roles_from_user_bindings(self):
+        """Test get_roles with Principal having prefetched bindings via RoleBindingPrincipal."""
         # Set up prefetched data structure
         mock_binding = Mock()
         mock_binding.role = self.role
 
-        mock_binding_group = Mock()
-        mock_binding_group.binding = mock_binding
+        # Mock RoleBindingPrincipal (directly on Principal)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
 
-        mock_group = Mock(spec=Group)
-        mock_group.filtered_bindings = [mock_binding_group]
-
-        self.principal.filtered_groups = [mock_group]
+        self.principal.filtered_bindings = [mock_binding_principal]
 
         serializer = RoleBindingOutputSerializer()
         result = serializer.get_roles(self.principal)
@@ -761,13 +759,11 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
         mock_binding = Mock()
         mock_binding.role = self.role
 
-        mock_binding_group = Mock()
-        mock_binding_group.binding = mock_binding
+        # Mock RoleBindingPrincipal (directly on Principal)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
 
-        mock_group = Mock(spec=Group)
-        mock_group.filtered_bindings = [mock_binding_group]
-
-        self.principal.filtered_groups = [mock_group]
+        self.principal.filtered_bindings = [mock_binding_principal]
 
         field_selection = FieldSelection(role_fields={"name"})
         serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
@@ -777,21 +773,19 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
         self.assertEqual(result[0]["id"], self.role.uuid)
         self.assertEqual(result[0]["name"], "test_role")
 
-    def test_roles_deduplicates_same_role_from_multiple_groups(self):
-        """Test get_roles deduplicates roles when same role appears in multiple groups."""
+    def test_roles_deduplicates_same_role_from_multiple_bindings(self):
+        """Test get_roles deduplicates roles when same role appears in multiple bindings."""
         mock_binding = Mock()
         mock_binding.role = self.role
 
-        mock_binding_group = Mock()
-        mock_binding_group.binding = mock_binding
+        # Mock two RoleBindingPrincipal entries pointing to the same role
+        mock_binding_principal1 = Mock()
+        mock_binding_principal1.binding = mock_binding
 
-        mock_group1 = Mock(spec=Group)
-        mock_group1.filtered_bindings = [mock_binding_group]
+        mock_binding_principal2 = Mock()
+        mock_binding_principal2.binding = mock_binding
 
-        mock_group2 = Mock(spec=Group)
-        mock_group2.filtered_bindings = [mock_binding_group]
-
-        self.principal.filtered_groups = [mock_group1, mock_group2]
+        self.principal.filtered_bindings = [mock_binding_principal1, mock_binding_principal2]
 
         serializer = RoleBindingOutputSerializer()
         result = serializer.get_roles(self.principal)
@@ -800,8 +794,8 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["id"], self.role.uuid)
 
-    def test_roles_returns_empty_list_when_no_filtered_groups(self):
-        """Test get_roles with Principal without filtered_groups attribute."""
+    def test_roles_returns_empty_list_when_no_filtered_bindings(self):
+        """Test get_roles with Principal without filtered_bindings attribute."""
         serializer = RoleBindingOutputSerializer()
         result = serializer.get_roles(self.principal)
 
@@ -823,13 +817,11 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
         mock_binding = Mock()
         mock_binding.role = self.role
 
-        mock_binding_group = Mock()
-        mock_binding_group.binding = mock_binding
+        # Mock RoleBindingPrincipal (directly on Principal, not through groups)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
 
-        mock_group = Mock(spec=Group)
-        mock_group.filtered_bindings = [mock_binding_group]
-
-        self.principal.filtered_groups = [mock_group]
+        self.principal.filtered_bindings = [mock_binding_principal]
 
         context = {
             "request": Mock(),
@@ -858,13 +850,11 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
         mock_binding = Mock()
         mock_binding.role = self.role
 
-        mock_binding_group = Mock()
-        mock_binding_group.binding = mock_binding
+        # Mock RoleBindingPrincipal (directly on Principal, not through groups)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
 
-        mock_group = Mock(spec=Group)
-        mock_group.filtered_bindings = [mock_binding_group]
-
-        self.principal.filtered_groups = [mock_group]
+        self.principal.filtered_bindings = [mock_binding_principal]
 
         field_selection = FieldSelection(
             subject_fields={"id", "user.username"},

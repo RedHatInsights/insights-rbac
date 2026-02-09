@@ -375,34 +375,32 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         if isinstance(obj, dict):
             return obj.get("roles", [])
 
-        # Collect all binding_groups from Group or Principal
-        binding_groups = self._get_binding_groups(obj)
-        return self._extract_roles_from_bindings(binding_groups)
+        # Collect all binding entries from Group or Principal
+        binding_entries = self._get_binding_entries(obj)
+        return self._extract_roles_from_bindings(binding_entries)
 
-    def _get_binding_groups(self, obj):
-        """Get all binding groups from a Group or Principal.
+    def _get_binding_entries(self, obj):
+        """Get all binding entries from a Group or Principal.
 
         Args:
             obj: Group or Principal object with prefetched bindings
 
         Returns:
-            Iterable of RoleBindingGroup objects
+            Iterable of RoleBindingGroup (for Group) or RoleBindingPrincipal (for Principal) objects
         """
         if isinstance(obj, Group):
+            # Group.filtered_bindings contains RoleBindingGroup objects
             return getattr(obj, "filtered_bindings", [])
         elif isinstance(obj, Principal):
-            # Collect bindings from all of user's groups
-            binding_groups = []
-            for group in getattr(obj, "filtered_groups", []):
-                binding_groups.extend(getattr(group, "filtered_bindings", []))
-            return binding_groups
+            # Principal.filtered_bindings contains RoleBindingPrincipal objects (direct, not through groups)
+            return getattr(obj, "filtered_bindings", [])
         return []
 
-    def _extract_roles_from_bindings(self, binding_groups):
-        """Extract deduplicated roles from binding groups.
+    def _extract_roles_from_bindings(self, binding_entries):
+        """Extract deduplicated roles from binding entries.
 
         Args:
-            binding_groups: Iterable of RoleBindingGroup objects
+            binding_entries: Iterable of RoleBindingGroup or RoleBindingPrincipal objects
 
         Returns:
             List of role dicts with id and requested fields
@@ -413,11 +411,11 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         roles_to_process = []
         seen_role_ids = set()
 
-        for binding_group in binding_groups:
-            if not hasattr(binding_group, "binding") or not binding_group.binding:
+        for binding_entry in binding_entries:
+            if not hasattr(binding_entry, "binding") or not binding_entry.binding:
                 continue
 
-            role = binding_group.binding.role
+            role = binding_entry.binding.role
             if not role:
                 continue
 

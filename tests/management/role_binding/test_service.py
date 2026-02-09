@@ -19,7 +19,7 @@
 from django.test import TestCase
 
 from management.models import Group, Permission, Principal, Workspace
-from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
+from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal, RoleV2
 from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import TenantMapping
@@ -221,11 +221,18 @@ class RoleBindingServiceTests(IdentityRequest):
             group=self.group,
             binding=self.binding,
         )
+        # Create RoleBindingPrincipal for user-type queries
+        RoleBindingPrincipal.objects.create(
+            principal=self.principal,
+            binding=self.binding,
+            source="test",
+        )
 
         self.service = RoleBindingService(tenant=self.tenant)
 
     def tearDown(self):
         """Tear down test data."""
+        RoleBindingPrincipal.objects.all().delete()
         RoleBindingGroup.objects.all().delete()
         RoleBinding.objects.all().delete()
         self.group.principals.clear()
@@ -320,7 +327,7 @@ class RoleBindingServiceTests(IdentityRequest):
         }
         queryset = self.service.get_role_bindings_by_subject(params)
 
-        # Should return the principal (user) that's in a group with a role binding
+        # Should return the principal (user) that has a RoleBindingPrincipal entry
         self.assertEqual(queryset.count(), 1)
         user = queryset.first()
         self.assertEqual(user.username, "testuser")

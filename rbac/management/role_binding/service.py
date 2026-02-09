@@ -32,7 +32,7 @@ from management.group.platform import DefaultGroupNotAvailableError, GlobalPolic
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup
+from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
@@ -239,8 +239,7 @@ class RoleBindingService:
     ) -> QuerySet:
         """Build queryset of users (principals) with role bindings for a resource.
 
-        Users are queried through their group memberships to groups that have
-        role bindings to the specified resource.
+        Users are queried directly via RoleBindingPrincipal, not through group memberships.
 
         Args:
             resource_id: The resource identifier
@@ -254,53 +253,51 @@ class RoleBindingService:
         if binding_uuids is not None:
             # Include both direct bindings and inherited bindings by UUID
             binding_filter = Q(
-                group__role_binding_entries__binding__resource_type=resource_type,
-                group__role_binding_entries__binding__resource_id=resource_id,
-            ) | Q(group__role_binding_entries__binding__uuid__in=binding_uuids)
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
         else:
             # Only direct bindings for the specified resource
             binding_filter = Q(
-                group__role_binding_entries__binding__resource_type=resource_type,
-                group__role_binding_entries__binding__resource_id=resource_id,
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
             )
 
-        # Get users who are members of groups that have bindings matching our filter
+        # Get users who have role bindings matching our filter
         queryset = Principal.objects.filter(
             binding_filter,
             tenant=self.tenant,
             type=Principal.Types.USER,
         ).distinct()
 
-        # Prefetch role bindings for this resource through groups
-        binding_queryset = RoleBinding.objects.filter(
-            resource_type=resource_type, resource_id=resource_id
-        ).select_related("role").prefetch_related("role__children")
+        # Prefetch role bindings for this resource
+        binding_queryset = (
+            RoleBinding.objects.filter(resource_type=resource_type, resource_id=resource_id)
+            .select_related("role")
+            .prefetch_related("role__children")
+        )
 
-        rolebinding_group_queryset = RoleBindingGroup.objects.filter(
+        # Prefetch RoleBindingPrincipal entries with their bindings
+        rolebinding_principal_queryset = RoleBindingPrincipal.objects.filter(
             binding__resource_type=resource_type, binding__resource_id=resource_id
         ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
 
-        # Prefetch groups with their filtered role bindings
-        group_queryset = Group.objects.filter(
-            role_binding_entries__binding__resource_type=resource_type,
-            role_binding_entries__binding__resource_id=resource_id,
-        ).prefetch_related(
+        # Prefetch role_binding_entries on Principal
+        queryset = queryset.prefetch_related(
             Prefetch(
                 "role_binding_entries",
-                queryset=rolebinding_group_queryset,
+                queryset=rolebinding_principal_queryset,
                 to_attr="filtered_bindings",
             )
         )
 
-        queryset = queryset.prefetch_related(Prefetch("group", queryset=group_queryset, to_attr="filtered_groups"))
-
         # Annotate with latest modified timestamp from roles
         queryset = queryset.annotate(
             latest_modified=Max(
-                "group__role_binding_entries__binding__role__modified",
+                "role_binding_entries__binding__role__modified",
                 filter=Q(
-                    group__role_binding_entries__binding__resource_type=resource_type,
-                    group__role_binding_entries__binding__resource_id=resource_id,
+                    role_binding_entries__binding__resource_type=resource_type,
+                    role_binding_entries__binding__resource_id=resource_id,
                 ),
             )
         )
