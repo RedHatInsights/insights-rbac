@@ -704,7 +704,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_list_with_non_existent_workspace_in_attribute_filter(self, mock_flag, mock_channel):
         """Test workspace list with attribute filter containing non-existent workspace ID.
 
-        Returns 403 since user has no real workspace access.
+        Returns 200 with fallback workspaces since user has no real workspace access.
         """
         # Mock Inventory API
         mock_stub = MagicMock()
@@ -735,9 +735,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 403 since inventory returns zero objects (no access)
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+            self.assertIn(str(self.default_workspace.id), returned_ids)
+            self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1181,7 +1186,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         return_value=True,
     )
     def test_workspace_list_user_without_permissions(self, mock_flag, mock_channel):
-        """Test workspace list for user without any permissions returns 403."""
+        """Test workspace list for user without any permissions returns fallback workspaces."""
         # Mock Inventory API to return no workspaces (user has no permissions)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1204,9 +1209,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 403 since inventory returns zero objects (no access)
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+            self.assertIn(str(self.default_workspace.id), returned_ids)
+            self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -1326,8 +1336,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_returns_403_when_no_access(self, mock_flag, mock_channel):
-        """Test that workspace list returns 403 when user has no real workspace access in V2 mode."""
+    def test_workspace_list_returns_fallback_workspaces_when_no_access(self, mock_flag, mock_channel):
+        """Test that workspace list returns fallback workspaces when user has no real workspace access in V2 mode."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1355,9 +1365,14 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 403 since inventory returns zero objects (no access)
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+            self.assertIn(str(self.default_workspace.id), returned_ids)
+            self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch("management.workspace.utils.access.PrincipalProxy")
@@ -1625,17 +1640,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Mock responses for second page without continuation token (last page)
         second_page_responses = self._create_mock_workspace_responses(second_page_workspaces)
 
-        # Permission check response (just needs to return something to set has_real_workspace_access=True)
-        permission_check_responses = self._create_mock_workspace_responses(first_page_workspaces)
-
         # Use side_effect list to return different responses on each call (no conditionals)
-        # Note: 4 calls expected due to permission check + FilterBackend both doing full pagination:
-        #   1. Permission check page 1 (populates has_real_workspace_access)
-        #   2. Permission check page 2 (follows continuation token from page 1)
-        #   3. FilterBackend page 1
-        #   4. FilterBackend page 2 (follows continuation token)
+        # Note: 2 calls expected - only FilterBackend does StreamedListObjects:
+        #   1. FilterBackend page 1
+        #   2. FilterBackend page 2 (follows continuation token)
         mock_stub.StreamedListObjects.side_effect = [
-            iter(permission_check_responses),  # Permission check (no continuation token, finishes)
             iter(first_page_responses),  # FilterBackend page 1 (has continuation token)
             iter(second_page_responses),  # FilterBackend page 2
         ]
@@ -1663,13 +1672,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
 
-            # Verify StreamedListObjects was called 3 times:
-            # 1 for permission check + 2 for FilterBackend pagination
-            self.assertEqual(mock_stub.StreamedListObjects.call_count, 3)
+            # Verify StreamedListObjects was called 2 times (FilterBackend pagination only)
+            self.assertEqual(mock_stub.StreamedListObjects.call_count, 2)
 
-            # Verify the third call (second FilterBackend page) included the continuation token
-            third_call_args = mock_stub.StreamedListObjects.call_args_list[2]
-            request_arg = third_call_args[0][0]
+            # Verify the second call (second FilterBackend page) included the continuation token
+            second_call_args = mock_stub.StreamedListObjects.call_args_list[1]
+            request_arg = second_call_args[0][0]
             self.assertEqual(request_arg.pagination.continuation_token, "next_page_token_123")
 
             # Verify workspaces from BOTH pages are returned in the response
@@ -2476,8 +2484,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_type_standard_returns_403_without_real_access(self, mock_flag, mock_channel):
-        """Test that type=standard returns 403 when user has no real workspace access in V2 mode."""
+    def test_workspace_list_type_standard_returns_empty_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=standard returns 200 with empty list when user has no real workspace access in V2 mode."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2496,19 +2504,21 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=standard - should return 403 since user has no real access
+            # Query with type=standard - should return 200 with empty data
+            # (fallback workspaces are root/default/ungrouped, none are type=standard)
             response = client.get(f"{url}?type=standard", format="json", **headers)
 
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+            self.assertEqual(len(response.data["data"]), 0)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_type_all_returns_403_without_real_access(self, mock_flag, mock_channel):
-        """Test that type=all returns 403 when user has no real workspace access in V2 mode."""
+    def test_workspace_list_type_all_returns_fallback_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=all returns 200 with fallback workspaces when user has no real workspace access in V2 mode."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2527,11 +2537,16 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=all - should return 403 since user has no real access
+            # Query with type=all - should return 200 with fallback workspaces
             response = client.get(f"{url}?type=all", format="json", **headers)
 
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+            self.assertIn(str(self.default_workspace.id), returned_ids)
+            self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -2633,8 +2648,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_no_type_returns_403_without_real_access(self, mock_flag, mock_channel):
-        """Test that default list (no type filter) returns 403 when user has no real workspace access."""
+    def test_workspace_list_no_type_returns_fallback_without_real_access(self, mock_flag, mock_channel):
+        """Test that default list (no type filter) returns fallback workspaces when user has no real workspace access."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2653,20 +2668,21 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query without type filter - should return 403 since user has no real access
+            # Query without type filter - should return 200 with fallback workspaces
             response = client.get(url, format="json", **headers)
 
-            # Should return 403 since inventory returns zero objects (no access)
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            # Default type filter is 'standard', so fallback workspaces (root, default, ungrouped)
+            # are filtered out, resulting in empty data
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_type_root_returns_403_without_real_access(self, mock_flag, mock_channel):
-        """Test that type=root returns 403 when user has no real workspace access in V2 mode."""
+    def test_workspace_list_type_root_returns_root_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=root returns root workspace when user has no real workspace access in V2 mode."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2685,19 +2701,22 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=root - should return 403 since user has no real access
+            # Query with type=root - should return root workspace from fallback
             response = client.get(f"{url}?type=root", format="json", **headers)
 
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_type_default_returns_403_without_real_access(self, mock_flag, mock_channel):
-        """Test that type=default returns 403 when user has no real workspace access in V2 mode."""
+    def test_workspace_list_type_default_returns_default_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=default returns default workspace when user has no real workspace access in V2 mode."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2716,8 +2735,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=default - should return 403 since user has no real access
+            # Query with type=default - should return default workspace from fallback
             response = client.get(f"{url}?type=default", format="json", **headers)
 
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.default_workspace.id), returned_ids)
