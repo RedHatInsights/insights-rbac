@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "60a3a8f190db3ef2f88bbefecb134dc56aede5da6f23e5593677bac81db5d447"
+            "sha256": "9d6231f981929d7bf19a73ab9e940a8c92c20cef67218bdc50f59108203b773b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -185,7 +185,7 @@
                 "sha256:fc7de24befaeae77ba923797c7c87834c73648a05a4bde34b3b7e5588973a453",
                 "sha256:fe562eb1a64e67dd297ccc4f5addea2501664954f2692b69a76449ec7913ecbf"
             ],
-            "markers": "python_version >= '3.9'",
+            "markers": "python_full_version >= '3.9' and platform_python_implementation != 'PyPy'",
             "version": "==2.0.0"
         },
         "charset-normalizer": {
@@ -444,7 +444,7 @@
                 "sha256:69b38505a4eac5df56a48045b9b6c7f8a4e2c34d50f55e89201cbef57d3a725b"
             ],
             "index": "pypi",
-            "markers": "python_full_version >= '3.10.0' and python_version < '4'",
+            "markers": "python_version < '4' and python_full_version >= '3.10.0'",
             "version": "==2.1.0"
         },
         "django-prometheus": {
@@ -584,12 +584,12 @@
         },
         "grpcio-status": {
             "hashes": [
-                "sha256:25fcbfec74c15d1a1cb5da3fab8ee9672852dc16a5a9eeb5baf7d7a9952943cd",
-                "sha256:380568794055a8efbbd8871162df92012e0228a5f6dffaf57f2a00c534103b18"
+                "sha256:a34cfd28101bfea84b5aa0f936b4b423019e9213882907166af6b3bddc59e189",
+                "sha256:b492b693d4bf27b47a6c32590701724f1d3b9444b36491878fb71f6208857f34"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.76.0"
+            "version": "==1.78.0"
         },
         "grpcio-tools": {
             "hashes": [
@@ -660,12 +660,12 @@
         },
         "gunicorn": {
             "hashes": [
-                "sha256:23cbe968c6ae3c8efc3d118c8353fa0763efc2102d89d0d3cea696cede7ff6b1",
-                "sha256:573e053aa950246e307ea908bd7ddce1870d41a40aec0c935938c586f0b9b946"
+                "sha256:aca364c096c81ca11acd4cede0aaeea91ba76ca74e2c0d7f879154db9d890f35",
+                "sha256:b53a7fff1a07b825b962af320554de44ae77a26abfa373711ff3f83d57d3506d"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.10'",
-            "version": "==25.0.1"
+            "version": "==25.0.3"
         },
         "idna": {
             "hashes": [
@@ -1085,7 +1085,7 @@
                 "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29",
                 "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
             ],
-            "markers": "python_version >= '3.10'",
+            "markers": "implementation_name != 'PyPy'",
             "version": "==3.0"
         },
         "python-dateutil": {
@@ -1094,7 +1094,7 @@
                 "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"
             ],
             "index": "pypi",
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==2.9.0.post0"
         },
         "pytz": {
@@ -1307,7 +1307,7 @@
                 "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
                 "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==1.17.0"
         },
         "sqlparse": {
@@ -1671,7 +1671,7 @@
                 "sha256:fc7de24befaeae77ba923797c7c87834c73648a05a4bde34b3b7e5588973a453",
                 "sha256:fe562eb1a64e67dd297ccc4f5addea2501664954f2692b69a76449ec7913ecbf"
             ],
-            "markers": "python_version >= '3.9'",
+            "markers": "python_full_version >= '3.9' and platform_python_implementation != 'PyPy'",
             "version": "==2.0.0"
         },
         "cfgv": {
@@ -2156,7 +2156,7 @@
                 "sha256:ff3e9c11aa260c31493d4b3197d1e28dd07768594a4f92bec4506849d736248f",
                 "sha256:ff71447cb778a4f772ddc4ce360e6ba9c95527ed84a52096bd1bbf9fee2ec7c0"
             ],
-            "markers": "python_version >= '3.9'",
+            "markers": "platform_python_implementation != 'PyPy'",
             "version": "==0.7.8"
         },
         "markupsafe": {
@@ -2451,7 +2451,7 @@
                 "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29",
                 "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
             ],
-            "markers": "python_version >= '3.10'",
+            "markers": "implementation_name != 'PyPy'",
             "version": "==3.0"
         },
         "pydocstyle": {
@@ -2643,7 +2643,7 @@
                 "sha256:6cd7b3897da8d6c9ffb968a6781fa6532dce9c3618a4b127d920dab764a19064",
                 "sha256:6d5eeeec8e9f84d4d56b847692bacf79bc2c8e90c7f80ca4444ff8b6f2e52895"
             ],
-            "markers": "python_version not in '3.0, 3.1, 3.2'",
+            "markers": "python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==3.0.1"
         },
         "sphinx": {
