@@ -392,7 +392,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             # Group.filtered_bindings contains RoleBindingGroup objects
             return getattr(obj, "filtered_bindings", [])
         elif isinstance(obj, Principal):
-            # Principal.filtered_bindings contains RoleBindingPrincipal objects (direct, not through groups)
+            # Principal.filtered_bindings contains RoleBindingPrincipal objects
             return getattr(obj, "filtered_bindings", [])
         return []
 
