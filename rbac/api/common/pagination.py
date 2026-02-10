@@ -166,14 +166,12 @@ class V2CursorPagination(CursorPagination):
     # Mapping of dot notation fields to Django ORM fields for Principal (user) queryset
     # Note: Principal model doesn't have created/modified fields directly
     USER_FIELD_MAPPING = {
-        # User (Principal) fields
         "user.username": "username",
         "user.uuid": "uuid",
-        # Role fields (accessed via related path from Principal through groups)
-        "role.name": "group__role_binding_entries__binding__role__name",
-        "role.uuid": "group__role_binding_entries__binding__role__uuid",
-        "role.modified": "group__role_binding_entries__binding__role__modified",
-        "role.created": "group__role_binding_entries__binding__role__created",
+        "role.name": "role_binding_entries__binding__role__name",
+        "role.uuid": "role_binding_entries__binding__role__uuid",
+        "role.modified": "role_binding_entries__binding__role__modified",
+        "role.created": "role_binding_entries__binding__role__created",
     }
 
     # Default ordering for each subject type

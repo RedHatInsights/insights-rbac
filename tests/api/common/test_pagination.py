@@ -497,3 +497,47 @@ class V2CursorPaginationTest(TestCase):
         with self.assertRaises(ValidationError) as context:
             self.paginator.get_ordering(request, self.queryset, None)
         self.assertIn("order_by", context.exception.detail)
+
+    def test_convert_order_field_user_mapping_role_name(self):
+        """Test _convert_order_field with user mapping for role.name uses direct path."""
+        field_mapping = self.paginator.USER_FIELD_MAPPING
+        self.assertEqual(
+            self.paginator._convert_order_field("role.name", field_mapping),
+            "role_binding_entries__binding__role__name",
+        )
+
+    def test_convert_order_field_user_mapping_role_fields(self):
+        """Test _convert_order_field with user mapping for all role fields."""
+        field_mapping = self.paginator.USER_FIELD_MAPPING
+        self.assertEqual(
+            self.paginator._convert_order_field("role.uuid", field_mapping),
+            "role_binding_entries__binding__role__uuid",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("role.modified", field_mapping),
+            "role_binding_entries__binding__role__modified",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("role.created", field_mapping),
+            "role_binding_entries__binding__role__created",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("-role.name", field_mapping),
+            "-role_binding_entries__binding__role__name",
+        )
+
+    def test_get_ordering_with_user_subject_type_role_name(self):
+        """Test get_ordering with subject_type=user converts role.name correctly."""
+        request = Request(
+            self.factory.get("/api/rbac/v2/role-bindings/by-subject/?subject_type=user&order_by=role.name")
+        )
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("role_binding_entries__binding__role__name",))
+
+    def test_get_ordering_with_user_subject_type_role_name_descending(self):
+        """Test get_ordering with subject_type=user converts -role.name correctly."""
+        request = Request(
+            self.factory.get("/api/rbac/v2/role-bindings/by-subject/?subject_type=user&order_by=-role.name")
+        )
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("-role_binding_entries__binding__role__name",))
