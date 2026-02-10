@@ -308,6 +308,68 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             return obj.get("modified") or obj.get("latest_modified")
         return getattr(obj, "latest_modified", None)
 
+    def _extract_group_details(self, group: Group, field_selection: FieldSelection) -> dict:
+        """Extract group.* fields from a Group object based on field selection.
+
+        Args:
+            group: The Group object to extract fields from
+            field_selection: The field selection specifying which fields to include
+
+        Returns:
+            Dictionary with extracted group details, or empty dict if none requested
+        """
+        # Extract field names from "group.X" paths
+        fields_to_include = set()
+        for field_path in field_selection.subject_fields:
+            if field_path.startswith("group."):
+                fields_to_include.add(field_path[6:])  # Remove "group." prefix
+
+        if not fields_to_include:
+            return {}
+
+        group_details = {}
+        for field_name in fields_to_include:
+            # Handle special case for user_count -> principalCount
+            if field_name == "user_count":
+                group_details[field_name] = getattr(group, "principalCount", 0)
+            else:
+                value = getattr(group, field_name, None)
+                if value is not None:
+                    group_details[field_name] = value
+
+        return group_details
+
+    def _build_subject_data(self, group: Group, field_selection: Optional[FieldSelection]) -> dict:
+        """Build subject data dictionary from a Group object.
+
+        Args:
+            group: The Group object to build subject data from
+            field_selection: Optional field selection to determine which fields to include
+
+        Returns:
+            Dictionary with subject data (always includes 'type')
+        """
+        # Default behavior: only basic fields
+        if field_selection is None:
+            return {
+                "id": group.uuid,
+                "type": "group",
+            }
+
+        # With fields param: type is always included
+        subject = {"type": "group"}
+
+        # Check if id is explicitly requested
+        if "id" in field_selection.subject_fields:
+            subject["id"] = group.uuid
+
+        # Extract group.* fields
+        group_details = self._extract_group_details(group, field_selection)
+        if group_details:
+            subject["group"] = group_details
+
+        return subject
+
     def get_subject(self, obj):
         """Extract subject information.
 
@@ -327,57 +389,13 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             if not group:
                 return {"type": "group"}
 
-            if field_selection is None:
-                return {
-                    "id": group.uuid,
-                    "type": "group",
-                }
-
-            subject = {"type": "group"}
-            if "id" in field_selection.subject_fields:
-                subject["id"] = group.uuid
-            return subject
+            return self._build_subject_data(group, field_selection)
 
         # Handle Group objects
         if not isinstance(obj, Group):
             return None
 
-        # Default behavior: only basic fields
-        if field_selection is None:
-            return {
-                "id": obj.uuid,
-                "type": "group",
-            }
-
-        # With fields param: type is always included
-        subject = {"type": "group"}
-
-        # Check if id is explicitly requested
-        if "id" in field_selection.subject_fields:
-            subject["id"] = obj.uuid
-
-        # Extract field names from "group.X" paths
-        fields_to_include = set()
-        for field_path in field_selection.subject_fields:
-            if field_path.startswith("group."):
-                fields_to_include.add(field_path[6:])  # Remove "group." prefix
-
-        # Dynamically extract requested fields from the object
-        if fields_to_include:
-            group_details = {}
-            for field_name in fields_to_include:
-                # Handle special case for user_count -> principalCount
-                if field_name == "user_count":
-                    group_details[field_name] = getattr(obj, "principalCount", 0)
-                else:
-                    value = getattr(obj, field_name, None)
-                    if value is not None:
-                        group_details[field_name] = value
-
-            if group_details:
-                subject["group"] = group_details
-
-        return subject
+        return self._build_subject_data(obj, field_selection)
 
     def _build_role_data(self, role: RoleV2, field_selection: Optional[FieldSelection]) -> dict:
         """Build role data dictionary from a role object.
