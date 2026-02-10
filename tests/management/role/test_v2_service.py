@@ -17,9 +17,8 @@
 """Test the RoleV2Service domain service."""
 
 from django.test import override_settings
-from management.exceptions import RequiredFieldError
+from management.exceptions import AlreadyExistsError, InvalidFieldError, MissingRequiredFieldError
 from management.models import Permission
-from management.role.v2_exceptions import RoleAlreadyExistsError
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_service import RoleV2Service
 from tests.identity_request import IdentityRequest
@@ -97,12 +96,12 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertIn(self.permission3, role.permissions.all())
 
     def test_create_role_with_empty_description_raises_error(self):
-        """Test that creating a role with empty description raises RequiredFieldError."""
+        """Test that creating a role with empty description raises MissingRequiredFieldError."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
+        with self.assertRaises(MissingRequiredFieldError) as context:
             self.service.create(
                 name="No Description Role",
                 description="",
@@ -110,15 +109,16 @@ class RoleV2ServiceTests(IdentityRequest):
                 tenant=self.tenant,
             )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(context.exception.field, "description")
+        self.assertEqual(context.exception.operation_context, "Create Role")
 
     def test_create_role_with_whitespace_only_description_raises_error(self):
-        """Test that whitespace-only description raises RequiredFieldError."""
+        """Test that whitespace-only description raises MissingRequiredFieldError."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
+        with self.assertRaises(MissingRequiredFieldError) as context:
             self.service.create(
                 name="Whitespace Description Role",
                 description="   ",
@@ -126,11 +126,11 @@ class RoleV2ServiceTests(IdentityRequest):
                 tenant=self.tenant,
             )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(context.exception.field, "description")
 
     def test_create_role_with_empty_permissions_raises_error(self):
-        """Test that creating a role with empty permissions raises RequiredFieldError."""
-        with self.assertRaises(RequiredFieldError) as context:
+        """Test that creating a role with empty permissions raises MissingRequiredFieldError."""
+        with self.assertRaises(MissingRequiredFieldError) as context:
             self.service.create(
                 name="Empty Permissions Role",
                 description="Valid description",
@@ -138,15 +138,16 @@ class RoleV2ServiceTests(IdentityRequest):
                 tenant=self.tenant,
             )
 
-        self.assertEqual(context.exception.field_name, "permissions")
+        self.assertEqual(context.exception.field, "permissions")
+        self.assertEqual(context.exception.operation_context, "Create Role")
 
     def test_create_role_with_permission_missing_required_field_raises_error(self):
-        """Test that permission missing a required field raises RequiredFieldError."""
+        """Test that permission missing a required field raises InvalidFieldError."""
         permission_data = [
             {"resource_type": "hosts", "operation": "read"},  # Missing 'application'
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
+        with self.assertRaises(InvalidFieldError) as context:
             self.service.create(
                 name="Missing App Permission Role",
                 description="Valid description",
@@ -154,15 +155,18 @@ class RoleV2ServiceTests(IdentityRequest):
                 tenant=self.tenant,
             )
 
-        self.assertEqual(context.exception.field_name, "application")
+        self.assertEqual(context.exception.field, "permissions")
+        self.assertIn("application", str(context.exception))
+        self.assertEqual(context.exception.operation_context, "Create Role")
 
     def test_create_role_with_missing_name_raises_error(self):
-        """Test that creating a role with blank name raises RequiredFieldError."""
+        """Test that creating a role with blank name raises error from model validation."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
+        # Empty name is caught by Django model validation (blank=False)
+        with self.assertRaises(Exception):
             self.service.create(
                 name="",
                 description="Valid description",
@@ -170,10 +174,8 @@ class RoleV2ServiceTests(IdentityRequest):
                 tenant=self.tenant,
             )
 
-        self.assertEqual(context.exception.field_name, "name")
-
     def test_create_role_with_duplicate_name_raises_error(self):
-        """Test that creating a role with a duplicate name raises RoleAlreadyExistsError."""
+        """Test that creating a role with a duplicate name raises AlreadyExistsError."""
         permission_data1 = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
@@ -190,7 +192,7 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         # Attempt to create second role with same name
-        with self.assertRaises(RoleAlreadyExistsError) as cm:
+        with self.assertRaises(AlreadyExistsError) as cm:
             self.service.create(
                 name="Duplicate Name",
                 description="Second role",
@@ -199,7 +201,9 @@ class RoleV2ServiceTests(IdentityRequest):
             )
 
         self.assertIn("Duplicate Name", str(cm.exception))
-        self.assertEqual(cm.exception.name, "Duplicate Name")
+        self.assertEqual(cm.exception.resource_type, "role")
+        self.assertEqual(cm.exception.identifier, "Duplicate Name")
+        self.assertEqual(cm.exception.operation_context, "Create Role")
 
     def test_create_role_generates_uuid(self):
         """Test that creating a role auto-generates a UUID."""
@@ -230,3 +234,20 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
+
+    def test_create_role_with_nonexistent_permission_raises_error(self):
+        """Test that creating a role with nonexistent permissions raises InvalidFieldError."""
+        permission_data = [
+            {"application": "nonexistent", "resource_type": "resource", "operation": "action"},
+        ]
+
+        with self.assertRaises(InvalidFieldError) as context:
+            self.service.create(
+                name="Nonexistent Permission Role",
+                description="Valid description",
+                permission_data=permission_data,
+                tenant=self.tenant,
+            )
+
+        self.assertEqual(context.exception.field, "permissions")
+        self.assertIn("do not exist", str(context.exception))

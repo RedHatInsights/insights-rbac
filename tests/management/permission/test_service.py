@@ -17,7 +17,7 @@
 """Tests for PermissionService."""
 
 from django.test import override_settings
-from management.permission.exceptions import InvalidPermissionDataError
+from management.exceptions import InvalidFieldError
 from management.permission.model import Permission
 from management.permission.service import PermissionService
 from tests.identity_request import IdentityRequest
@@ -77,13 +77,15 @@ class PermissionServiceTests(IdentityRequest):
         self.assertEqual(result[0], self.permission1)
 
     def test_resolve_both_operation_and_verb_raises_error(self):
+        """Test that specifying both operation and verb raises InvalidFieldError."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read", "verb": "write"},
         ]
 
-        with self.assertRaises(InvalidPermissionDataError) as context:
+        with self.assertRaises(InvalidFieldError) as context:
             self.service.resolve(permission_data)
 
+        self.assertEqual(context.exception.field, "operation")
         self.assertIn("Cannot specify both", str(context.exception))
 
     def test_resolve_empty_list_returns_empty(self):

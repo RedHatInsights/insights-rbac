@@ -23,6 +23,7 @@ from django.db import IntegrityError
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
+from management.exceptions import DomainError
 from management.utils import api_path_prefix, v2response_error_from_errors
 from rest_framework import status
 from rest_framework.views import Response, exception_handler
@@ -103,6 +104,25 @@ def custom_exception_handler_v2(exc, context):
             errors += _generate_errors_from_list(data, **{"status_code": str(response.status_code)})
         error_response = v2response_error_from_errors(errors=errors, exc=exc, context=context)
         response.data = error_response
+    elif isinstance(exc, DomainError):
+        # Handle domain exceptions with enhanced Problem Details
+        detail_prefix = f"{exc.operation_context}: " if exc.operation_context else ""
+
+        response_data = {
+            "status": exc.status_code,
+            "title": exc.title,
+            "detail": f"{detail_prefix}{str(exc)}",
+        }
+
+        # Add errors array for field-level exceptions
+        if hasattr(exc, "field"):
+            response_data["errors"] = [{"field": exc.field, "message": str(exc)}]
+
+        response = Response(
+            response_data,
+            status=exc.status_code,
+            content_type="application/problem+json",
+        )
     elif isinstance(exc, IntegrityError):
         source_view = context.get("view")
         response = Response(

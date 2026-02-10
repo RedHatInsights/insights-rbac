@@ -14,22 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Domain exceptions for Permission operations."""
+"""Domain exceptions for Permission operations.
 
-from management.exceptions import RequiredFieldError
+Note: This module re-exports generic exceptions for convenience.
+Domain-specific permission exceptions should extend DomainError.
+"""
 
-__all__ = ["PermissionError", "InvalidPermissionDataError", "RequiredFieldError"]
+from management.exceptions import InvalidFieldError, MissingRequiredFieldError
 
-
-class PermissionError(Exception):
-    """Base exception for Permission domain errors."""
-
-    pass
-
-
-class InvalidPermissionDataError(PermissionError):
-    """Raised when permission data is malformed (e.g., conflicting fields)."""
-
-    def __init__(self, message: str):
-        """Initialize with the validation error message."""
-        super().__init__(message)
+__all__ = ["InvalidFieldError", "MissingRequiredFieldError"]

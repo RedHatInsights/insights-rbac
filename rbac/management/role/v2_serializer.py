@@ -14,26 +14,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Serializers for RoleV2 API."""
+"""Serializers for Role API."""
 
-from management.exceptions import RequiredFieldError
-from management.role.v2_exceptions import (
-    InvalidRolePermissionsError,
-    PermissionsNotFoundError,
-    RoleAlreadyExistsError,
-    RoleDatabaseError,
-)
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from rest_framework import serializers
-
-# Centralized mapping from domain exceptions to API error fields
-ERROR_MAPPING = {
-    InvalidRolePermissionsError: "permissions",
-    PermissionsNotFoundError: "permissions",
-    RoleAlreadyExistsError: "name",
-    RoleDatabaseError: "detail",
-}
 
 
 class PermissionSerializer(serializers.Serializer):
@@ -45,7 +30,7 @@ class PermissionSerializer(serializers.Serializer):
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
-    """Serializer for RoleV2 API responses."""
+    """Serializer for Role API responses."""
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
@@ -89,7 +74,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
-    """Serializer for RoleV2 create/update requests."""
+    """Serializer for Role create/update requests."""
 
     service_class = RoleV2Service
 
@@ -109,19 +94,13 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         return self.context.get("role_service") or self.service_class()
 
     def create(self, validated_data):
-        """Create a new RoleV2 using the service layer."""
+        """Create a new Role using the service layer."""
         tenant = self.context["request"].tenant
         permission_data = validated_data.pop("permissions", [])
 
-        try:
-            return self.service.create(
-                name=validated_data.get("name"),
-                description=validated_data.get("description"),
-                permission_data=permission_data,
-                tenant=tenant,
-            )
-        except RequiredFieldError as e:
-            raise serializers.ValidationError({e.field_name: str(e)})
-        except tuple(ERROR_MAPPING.keys()) as e:
-            field = ERROR_MAPPING[type(e)]
-            raise serializers.ValidationError({field: str(e)})
+        return self.service.create(
+            name=validated_data.get("name"),
+            description=validated_data.get("description"),
+            permission_data=permission_data,
+            tenant=tenant,
+        )

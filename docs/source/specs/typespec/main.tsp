@@ -780,7 +780,7 @@ namespace RoleBindings {
     @example(#{
         requests: #[
             #{
-                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
                 subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
                 role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
             },
@@ -1001,7 +1001,7 @@ namespace RoleBindings {
             body: #{
                 requests: #[
                     #{
-                        resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+                resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
                         subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
                         role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
                     },
@@ -1017,7 +1017,7 @@ namespace RoleBindings {
             _: 201,
             role_bindings: #[
                 #{
-                    resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
+            resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
                     subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
                     role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
                 },
@@ -1036,10 +1036,10 @@ namespace RoleBindings {
 
     @doc("Request body for updating role bindings - contains the new roles to assign")
     @example(#{
-        roles: #[
-            #{ id: "550e8400-e29b-41d4-a716-446655440002" },
-            #{ id: "550e8400-e29b-41d4-a716-446655440003" }
-        ]
+            roles: #[
+                #{ id: "550e8400-e29b-41d4-a716-446655440002" },
+                #{ id: "550e8400-e29b-41d4-a716-446655440003" }
+            ]
     })
     model UpdateRoleBindingsRequest {
         @doc("Roles to assign (replaces existing roles for the target binding)")
@@ -1108,7 +1108,7 @@ namespace RoleBindings {
                 #{
                     application: "rbac",
                     resource_type: "workspace",
-                    operation: "read"
+        operation: "read"
                 },
                 #{
                     application: "rbac",
@@ -1262,10 +1262,10 @@ namespace Roles {
             },
             data: #[
                 #{
-                    id: "550e8400-e29b-41d4-a716-446655440002",
+        id: "550e8400-e29b-41d4-a716-446655440002",
                     name: "Workspace Admin",
                     description: "description",
-                    last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+        last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
                 }
             ]
         }
@@ -1361,15 +1361,15 @@ namespace Roles {
         },
         returnType: #{
             _: 200,
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Workspace Admin",
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                name: "Workspace Admin",
             description: "Full administrative access to workspace resources",
             permissions: #[
                 #{ application: "inventory", resource_type: "hosts", operation: "read" },
                 #{ application: "inventory", resource_type: "hosts", operation: "write" }
             ],
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
-        }
+                last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z")
+            }
     })
     @opExample(#{
         parameters: #{
@@ -1406,7 +1406,7 @@ namespace Roles {
         },
         returnType: #{
             _: 200,
-            id: "550e8400-e29b-41d4-a716-446655440002",
+                    id: "550e8400-e29b-41d4-a716-446655440002",
             name: "Updated Inventory Admin",
             description: "Updated role for inventory management",
             permissions: #[
