@@ -102,17 +102,10 @@ class RoleFieldSelection(FieldSelection):
 class RoleV2ListSerializer(serializers.Serializer):
     """Input serializer for RoleV2 list query parameters."""
 
-    service_class = RoleV2Service
-
     DEFAULT_FIELDS = {"id", "name", "description", "last_modified"}
 
     name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
-
-    @property
-    def service(self):
-        """Return the service instance from context or create a new one."""
-        return self.context.get("role_service") or self.service_class(tenant=self.context["request"].tenant)
 
     def to_internal_value(self, data):
         """Sanitize input data by stripping NUL bytes before field validation."""
@@ -139,10 +132,6 @@ class RoleV2ListSerializer(serializers.Serializer):
 
         resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
         return resolved or self.DEFAULT_FIELDS
-
-    def list(self):
-        """Get a list of roles using the service layer."""
-        return self.service.list(self.validated_data)
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
