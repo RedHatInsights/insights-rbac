@@ -17,6 +17,8 @@
 """Service for RoleV2 management."""
 
 import logging
+import uuid
+from typing import Iterable, Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -36,6 +38,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.v2_exceptions import (
+    CustomRoleRequiredError,
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
@@ -43,6 +46,7 @@ from management.role.v2_exceptions import (
     RoleNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
+from management.utils import as_uuid
 
 from api.models import Tenant
 
@@ -243,3 +247,28 @@ class RoleV2Service:
                 queryset = queryset.prefetch_related("permissions")
 
         return queryset
+
+    @atomic
+    def bulk_delete(self, ids: Iterable[str | uuid.UUID], from_tenant: Optional[Tenant] = None):
+        """Delete custom roles with the provided UUIDs."""
+        # Normalize UUIDs. These should have already been validated.
+        ids = {as_uuid(id) for id in ids}
+
+        query = RoleV2.objects.filter(uuid__in=ids)
+
+        if from_tenant is not None:
+            query = query.filter(tenant=from_tenant)
+
+        roles: list[RoleV2] = list(query)
+
+        if len(roles) != len(ids):
+            missing_ids = {str(u) for u in ids.difference(r.uuid for r in roles)}
+            raise RoleNotFoundError(f"Failed to find roles with provided UUIDs: {missing_ids}")
+
+        non_custom_roles = [r for r in roles if r.type != RoleV2.Types.CUSTOM]
+
+        if non_custom_roles:
+            error_info = ", ".join(f"{str(r.uuid)} ({r.name!r})" for r in non_custom_roles)
+            raise CustomRoleRequiredError(f"Only custom roles can be deleted, but got the following: {error_info}")
+
+        query.delete()

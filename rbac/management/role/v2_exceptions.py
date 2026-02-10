@@ -64,3 +64,11 @@ class RoleNotFoundError(RoleV2Error):
         """Initialize with the role UUID that was not found."""
         self.uuid = uuid
         super().__init__(f"Role with UUID '{uuid}' not found.")
+
+
+class CustomRoleRequiredError(RoleV2Error):
+    """Raised when an operation requires a custom role, but a custom role was not provided."""
+
+    def __init__(self, message: str):
+        """Initialize the exception with a message."""
+        super().__init__(message)
