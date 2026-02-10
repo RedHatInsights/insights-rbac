@@ -1,7 +1,5 @@
 """Command to fix orphan relations in all tenants."""
 
-import datetime
-
 #
 # Copyright 2026 Red Hat, Inc.
 #
@@ -18,6 +16,7 @@ import datetime
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+import datetime
 import logging
 
 from django.core.management import BaseCommand, CommandError
