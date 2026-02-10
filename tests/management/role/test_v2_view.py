@@ -32,7 +32,7 @@ from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2RetrieveViewTest(IdentityRequest):
     """Test the RoleV2ViewSet retrieve endpoint."""
 
