@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 from unittest import TestCase
 
 from management.group.platform import GlobalPolicyIdService, DefaultGroupNotAvailableError
@@ -69,7 +69,7 @@ def _assert_binding_tuples_consistent(test: TestCase, tuples: InMemoryTuples, bi
         )
     )
 
-    test.assertEqual(1, len(role_tuples))
+    test.assertEqual(1, len(role_tuples), f"Missing role relation for binding: {str(binding.uuid)}")
     test.assertEqual(str(binding.role.uuid), role_tuples.only.subject_id)
 
     resource_tuples = tuples.find_tuples(
@@ -273,3 +273,58 @@ def seed_v2_role_from_v1(role: Role) -> SeededRoleV2:
     v2_role.permissions.set(Permission.objects.filter(accesses__role=role))
 
     return v2_role
+
+
+def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, str, str], list[dict]]:
+    """Get a function with the signature of (read/iterate)_tuples_from_kessel that reads from an InMemoryTuples."""
+
+    def read_tuples_fn(resource_type_name, resource_id, relation_name, subject_type_name, subject_id):
+        """Mock function to read tuples from InMemoryTuples."""
+        # Build a filter based on the provided parameters
+        filters = [resource_type("rbac", resource_type_name)]
+
+        if resource_id:
+            filters.append(resource("rbac", resource_type_name, resource_id))
+
+        if relation_name:
+            filters.append(relation(relation_name))
+
+        found_tuples = tuples.find_tuples(all_of(*filters))
+
+        # Convert to dict format matching Kessel gRPC response
+        # Format: {"tuple": {"resource": {...}, "relation": "...", "subject": {...}}, ...}
+        result = []
+        for t in found_tuples:
+            # Filter by subject type and id if provided
+            if subject_type_name and t.subject_type_name != subject_type_name:
+                continue
+            if subject_id and t.subject_id != subject_id:
+                continue
+
+            result.append(
+                {
+                    "tuple": {
+                        "resource": {
+                            "type": {
+                                "namespace": t.resource_type_namespace,
+                                "name": t.resource_type_name,
+                            },
+                            "id": t.resource_id,
+                        },
+                        "relation": t.relation,
+                        "subject": {
+                            "subject": {
+                                "type": {
+                                    "namespace": t.subject_type_namespace,
+                                    "name": t.subject_type_name,
+                                },
+                                "id": t.subject_id,
+                            },
+                            "relation": t.subject_relation,
+                        },
+                    },
+                }
+            )
+        return result
+
+    return read_tuples_fn
