@@ -16,11 +16,13 @@
 #
 """View for RoleV2 management."""
 
+from management.atomic_transactions import atomic
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
     RoleFieldSelection,
+    RoleV2BulkDeleteRequestSerializer,
     RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
@@ -76,6 +78,8 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         """Return appropriate serializer based on action."""
         if self.action in ("create", "update"):
             return RoleV2RequestSerializer
+        if self.action == "bulk_destroy":
+            return RoleV2BulkDeleteRequestSerializer
         return RoleV2ResponseSerializer
 
     def _parse_fields_param(self, fields_str: str | None) -> set[str]:
@@ -158,3 +162,16 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             role, context={"input_permissions": input_permissions, "fields": fields}
         )
         return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+    @atomic
+    def bulk_destroy(self, request, *args, **kwargs):
+        """Delete multiple roles atomically."""
+        service = RoleV2Service(tenant=request.tenant)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        ids = set(serializer.validated_data["ids"])
+
+        service.bulk_delete(ids, from_tenant=self.request.tenant)
+        return Response(status=status.HTTP_204_NO_CONTENT)
