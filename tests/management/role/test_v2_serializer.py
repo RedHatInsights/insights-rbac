@@ -161,11 +161,11 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
     def _build_context(self, fields=None):
         """Build serializer context with resolved field set."""
         if not fields:
-            return {"fields": RoleV2Service.DEFAULT_FIELDS}
+            return {"fields": RoleV2Service.DEFAULT_LIST_FIELDS}
         fields = fields.replace("\x00", "")
         field_selection = RoleFieldSelection.parse(fields)
         resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return {"fields": resolved or RoleV2Service.DEFAULT_FIELDS}
+        return {"fields": resolved or RoleV2Service.DEFAULT_LIST_FIELDS}
 
     def test_default_fields_when_no_field_selection(self):
         """Test that default fields are returned when no fields param is provided."""
@@ -341,16 +341,16 @@ class RoleV2ListSerializerTests(IdentityRequest):
         self.assertNotIn("name", serializer.validated_data)
 
     def test_no_fields_param_returns_defaults(self):
-        """Test that omitting fields returns DEFAULT_FIELDS."""
+        """Test that omitting fields returns DEFAULT_LIST_FIELDS."""
         serializer = RoleV2ListSerializer(data={})
         self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_FIELDS)
+        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_LIST_FIELDS)
 
     def test_empty_fields_returns_defaults(self):
-        """Test that an empty fields string returns DEFAULT_FIELDS."""
+        """Test that an empty fields string returns DEFAULT_LIST_FIELDS."""
         serializer = RoleV2ListSerializer(data={"fields": ""})
         self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_FIELDS)
+        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_LIST_FIELDS)
 
     def test_valid_fields_resolve_to_requested_set(self):
         """Test that valid field names resolve to the requested set."""
