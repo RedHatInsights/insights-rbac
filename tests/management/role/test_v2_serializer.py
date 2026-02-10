@@ -31,6 +31,7 @@ from management.role.v2_serializer import (
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
 )
+from management.role.v2_service import RoleV2Service
 from management.utils import FieldSelectionValidationError
 from management.utils import PRINCIPAL_CACHE
 from tests.identity_request import IdentityRequest
@@ -160,11 +161,11 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
     def _build_context(self, fields=None):
         """Build serializer context with resolved field set."""
         if not fields:
-            return {"fields": RoleV2ListSerializer.DEFAULT_FIELDS}
+            return {"fields": RoleV2Service.DEFAULT_FIELDS}
         fields = fields.replace("\x00", "")
         field_selection = RoleFieldSelection.parse(fields)
         resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return {"fields": resolved or RoleV2ListSerializer.DEFAULT_FIELDS}
+        return {"fields": resolved or RoleV2Service.DEFAULT_FIELDS}
 
     def test_default_fields_when_no_field_selection(self):
         """Test that default fields are returned when no fields param is provided."""
@@ -304,6 +305,71 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
 
         expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
         self.assertEqual(set(data.keys()), expected)
+
+
+class RoleV2ListSerializerTests(IdentityRequest):
+    """Test the RoleV2ListSerializer."""
+
+    def test_nul_bytes_stripped_from_name(self):
+        """Test that NUL bytes in name are stripped before validation."""
+        serializer = RoleV2ListSerializer(data={"name": "admin\x00role"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["name"], "adminrole")
+
+    def test_nul_bytes_stripped_from_fields(self):
+        """Test that NUL bytes in fields are stripped before validation."""
+        serializer = RoleV2ListSerializer(data={"fields": "id,na\x00me"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIn("name", serializer.validated_data["fields"])
+
+    def test_name_passes_through(self):
+        """Test that a non-empty name passes through as-is."""
+        serializer = RoleV2ListSerializer(data={"name": "my_role"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["name"], "my_role")
+
+    def test_empty_name_returns_none(self):
+        """Test that an empty name string is normalized to None."""
+        serializer = RoleV2ListSerializer(data={"name": ""})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIsNone(serializer.validated_data["name"])
+
+    def test_no_name_param_is_valid(self):
+        """Test that omitting name entirely is valid."""
+        serializer = RoleV2ListSerializer(data={})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertNotIn("name", serializer.validated_data)
+
+    def test_no_fields_param_returns_defaults(self):
+        """Test that omitting fields returns DEFAULT_FIELDS."""
+        serializer = RoleV2ListSerializer(data={})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_FIELDS)
+
+    def test_empty_fields_returns_defaults(self):
+        """Test that an empty fields string returns DEFAULT_FIELDS."""
+        serializer = RoleV2ListSerializer(data={"fields": ""})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_FIELDS)
+
+    def test_valid_fields_resolve_to_requested_set(self):
+        """Test that valid field names resolve to the requested set."""
+        serializer = RoleV2ListSerializer(data={"fields": "id,name"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], {"id", "name"})
+
+    def test_invalid_fields_raise_validation_error(self):
+        """Test that invalid field names raise a validation error."""
+        serializer = RoleV2ListSerializer(data={"fields": "id,bogus_field"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("fields", serializer.errors)
+
+    def test_all_valid_response_fields_can_be_requested(self):
+        """Test that all fields from RoleV2ResponseSerializer.Meta.fields are accepted."""
+        all_fields = ",".join(RoleV2ResponseSerializer.Meta.fields)
+        serializer = RoleV2ListSerializer(data={"fields": all_fields})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], set(RoleV2ResponseSerializer.Meta.fields))
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

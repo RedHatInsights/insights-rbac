@@ -47,6 +47,8 @@ class RoleV2Service:
     to HTTP-level errors by the serializer layer.
     """
 
+    DEFAULT_FIELDS = {"id", "name", "description", "last_modified"}
+
     def __init__(self, tenant: Tenant | None = None):
         """Initialize the service."""
         self.tenant = tenant

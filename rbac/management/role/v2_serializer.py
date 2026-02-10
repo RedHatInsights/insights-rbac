@@ -102,8 +102,6 @@ class RoleFieldSelection(FieldSelection):
 class RoleV2ListSerializer(serializers.Serializer):
     """Input serializer for RoleV2 list query parameters."""
 
-    DEFAULT_FIELDS = {"id", "name", "description", "last_modified"}
-
     name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
 
@@ -121,17 +119,17 @@ class RoleV2ListSerializer(serializers.Serializer):
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
         if not value:
-            return self.DEFAULT_FIELDS
+            return RoleV2Service.DEFAULT_FIELDS
         try:
             field_selection = RoleFieldSelection.parse(value)
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
 
         if not field_selection:
-            return self.DEFAULT_FIELDS
+            return RoleV2Service.DEFAULT_FIELDS
 
         resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return resolved or self.DEFAULT_FIELDS
+        return resolved or RoleV2Service.DEFAULT_FIELDS
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
