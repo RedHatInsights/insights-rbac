@@ -16,16 +16,12 @@
 #
 """View for RoleV2 management."""
 
-from uuid import UUID
-
-from django.http import Http404
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
-from management.role.v2_exceptions import RoleNotFoundError
 from management.role.v2_model import RoleV2
-from management.role.v2_serializer import RoleV2ResponseSerializer
-from management.role.v2_service import RoleV2Service
-from rest_framework import serializers
+from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import serializers, status
 from rest_framework.response import Response
 
 # Default fields returned when no fields parameter is specified
@@ -40,23 +36,16 @@ VALID_ROLE_FIELDS = {
     "permissions_count",
     "last_modified",
 }
-from management.role.v2_model import RoleV2
-from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
-from management.v2_mixins import AtomicOperationsMixin
-from rest_framework import status
-from rest_framework.response import Response
 
 
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
-class RoleV2ViewSet(BaseV2ViewSet):
-    """RoleV2 ViewSet."""
     permission_classes = (RoleAccessPermission,)
     queryset = RoleV2.objects.none()
     serializer_class = RoleV2ResponseSerializer
     lookup_field = "uuid"
-    http_method_names = ["post", "head", "options"]
+    http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
         """Get the queryset for roles filtered by tenant."""
@@ -113,31 +102,9 @@ class RoleV2ViewSet(BaseV2ViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve a single role by UUID."""
-        # Validate fields parameter first (will raise ValidationError if invalid)
-        self._validate_and_get_fields_param(request)
-
-        uuid_str = kwargs.get("uuid")
-
-        # Initialize service with tenant
-        service = RoleV2Service(tenant=request.tenant)
-
-        try:
-            # Convert string to UUID
-            uuid_obj = UUID(uuid_str)
-
-            # Get role via service
-            role = service.get_role(uuid_obj)
-
-            # Serialize with field filtering
-            serializer = self.get_serializer(role)
-            return Response(serializer.data)
-
-        except ValueError:
-            # Invalid UUID format
-            raise Http404(f"Invalid UUID format: {uuid_str}")
-        except RoleNotFoundError as e:
-            raise Http404(str(e))
-
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""

@@ -217,6 +217,8 @@ class RoleV2ServiceGetRoleTest(TestCase):
         self.assertEqual(role.name, "Role with Special Chars: @#$%")
 
         special_role.delete()
+
+
 """Test the RoleV2Service domain service."""
 
 from django.test import override_settings

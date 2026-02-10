@@ -19,7 +19,6 @@
 import logging
 
 import pgtransaction
-from django.conf import settings
 from django.db import OperationalError
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import status

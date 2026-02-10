@@ -16,9 +16,6 @@
 #
 """Serializers for RoleV2 API."""
 
-from management.role.v2_model import RoleV2
-from rest_framework import serializers
-
 from management.exceptions import RequiredFieldError
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
@@ -48,33 +45,24 @@ class PermissionSerializer(serializers.Serializer):
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
-    """Serializer for RoleV2 response data."""
-    application = serializers.CharField(help_text="Application name")
-    resource_type = serializers.CharField(help_text="Resource type")
-    operation = serializers.CharField(source="verb", help_text="Operation/verb")
-
-
-class RoleV2ResponseSerializer(serializers.ModelSerializer):
     """Serializer for RoleV2 API responses."""
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True)
     permissions = serializers.SerializerMethodField()
+    permissions_count = serializers.SerializerMethodField()
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
-    # permissions_count - uncomment when field masking is implemented
-    # permissions_count = serializers.SerializerMethodField()
 
     class Meta:
-
         model = RoleV2
         fields = (
             "id",
             "name",
             "description",
             "permissions",
-            "last_modified",
             "permissions_count",
+            "last_modified",
         )
 
     def __init__(self, *args, **kwargs):
@@ -93,18 +81,20 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
                 self.fields.pop(field_name)
 
     def get_permissions(self, obj):
-        """Return permissions, ordered by input order if available."""
+        """Return permissions, ordered by input order if available, otherwise alphabetically."""
         permissions = list(obj.permissions.all())
         input_permissions = self.context.get("input_permissions")
 
         if input_permissions:
+            # Sort by input order (for create responses)
             order_map = {}
             for i, p in enumerate(input_permissions):
                 key = f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}"
                 order_map[key] = i
-
-            # Sort permissions by input order
             permissions.sort(key=lambda p: order_map.get(p.permission, float("inf")))
+        else:
+            # Sort alphabetically by permission string (for retrieve/list responses)
+            permissions.sort(key=lambda p: p.permission)
 
         return PermissionSerializer(permissions, many=True).data
 

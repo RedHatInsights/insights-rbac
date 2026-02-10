@@ -31,6 +31,7 @@ class RoleNotFoundError(RoleV2Error):
         self.uuid = uuid
         super().__init__(f"Role with UUID '{uuid}' not found.")
 
+
 class RoleAlreadyExistsError(RoleV2Error):
     """Raised when attempting to create a role with a name that already exists for the tenant."""
 
@@ -63,4 +64,3 @@ class InvalidRolePermissionsError(RoleV2Error):
     def __init__(self, message: str):
         """Initialize with the validation error message."""
         super().__init__(message)
-

@@ -14,16 +14,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Service for RoleV2 management following DDD principles."""
-
-import logging
-from uuid import UUID
-
-from management.role.v2_exceptions import RoleNotFoundError
-from management.role.v2_model import RoleV2
 """Service for RoleV2 management."""
 
 import logging
+from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
@@ -37,8 +31,9 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
+    RoleNotFoundError,
 )
-from management.role.v2_model import CustomRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2
 
 from api.models import Tenant
 
@@ -55,7 +50,7 @@ class RoleV2Service:
     to HTTP-level errors by the view layer.
     """
 
-    def __init__(self, tenant: Tenant):
+    def __init__(self, tenant: Tenant = None):
         """
         Initialize the service with a tenant.
 
@@ -63,6 +58,7 @@ class RoleV2Service:
             tenant: The tenant context for operations.
         """
         self.tenant = tenant
+        self.permission_service = PermissionService()
 
     def get_role(self, uuid: UUID) -> RoleV2:
         """
@@ -84,11 +80,6 @@ class RoleV2Service:
         except RoleV2.DoesNotExist:
             logger.warning(f"Role {uuid} not found for tenant {self.tenant.org_id}")
             raise RoleNotFoundError(uuid)
-
-
-    def __init__(self):
-        """Initialize the service with its dependencies."""
-        self.permission_service = PermissionService()
 
     @atomic
     def create(

@@ -20,19 +20,14 @@ import uuid
 from importlib import reload
 from unittest.mock import patch
 
-from django.test.utils import override_settings
-from importlib import reload
-
 from django.test import override_settings
 from django.urls import clear_url_caches, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from management.models import Permission
-from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2
 from management import v2_urls
 from management.models import Permission
-from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2
 from rbac import urls
 from tests.identity_request import IdentityRequest
 
@@ -337,56 +332,43 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         # Based on implementation, this might return 400 or use defaults
         self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
 
-    def test_retrieve_role_service_layer_integration(self):
-        """Test that retrieve uses the service layer correctly."""
-        from unittest.mock import MagicMock, patch
+    def test_retrieve_role_permissions_alphabetical_order(self):
+        """Test that permissions are returned in alphabetical order."""
+        # Create role with permissions in random order
+        ordered_role = CustomRoleV2.objects.create(
+            name="Ordered Permissions Role",
+            description="Role to test alphabetical ordering",
+            tenant=self.tenant,
+        )
+        # Add permissions in non-alphabetical order
+        # Expected alphabetical order: cost:reports:read, inventory:hosts:read, inventory:hosts:write
+        ordered_role.permissions.add(self.permission2)  # inventory:hosts:write
+        ordered_role.permissions.add(self.permission3)  # cost:reports:read
+        ordered_role.permissions.add(self.permission1)  # inventory:hosts:read
 
+        url = self._get_role_url(ordered_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        # Verify permissions are sorted alphabetically
+        permission_strings = [f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]]
+        self.assertEqual(permission_strings, ["cost:reports:read", "inventory:hosts:read", "inventory:hosts:write"])
+
+        ordered_role.delete()
+
+    def test_retrieve_role_uses_queryset_not_service(self):
+        """Test that retrieve uses DRF's get_object() from queryset."""
         url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url, **self.headers)
 
-        # Mock the service to verify it's being called
-        with patch("management.role.v2_view.RoleV2Service") as mock_service_class:
-            mock_service = MagicMock()
-            mock_service_class.return_value = mock_service
-            mock_service.get_role.return_value = self.custom_role
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
 
-            response = self.client.get(url, **self.headers)
-
-            # Verify service was instantiated with tenant
-            mock_service_class.assert_called_once_with(tenant=self.tenant)
-
-            # Verify get_role was called with the correct UUID
-            from uuid import UUID
-
-            mock_service.get_role.assert_called_once()
-            call_args = mock_service.get_role.call_args[0]
-            self.assertEqual(call_args[0], UUID(str(self.custom_role.uuid)))
-
-            # Response should be successful
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    def test_retrieve_role_service_raises_not_found_error(self):
-        """Test that service RoleNotFoundError is converted to Http404."""
-        from unittest.mock import MagicMock, patch
-        from uuid import UUID
-
-        from management.role.v2_exceptions import RoleNotFoundError
-
-        non_existent_uuid = UUID("00000000-0000-0000-0000-000000000000")
-        url = self._get_role_url(non_existent_uuid)
-
-        # Mock the service to raise RoleNotFoundError
-        with patch("management.role.v2_view.RoleV2Service") as mock_service_class:
-            mock_service = MagicMock()
-            mock_service_class.return_value = mock_service
-            mock_service.get_role.side_effect = RoleNotFoundError(non_existent_uuid)
-
-            response = self.client.get(url, **self.headers)
-
-            # Should convert to 404
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-            # Verify service was called
-            mock_service.get_role.assert_called_once_with(non_existent_uuid)
+        # Verify correct role was retrieved via queryset
+        self.assertEqual(data["id"], str(self.custom_role.uuid))
+        self.assertEqual(data["name"], "Test Custom Role")
 
     @patch("management.permissions.RoleAccessPermission.has_permission")
     def test_retrieve_role_permission_denied(self, mock_permission):
@@ -419,7 +401,7 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         special_role.delete()
 
     def test_retrieve_role_performance_prefetch(self):
-        """Test that service layer prefetches permissions to avoid N+1 queries."""
+        """Test that queryset prefetches permissions to avoid N+1 queries."""
         # Create a role with many permissions
         many_permissions_role = CustomRoleV2.objects.create(
             name="Many Permissions Role",
@@ -439,7 +421,7 @@ class RoleV2RetrieveViewTest(IdentityRequest):
 
         url = self._get_role_url(many_permissions_role.uuid)
 
-        # Query count should be minimal due to service layer's prefetch_related
+        # Query count should be minimal due to queryset's prefetch_related
         # Expected queries: tenant lookup, role fetch with prefetch
         response = self.client.get(url, **self.headers)
 
@@ -451,6 +433,48 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         many_permissions_role.delete()
         for perm in permissions:
             perm.delete()
+
+    def test_create_and_retrieve_consistency(self):
+        """Test that create and retrieve operations are consistent."""
+        # Create a role with specific permission order
+        create_data = {
+            "name": "Consistency Test Role",
+            "description": "Testing create/retrieve consistency",
+            "permissions": [
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+                {"application": "cost", "resource_type": "reports", "operation": "read"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            ],
+        }
+
+        # Create the role
+        create_response = self.client.post(
+            reverse("v2_management:roles-list"), create_data, format="json", **self.headers
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        role_id = create_response.data["id"]
+
+        # Create response preserves input order
+        create_permissions = [
+            f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in create_response.data["permissions"]
+        ]
+        self.assertEqual(create_permissions, ["inventory:hosts:write", "cost:reports:read", "inventory:hosts:read"])
+
+        # Retrieve the same role
+        retrieve_url = reverse("v2_management:roles-detail", kwargs={"uuid": role_id})
+        retrieve_response = self.client.get(retrieve_url, **self.headers)
+        self.assertEqual(retrieve_response.status_code, status.HTTP_200_OK)
+
+        # Retrieve response returns alphabetical order
+        retrieve_permissions = [
+            f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in retrieve_response.data["permissions"]
+        ]
+        self.assertEqual(retrieve_permissions, ["cost:reports:read", "inventory:hosts:read", "inventory:hosts:write"])
+
+        # Both should have same permission set, just different order
+        self.assertEqual(set(create_permissions), set(retrieve_permissions))
+
+
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2ViewSetTests(IdentityRequest):
     """Test the RoleV2ViewSet."""
