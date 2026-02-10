@@ -1,5 +1,7 @@
 """Command to fix orphan relations in all tenants."""
 
+import datetime
+
 #
 # Copyright 2026 Red Hat, Inc.
 #
@@ -60,7 +62,16 @@ class Command(BaseCommand):
         success_count = 0
         failed_orgs = []
 
-        for tenant in tenants_query.iterator():
+        tenant_count = tenants_query.count()
+
+        for index, tenant in enumerate(tenants_query.iterator()):
+            start_time = datetime.datetime.now(datetime.timezone.utc)
+
+            print(
+                f"Beginning migration of tenant {index + 1}/{tenant_count} with org_id={tenant.org_id!r} "
+                f"at {start_time}"
+            )
+
             try:
                 result = cleanup_tenant_orphan_bindings(org_id=tenant.org_id)
 
@@ -76,6 +87,13 @@ class Command(BaseCommand):
             except Exception as e:
                 logger.error(f"Failed to remove orphan relations for tenant with org_id={tenant.org_id!r}", exc_info=e)
                 failed_orgs.append(tenant.org_id)
+
+            end_time = datetime.datetime.now(datetime.timezone.utc)
+
+            print(
+                f"Done with migration of tenant with org_id={tenant.org_id!r} at {end_time}; "
+                f"took {end_time - start_time}."
+            )
 
         if len(failed_orgs) > 0:
             raise CommandError(
