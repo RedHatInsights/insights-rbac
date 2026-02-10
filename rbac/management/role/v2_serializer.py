@@ -169,3 +169,9 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         except tuple(ERROR_MAPPING.keys()) as e:
             field = ERROR_MAPPING[type(e)]
             raise serializers.ValidationError({field: str(e)})
+
+
+class RoleV2BulkDeleteRequestSerializer(serializers.Serializer):
+    """Serializer for requests to delete multiple roles."""
+
+    ids = serializers.ListField(child=serializers.UUIDField())

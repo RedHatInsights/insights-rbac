@@ -16,10 +16,16 @@
 #
 """View for RoleV2 management."""
 
+from management.atomic_transactions import atomic
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
-from management.role.v2_serializer import RoleV2ListSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.role.v2_serializer import (
+    RoleV2BulkDeleteRequestSerializer,
+    RoleV2ListSerializer,
+    RoleV2RequestSerializer,
+    RoleV2ResponseSerializer,
+)
 from management.role.v2_service import RoleV2Service
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
@@ -45,10 +51,17 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     lookup_field = "uuid"
     http_method_names = ["get", "post", "head", "options"]
 
+    def __init__(self, *args, **kwargs):
+        """Initialize the ViewSet."""
+        super().__init__(*args, **kwargs)
+        self._service = RoleV2Service()
+
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
         if self.action == "create":
             return RoleV2RequestSerializer
+        if self.action == "bulk_destroy":
+            return RoleV2BulkDeleteRequestSerializer
         return RoleV2ResponseSerializer
 
     def list(self, request, *args, **kwargs):
@@ -77,3 +90,14 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         input_permissions = request.data.get("permissions", [])
         response_serializer = RoleV2ResponseSerializer(role, context={"input_permissions": input_permissions})
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+    @atomic
+    def bulk_destroy(self, request, *args, **kwargs):
+        """Delete multiple roles atomically."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        ids = set(serializer.validated_data["ids"])
+
+        self._service.bulk_delete(ids, from_tenant=self.request.tenant)
+        return Response(status=status.HTTP_204_NO_CONTENT)
