@@ -106,7 +106,11 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
     @property
     def service(self):
         """Return the service instance from context or create a new one."""
-        return self.context.get("role_service") or self.service_class()
+        if "role_service" in self.context:
+            return self.context["role_service"]
+        # Create service with tenant from request context
+        tenant = self.context["request"].tenant
+        return self.service_class(tenant=tenant)
 
     def create(self, validated_data):
         """Create a new RoleV2 using the service layer."""

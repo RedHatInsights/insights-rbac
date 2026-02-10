@@ -237,7 +237,7 @@ class RoleV2ServiceTests(IdentityRequest):
     def setUp(self):
         """Set up the RoleV2Service tests."""
         super().setUp()
-        self.service = RoleV2Service()
+        self.service = RoleV2Service(tenant=self.tenant)
 
         # Create test permissions
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)

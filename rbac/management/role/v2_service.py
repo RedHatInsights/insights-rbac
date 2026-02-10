@@ -50,7 +50,7 @@ class RoleV2Service:
     to HTTP-level errors by the view layer.
     """
 
-    def __init__(self, tenant: Tenant = None):
+    def __init__(self, tenant: Tenant):
         """
         Initialize the service with a tenant.
 
