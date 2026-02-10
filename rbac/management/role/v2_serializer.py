@@ -65,21 +65,6 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
             "last_modified",
         )
 
-    def __init__(self, *args, **kwargs):
-        """Initialize serializer with optional field filtering."""
-        super().__init__(*args, **kwargs)
-
-        # Apply field filtering based on 'fields' query parameter from context
-        fields_param = self.context.get("fields")
-        if fields_param is not None:
-            # Parse comma-separated fields
-            allowed = set(fields_param.split(","))
-            existing = set(self.fields.keys())
-
-            # Remove fields that are not in the allowed list
-            for field_name in existing - allowed:
-                self.fields.pop(field_name)
-
     def get_permissions(self, obj):
         """Return permissions, ordered by input order if available, otherwise alphabetically."""
         permissions = list(obj.permissions.all())
@@ -99,7 +84,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         return PermissionSerializer(permissions, many=True).data
 
     def get_permissions_count(self, obj):
-        """Available for field masking - not included in default response."""
+        """Return the number of permissions assigned to this role."""
         return obj.permissions.count()
 
 

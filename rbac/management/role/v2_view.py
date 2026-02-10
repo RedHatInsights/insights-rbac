@@ -21,21 +21,8 @@ from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleV2RequestSerializer, RoleV2ResponseSerializer
 from management.v2_mixins import AtomicOperationsMixin
-from rest_framework import serializers, status
+from rest_framework import status
 from rest_framework.response import Response
-
-# Default fields returned when no fields parameter is specified
-DEFAULT_ROLE_FIELD_MASK = "id,name,description,permissions,last_modified"
-
-# All valid fields that can be requested
-VALID_ROLE_FIELDS = {
-    "id",
-    "name",
-    "description",
-    "permissions",
-    "permissions_count",
-    "last_modified",
-}
 
 
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
@@ -59,46 +46,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             return base_qs
         else:
             return base_qs.filter(type=RoleV2.Types.CUSTOM)
-
-    def _validate_and_get_fields_param(self, request):
-        """
-        Validate and return the fields parameter.
-
-        Args:
-            request: The HTTP request
-
-        Returns:
-            str: The validated fields parameter
-
-        Raises:
-            ValidationError: If invalid fields are requested
-        """
-        fields_param = request.query_params.get("fields", DEFAULT_ROLE_FIELD_MASK)
-        if fields_param:
-            # Validate requested fields
-            requested_fields = set(fields_param.split(","))
-            invalid_fields = requested_fields - VALID_ROLE_FIELDS
-
-            if invalid_fields:
-                raise serializers.ValidationError(
-                    {
-                        "fields": f"Invalid field(s): {', '.join(sorted(invalid_fields))}. "
-                        f"Valid fields are: {', '.join(sorted(VALID_ROLE_FIELDS))}"
-                    }
-                )
-
-        return fields_param
-
-    def get_serializer_context(self):
-        """Add fields parameter to serializer context for retrieve/list operations."""
-        context = super().get_serializer_context()
-
-        # Only apply field filtering for retrieve and list actions
-        if self.action in ("retrieve", "list"):
-            fields_param = self._validate_and_get_fields_param(self.request)
-            context["fields"] = fields_param
-
-        return context
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve a single role by UUID."""

@@ -84,19 +84,20 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         return reverse("v2_management:roles-detail", kwargs={"uuid": str(role_uuid)})
 
     def test_retrieve_custom_role_success(self):
-        """Test retrieving a custom role with default fields."""
+        """Test retrieving a custom role with all fields."""
         url = self._get_role_url(self.custom_role.uuid)
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        # Verify all default fields are present
+        # Verify all fields are present
         self.assertEqual(data["id"], str(self.custom_role.uuid))
         self.assertEqual(data["name"], "Test Custom Role")
         self.assertEqual(data["description"], "A test custom role")
         self.assertIn("last_modified", data)
         self.assertIn("permissions", data)
+        self.assertEqual(data["permissions_count"], 2)
 
         # Verify permissions
         self.assertEqual(len(data["permissions"]), 2)
@@ -115,83 +116,6 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(data["name"], "Test Platform Role")
         self.assertEqual(len(data["permissions"]), 1)
         self.assertEqual(data["permissions"][0]["application"], "cost")
-
-    def test_retrieve_role_with_field_filtering_name_only(self):
-        """Test retrieving a role with only name field."""
-        url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(f"{url}?fields=name", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-
-        # Only name should be present
-        self.assertEqual(len(data.keys()), 1)
-        self.assertEqual(data["name"], "Test Custom Role")
-        self.assertNotIn("id", data)
-        self.assertNotIn("description", data)
-        self.assertNotIn("permissions", data)
-
-    def test_retrieve_role_with_field_filtering_multiple_fields(self):
-        """Test retrieving a role with multiple specific fields."""
-        url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(f"{url}?fields=id,name,permissions_count", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-
-        # Only requested fields should be present
-        self.assertEqual(set(data.keys()), {"id", "name", "permissions_count"})
-        self.assertEqual(data["id"], str(self.custom_role.uuid))
-        self.assertEqual(data["name"], "Test Custom Role")
-        self.assertEqual(data["permissions_count"], 2)
-        self.assertNotIn("description", data)
-        self.assertNotIn("permissions", data)
-
-    def test_retrieve_role_with_field_filtering_all_fields(self):
-        """Test retrieving a role with all available fields explicitly."""
-        url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(
-            f"{url}?fields=id,name,description,permissions,permissions_count,last_modified", **self.headers
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-
-        # All fields should be present
-        self.assertIn("id", data)
-        self.assertIn("name", data)
-        self.assertIn("description", data)
-        self.assertIn("permissions", data)
-        self.assertIn("permissions_count", data)
-        self.assertIn("last_modified", data)
-
-    def test_retrieve_role_with_invalid_field(self):
-        """Test retrieving a role with an invalid field parameter."""
-        url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(f"{url}?fields=name,invalid_field", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        data = response.json()
-
-        # V2 API error response format: {status, detail}
-        self.assertEqual(data["status"], 400)
-        self.assertIn("invalid_field", data["detail"])
-        self.assertIn("Invalid field(s)", data["detail"])
-        self.assertIn("Valid fields are:", data["detail"])
-
-    def test_retrieve_role_with_multiple_invalid_fields(self):
-        """Test retrieving a role with multiple invalid fields."""
-        url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(f"{url}?fields=name,bad_field,another_bad_field", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        data = response.json()
-
-        # V2 API error response format: {status, detail}
-        self.assertEqual(data["status"], 400)
-        self.assertIn("another_bad_field", data["detail"])
-        self.assertIn("bad_field", data["detail"])
-        self.assertIn("Invalid field(s)", data["detail"])
 
     def test_retrieve_role_not_found(self):
         """Test retrieving a non-existent role."""
@@ -271,8 +195,7 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         )
 
         url = self._get_role_url(empty_role.uuid)
-        # Request permissions_count explicitly since it's not in default fields
-        response = self.client.get(f"{url}?fields=permissions,permissions_count", **self.headers)
+        response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
@@ -302,35 +225,26 @@ class RoleV2RetrieveViewTest(IdentityRequest):
     def test_retrieve_role_permissions_count_field(self):
         """Test that permissions_count field returns correct count."""
         url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(f"{url}?fields=permissions_count", **self.headers)
+        response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
         self.assertEqual(data["permissions_count"], 2)
 
-    def test_retrieve_role_default_fields_matches_spec(self):
-        """Test that default fields match the TypeSpec specification."""
+    def test_retrieve_role_all_fields_present(self):
+        """Test that all fields are present in the response."""
         url = self._get_role_url(self.custom_role.uuid)
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        # Default fields per TypeSpec: id, name, description, permissions, last_modified
-        expected_fields = {"id", "name", "description", "permissions", "last_modified"}
+        # All fields should be present
+        expected_fields = {"id", "name", "description", "permissions", "permissions_count", "last_modified"}
         actual_fields = set(data.keys())
 
         self.assertEqual(actual_fields, expected_fields)
-
-    def test_retrieve_role_with_empty_fields_parameter(self):
-        """Test retrieving a role with empty fields parameter uses defaults."""
-        url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(f"{url}?fields=", **self.headers)
-
-        # Empty fields should be treated as invalid or use defaults
-        # Based on implementation, this might return 400 or use defaults
-        self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
 
     def test_retrieve_role_permissions_alphabetical_order(self):
         """Test that permissions are returned in alphabetical order."""
