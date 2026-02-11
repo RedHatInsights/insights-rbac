@@ -1353,6 +1353,14 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        expected = {
+            "status": 400,
+            "title": "The request payload contains invalid syntax.",
+            "detail": "This field is required.",
+            "errors": [{"message": "This field is required.", "field": "resource_id"}],
+            "instance": "/api/v2/role-bindings/by-subject/",
+        }
+        self.assertEqual(response.data, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -1370,6 +1378,14 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        expected = {
+            "status": 400,
+            "title": "The request payload contains invalid syntax.",
+            "detail": "At least one role is required.",
+            "errors": [{"message": "At least one role is required.", "field": "roles"}],
+            "instance": "/api/v2/role-bindings/by-subject/",
+        }
+        self.assertEqual(response.data, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -1388,6 +1404,14 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        expected = {
+            "status": 404,
+            "title": "Not found.",
+            "detail": f"Subject not found: group with id '{fake_uuid}'",
+            "errors": [{"message": f"Subject not found: group with id '{fake_uuid}'", "field": "detail"}],
+            "instance": "/api/v2/role-bindings/by-subject/",
+        }
+        self.assertEqual(response.data, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -1406,5 +1430,16 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("field", response.data)
-        self.assertIn("roles", response.data["field"])
+        expected = {
+            "status": 400,
+            "title": "The request payload contains invalid syntax.",
+            "detail": f"Invalid field 'roles': The following roles do not exist: {fake_uuid}",
+            "errors": [
+                {
+                    "message": f"Invalid field 'roles': The following roles do not exist: {fake_uuid}",
+                    "field": "roles",
+                }
+            ],
+            "instance": "/api/v2/role-bindings/by-subject/",
+        }
+        self.assertEqual(response.data, expected)

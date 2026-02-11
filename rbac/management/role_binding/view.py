@@ -30,8 +30,9 @@ from management.role_binding.exceptions import (
 )
 from management.subject import SubjectType
 from management.v2_mixins import AtomicOperationsMixin
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
@@ -43,14 +44,6 @@ from .serializer import (
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
-
-# Mapping from domain exceptions to HTTP status codes and error fields
-EXCEPTION_MAPPING = {
-    UnsupportedSubjectTypeError: (status.HTTP_400_BAD_REQUEST, "subject_type"),
-    SubjectNotFoundError: (status.HTTP_404_NOT_FOUND, "subject_id"),
-    NotFoundError: (status.HTTP_404_NOT_FOUND, "resource_id"),
-    InvalidFieldError: (status.HTTP_400_BAD_REQUEST, "field"),
-}
 
 
 class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
@@ -141,9 +134,10 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
                 subject_id=validated["subject_id"],
                 role_ids=role_ids,
             )
-        except tuple(EXCEPTION_MAPPING.keys()) as e:
-            http_status, field = EXCEPTION_MAPPING[type(e)]
-            return Response({field: str(e)}, status=http_status)
+        except (SubjectNotFoundError, NotFoundError) as e:
+            raise NotFound(detail=str(e))
+        except (UnsupportedSubjectTypeError, InvalidFieldError) as e:
+            raise serializers.ValidationError({getattr(e, "field", "detail"): str(e)})
 
         resource_name = service.get_resource_name(validated["resource_id"], validated["resource_type"])
         last_modified = max((role.modified for role in result.roles), default=None) if result.roles else None
