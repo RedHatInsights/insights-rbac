@@ -151,6 +151,39 @@ class FieldSelection:
         return parts
 
 
+# --- Shared validation functions  ---
+
+
+def sanitize_nul_bytes(data: dict) -> dict:
+    """Sanitize input data by stripping NUL bytes from string values."""
+    return {key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()}
+
+
+def validate_required_string(value: str, field_name: str) -> str:
+    """Validate that a string value is provided and non-empty."""
+    if not value:
+        raise serializers.ValidationError(f"{field_name} is required.")
+    return value
+
+
+def validate_optional_string(value: str) -> str | None:
+    """Return None for empty string values."""
+    return value or None
+
+
+def validate_fields_param(value: str) -> FieldSelection | None:
+    """Parse and validate fields parameter into FieldSelection object."""
+    if not value:
+        return None
+    try:
+        return FieldSelection.parse(value)
+    except FieldSelectionValidationError as e:
+        raise serializers.ValidationError(e.message)
+
+
+# --- Serializers using shared validation functions ---
+
+
 class RoleBindingInputSerializer(serializers.Serializer):
     """Input serializer for role binding query parameters.
 
@@ -169,28 +202,19 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
     def to_internal_value(self, data):
         """Sanitize input data by stripping NUL bytes before field validation."""
-        sanitized = {
-            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
-        }
-        return super().to_internal_value(sanitized)
+        return super().to_internal_value(sanitize_nul_bytes(data))
 
     def validate_resource_id(self, value):
         """Validate resource_id is provided."""
-        if not value:
-            raise serializers.ValidationError("resource_id is required to identify the resource for role bindings.")
-        return value
+        return validate_required_string(value, "resource_id")
 
     def validate_resource_type(self, value):
         """Validate resource_type is provided."""
-        if not value:
-            raise serializers.ValidationError(
-                "resource_type is required to specify the type of resource (e.g., 'workspace')."
-            )
-        return value
+        return validate_required_string(value, "resource_type")
 
     def validate_subject_type(self, value):
         """Return None for empty values."""
-        return value or None
+        return validate_optional_string(value)
 
     def validate_parent_role_bindings(self, value):
         """Return None for empty values."""
@@ -198,20 +222,15 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
     def validate_subject_id(self, value):
         """Return None for empty values."""
-        return value or None
+        return validate_optional_string(value)
 
     def validate_fields(self, value):
         """Parse and validate fields parameter into FieldSelection object."""
-        if not value:
-            return None
-        try:
-            return FieldSelection.parse(value)
-        except FieldSelectionValidationError as e:
-            raise serializers.ValidationError(e.message)
+        return validate_fields_param(value)
 
     def validate_order_by(self, value):
         """Return None for empty values."""
-        return value or None
+        return validate_optional_string(value)
 
 
 class RoleBindingOutputSerializer(serializers.Serializer):
@@ -429,3 +448,53 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
 # Backward compatibility alias
 RoleBindingByGroupSerializer = RoleBindingOutputSerializer
+
+
+class RoleIdSerializer(serializers.Serializer):
+    """Serializer for a role ID reference."""
+
+    id = serializers.UUIDField(required=True, help_text="Role identifier")
+
+
+class UpdateRoleBindingSerializer(serializers.Serializer):
+    """Input serializer for update role binding API."""
+
+    # Query parameters
+    resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
+    resource_type = serializers.CharField(required=True, help_text="Resource type (e.g., 'workspace')")
+    subject_id = serializers.CharField(required=True, help_text="Subject ID (UUID)")
+    subject_type = serializers.CharField(required=True, help_text="Subject type (e.g., 'group')")
+    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+
+    # Request body
+    roles = RoleIdSerializer(many=True, required=True, help_text="Roles to assign")
+
+    def to_internal_value(self, data):
+        """Sanitize input data by stripping NUL bytes before field validation."""
+        return super().to_internal_value(sanitize_nul_bytes(data))
+
+    def validate_resource_id(self, value):
+        """Validate resource_id is provided."""
+        return validate_required_string(value, "resource_id")
+
+    def validate_resource_type(self, value):
+        """Validate resource_type is provided."""
+        return validate_required_string(value, "resource_type")
+
+    def validate_subject_id(self, value):
+        """Validate subject_id is provided."""
+        return validate_required_string(value, "subject_id")
+
+    def validate_subject_type(self, value):
+        """Validate subject_type is provided."""
+        return validate_required_string(value, "subject_type")
+
+    def validate_fields(self, value):
+        """Parse and validate fields parameter into FieldSelection object."""
+        return validate_fields_param(value)
+
+    def validate_roles(self, value):
+        """Validate that at least one role is provided."""
+        if not value:
+            raise serializers.ValidationError("At least one role is required.")
+        return value

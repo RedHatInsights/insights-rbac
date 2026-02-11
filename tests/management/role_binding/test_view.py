@@ -37,7 +37,8 @@ from management.models import Group, Permission, Principal, Workspace
 from management.permission.scope_service import Scope
 from management.role.definer import seed_roles
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup, RoleV2
+from management.role.v2_model import PlatformRoleV2, RoleV2
+from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService

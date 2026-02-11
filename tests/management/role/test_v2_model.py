@@ -35,7 +35,7 @@ from management.models import (
 )
 from management.principal.model import Principal
 from management.role.model import Access
-from management.role.v2_model import RoleBindingPrincipal
+from management.role_binding.model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
 
 
