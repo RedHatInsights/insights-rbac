@@ -26,7 +26,12 @@ from management.permissions.role_binding_access import (
 from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
+from .serializer import (
+    RoleBindingBySubjectInputSerializer,
+    RoleBindingBySubjectOutputSerializer,
+    RoleBindingListInputSerializer,
+    RoleBindingListOutputSerializer,
+)
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
@@ -49,12 +54,18 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
     """
 
-    serializer_class = RoleBindingOutputSerializer
+    serializer_class = RoleBindingListOutputSerializer
     permission_classes = (
         RoleBindingSystemUserAccessPermission,
         RoleBindingKesselAccessPermission,
     )
     pagination_class = V2CursorPagination
+
+    def get_serializer_class(self):
+        """Get serializer class based on action."""
+        if self.action == "by_subject":
+            return RoleBindingBySubjectOutputSerializer
+        return RoleBindingListOutputSerializer
 
     def list(self, request, *args, **kwargs):
         """Get a list of role bindings.
@@ -65,7 +76,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
         # Validate and parse query parameters using input serializer
-        input_serializer = RoleBindingInputSerializer(data=request.query_params, context={"endpoint": "list"})
+        input_serializer = RoleBindingListInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
@@ -97,7 +108,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
         # Validate and parse query parameters using input serializer
-        input_serializer = RoleBindingInputSerializer(data=request.query_params, context={"endpoint": "by_subject"})
+        input_serializer = RoleBindingBySubjectInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 

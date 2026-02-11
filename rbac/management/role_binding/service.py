@@ -95,7 +95,7 @@ class RoleBindingService:
                 - role_id: Optional UUID to filter by role
 
         Returns:
-            QuerySet of RoleBinding objects
+            QuerySet of RoleBinding objects with prefetched groups
 
         Note:
             Ordering is handled by V2CursorPagination.get_ordering() to ensure
@@ -108,6 +108,7 @@ class RoleBindingService:
         queryset = (
             RoleBinding.objects.filter(tenant=self.tenant)
             .select_related("role")
+            .prefetch_related("group_entries__group")
             .annotate(role_created=F("role__created"))
         )
 
