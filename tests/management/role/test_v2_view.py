@@ -699,7 +699,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_delete_invalid_id(self):
         """Test that a delete request with an invalid ID fails with status 400."""
-        for invalid_id in ["not a UUID"]:
+        for invalid_id in [42, "d5111b1de8104822b54ba5cb590dceb6", "not a UUID"]:
             with self.subTest(id=invalid_id):
                 response = self._request_delete({"ids": [invalid_id]})
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

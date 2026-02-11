@@ -28,6 +28,8 @@ from management.role.v2_service import RoleV2Service
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
+from management.utils import UUIDStringField
+
 # Centralized mapping from domain exceptions to API error fields
 ERROR_MAPPING = {
     InvalidRolePermissionsError: "permissions",
@@ -174,4 +176,4 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
 class RoleV2BulkDeleteRequestSerializer(serializers.Serializer):
     """Serializer for requests to delete multiple roles."""
 
-    ids = serializers.ListField(child=serializers.UUIDField())
+    ids = serializers.ListField(child=UUIDStringField())
