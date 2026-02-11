@@ -368,42 +368,68 @@ class V2CursorPaginationTest(TestCase):
 
     def test_convert_order_field_rejects_simple_field(self):
         """Test _convert_order_field rejects simple field names without dot notation."""
-        self.assertIsNone(self.paginator._convert_order_field("name"))
-        self.assertIsNone(self.paginator._convert_order_field("modified"))
-        self.assertIsNone(self.paginator._convert_order_field("uuid"))
+        field_mapping = self.paginator.GROUP_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("name", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("modified", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("uuid", field_mapping))
 
     def test_convert_order_field_rejects_descending_simple_field(self):
         """Test _convert_order_field rejects descending simple field names."""
-        self.assertIsNone(self.paginator._convert_order_field("-name"))
-        self.assertIsNone(self.paginator._convert_order_field("-modified"))
+        field_mapping = self.paginator.GROUP_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("-name", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("-modified", field_mapping))
 
     def test_convert_order_field_dot_notation_group(self):
         """Test _convert_order_field with group dot notation."""
-        self.assertEqual(self.paginator._convert_order_field("group.name"), "name")
-        self.assertEqual(self.paginator._convert_order_field("group.description"), "description")
-        self.assertEqual(self.paginator._convert_order_field("group.user_count"), "principalCount")
-        self.assertEqual(self.paginator._convert_order_field("group.uuid"), "uuid")
-        self.assertEqual(self.paginator._convert_order_field("group.modified"), "modified")
-        self.assertEqual(self.paginator._convert_order_field("group.created"), "created")
+        field_mapping = self.paginator.GROUP_FIELD_MAPPING
+        self.assertEqual(self.paginator._convert_order_field("group.name", field_mapping), "name")
+        self.assertEqual(self.paginator._convert_order_field("group.description", field_mapping), "description")
+        self.assertEqual(self.paginator._convert_order_field("group.user_count", field_mapping), "principalCount")
+        self.assertEqual(self.paginator._convert_order_field("group.uuid", field_mapping), "uuid")
+        self.assertEqual(self.paginator._convert_order_field("group.modified", field_mapping), "modified")
+        self.assertEqual(self.paginator._convert_order_field("group.created", field_mapping), "created")
 
     def test_convert_order_field_dot_notation_group_descending(self):
         """Test _convert_order_field with group dot notation and descending prefix."""
-        self.assertEqual(self.paginator._convert_order_field("-group.name"), "-name")
-        self.assertEqual(self.paginator._convert_order_field("-group.user_count"), "-principalCount")
+        field_mapping = self.paginator.GROUP_FIELD_MAPPING
+        self.assertEqual(self.paginator._convert_order_field("-group.name", field_mapping), "-name")
+        self.assertEqual(self.paginator._convert_order_field("-group.user_count", field_mapping), "-principalCount")
 
     def test_convert_order_field_dot_notation_role(self):
         """Test _convert_order_field with role dot notation."""
-        self.assertEqual(self.paginator._convert_order_field("role.name"), "role_binding_entries__binding__role__name")
-        self.assertEqual(self.paginator._convert_order_field("role.uuid"), "role_binding_entries__binding__role__uuid")
+        field_mapping = self.paginator.GROUP_FIELD_MAPPING
         self.assertEqual(
-            self.paginator._convert_order_field("-role.modified"), "-role_binding_entries__binding__role__modified"
+            self.paginator._convert_order_field("role.name", field_mapping),
+            "role_binding_entries__binding__role__name",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("role.uuid", field_mapping),
+            "role_binding_entries__binding__role__uuid",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("-role.modified", field_mapping),
+            "-role_binding_entries__binding__role__modified",
         )
 
     def test_convert_order_field_rejects_unknown_dot_notation(self):
         """Test _convert_order_field rejects unknown dot notation fields."""
-        self.assertIsNone(self.paginator._convert_order_field("foo.bar"))
-        self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz"))
-        self.assertIsNone(self.paginator._convert_order_field("unknown.field"))
+        field_mapping = self.paginator.GROUP_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("foo.bar", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("unknown.field", field_mapping))
+
+    def test_convert_order_field_dot_notation_user(self):
+        """Test _convert_order_field with user dot notation."""
+        field_mapping = self.paginator.USER_FIELD_MAPPING
+        self.assertEqual(self.paginator._convert_order_field("user.username", field_mapping), "username")
+        self.assertEqual(self.paginator._convert_order_field("user.uuid", field_mapping), "uuid")
+        self.assertEqual(self.paginator._convert_order_field("-user.username", field_mapping), "-username")
+
+    def test_convert_order_field_user_mapping_rejects_group_fields(self):
+        """Test _convert_order_field with user mapping rejects group fields."""
+        field_mapping = self.paginator.USER_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("group.name", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("group.modified", field_mapping))
 
     def test_get_ordering_with_group_name(self):
         """Test get_ordering converts group.name to name."""
@@ -471,3 +497,47 @@ class V2CursorPaginationTest(TestCase):
         with self.assertRaises(ValidationError) as context:
             self.paginator.get_ordering(request, self.queryset, None)
         self.assertIn("order_by", context.exception.detail)
+
+    def test_convert_order_field_user_mapping_role_name(self):
+        """Test _convert_order_field with user mapping for role.name uses direct path."""
+        field_mapping = self.paginator.USER_FIELD_MAPPING
+        self.assertEqual(
+            self.paginator._convert_order_field("role.name", field_mapping),
+            "role_binding_entries__binding__role__name",
+        )
+
+    def test_convert_order_field_user_mapping_role_fields(self):
+        """Test _convert_order_field with user mapping for all role fields."""
+        field_mapping = self.paginator.USER_FIELD_MAPPING
+        self.assertEqual(
+            self.paginator._convert_order_field("role.uuid", field_mapping),
+            "role_binding_entries__binding__role__uuid",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("role.modified", field_mapping),
+            "role_binding_entries__binding__role__modified",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("role.created", field_mapping),
+            "role_binding_entries__binding__role__created",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("-role.name", field_mapping),
+            "-role_binding_entries__binding__role__name",
+        )
+
+    def test_get_ordering_with_user_subject_type_role_name(self):
+        """Test get_ordering with subject_type=user converts role.name correctly."""
+        request = Request(
+            self.factory.get("/api/rbac/v2/role-bindings/by-subject/?subject_type=user&order_by=role.name")
+        )
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("role_binding_entries__binding__role__name",))
+
+    def test_get_ordering_with_user_subject_type_role_name_descending(self):
+        """Test get_ordering with subject_type=user converts -role.name correctly."""
+        request = Request(
+            self.factory.get("/api/rbac/v2/role-bindings/by-subject/?subject_type=user&order_by=-role.name")
+        )
+        ordering = self.paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("-role_binding_entries__binding__role__name",))
