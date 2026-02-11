@@ -1331,6 +1331,12 @@ class RBACKafkaConsumer:
 
             # Send NOTIFY for workspace creation events (Read-Your-Writes support)
             if event_type == "create_workspace" and resource_id:
+                logger.info(
+                    "Workspace create event processed - org_id=%s, workspace_id=%s, consistency_token=%s",
+                    org_id,
+                    resource_id,
+                    token,
+                )
                 try:
                     notify_channel = settings.READ_YOUR_WRITES_CHANNEL
                     notify_sql = sql.SQL("NOTIFY {}, %s").format(sql.Identifier(notify_channel))
