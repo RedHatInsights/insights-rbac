@@ -19,6 +19,7 @@
 from management.atomic_transactions import atomic
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.role.v2_exceptions import RoleNotFoundError, CustomRoleRequiredError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
     RoleV2BulkDeleteRequestSerializer,
@@ -99,5 +100,14 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         ids = set(serializer.validated_data["ids"])
 
-        self._service.bulk_delete(ids, from_tenant=self.request.tenant)
+        try:
+            self._service.bulk_delete(ids, from_tenant=self.request.tenant)
+        except RoleNotFoundError as e:
+            return Response({"title": "Resource was not found", "detail": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except CustomRoleRequiredError as e:
+            # This should be impossible. We constrain deletions to be from the user's tenant. Non-custom roles should
+            # only exist in the public tenant, and there shouldn't be any users in the public tenant. Thus,
+            # we will never find any non-custom roles to try to delete.
+            return Response({"title": "An internal error occurred.", "detail": str(e)})
+
         return Response(status=status.HTTP_204_NO_CONTENT)
