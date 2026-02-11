@@ -17,6 +17,7 @@
 """Service layer for role binding management."""
 
 import logging
+from dataclasses import dataclass
 from typing import Iterable, Optional, Sequence
 
 from django.conf import settings
@@ -43,6 +44,18 @@ from management.workspace.model import Workspace
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CreateBindingRequest:
+    """Typed input for a single role binding creation."""
+
+    role_id: str
+    resource_type: str
+    resource_id: str
+    subject_type: str
+    subject_id: str
+
 
 # Lazily instantiate the JWT helpers once so all requests reuse the same objects.
 _jwt_cache = JWTCache()
@@ -130,63 +143,59 @@ class RoleBindingService:
             "field_selection": params.get("fields"),
         }
 
-    def batch_create(self, requests: list[dict]) -> list[dict]:
+    def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
         """Create multiple role bindings."""
-        role_uuids = {str(req["role"]["id"]) for req in requests}
-        group_uuids = {str(req["subject"]["id"]) for req in requests if req["subject"]["type"] == "group"}
-        user_uuids = {str(req["subject"]["id"]) for req in requests if req["subject"]["type"] == "user"}
+        role_uuids = {req.role_id for req in requests}
+        group_uuids = {req.subject_id for req in requests if req.subject_type == "group"}
+        user_uuids = {req.subject_id for req in requests if req.subject_type == "user"}
 
         roles_by_uuid = {str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids)}
         missing_roles = role_uuids - set(roles_by_uuid.keys())
         if missing_roles:
-            raise RolesNotFoundError(sorted(missing_roles))
+            raise RolesNotFoundError(missing_roles)
 
         groups_by_uuid = self.subject_service.resolve_groups(group_uuids)
         missing_groups = group_uuids - set(groups_by_uuid.keys())
         if missing_groups:
-            raise SubjectsNotFoundError("group", sorted(missing_groups))
+            raise SubjectsNotFoundError("group", missing_groups)
 
         principals_by_uuid = self.subject_service.resolve_users(user_uuids)
         missing_users = user_uuids - set(principals_by_uuid.keys())
         if missing_users:
-            raise SubjectsNotFoundError("user", sorted(missing_users))
+            raise SubjectsNotFoundError("user", missing_users)
 
         created = []
         for req in requests:
-            role = roles_by_uuid[str(req["role"]["id"])]
-            resource_type = req["resource"]["type"]
-            resource_id = str(req["resource"]["id"])
-            subject_type = req["subject"]["type"]
-            subject_id = str(req["subject"]["id"])
+            role = roles_by_uuid[req.role_id]
 
             try:
                 binding = RoleBinding.objects.create(
                     role=role,
-                    resource_type=resource_type,
-                    resource_id=resource_id,
+                    resource_type=req.resource_type,
+                    resource_id=req.resource_id,
                     tenant=self.tenant,
                 )
             except IntegrityError:
                 raise DuplicateBindingError(
                     role_id=str(role.uuid),
-                    resource_type=resource_type,
-                    resource_id=resource_id,
+                    resource_type=req.resource_type,
+                    resource_id=req.resource_id,
                 )
 
-            if subject_type == "group":
-                subject = groups_by_uuid[subject_id]
+            if req.subject_type == "group":
+                subject = groups_by_uuid[req.subject_id]
                 RoleBindingGroup.objects.create(binding=binding, group=subject)
             else:
-                subject = principals_by_uuid[subject_id]
+                subject = principals_by_uuid[req.subject_id]
                 RoleBindingPrincipal.objects.create(binding=binding, principal=subject, source="api")
 
             created.append(
                 {
                     "role": role,
-                    "subject_type": subject_type,
+                    "subject_type": req.subject_type,
                     "subject": subject,
-                    "resource_type": resource_type,
-                    "resource_id": resource_id,
+                    "resource_type": req.resource_type,
+                    "resource_id": req.resource_id,
                 }
             )
 
