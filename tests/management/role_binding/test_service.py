@@ -856,7 +856,25 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
         """Set up test data using services."""
         super().setUp()
 
- c
+        # Create workspace hierarchy
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            description="Test workspace description",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
 
         # Create permissions and roles using RoleV2Service
         self.permission1 = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
