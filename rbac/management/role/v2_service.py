@@ -74,10 +74,12 @@ class RoleV2Service:
         """
         try:
             role = RoleV2.objects.filter(tenant=self.tenant, uuid=uuid).prefetch_related("permissions").get()
-            logger.debug(f"Retrieved role {uuid} for tenant {self.tenant.org_id}")
+            tenant_org_id = self.tenant.org_id if self.tenant else "unknown"
+            logger.debug(f"Retrieved role {uuid} for tenant {tenant_org_id}")
             return role
         except RoleV2.DoesNotExist:
-            logger.warning(f"Role {uuid} not found for tenant {self.tenant.org_id}")
+            tenant_org_id = self.tenant.org_id if self.tenant else "unknown"
+            logger.warning(f"Role {uuid} not found for tenant {tenant_org_id}")
             raise RoleNotFoundError(uuid)
 
     @atomic
