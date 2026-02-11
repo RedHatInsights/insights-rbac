@@ -2102,6 +2102,102 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Should succeed
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    # ==================== Non-existent target workspace Tests ====================
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_move_non_admin_non_existent_target_v2_returns_403(
+        self, mock_flag, mock_channel, send_kafka_message
+    ):
+        """Non-admin move in V2 mode should return 403 when target workspace doesn't exist.
+
+        This prevents information leakage: non-admin users should not be able to
+        distinguish between a non-existent workspace and one they lack access to.
+        """
+        # Mock Inventory API (should not be reached due to early existence check)
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Create request context for non-org admin user
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Setup access for the user on the source workspace
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:write",
+                workspace_id=str(self.standard_workspace.id),
+            )
+
+            # Use a non-existent workspace ID as target
+            non_existent_target_id = str(uuid4())
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_sub_workspace.id},
+            )
+            client = APIClient()
+            data = {"parent_id": non_existent_target_id}
+            response = client.post(url, data, format="json", **headers)
+
+            # Should be denied (403 Forbidden), not 400 Bad Request
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertEqual(response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=False,
+    )
+    def test_workspace_move_non_admin_non_existent_target_v1_returns_403(self, mock_flag, send_kafka_message):
+        """Non-admin move in V1 mode should return 403 when target workspace doesn't exist.
+
+        This prevents information leakage: non-admin users should not be able to
+        distinguish between a non-existent workspace and one they lack access to.
+        """
+        # Use a unique user for this test
+        unique_user_data = {
+            "username": "test_non_admin_nonexistent_target_v1",
+            "email": "nonexistent_target_v1@example.com",
+        }
+        unique_customer_data = {**self.customer_data, "user_data": unique_user_data}
+
+        # Create request context for non-org admin user
+        request_context = self._create_request_context(unique_customer_data, unique_user_data, is_org_admin=False)
+        headers = request_context["request"].META
+
+        # Setup write access to source workspace
+        self._setup_access_for_principal(
+            unique_user_data["username"],
+            "inventory:groups:write",
+            workspace_id=str(self.standard_workspace.id),
+        )
+
+        # Use a non-existent workspace ID as target
+        non_existent_target_id = str(uuid4())
+        url = reverse(
+            "v2_management:workspace-move",
+            kwargs={"pk": self.standard_sub_workspace.id},
+        )
+        client = APIClient()
+        data = {"parent_id": non_existent_target_id}
+        response = client.post(url, data, format="json", **headers)
+
+        # Should be denied (403 Forbidden), not 400 Bad Request
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("detail"), TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE)
+
     # ==================== Missing/Invalid parent_id Tests ====================
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
