@@ -340,6 +340,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
                     principal_id=principal_id,
                     relation=relation,
                     request_id=getattr(request, "req_id", None),
+                    consistency_token=getattr(request.tenant, "relations_consistency_token", None),
                 )
 
             # Convert to set of UUIDs for proper filtering
