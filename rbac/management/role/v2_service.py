@@ -21,6 +21,7 @@ from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import Count, QuerySet
 from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
@@ -50,13 +51,10 @@ class RoleV2Service:
     to HTTP-level errors by the view layer.
     """
 
-    def __init__(self, tenant: Tenant):
-        """
-        Initialize the service with a tenant.
+    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
 
-        Args:
-            tenant: The tenant context for operations.
-        """
+    def __init__(self, tenant: Tenant | None = None):
+        """Initialize the service."""
         self.tenant = tenant
         self.permission_service = PermissionService()
 
@@ -141,3 +139,20 @@ class RoleV2Service:
                 raise RoleAlreadyExistsError(name)
             logger.exception("Database error creating role '%s'", name)
             raise RoleDatabaseError()
+
+    def list(self, params: dict) -> QuerySet:
+        """Get a list of roles for the tenant."""
+        queryset = RoleV2.objects.filter(tenant=self.tenant).exclude(type=RoleV2.Types.PLATFORM)
+
+        name = params.get("name")
+        if name:
+            queryset = queryset.filter(name__exact=name)
+
+        fields = params.get("fields")
+        if fields:
+            if "permissions_count" in fields:
+                queryset = queryset.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+            if "permissions" in fields:
+                queryset = queryset.prefetch_related("permissions")
+
+        return queryset

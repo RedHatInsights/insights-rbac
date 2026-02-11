@@ -25,6 +25,7 @@ from management.role.v2_exceptions import (
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
+from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
 # Centralized mapping from domain exceptions to API error fields
@@ -50,20 +51,23 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True)
+    permissions_count = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     permissions_count = serializers.SerializerMethodField()
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
 
     class Meta:
         model = RoleV2
-        fields = (
-            "id",
-            "name",
-            "description",
-            "permissions",
-            "permissions_count",
-            "last_modified",
-        )
+        fields = ("id", "name", "description", "permissions_count", "permissions", "last_modified")
+
+    def __init__(self, *args, **kwargs):
+        """Initialize with dynamic field selection from context."""
+        super().__init__(*args, **kwargs)
+
+        allowed = self.context.get("fields")
+        if allowed is not None:
+            for field_name in set(self.fields) - allowed:
+                self.fields.pop(field_name)
 
     def get_permissions(self, obj):
         """Return permissions, ordered by input order if available, otherwise alphabetically."""
@@ -84,8 +88,50 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         return PermissionSerializer(permissions, many=True).data
 
     def get_permissions_count(self, obj):
-        """Return the number of permissions assigned to this role."""
+        """Return permissions count, using annotation if available."""
+        count = getattr(obj, "permissions_count_annotation", None)
+        if count is not None:
+            return count
         return obj.permissions.count()
+
+
+class RoleFieldSelection(FieldSelection):
+    """Field selection for roles endpoint."""
+
+    VALID_ROOT_FIELDS = set(RoleV2ResponseSerializer.Meta.fields)
+
+
+class RoleV2ListSerializer(serializers.Serializer):
+    """Input serializer for RoleV2 list query parameters."""
+
+    name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
+    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
+
+    def to_internal_value(self, data):
+        """Sanitize input data by stripping NUL bytes before field validation."""
+        sanitized = {
+            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
+        }
+        return super().to_internal_value(sanitized)
+
+    def validate_name(self, value):
+        """Return None for empty values."""
+        return value or None
+
+    def validate_fields(self, value):
+        """Parse, validate, and resolve fields parameter into a set of field names."""
+        if not value:
+            return RoleV2Service.DEFAULT_LIST_FIELDS
+        try:
+            field_selection = RoleFieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+        if not field_selection:
+            return RoleV2Service.DEFAULT_LIST_FIELDS
+
+        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+        return resolved or RoleV2Service.DEFAULT_LIST_FIELDS
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
