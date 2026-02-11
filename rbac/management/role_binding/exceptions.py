@@ -24,7 +24,6 @@ __all__ = [
     "SubjectNotFoundError",
     "UnsupportedSubjectTypeError",
     "RoleBindingError",
-    "RolesNotFoundError",
     "ResourceNotFoundError",
 ]
 
@@ -33,15 +32,6 @@ class RoleBindingError(Exception):
     """Base exception for RoleBinding domain errors."""
 
     pass
-
-
-class RolesNotFoundError(RoleBindingError):
-    """Raised when one or more roles cannot be found."""
-
-    def __init__(self, missing_role_ids: list[str]):
-        """Initialize with the list of missing role IDs."""
-        self.missing_role_ids = missing_role_ids
-        super().__init__(f"The following roles do not exist: {', '.join(missing_role_ids)}")
 
 
 class ResourceNotFoundError(RoleBindingError):

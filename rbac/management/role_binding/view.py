@@ -19,13 +19,13 @@
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
+from management.exceptions import InvalidFieldError
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
 from management.role_binding.exceptions import (
     ResourceNotFoundError,
-    RolesNotFoundError,
     SubjectNotFoundError,
     UnsupportedSubjectTypeError,
 )
@@ -50,7 +50,7 @@ EXCEPTION_MAPPING = {
     UnsupportedSubjectTypeError: (status.HTTP_400_BAD_REQUEST, "subject_type"),
     SubjectNotFoundError: (status.HTTP_404_NOT_FOUND, "subject_id"),
     ResourceNotFoundError: (status.HTTP_404_NOT_FOUND, "resource_id"),
-    RolesNotFoundError: (status.HTTP_400_BAD_REQUEST, "roles"),
+    InvalidFieldError: (status.HTTP_400_BAD_REQUEST, "field"),
 }
 
 

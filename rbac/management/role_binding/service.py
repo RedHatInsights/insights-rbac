@@ -29,13 +29,14 @@ from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
 from management.atomic_transactions import atomic
 from management.cache import JWTCache
+from management.exceptions import InvalidFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
-from management.role_binding.exceptions import ResourceNotFoundError, RolesNotFoundError
+from management.role_binding.exceptions import ResourceNotFoundError
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.subject import SubjectService, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
@@ -614,7 +615,7 @@ class RoleBindingService:
             UnsupportedSubjectTypeError: If the subject type is not supported
             SubjectNotFoundError: If the subject cannot be found
             ResourceNotFoundError: If the resource cannot be found
-            RolesNotFoundError: If one or more roles cannot be found
+            InvalidFieldError: If one or more roles cannot be found
         """
         self._validate_resource(resource_type, resource_id)
 
@@ -682,6 +683,6 @@ class RoleBindingService:
 
         if found_ids != requested_ids:
             missing = list(requested_ids - found_ids)
-            raise RolesNotFoundError(missing)
+            raise InvalidFieldError("roles", f"The following roles do not exist: {', '.join(missing)}")
 
         return roles

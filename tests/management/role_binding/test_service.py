@@ -1014,10 +1014,10 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
         """Test that update raises error for non-existent role."""
         import uuid
 
-        from management.role_binding.exceptions import RolesNotFoundError
+        from management.exceptions import InvalidFieldError
 
         fake_uuid = str(uuid.uuid4())
-        with self.assertRaises(RolesNotFoundError) as context:
+        with self.assertRaises(InvalidFieldError) as context:
             self.service.update_role_bindings_for_subject(
                 resource_type="workspace",
                 resource_id=str(self.workspace.id),
@@ -1025,6 +1025,7 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
                 subject_id=str(self.group.uuid),
                 role_ids=[fake_uuid],
             )
+        self.assertEqual(context.exception.field, "roles")
         self.assertIn(fake_uuid, str(context.exception))
 
     def test_update_raises_error_for_unsupported_subject_type(self):

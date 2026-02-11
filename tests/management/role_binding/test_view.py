@@ -1406,4 +1406,5 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("roles", response.data)
+        self.assertIn("field", response.data)
+        self.assertIn("roles", response.data["field"])
