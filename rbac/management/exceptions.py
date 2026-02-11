@@ -26,10 +26,10 @@ class RequiredFieldError(Exception):
         self.field_name = field_name
 
 
-class InvalidArgumentError(Exception):
-    """Raised when an argument has an invalid type or value."""
+class InvalidFieldError(Exception):
+    """Raised when a field value fails validation."""
 
-    def __init__(self, argument_name: str, message: str):
-        """Initialize with the argument name and error message."""
-        super().__init__(f"Invalid argument '{argument_name}': {message}")
-        self.argument_name = argument_name
+    def __init__(self, field: str, message: str):
+        """Initialize with the field name and validation message."""
+        super().__init__(f"Invalid field '{field}': {message}")
+        self.field = field
