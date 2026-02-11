@@ -21,6 +21,8 @@ from typing import Optional
 from management.models import Group
 from management.role.v2_model import RoleV2
 from management.utils import FieldSelection, FieldSelectionValidationError
+from management.role_binding.exceptions import DuplicateBindingError, RolesNotFoundError, SubjectsNotFoundError
+from management.role_binding.service import RoleBindingService
 from rest_framework import serializers
 
 
@@ -33,6 +35,39 @@ class RoleBindingFieldSelection(FieldSelection):
         "role": {"id", "name"},
         "resource": {"id", "name", "type"},
     }
+
+
+# --- Shared validation functions  ---
+
+
+def sanitize_nul_bytes(data: dict) -> dict:
+    """Sanitize input data by stripping NUL bytes from string values."""
+    return {key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()}
+
+
+def validate_required_string(value: str, field_name: str) -> str:
+    """Validate that a string value is provided and non-empty."""
+    if not value:
+        raise serializers.ValidationError(f"{field_name} is required.")
+    return value
+
+
+def validate_optional_string(value: str) -> str | None:
+    """Return None for empty string values."""
+    return value or None
+
+
+def validate_fields_param(value: str) -> FieldSelection | None:
+    """Parse and validate fields parameter into FieldSelection object."""
+    if not value:
+        return None
+    try:
+        return FieldSelection.parse(value)
+    except FieldSelectionValidationError as e:
+        raise serializers.ValidationError(e.message)
+
+
+# --- Serializers using shared validation functions ---
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -53,28 +88,19 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
     def to_internal_value(self, data):
         """Sanitize input data by stripping NUL bytes before field validation."""
-        sanitized = {
-            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
-        }
-        return super().to_internal_value(sanitized)
+        return super().to_internal_value(sanitize_nul_bytes(data))
 
     def validate_resource_id(self, value):
         """Validate resource_id is provided."""
-        if not value:
-            raise serializers.ValidationError("resource_id is required to identify the resource for role bindings.")
-        return value
+        return validate_required_string(value, "resource_id")
 
     def validate_resource_type(self, value):
         """Validate resource_type is provided."""
-        if not value:
-            raise serializers.ValidationError(
-                "resource_type is required to specify the type of resource (e.g., 'workspace')."
-            )
-        return value
+        return validate_required_string(value, "resource_type")
 
     def validate_subject_type(self, value):
         """Return None for empty values."""
-        return value or None
+        return validate_optional_string(value)
 
     def validate_parent_role_bindings(self, value):
         """Return None for empty values."""
@@ -82,7 +108,7 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
     def validate_subject_id(self, value):
         """Return None for empty values."""
-        return value or None
+        return validate_optional_string(value)
 
     def validate_fields(self, value):
         """Parse and validate fields parameter into RoleBindingFieldSelection object."""
@@ -95,7 +121,7 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
     def validate_order_by(self, value):
         """Return None for empty values."""
-        return value or None
+        return validate_optional_string(value)
 
 
 class RoleBindingOutputSerializer(serializers.Serializer):
@@ -314,3 +340,85 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
 # Backward compatibility alias
 RoleBindingByGroupSerializer = RoleBindingOutputSerializer
+
+# Centralized mapping from domain exceptions to API error fields
+BATCH_CREATE_ERROR_MAPPING = {
+    RolesNotFoundError: "role",
+    SubjectsNotFoundError: "subject",
+    DuplicateBindingError: "detail",
+}
+
+
+class ResourceInputSerializer(serializers.Serializer):
+    """Validates the resource portion of a role binding request."""
+
+    id = serializers.UUIDField(help_text="UUID of the resource")
+    type = serializers.CharField(help_text="Type of resource")
+
+
+class SubjectInputSerializer(serializers.Serializer):
+    """Validates the subject portion of a role binding request."""
+
+    id = serializers.UUIDField(help_text="UUID of the subject")
+    type = serializers.ChoiceField(choices=["user", "group"], help_text="Type of subject")
+
+
+class RoleIdSerializer(serializers.Serializer):
+    """Serializer for a role ID reference."""
+
+    id = serializers.UUIDField(required=True, help_text="Role identifier")
+
+class CreateRoleBindingItemSerializer(serializers.Serializer):
+    """Validates a single role binding request item."""
+
+    resource = ResourceInputSerializer()
+    subject = SubjectInputSerializer()
+    role = RoleIdSerializer()
+
+
+class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
+    """Validates and processes a batch create role bindings request."""
+
+    service_class = RoleBindingService
+
+    requests = CreateRoleBindingItemSerializer(many=True, min_length=1, max_length=100)
+
+    @property
+    def service(self):
+        """Return the service instance."""
+        return self.context.get("role_binding_service") or self.service_class(tenant=self.context["request"].tenant)
+
+    def create(self, validated_data):
+        """Create role bindings using the service layer."""
+        try:
+            return self.service.batch_create(validated_data["requests"])
+        except tuple(BATCH_CREATE_ERROR_MAPPING.keys()) as e:
+            field_name = BATCH_CREATE_ERROR_MAPPING[type(e)]
+            raise serializers.ValidationError({field_name: str(e)})
+
+
+class BatchCreateRoleBindingResponseItemSerializer(serializers.Serializer):
+    """Serializes a single created role binding for the batch create response."""
+
+    role = serializers.SerializerMethodField()
+    subject = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+
+    def get_role(self, obj):
+        """Serialize role data."""
+        role = obj["role"]
+        return {"id": str(role.uuid)}
+
+    def get_subject(self, obj):
+        """Serialize subject data."""
+        return {
+            "id": str(obj["subject"].uuid),
+            "type": obj["subject_type"],
+        }
+
+    def get_resource(self, obj):
+        """Serialize resource data."""
+        return {
+            "id": obj["resource_id"],
+            "type": obj["resource_type"],
+        }

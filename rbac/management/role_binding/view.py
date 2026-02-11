@@ -24,19 +24,27 @@ from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
+from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
+from .serializer import (
+    BatchCreateRoleBindingRequestSerializer,
+    BatchCreateRoleBindingResponseItemSerializer,
+    RoleBindingInputSerializer,
+    RoleBindingOutputSerializer,
+)
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
 
 
-class RoleBindingViewSet(BaseV2ViewSet):
+class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """Role Binding ViewSet.
 
-    Provides read-only access to role bindings currently.
+    Provides access to role bindings with support for listing and batch creation.
 
     Query Parameters (by-subject endpoint):
         Required:
@@ -97,3 +105,17 @@ class RoleBindingViewSet(BaseV2ViewSet):
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path=":batchCreate")
+    def batch_create(self, request, *args, **kwargs):
+        """Grant access to a resource to a set of subjects with a set of roles."""
+        return super().batch_create(request, *args, **kwargs)
+
+    def perform_batch_create(self, request, *args, **kwargs):
+        """Core batch create logic, called within an atomic transaction by the mixin."""
+        serializer = BatchCreateRoleBindingRequestSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        created_bindings = serializer.save()
+
+        response_serializer = BatchCreateRoleBindingResponseItemSerializer(created_bindings, many=True)
+        return Response({"role_bindings": response_serializer.data}, status=status.HTTP_201_CREATED)
