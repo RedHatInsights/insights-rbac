@@ -16,8 +16,12 @@
 #
 """View for RoleV2 management."""
 
+from uuid import UUID
+
+from django.http import Http404
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.role.v2_exceptions import RoleNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleV2ListSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
 from management.role.v2_service import RoleV2Service
@@ -60,8 +64,39 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve a single role by UUID."""
-        instance = self.get_object()
-        serializer = self.get_serializer(instance)
+        # Step 1: Validate input using input serializer (always validate for consistency)
+        input_serializer = RoleV2ListSerializer(
+            data={"fields": request.query_params.get("fields", "")}, context={"request": request}
+        )
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
+
+        # Step 2: Use service layer for business logic (consistent with list)
+        try:
+            uuid_str = kwargs.get(self.lookup_field)
+            uuid_obj = UUID(uuid_str)  # Convert string to UUID
+            service = RoleV2Service(tenant=request.tenant)
+            instance = service.get_role(uuid_obj)
+        except (ValueError, RoleNotFoundError) as e:
+            # ValueError: invalid UUID format
+            # RoleNotFoundError: role not found for tenant
+            raise Http404(str(e))
+
+        # Step 3: Build context from validated_params (consistent with list)
+        # For retrieve: use DEFAULT_RETRIEVE_FIELDS if no fields param provided
+        if request.query_params.get("fields"):
+            # User explicitly provided fields param - use validated value
+            fields = validated_params.get("fields")
+        else:
+            # No fields param - use retrieve default (includes permissions)
+            fields = RoleV2Service.DEFAULT_RETRIEVE_FIELDS
+        context = {
+            "request": request,
+            "fields": fields,
+        }
+
+        # Step 4: Serialize and return
+        serializer = RoleV2ResponseSerializer(instance, context=context)
         return Response(serializer.data)
 
     def get_serializer_class(self):

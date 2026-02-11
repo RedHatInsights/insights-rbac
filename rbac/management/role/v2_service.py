@@ -52,6 +52,7 @@ class RoleV2Service:
     """
 
     DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
+    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
 
     def __init__(self, tenant: Tenant | None = None):
         """Initialize the service."""

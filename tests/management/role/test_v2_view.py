@@ -94,13 +94,14 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        # Verify all fields are present
+        # Verify default retrieve fields are present (per API spec)
         self.assertEqual(data["id"], str(self.custom_role.uuid))
         self.assertEqual(data["name"], "Test Custom Role")
         self.assertEqual(data["description"], "A test custom role")
         self.assertIn("last_modified", data)
         self.assertIn("permissions", data)
-        self.assertEqual(data["permissions_count"], 2)
+        # permissions_count is not in default retrieve fields
+        self.assertNotIn("permissions_count", data)
 
         # Verify permissions
         self.assertEqual(len(data["permissions"]), 2)
@@ -204,7 +205,8 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         data = response.json()
 
         self.assertEqual(data["permissions"], [])
-        self.assertEqual(data["permissions_count"], 0)
+        # permissions_count is not in default retrieve fields
+        self.assertNotIn("permissions_count", data)
 
         empty_role.delete()
 
@@ -226,25 +228,28 @@ class RoleV2RetrieveViewTest(IdentityRequest):
             self.fail("last_modified is not a valid ISO 8601 datetime")
 
     def test_retrieve_role_permissions_count_field(self):
-        """Test that permissions_count field returns correct count."""
+        """Test that permissions_count field returns correct count when explicitly requested."""
         url = self._get_role_url(self.custom_role.uuid)
-        response = self.client.get(url, **self.headers)
+        # Explicitly request permissions_count field (not in default)
+        response = self.client.get(f"{url}?fields=permissions_count", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
         self.assertEqual(data["permissions_count"], 2)
+        # Only permissions_count should be in response when requested alone
+        self.assertEqual(set(data.keys()), {"permissions_count"})
 
     def test_retrieve_role_all_fields_present(self):
-        """Test that all fields are present in the response."""
+        """Test that default retrieve fields are present in the response (per API spec)."""
         url = self._get_role_url(self.custom_role.uuid)
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        # All fields should be present
-        expected_fields = {"id", "name", "description", "permissions", "permissions_count", "last_modified"}
+        # Default retrieve fields per API spec (line 1223 in main.tsp)
+        expected_fields = {"id", "name", "description", "permissions", "last_modified"}
         actual_fields = set(data.keys())
 
         self.assertEqual(actual_fields, expected_fields)

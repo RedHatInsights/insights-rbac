@@ -140,10 +140,11 @@ class RoleV2ServiceGetRoleTest(TestCase):
         with self.assertRaises(RoleNotFoundError):
             service.get_role(self.other_tenant_role.uuid)
 
-    def test_service_init_requires_tenant(self):
-        """Test that RoleV2Service requires tenant parameter."""
-        with self.assertRaises(TypeError):
-            RoleV2Service()  # No tenant provided
+    def test_service_init_tenant_is_optional(self):
+        """Test that RoleV2Service can be initialized without tenant parameter."""
+        # Tenant is optional for operations like list() where tenant is passed separately
+        service = RoleV2Service()
+        self.assertIsNone(service.tenant)
 
     def test_get_role_returns_correct_type(self):
         """Test that get_role returns RoleV2 instance."""
