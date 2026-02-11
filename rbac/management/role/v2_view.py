@@ -39,7 +39,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
     permission_classes = (RoleAccessPermission,)
-    queryset = RoleV2.objects.none()
+    queryset = RoleV2.objects.exclude(type=RoleV2.Types.PLATFORM)
     serializer_class = RoleV2ResponseSerializer
     pagination_class = RoleV2CursorPagination
     lookup_field = "uuid"

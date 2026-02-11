@@ -102,6 +102,21 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertNotIn("permissions", role_data)
         self.assertNotIn("permissions_count", role_data)
 
+    def test_list_roles_excludes_platform_roles(self):
+        """Test that platform roles are excluded from list responses."""
+        RoleV2.objects.create(
+            name="platform_role",
+            description="Platform description",
+            type=RoleV2.Types.PLATFORM,
+            tenant=self.tenant,
+        )
+
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["name"], "test_role")
+
     def test_list_roles_with_custom_fields(self):
         """Test that fields parameter returns only requested fields."""
         url = f"{self.url}?fields=id,name,permissions_count"
