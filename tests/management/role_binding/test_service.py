@@ -1045,10 +1045,10 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
         """Test that update raises error for non-existent resource."""
         import uuid
 
-        from management.role_binding.exceptions import ResourceNotFoundError
+        from management.exceptions import NotFoundError
 
         fake_workspace_uuid = str(uuid.uuid4())
-        with self.assertRaises(ResourceNotFoundError):
+        with self.assertRaises(NotFoundError) as context:
             self.service.update_role_bindings_for_subject(
                 resource_type="workspace",
                 resource_id=fake_workspace_uuid,

@@ -19,13 +19,12 @@
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
-from management.exceptions import InvalidFieldError
+from management.exceptions import InvalidFieldError, NotFoundError
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
 from management.role_binding.exceptions import (
-    ResourceNotFoundError,
     SubjectNotFoundError,
     UnsupportedSubjectTypeError,
 )
@@ -49,7 +48,7 @@ logger = logging.getLogger(__name__)
 EXCEPTION_MAPPING = {
     UnsupportedSubjectTypeError: (status.HTTP_400_BAD_REQUEST, "subject_type"),
     SubjectNotFoundError: (status.HTTP_404_NOT_FOUND, "subject_id"),
-    ResourceNotFoundError: (status.HTTP_404_NOT_FOUND, "resource_id"),
+    NotFoundError: (status.HTTP_404_NOT_FOUND, "resource_id"),
     InvalidFieldError: (status.HTTP_400_BAD_REQUEST, "field"),
 }
 

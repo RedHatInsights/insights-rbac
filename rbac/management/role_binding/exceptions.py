@@ -24,7 +24,6 @@ __all__ = [
     "SubjectNotFoundError",
     "UnsupportedSubjectTypeError",
     "RoleBindingError",
-    "ResourceNotFoundError",
 ]
 
 
@@ -32,13 +31,3 @@ class RoleBindingError(Exception):
     """Base exception for RoleBinding domain errors."""
 
     pass
-
-
-class ResourceNotFoundError(RoleBindingError):
-    """Raised when the specified resource cannot be found."""
-
-    def __init__(self, resource_type: str, resource_id: str):
-        """Initialize with the resource details."""
-        self.resource_type = resource_type
-        self.resource_id = resource_id
-        super().__init__(f"Resource not found: {resource_type} with id '{resource_id}'")

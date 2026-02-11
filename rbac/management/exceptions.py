@@ -33,3 +33,13 @@ class InvalidFieldError(Exception):
         """Initialize with the field name and validation message."""
         super().__init__(f"Invalid field '{field}': {message}")
         self.field = field
+
+
+class NotFoundError(Exception):
+    """Raised when a resource cannot be found."""
+
+    def __init__(self, resource_type: str, resource_id: str):
+        """Initialize with resource type and identifier."""
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        super().__init__(f"{resource_type} with id '{resource_id}' not found")
