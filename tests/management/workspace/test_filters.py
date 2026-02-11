@@ -372,12 +372,12 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_list_returns_403_when_no_access(self, mock_flag, mock_channel):
-        """Test that list returns 403 when user has no real workspace access in V2 mode."""
+    def test_list_returns_fallback_workspaces_when_no_real_access(self, mock_flag, mock_channel):
+        """Test that list returns 200 with fallback workspaces when user has no real workspace access in V2 mode."""
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # User has no accessible workspaces
+        # User has no accessible workspaces - FilterBackend will use fallback workspaces
         mock_stub.StreamedListObjects.return_value = iter([])
 
         with patch(
@@ -391,9 +391,14 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 403 since inventory returns zero objects (no access)
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+            self.assertIn(str(self.default_workspace.id), returned_ids)
+            self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
