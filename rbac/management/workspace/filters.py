@@ -32,68 +32,58 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
 
     This filter:
     - Applies ONLY to v2 workspace endpoints
-    - Uses is_user_allowed_v2 which internally selects the appropriate API:
-      - List (workspace_id=None): StreamedListObjects, sets request.permission_tuples
-      - Detail (workspace_id specified): CheckForUpdate (single resource check)
-    - Filters queryset to only include workspaces user can access
-    - Returns 404 for inaccessible workspaces on detail views (no existence leak)
+    - For detail actions: just filters queryset to the specific workspace ID
+      (access check is already done by WorkspaceAccessPermission)
+    - For list actions: uses is_user_allowed_v2 with StreamedListObjects
+      to determine accessible workspaces and filters queryset accordingly
 
     Why FilterBackend over Permission class:
-    - Permission classes are for coarse-grained endpoint access (can user call this endpoint?)
-    - FilterBackends are for data filtering (what data can user see?)
+    - Permission classes handle access decisions (can user access this resource? → 403)
+    - FilterBackends handle data filtering (what data can user see? → queryset)
     - This separation follows DRF best practices and single responsibility principle
     """
 
-    # Actions that operate on a single workspace (use CheckForUpdate via is_user_allowed_v2)
+    # Actions that operate on a single workspace
     DETAIL_ACTIONS = {"retrieve", "update", "partial_update", "destroy", "move"}
 
     def filter_queryset(self, request, queryset, view):
         """
         Filter workspaces to only those accessible by the current user.
 
-        Uses is_user_allowed_v2 for all access checks which provides:
-        - Consistent timing logs for performance monitoring
-        - Proper error handling and logging
-        - IT service fallback for user_id lookup
-        - System user bypass
-        - Automatically selects API method based on workspace_id:
-          - None: StreamedListObjects, sets request.permission_tuples
-          - Specified: CheckForUpdate
+        For detail actions: access is already checked by WorkspaceAccessPermission,
+        so just filter to the specific workspace by ID.
 
-        This ensures consistent 404 behavior:
-        - If workspace doesn't exist: 404 (standard DRF behavior)
-        - If workspace exists but user can't access: 404 (prevents existence leakage)
+        For list actions: uses is_user_allowed_v2 via StreamedListObjects to get
+        accessible workspace IDs and filters the queryset accordingly.
         """
         # Skip filtering if V2 access check is disabled (fall back to v1 behavior)
         if not FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
             return self._filter_v1(request, queryset, view)
 
-        # Determine the relation/permission and workspace_id based on action
-        relation = permission_from_request(request, view)
         action = getattr(view, "action", None)
-        workspace_id = str(view.kwargs.get("pk")) if action in self.DETAIL_ACTIONS else None
 
-        # Call is_user_allowed_v2 - handles both list and detail cases
-        # Side effect: when workspace_id is None (list actions), is_user_allowed_v2 sets
-        # request.permission_tuples with accessible workspace IDs, used for filtering below
+        # For detail actions, access was already checked by WorkspaceAccessPermission.
+        # Just filter queryset to the specific workspace so DRF's get_object() can find it.
+        if action in self.DETAIL_ACTIONS:
+            workspace_id = view.kwargs.get("pk")
+            if workspace_id:
+                return queryset.filter(id=workspace_id)
+            return queryset
+
+        # For list actions, call is_user_allowed_v2 to get accessible workspaces
+        relation = permission_from_request(request, view)
         try:
-            has_access = is_user_allowed_v2(request, relation, workspace_id)
+            has_access = is_user_allowed_v2(request, relation, None)
         except Exception as e:
             logger.exception(
-                "Exception in is_user_allowed_v2: user=%s, org_id=%s, workspace_id=%s, relation=%s, error=%s",
+                "Exception in is_user_allowed_v2: user=%s, org_id=%s, relation=%s, error=%s",
                 getattr(request.user, "username", "unknown"),
                 getattr(request.user, "org_id", "unknown"),
-                workspace_id,
                 relation,
                 str(e),
             )
             return queryset.none()
 
-        # For detail actions: filter to specific workspace if access granted
-        if workspace_id:
-            return queryset.filter(id=workspace_id) if has_access else queryset.none()
-
-        # For list actions: check access decision first, then filter by permission_tuples
         if not has_access:
             return queryset.none()
 
@@ -121,20 +111,21 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
 
 class WorkspaceObjectAccessMixin:
     """
-    Mixin that ensures 404 for inaccessible workspaces on detail views.
+    Mixin for workspace detail views.
 
-    Add this to viewsets to prevent object existence leakage.
-    The get_object() method will raise 404 if the workspace is not
-    in the filtered queryset (i.e., user doesn't have access).
+    Access control is handled by WorkspaceAccessPermission (returns 403 for
+    denied access). This mixin provides the standard DRF get_object() behavior
+    where a 404 is returned only for truly non-existent resources.
     """
 
     def get_object(self):
         """
-        Get object with access-aware 404 behavior.
+        Get object from the filtered queryset.
 
-        If the workspace exists but user doesn't have access,
-        returns 404 (not 403) to prevent existence leakage.
+        Access is already checked by WorkspaceAccessPermission (403).
+        If the workspace doesn't exist, DRF raises 404.
         """
-        # get_queryset() already filtered by WorkspaceAccessFilterBackend
-        # If object not in filtered queryset, DRF raises 404
+        # Access check is done by WorkspaceAccessPermission
+        # FilterBackend filters queryset to the specific workspace by ID
+        # DRF raises 404 only if the workspace doesn't exist
         return super().get_object()

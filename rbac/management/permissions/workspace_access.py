@@ -42,6 +42,7 @@ from rest_framework import permissions
 
 # Custom message for target workspace access denial
 # This message is relation-agnostic: V1 uses 'write' operation, V2 uses 'create' permission
+WORKSPACE_ACCESS_DENIED_MESSAGE = "Permission denied on resource (or it might not exist)"
 TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE = "You do not have permission to access the target workspace."
 
 logger = logging.getLogger(__name__)
@@ -118,19 +119,18 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
     def _has_permission_v2(self, request, view, perm, ws_id) -> bool:
         """
-        V2 permission check - coarse-grained for create/move, FilterBackend for detail/list.
-
-        The WorkspaceAccessFilterBackend handles access filtering for list/detail operations
-        via queryset. This ensures consistent 404 behavior for both non-existing and
-        inaccessible workspaces (prevents existence leakage).
+        V2 permission check using Kessel Inventory API.
 
         This permission class handles:
         - System user bypass/denial
         - Create operation: check 'create' permission on parent workspace
-        - Move operation: check 'create' permission on target workspace
+        - Move operation: check source and target workspace access
+        - Detail operations (retrieve, update, partial_update, destroy):
+          check access and return 403 if denied
+        - List operations: allow request, FilterBackend handles queryset filtering
 
-        For list/detail operations, allow the request to proceed and let the
-        FilterBackend handle access via queryset filtering.
+        For detail operations, access denial returns 403 with an intentionally
+        ambiguous message to avoid leaking resource existence.
         """
         # For system users (s2s communication), bypass v2 access checks and rely on user.admin
         # Uses unified check_system_user_access to prevent behavior drift
@@ -160,16 +160,27 @@ class WorkspaceAccessPermission(permissions.BasePermission):
                 return False
             return True
 
-        # For move operations, check target workspace access
-        # Source workspace access is handled by FilterBackend
+        # For move operations, check both source and target workspace access
         if view.action == "move":
+            # Check source workspace access first (returns 403 if denied)
+            if ws_id and not is_user_allowed_v2(request, perm, ws_id):
+                self.message = WORKSPACE_ACCESS_DENIED_MESSAGE
+                return False
             return self._check_move_target_access_v2(request)
 
-        # For list/detail operations, allow request to proceed
+        # For detail operations (retrieve, update, partial_update, destroy),
+        # check access here and return 403 if denied. This ensures permission
+        # denial is reported as 403 rather than 404 (which would be misleading).
+        # The 403 message is intentionally ambiguous to avoid leaking resource existence.
+        if ws_id is not None:
+            if not is_user_allowed_v2(request, perm, ws_id):
+                self.message = WORKSPACE_ACCESS_DENIED_MESSAGE
+                return False
+
+        # For list operations, allow request to proceed
         # FilterBackend handles access filtering via queryset
         # For list: users with no real workspace access get fallback workspaces
         # (root, default, ungrouped) via FilterBackend instead of 403
-        # This ensures 404 for both non-existing and inaccessible workspaces
         return True
 
     def _has_permission_v1(self, request, view, ws_id) -> bool:
@@ -248,16 +259,29 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         In V2, we use the Inventory API to check if the user has 'create' permission
         on the target workspace (from SpiceDB schema: create, view, edit, move, delete).
 
+        Also verifies the target workspace exists in the local database to prevent
+        information leakage: non-admin users receive 403 (not 400) for non-existent
+        target workspaces, so they cannot determine whether a workspace exists.
+
         Args:
             request: The HTTP request object
 
         Returns:
             bool: True if the user has 'create' permission on target workspace
         """
+        from management.workspace.model import Workspace
+
         target_workspace_id = self._get_target_workspace_id(request)
         if target_workspace_id is None:
             # Let validation handle missing/invalid parent_id
             return True
+
+        # Check if target workspace exists before calling Inventory API.
+        # This prevents information leakage: non-admin users get 403 for
+        # non-existent workspaces instead of 400 from the service layer.
+        if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
 
         # V2: Check 'create' permission on target workspace via Inventory API
         if not is_user_allowed_v2(request, "create", target_workspace_id):
@@ -272,16 +296,29 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         In V1, we use legacy role-based checks with 'write' operation.
 
+        Also verifies the target workspace exists in the local database to prevent
+        information leakage: non-admin users receive 403 (not 400) for non-existent
+        target workspaces, so they cannot determine whether a workspace exists.
+
         Args:
             request: The HTTP request object
 
         Returns:
             bool: True if the user has 'write' access on target workspace
         """
+        from management.workspace.model import Workspace
+
         target_workspace_id = self._get_target_workspace_id(request)
         if target_workspace_id is None:
             # Let validation handle missing/invalid parent_id
             return True
+
+        # Check if target workspace exists before checking permissions.
+        # This prevents information leakage: non-admin users get 403 for
+        # non-existent workspaces instead of 400 from the service layer.
+        if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
 
         # V1: Check 'write' operation on target workspace
         if not is_user_allowed_v1(request, "write", target_workspace_id):

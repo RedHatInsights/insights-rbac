@@ -60,9 +60,8 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
     A viewset that provides default `create()`, `destroy` and `retrieve()`.
 
     Access control is handled by:
-    - WorkspaceAccessPermission: Coarse-grained endpoint access
-    - WorkspaceAccessFilterBackend: Queryset filtering via Kessel Inventory API
-    - WorkspaceObjectAccessMixin: 404 for inaccessible workspaces (no existence leak)
+    - WorkspaceAccessPermission: Access checks (403 for denied access on detail/create/move)
+    - WorkspaceAccessFilterBackend: Queryset filtering for list operations via Kessel Inventory API
     """
 
     permission_classes = (WorkspaceAccessPermission,)
