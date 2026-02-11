@@ -24,6 +24,8 @@ from typing import Optional, Set
 import grpc
 from kessel.inventory.v1beta2 import (
     allowed_pb2,
+    consistency_pb2,
+    consistency_token_pb2,
     representation_type_pb2,
     request_pagination_pb2,
     streamed_list_objects_request_pb2,
@@ -189,9 +191,10 @@ class WorkspaceInventoryAccessChecker:
         principal_id: str,
         relation: str,
         continuation_token: Optional[str],
+        consistency_token: Optional[str] = None,
     ) -> streamed_list_objects_request_pb2.StreamedListObjectsRequest:
-        """Build a StreamedListObjects request with pagination."""
-        return streamed_list_objects_request_pb2.StreamedListObjectsRequest(
+        """Build a StreamedListObjects request with pagination and optional consistency."""
+        kwargs = dict(
             object_type=representation_type_pb2.RepresentationType(
                 resource_type="workspace",
                 reporter_type="rbac",
@@ -203,6 +206,11 @@ class WorkspaceInventoryAccessChecker:
                 continuation_token=continuation_token or "",
             ),
         )
+        if consistency_token:
+            kwargs["consistency"] = consistency_pb2.Consistency(
+                at_least_as_fresh=consistency_token_pb2.ConsistencyToken(token=consistency_token),
+            )
+        return streamed_list_objects_request_pb2.StreamedListObjectsRequest(**kwargs)
 
     def _extract_workspace_id(self, response) -> Optional[str]:
         """Extract workspace ID from a StreamedListObjects response, or None if malformed."""
@@ -221,7 +229,11 @@ class WorkspaceInventoryAccessChecker:
         return token or None
 
     def lookup_accessible_workspaces(
-        self, principal_id: str, relation: str, request_id: Optional[str] = None
+        self,
+        principal_id: str,
+        relation: str,
+        request_id: Optional[str] = None,
+        consistency_token: Optional[str] = None,
     ) -> Set[str]:
         """
         Lookup which workspaces are accessible to the principal using Inventory API StreamedListObjects.
@@ -251,7 +263,9 @@ class WorkspaceInventoryAccessChecker:
             while page_count < self.MAX_PAGES:
                 page_count += 1
 
-                request_data = self._build_streamed_request(principal_id, relation, continuation_token)
+                request_data = self._build_streamed_request(
+                    principal_id, relation, continuation_token, consistency_token=consistency_token
+                )
 
                 t0 = time.perf_counter()
                 responses = stub.StreamedListObjects(request_data)
