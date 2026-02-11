@@ -16,6 +16,7 @@
 #
 """Test the RoleV2ViewSet."""
 
+import uuid
 from importlib import reload
 
 from django.test import override_settings
@@ -26,7 +27,11 @@ from rest_framework.test import APIClient
 
 from management import v2_urls
 from management.models import Permission
-from management.role.v2_model import CustomRoleV2, RoleV2
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.role.definer import seed_roles
+from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2
+from management.role.v2_service import RoleV2Service
+from management.tenant_service import V2TenantBootstrapService
 from management.utils import PRINCIPAL_CACHE
 from rbac import urls
 from tests.identity_request import IdentityRequest
@@ -48,12 +53,15 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
         # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
+        self.delete_url = reverse("v2_management:roles-bulk-destroy")
 
         # Create test permissions
         self.permission1 = Permission.objects.create(permission="test:resource:read", tenant=self.tenant)
         self.permission2 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
         self.permission3 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
         self.permission4 = Permission.objects.create(permission="cost:reports:read", tenant=self.tenant)
+
+        self.permission1_data = {"application": "inventory", "resource_type": "hosts", "operation": "read"}
 
         # Create a role for list tests
         self.role = RoleV2.objects.create(name="test_role", description="Test description", tenant=self.tenant)
@@ -589,3 +597,118 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("description", response.data)
         self.assertIn("permissions", response.data)
         self.assertIn("last_modified", response.data)
+        # permissions_count not included until field masking is implemented
+
+    # ==========================================================================
+    # Tests for POST /api/v2/roles:bulkDelete/ (bulk destroy)
+    # ==========================================================================
+
+    def _create_role(self) -> dict:
+        response = self.client.post(
+            self.url,
+            {
+                "name": f"Test Role {str(uuid.uuid4())}",
+                "description": "A role for testing",
+                "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return response.data
+
+    def _request_delete(self, data: dict):
+        return self.client.post(self.delete_url, data, format="json")
+
+    def test_delete_empty(self):
+        """Test that deleting 0 roles is successful."""
+        response = self._request_delete({"ids": []})
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_delete_nonexistent_role(self):
+        """Test that deleting a nonexistent role fails with status 404."""
+        create_response = self._create_role()
+        fake_role_id = str(uuid.uuid4())
+
+        response = self._request_delete({"ids": [create_response["id"], fake_role_id]})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        self.assertIn("detail", response.data)
+        self.assertIn(fake_role_id, response.data["detail"])
+        self.assertNotIn(create_response["id"], response.data["detail"])  # Existing role should not be in the error.
+
+        # The existing role should not have been deleted.
+        self.assertTrue(RoleV2.objects.filter(uuid=create_response["id"]).exists())
+
+    def test_delete_outside_tenant(self):
+        """Test that deleting a role outside the user's tenant fails with status 404."""
+        tenant2 = V2TenantBootstrapService(OutboxReplicator()).new_bootstrapped_tenant("t2").tenant
+        role = RoleV2Service().create("test role", "test role", [self.permission1_data], tenant2)
+
+        response = self._request_delete({"ids": [str(role.uuid)]})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        self.assertIn("detail", response.data)
+        self.assertIn(str(role.uuid), response.data["detail"])
+
+    def test_delete_seeded(self):
+        """Test that deleting a seeded role fails with status 404."""
+        seed_roles()
+
+        seeded_role = SeededRoleV2.objects.first()
+        self.assertIsNotNone(seeded_role)
+
+        response = self._request_delete({"ids": [str(seeded_role.uuid)]})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        self.assertIn("title", response.data)
+        self.assertEqual("Resource was not found", response.data["title"])
+
+        self.assertIn("detail", response.data)
+        self.assertIn(str(seeded_role.uuid), response.data["detail"])
+
+    def test_delete_missing_ids(self):
+        """Test that a delete request with no IDs fails with status 400."""
+        response = self._request_delete({})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.assertIn("title", response.data)
+        self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["detail"], "This field is required.")
+
+        self.assertIn("errors", response.data)
+        self.assertEqual(response.data["errors"], [{"message": "This field is required.", "field": "ids"}])
+
+    def test_delete_non_array_ids(self):
+        """Test that a delete request with a non-array ids field fails with status 400."""
+        response = self._request_delete({"ids": 42})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.assertIn("title", response.data)
+        self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["detail"], 'Expected a list of items but got type "int".')
+
+        self.assertIn("errors", response.data)
+        self.assertEqual(
+            response.data["errors"], [{"message": 'Expected a list of items but got type "int".', "field": "ids"}]
+        )
+
+    def test_delete_invalid_id(self):
+        """Test that a delete request with an invalid ID fails with status 400."""
+        for invalid_id in ["not a UUID"]:
+            with self.subTest(id=invalid_id):
+                response = self._request_delete({"ids": [invalid_id]})
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+                self.assertIn("title", response.data)
+                self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+
+                self.assertIn("detail", response.data)
+                self.assertEqual(response.data["detail"], "Must be a valid UUID.")
+
+                self.assertIn("errors", response.data)
+                self.assertEqual(response.data["errors"], [{"message": "Must be a valid UUID.", "field": "ids.0"}])
