@@ -18,6 +18,7 @@
 
 from unittest.mock import Mock
 
+from django.db.models import Count
 from django.test import override_settings
 from rest_framework import serializers
 
@@ -25,9 +26,14 @@ from management.models import Permission
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_serializer import (
     PermissionSerializer,
+    RoleFieldSelection,
+    RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
 )
+from management.role.v2_service import RoleV2Service
+from management.utils import FieldSelectionValidationError
+from management.utils import PRINCIPAL_CACHE
 from tests.identity_request import IdentityRequest
 
 
@@ -90,14 +96,11 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down serializer tests."""
-        from management.utils import PRINCIPAL_CACHE
-
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
 
         # Clear principal cache to avoid test isolation issues
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
-
         super().tearDown()
 
     def test_response_serializer_output_fields(self):
@@ -110,7 +113,6 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
         self.assertIn("description", data)
         self.assertIn("permissions", data)
         self.assertIn("last_modified", data)
-        # permissions_count not included until field masking is implemented
 
     def test_response_serializer_uuid_mapping(self):
         """Test that 'id' field maps to model's 'uuid'."""
@@ -125,6 +127,249 @@ class RoleV2ResponseSerializerTests(IdentityRequest):
         data = serializer.data
 
         self.assertIsNotNone(data["last_modified"])
+
+
+class RoleV2SerializerFieldSelectionTests(IdentityRequest):
+    """Test the RoleV2 serializer field selection."""
+
+    def setUp(self):
+        """Set up the serializer tests."""
+        super().setUp()
+        self.permission = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
+        self.role = RoleV2.objects.create(
+            name="test_role",
+            description="Test role description",
+            tenant=self.tenant,
+        )
+        self.role.permissions.add(self.permission)
+
+    def tearDown(self):
+        """Tear down the serializer tests."""
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+
+        # Clear principal cache to avoid test isolation issues
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+        super().tearDown()
+
+    def _get_annotated_role(self):
+        """Get the role with the permissions_count annotation."""
+        return RoleV2.objects.annotate(permissions_count_annotation=Count("permissions", distinct=True)).get(
+            pk=self.role.pk
+        )
+
+    def _build_context(self, fields=None):
+        """Build serializer context with resolved field set."""
+        if not fields:
+            return {"fields": RoleV2Service.DEFAULT_LIST_FIELDS}
+        fields = fields.replace("\x00", "")
+        field_selection = RoleFieldSelection.parse(fields)
+        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+        return {"fields": resolved or RoleV2Service.DEFAULT_LIST_FIELDS}
+
+    def test_default_fields_when_no_field_selection(self):
+        """Test that default fields are returned when no fields param is provided."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context())
+        data = serializer.data
+
+        # Should return exactly the default fields
+        expected_fields = {"id", "name", "description", "last_modified"}
+        self.assertEqual(set(data.keys()), expected_fields)
+
+        self.assertEqual(data["name"], "test_role")
+        self.assertEqual(data["description"], "Test role description")
+        self.assertEqual(data["id"], str(self.role.uuid))
+        self.assertIsNotNone(data["last_modified"])
+
+    def test_custom_fields_with_field_selection(self):
+        """Test that only requested fields are returned with field selection."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id,name,permissions_count"))
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"id", "name", "permissions_count"})
+        self.assertEqual(data["name"], "test_role")
+        self.assertEqual(data["permissions_count"], 1)
+
+    def test_permissions_field_returns_permission_objects(self):
+        """Test that permissions field returns properly formatted permission objects."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id,permissions"))
+        data = serializer.data
+
+        self.assertIn("permissions", data)
+        self.assertEqual(len(data["permissions"]), 1)
+
+        perm = data["permissions"][0]
+        self.assertEqual(perm["application"], "inventory")
+        self.assertEqual(perm["resource_type"], "hosts")
+        self.assertEqual(perm["operation"], "read")
+
+    def test_all_fields_can_be_selected(self):
+        """Test that all valid fields can be selected."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(
+            role,
+            context=self._build_context("id,name,description,permissions_count,last_modified,permissions"),
+        )
+        data = serializer.data
+
+        expected = {"id", "name", "description", "permissions_count", "last_modified", "permissions"}
+        self.assertEqual(set(data.keys()), expected)
+
+    def test_invalid_fields_raise_validation_error(self):
+        """Test that invalid field names raise a validation error during parsing."""
+
+        with self.assertRaises(FieldSelectionValidationError):
+            RoleFieldSelection.parse("id,invalid_field,name")
+
+    def test_multiple_permissions_serialization(self):
+        """Test that role with multiple permissions serializes correctly."""
+        # Add more permissions
+        perm2 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
+        perm3 = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
+        self.role.permissions.add(perm2, perm3)
+
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id,permissions,permissions_count"))
+        data = serializer.data
+
+        self.assertEqual(data["permissions_count"], 3)
+        self.assertEqual(len(data["permissions"]), 3)
+
+        # Verify all permissions have correct structure
+        for perm in data["permissions"]:
+            self.assertIn("application", perm)
+            self.assertIn("resource_type", perm)
+            self.assertIn("operation", perm)
+
+    def test_role_with_no_permissions(self):
+        """Test that role with no permissions returns empty list."""
+        self.role.permissions.clear()
+
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id,permissions,permissions_count"))
+        data = serializer.data
+
+        self.assertEqual(data["permissions_count"], 0)
+        self.assertEqual(data["permissions"], [])
+
+    def test_fields_with_whitespace(self):
+        """Test that fields with whitespace around commas are parsed correctly."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id, name, description"))
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"id", "name", "description"})
+
+    def test_fields_with_null_character(self):
+        """Test that null characters in fields param are sanitized."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id,na\x00me,description"))
+        data = serializer.data
+
+        # Null character should be removed, "name" should be parsed correctly
+        self.assertEqual(set(data.keys()), {"id", "name", "description"})
+
+    def test_fields_with_duplicates(self):
+        """Test that duplicate field names are handled."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id,name,id,name"))
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"id", "name"})
+
+    def test_fields_with_empty_entries(self):
+        """Test that empty entries between commas are ignored."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("id,,name,,,description"))
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"id", "name", "description"})
+
+    def test_only_permissions_count_field(self):
+        """Test requesting only permissions_count field."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role, context=self._build_context("permissions_count"))
+        data = serializer.data
+
+        self.assertEqual(set(data.keys()), {"permissions_count"})
+        self.assertEqual(data["permissions_count"], 1)
+
+    def test_serializer_without_context_returns_all_fields(self):
+        """Test that serializer without context keeps all fields."""
+        role = self._get_annotated_role()
+        serializer = RoleV2ResponseSerializer(role)
+        data = serializer.data
+
+        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
+        self.assertEqual(set(data.keys()), expected)
+
+
+class RoleV2ListSerializerTests(IdentityRequest):
+    """Test the RoleV2ListSerializer."""
+
+    def test_nul_bytes_stripped_from_name(self):
+        """Test that NUL bytes in name are stripped before validation."""
+        serializer = RoleV2ListSerializer(data={"name": "admin\x00role"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["name"], "adminrole")
+
+    def test_nul_bytes_stripped_from_fields(self):
+        """Test that NUL bytes in fields are stripped before validation."""
+        serializer = RoleV2ListSerializer(data={"fields": "id,na\x00me"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIn("name", serializer.validated_data["fields"])
+
+    def test_name_passes_through(self):
+        """Test that a non-empty name passes through as-is."""
+        serializer = RoleV2ListSerializer(data={"name": "my_role"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["name"], "my_role")
+
+    def test_empty_name_returns_none(self):
+        """Test that an empty name string is normalized to None."""
+        serializer = RoleV2ListSerializer(data={"name": ""})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIsNone(serializer.validated_data["name"])
+
+    def test_no_name_param_is_valid(self):
+        """Test that omitting name entirely is valid."""
+        serializer = RoleV2ListSerializer(data={})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertNotIn("name", serializer.validated_data)
+
+    def test_no_fields_param_returns_defaults(self):
+        """Test that omitting fields returns DEFAULT_LIST_FIELDS."""
+        serializer = RoleV2ListSerializer(data={})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_LIST_FIELDS)
+
+    def test_empty_fields_returns_defaults(self):
+        """Test that an empty fields string returns DEFAULT_LIST_FIELDS."""
+        serializer = RoleV2ListSerializer(data={"fields": ""})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], RoleV2Service.DEFAULT_LIST_FIELDS)
+
+    def test_valid_fields_resolve_to_requested_set(self):
+        """Test that valid field names resolve to the requested set."""
+        serializer = RoleV2ListSerializer(data={"fields": "id,name"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], {"id", "name"})
+
+    def test_invalid_fields_raise_validation_error(self):
+        """Test that invalid field names raise a validation error."""
+        serializer = RoleV2ListSerializer(data={"fields": "id,bogus_field"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("fields", serializer.errors)
+
+    def test_all_valid_response_fields_can_be_requested(self):
+        """Test that all fields from RoleV2ResponseSerializer.Meta.fields are accepted."""
+        all_fields = ",".join(RoleV2ResponseSerializer.Meta.fields)
+        serializer = RoleV2ListSerializer(data={"fields": all_fields})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["fields"], set(RoleV2ResponseSerializer.Meta.fields))
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -142,14 +387,9 @@ class RoleV2RequestSerializerTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down serializer tests."""
-        from management.utils import PRINCIPAL_CACHE
-
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
-
-        # Clear principal cache to avoid test isolation issues
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
-
         super().tearDown()
 
     def test_serializer_validates_required_name(self):

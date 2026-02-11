@@ -18,9 +18,11 @@
 
 import logging
 import os
+import re
 import uuid
 from contextlib import contextmanager
-from typing import Optional, TypedDict
+from dataclasses import dataclass, field
+from typing import ClassVar, Optional, TypedDict
 from uuid import UUID
 
 import grpc
@@ -662,3 +664,102 @@ def is_permission_blocked_for_v1(permission_str, request=None):
     # Check against block list using exact string matching
     block_list = getattr(settings, "V1_ROLE_PERMISSION_BLOCK_LIST", [])
     return permission_str in block_list
+
+
+class FieldSelectionValidationError(Exception):
+    """Exception raised when field selection validation fails."""
+
+    def __init__(self, message: str):
+        """Initialize with error message."""
+        self.message = message
+        super().__init__(self.message)
+
+
+@dataclass
+class FieldSelection:
+    """Generic, config-driven field selection parser.
+
+    Parses a fields query parameter that supports both root-level fields
+    and nested object fields using the syntax: object(field1,field2) or field1,field2.
+
+    Examples:
+        - "last_modified"
+        - "subject(group.name,group.user_count)"
+        - "subject(id),role(name),last_modified"
+    """
+
+    VALID_ROOT_FIELDS: ClassVar[set] = set()
+    VALID_NESTED_FIELDS: ClassVar[dict[str, set]] = {}
+
+    root_fields: set = field(default_factory=set)
+    nested_fields: dict[str, set] = field(default_factory=dict)
+
+    def get_nested(self, name: str) -> set:
+        """Return the parsed nested fields for name."""
+        return self.nested_fields.get(name, set())
+
+    @classmethod
+    def parse(cls, fields_param: Optional[str]) -> Optional["FieldSelection"]:
+        """Parse a fields parameter string into a FieldSelection instance."""
+        if not fields_param:
+            return None
+
+        selection = cls()
+        invalid_fields: list[str] = []
+
+        parts = cls._split_fields(fields_param)
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            # Nested: object(field1,field2)
+            match = re.match(r"(\w+)\(([^)]+)\)", part)
+            if match:
+                obj_name = match.group(1)
+                obj_fields = {f.strip() for f in match.group(2).split(",")}
+
+                valid_set = cls.VALID_NESTED_FIELDS.get(obj_name)
+                if valid_set is None:
+                    invalid_fields.append(f"Unknown object type: '{obj_name}'")
+                else:
+                    invalid = obj_fields - valid_set
+                    if invalid:
+                        invalid_fields.extend([f"{obj_name}({f})" for f in invalid])
+                    selection.nested_fields.setdefault(obj_name, set()).update(obj_fields)
+            else:
+                if part not in cls.VALID_ROOT_FIELDS:
+                    invalid_fields.append(f"Unknown field: '{part}'")
+                selection.root_fields.add(part)
+
+        if invalid_fields:
+            error_parts = [f"Invalid field(s): {', '.join(invalid_fields)}."]
+            for obj_name, valid_set in sorted(cls.VALID_NESTED_FIELDS.items()):
+                error_parts.append(f"Valid {obj_name} fields: {sorted(valid_set)}.")
+            error_parts.append(f"Valid root fields: {sorted(cls.VALID_ROOT_FIELDS)}.")
+            raise FieldSelectionValidationError(" ".join(error_parts))
+
+        return selection
+
+    @staticmethod
+    def _split_fields(fields_str: str) -> list[str]:
+        """Split a fields string by comma, respecting parentheses."""
+        if not fields_str:
+            return []
+
+        parts: list[str] = []
+        start = 0
+        depth = 0
+
+        for i, char in enumerate(fields_str):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(fields_str[start:i].strip())
+                start = i + 1
+
+        parts.append(fields_str[start:].strip())
+        return parts

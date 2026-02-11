@@ -120,14 +120,16 @@ class V2ResultsSetPagination(StandardResultsSetPagination):
 
 
 class V2CursorPagination(CursorPagination):
-    """Cursor-based pagination for V2 Role binding API.
+    """Cursor-based pagination for V2 APIs.
 
     Uses cursor-based pagination which provides consistent ordering
     and better performance for large datasets.
 
     Supports dynamic ordering via the order_by query parameter.
-    Ordering REQUIRES dot notation (e.g., group.name, role.name).
-    Direct field names without dot notation are not allowed.
+    Subclasses define FIELD_MAPPING to control which API field names
+    are accepted and how they map to Django ORM fields.
+    Both dot notation (e.g., group.name) and direct field names
+    (e.g., name, last_modified) are supported.
     Multiple fields can be specified via comma-separated values
     or multiple order_by parameters.
 
@@ -161,13 +163,13 @@ class V2CursorPagination(CursorPagination):
     }
 
     def _convert_order_field(self, field: str) -> str | None:
-        """Convert dot notation field to Django ORM field.
+        """Convert an API order field to a Django ORM field.
 
-        Only accepts fields using dot notation (e.g., group.name, role.name).
-        Direct field names without dot notation are rejected.
+        Accepts any field name present in FIELD_MAPPING, including both
+        dot notation (e.g., group.name) and direct names (e.g., name).
 
         Args:
-            field: The field name, must use dot notation (e.g., group.name, -role.modified)
+            field: The API field name, optionally prefixed with '-' for descending order.
 
         Returns:
             The Django ORM field name, or None if the field is invalid
@@ -176,17 +178,11 @@ class V2CursorPagination(CursorPagination):
         descending = field.startswith("-")
         field_name = field[1:] if descending else field
 
-        # Reject fields without dot notation - dot notation is required
-        if "." not in field_name:
+        orm_field = self.FIELD_MAPPING.get(field_name)
+        if orm_field is None:
             return None
 
-        # Check if it's a known mapping
-        if field_name in self.FIELD_MAPPING:
-            orm_field = self.FIELD_MAPPING[field_name]
-            return f"-{orm_field}" if descending else orm_field
-
-        # Unknown dot notation field - reject it
-        return None
+        return f"-{orm_field}" if descending else orm_field
 
     def get_ordering(self, request, queryset, view):
         """Get ordering from order_by query parameter or use default.
