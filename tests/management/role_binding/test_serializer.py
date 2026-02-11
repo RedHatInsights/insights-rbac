@@ -14,18 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleBindingByGroupSerializer."""
+"""Test the RoleBindingBySubjectOutputSerializer."""
 
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
 from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
+from management.role_binding.serializer import FieldSelection, RoleBindingBySubjectOutputSerializer
 from tests.identity_request import IdentityRequest
 
 
-class RoleBindingByGroupSerializerTest(IdentityRequest):
-    """Test the RoleBindingByGroupSerializer.
+class RoleBindingBySubjectOutputSerializerTest(IdentityRequest):
+    """Test the RoleBindingBySubjectOutputSerializer.
 
     Tests verify the serializer produces output matching the API spec:
     - last_modified: datetime timestamp
@@ -94,7 +94,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         modified_time = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         obj = {"modified": modified_time}
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_last_modified(obj)
 
         self.assertEqual(result, modified_time)
@@ -104,7 +104,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         latest_modified_time = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
         obj = {"latest_modified": latest_modified_time}
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_last_modified(obj)
 
         self.assertEqual(result, latest_modified_time)
@@ -115,14 +115,14 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         latest_modified_time = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
         obj = {"modified": modified_time, "latest_modified": latest_modified_time}
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_last_modified(obj)
 
         self.assertEqual(result, modified_time)
 
     def test_last_modified_returns_none_for_empty_dict(self):
         """Test get_last_modified with empty dict returns None."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_last_modified({})
 
         self.assertIsNone(result)
@@ -132,14 +132,14 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         mock_group = Mock(spec=Group)
         mock_group.latest_modified = datetime(2025, 1, 25, 12, 0, 0, tzinfo=timezone.utc)
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_last_modified(mock_group)
 
         self.assertEqual(result, mock_group.latest_modified)
 
     def test_last_modified_returns_none_when_group_has_no_latest_modified(self):
         """Test get_last_modified with Group object without latest_modified returns None."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_last_modified(self.group)
 
         self.assertIsNone(result)
@@ -153,7 +153,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         """
         self.group.principalCount = 1
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_subject(self.group)
 
         # Default behavior: only id and type
@@ -175,7 +175,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         )
         group.principalCount = 0
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_subject(group)
 
         # Default behavior: only id and type, no group details
@@ -199,7 +199,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.group.principalCount = 2
 
         field_selection = FieldSelection(subject_fields={"group.user_count"})
-        serializer = RoleBindingByGroupSerializer(context={"field_selection": field_selection})
+        serializer = RoleBindingBySubjectOutputSerializer(context={"field_selection": field_selection})
         result = serializer.get_subject(self.group)
 
         self.assertEqual(result["type"], "group")
@@ -209,14 +209,14 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
 
     def test_subject_returns_none_for_non_group_object(self):
         """Test get_subject with non-Group object returns None."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_subject({"name": "not a group"})
 
         self.assertIsNone(result)
 
     def test_subject_returns_none_for_none_input(self):
         """Test get_subject with None returns None."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_subject(None)
 
         self.assertIsNone(result)
@@ -231,21 +231,21 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         ]
         obj = {"roles": roles}
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles(obj)
 
         self.assertEqual(result, roles)
 
     def test_roles_returns_empty_list_from_dict_with_empty_roles(self):
         """Test get_roles with dict containing empty roles list."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles({"roles": []})
 
         self.assertEqual(result, [])
 
     def test_roles_returns_empty_list_from_dict_without_roles_key(self):
         """Test get_roles with dict without roles key."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles({})
 
         self.assertEqual(result, [])
@@ -264,7 +264,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         mock_group = Mock(spec=Group)
         mock_group.filtered_bindings = [mock_binding_group]
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles(mock_group)
 
         self.assertEqual(len(result), 1)
@@ -287,7 +287,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         mock_group = Mock(spec=Group)
         mock_group.filtered_bindings = [mock_binding_group1, mock_binding_group2]
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles(mock_group)
 
         self.assertEqual(len(result), 1)
@@ -311,7 +311,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         mock_group = Mock(spec=Group)
         mock_group.filtered_bindings = [mock_binding_group1, mock_binding_group2]
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles(mock_group)
 
         self.assertEqual(len(result), 2)
@@ -323,7 +323,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
 
     def test_roles_returns_empty_list_when_group_has_no_filtered_bindings(self):
         """Test get_roles with Group without filtered_bindings attribute."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles(self.group)
 
         self.assertEqual(result, [])
@@ -339,7 +339,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         mock_group = Mock(spec=Group)
         mock_group.filtered_bindings = [mock_binding_group]
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles(mock_group)
 
         self.assertEqual(result, [])
@@ -352,7 +352,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         mock_group = Mock(spec=Group)
         mock_group.filtered_bindings = [mock_binding_group]
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_roles(mock_group)
 
         self.assertEqual(result, [])
@@ -368,21 +368,21 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         }
         obj = {"resource": resource_data}
 
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_resource(obj)
 
         self.assertEqual(result, resource_data)
 
     def test_resource_returns_empty_dict_from_dict_with_empty_resource(self):
         """Test get_resource with dict containing empty resource."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_resource({"resource": {}})
 
         self.assertEqual(result, {})
 
     def test_resource_returns_empty_dict_from_dict_without_resource_key(self):
         """Test get_resource with dict without resource key."""
-        serializer = RoleBindingByGroupSerializer()
+        serializer = RoleBindingBySubjectOutputSerializer()
         result = serializer.get_resource({})
 
         self.assertEqual(result, {})
@@ -399,7 +399,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
             "resource_type": "workspace",
         }
 
-        serializer = RoleBindingByGroupSerializer(context=context)
+        serializer = RoleBindingBySubjectOutputSerializer(context=context)
         result = serializer.get_resource(self.group)
 
         # Default behavior: only id
@@ -417,7 +417,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
             "resource_type": "workspace",
         }
 
-        serializer = RoleBindingByGroupSerializer(context=context)
+        serializer = RoleBindingBySubjectOutputSerializer(context=context)
         result = serializer.get_resource(self.group)
 
         # Default behavior: only id
@@ -426,7 +426,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
 
     def test_resource_returns_none_when_context_is_empty(self):
         """Test get_resource with Group and empty context."""
-        serializer = RoleBindingByGroupSerializer(context={})
+        serializer = RoleBindingBySubjectOutputSerializer(context={})
         result = serializer.get_resource(self.group)
 
         self.assertIsNone(result)
@@ -441,7 +441,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
             "resource_id": "ws-12345",
         }
 
-        serializer = RoleBindingByGroupSerializer(context=context)
+        serializer = RoleBindingBySubjectOutputSerializer(context=context)
         result = serializer.get_resource(self.group)
 
         # Default behavior: only id
@@ -466,7 +466,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
             },
         }
 
-        serializer = RoleBindingByGroupSerializer(obj)
+        serializer = RoleBindingBySubjectOutputSerializer(obj)
         data = serializer.data
 
         # Default behavior: last_modified not included
@@ -505,7 +505,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
             "resource_type": "workspace",
         }
 
-        serializer = RoleBindingByGroupSerializer(self.group, context=context)
+        serializer = RoleBindingBySubjectOutputSerializer(self.group, context=context)
         data = serializer.data
 
         # Default behavior: only basic fields
@@ -538,7 +538,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
             "resource_type": "workspace",
         }
 
-        serializer = RoleBindingByGroupSerializer([self.group, group2], many=True, context=context)
+        serializer = RoleBindingBySubjectOutputSerializer([self.group, group2], many=True, context=context)
         data = serializer.data
 
         self.assertEqual(len(data), 2)
@@ -579,7 +579,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
             "resource_type": "workspace",
         }
 
-        serializer = RoleBindingByGroupSerializer(self.group, context=context)
+        serializer = RoleBindingBySubjectOutputSerializer(self.group, context=context)
         data = serializer.data
 
         # Verify top-level fields (no last_modified by default)

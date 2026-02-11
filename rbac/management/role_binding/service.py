@@ -21,7 +21,7 @@ from typing import Iterable, Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Max, Prefetch, Q, QuerySet
+from django.db.models import F, Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
 from google.protobuf import json_format
 from internal.jwt_utils import JWTManager, JWTProvider
@@ -84,6 +84,37 @@ class RoleBindingService:
 
         # Apply subject filters
         queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
+
+        return queryset
+
+    def get_role_bindings(self, params: dict) -> QuerySet:
+        """Get role bindings from a dictionary of parameters.
+
+        Args:
+            params: Dictionary of validated query parameters (from input serializer)
+                - role_id: Optional UUID to filter by role
+
+        Returns:
+            QuerySet of RoleBinding objects with prefetched groups
+
+        Note:
+            Ordering is handled by V2CursorPagination.get_ordering() to ensure
+            cursor pagination works correctly with the requested order_by parameter.
+        """
+        role_id = params.get("role_id")
+
+        # Build base queryset for RoleBinding objects
+        # Annotate role_created for cursor pagination (cursor pagination needs direct attribute access)
+        queryset = (
+            RoleBinding.objects.filter(tenant=self.tenant)
+            .select_related("role")
+            .prefetch_related("group_entries__group")
+            .annotate(role_created=F("role__created"))
+        )
+
+        # Apply optional role_id filter
+        if role_id:
+            queryset = queryset.filter(role__uuid=role_id)
 
         return queryset
 
