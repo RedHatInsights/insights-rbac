@@ -22,7 +22,8 @@ from management.models import Group
 from management.role.v2_model import RoleV2
 from management.utils import FieldSelection, FieldSelectionValidationError
 from management.role_binding.exceptions import DuplicateBindingError, RolesNotFoundError, SubjectsNotFoundError
-from management.role_binding.service import RoleBindingService
+from management.role_binding.service import CreateBindingRequest, RoleBindingService
+from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
 
@@ -390,8 +391,18 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         """Create role bindings using the service layer."""
+        requests = [
+            CreateBindingRequest(
+                role_id=str(item["role"]["id"]),
+                resource_type=item["resource"]["type"],
+                resource_id=str(item["resource"]["id"]),
+                subject_type=item["subject"]["type"],
+                subject_id=str(item["subject"]["id"]),
+            )
+            for item in validated_data["requests"]
+        ]
         try:
-            return self.service.batch_create(validated_data["requests"])
+            return self.service.batch_create(requests)
         except tuple(BATCH_CREATE_ERROR_MAPPING.keys()) as e:
             field_name = BATCH_CREATE_ERROR_MAPPING[type(e)]
             raise serializers.ValidationError({field_name: str(e)})
