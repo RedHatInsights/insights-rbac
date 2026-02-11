@@ -14,22 +14,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Shared domain exceptions for the management module."""
+"""Domain types and services for subjects in the RBAC system.
 
+A "subject" is an entity that can be granted permissions via role bindings.
+Currently supported subjects are:
+- Groups (collections of users)
+- Users (individual principals)
+"""
 
-class RequiredFieldError(Exception):
-    """Raised when a required field is missing."""
+from management.subject.exceptions import (
+    SubjectError,
+    SubjectNotFoundError,
+    UnsupportedSubjectTypeError,
+)
+from management.subject.service import SubjectService, SubjectType
 
-    def __init__(self, field_name: str):
-        """Initialize with the missing field name."""
-        super().__init__(f"{field_name} is required")
-        self.field_name = field_name
-
-
-class InvalidArgumentError(Exception):
-    """Raised when an argument has an invalid type or value."""
-
-    def __init__(self, argument_name: str, message: str):
-        """Initialize with the argument name and error message."""
-        super().__init__(f"Invalid argument '{argument_name}': {message}")
-        self.argument_name = argument_name
+__all__ = [
+    "SubjectType",
+    "SubjectError",
+    "SubjectNotFoundError",
+    "UnsupportedSubjectTypeError",
+    "SubjectService",
+]

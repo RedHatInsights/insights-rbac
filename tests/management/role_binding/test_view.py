@@ -1172,3 +1172,238 @@ class DefaultBindingsAPITests(TestCase):
         # USER bindings should be restored
         self.assertEqual(self._count_default_bindings(DefaultAccessType.USER), 3)
         self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
+
+
+@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
+    """Tests for PUT /role-bindings/by-subject/ endpoint."""
+
+    def setUp(self):
+        """Set up test data using services."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.client = APIClient()
+
+        # Create workspace hierarchy
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            description="Test workspace description",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        # Create permissions and roles using RoleV2Service
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+
+        from management.role.v2_service import RoleV2Service
+
+        role_service = RoleV2Service()
+        self.role1 = role_service.create(
+            name="role1",
+            description="Test role 1",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+        self.role2 = role_service.create(
+            name="role2",
+            description="Test role 2",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "write"}],
+            tenant=self.tenant,
+        )
+
+        # Create group and principal
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group description",
+            tenant=self.tenant,
+        )
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            user_id="testuser",
+            type=Principal.Types.USER,
+        )
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    def _get_by_subject_url(self):
+        """Get the by-subject URL."""
+        return reverse("v2_management:role-bindings-by-subject")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_role_bindings_for_group(self, mock_permission):
+        """Test updating role bindings for a group via PUT."""
+        url = self._get_by_subject_url()
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}, {"id": str(self.role2.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("subject", response.data)
+        self.assertIn("roles", response.data)
+        self.assertIn("resource", response.data)
+
+        # Verify subject
+        self.assertEqual(response.data["subject"]["type"], "group")
+        self.assertEqual(str(response.data["subject"]["id"]), str(self.group.uuid))
+
+        # Verify roles
+        role_ids = {str(r["id"]) for r in response.data["roles"]}
+        self.assertEqual(role_ids, {str(self.role1.uuid), str(self.role2.uuid)})
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_role_bindings_for_principal(self, mock_permission):
+        """Test updating role bindings for a principal via PUT."""
+        url = self._get_by_subject_url()
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.principal.uuid}&subject_type=user",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify subject
+        self.assertEqual(response.data["subject"]["type"], "user")
+        self.assertEqual(str(response.data["subject"]["id"]), str(self.principal.uuid))
+        self.assertIn("user", response.data["subject"])
+        self.assertEqual(response.data["subject"]["user"]["username"], self.principal.username)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_replaces_existing_bindings(self, mock_permission):
+        """Test that PUT replaces existing bindings."""
+        url = self._get_by_subject_url()
+
+        # First update with role1
+        self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        # Second update with role2
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role2.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify only role2 in response
+        self.assertEqual(len(response.data["roles"]), 1)
+        self.assertEqual(str(response.data["roles"][0]["id"]), str(self.role2.uuid))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_missing_resource_id_returns_400(self, mock_permission):
+        """Test that missing resource_id returns 400."""
+        url = self._get_by_subject_url()
+        response = self.client.put(
+            f"{url}?resource_type=workspace&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_empty_roles_returns_400(self, mock_permission):
+        """Test that empty roles list returns 400."""
+        url = self._get_by_subject_url()
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": []},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_invalid_group_returns_404(self, mock_permission):
+        """Test that invalid group UUID returns 404."""
+        url = self._get_by_subject_url()
+        fake_uuid = str(uuid.uuid4())
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={fake_uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_invalid_role_returns_400(self, mock_permission):
+        """Test that non-existent role UUID returns 400 (roles error)."""
+        url = self._get_by_subject_url()
+        fake_uuid = str(uuid.uuid4())
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": fake_uuid}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("roles", response.data)

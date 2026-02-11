@@ -16,15 +16,15 @@
 #
 """Tests for the RoleBindingService and Serializer."""
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleV2
+from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import TenantMapping
-
 from tests.identity_request import IdentityRequest
 
 
@@ -846,3 +846,194 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         # Check last_modified
         self.assertIn("last_modified", data)
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class UpdateRoleBindingsForSubjectTests(IdentityRequest):
+    """Tests for RoleBindingService.update_role_bindings_for_subject method."""
+
+    def setUp(self):
+        """Set up test data using services."""
+        super().setUp()
+
+ c
+
+        # Create permissions and roles using RoleV2Service
+        self.permission1 = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+
+        self.role_service = RoleV2Service()
+        self.role1 = self.role_service.create(
+            name="role1",
+            description="Test role 1",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+        self.role2 = self.role_service.create(
+            name="role2",
+            description="Test role 2",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "write"}],
+            tenant=self.tenant,
+        )
+
+        # Create group and principal
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group description",
+            tenant=self.tenant,
+        )
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            user_id="testuser",
+            type=Principal.Types.USER,
+        )
+
+        self.service = RoleBindingService(tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    def test_update_role_bindings_for_group(self):
+        """Test updating role bindings for a group."""
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid), str(self.role2.uuid)],
+        )
+
+        self.assertEqual(result.subject_type, "group")
+        self.assertEqual(result.group, self.group)
+        self.assertIsNone(result.principal)
+        self.assertEqual(len(result.roles), 2)
+        self.assertEqual({r.uuid for r in result.roles}, {self.role1.uuid, self.role2.uuid})
+
+    def test_update_role_bindings_for_principal(self):
+        """Test updating role bindings for a principal."""
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="user",
+            subject_id=str(self.principal.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        self.assertEqual(result.subject_type, "user")
+        self.assertIsNone(result.group)
+        self.assertEqual(result.principal, self.principal)
+        self.assertEqual(len(result.roles), 1)
+        self.assertEqual(result.roles[0].uuid, self.role1.uuid)
+
+    def test_update_replaces_existing_bindings(self):
+        """Test that update replaces existing bindings."""
+        # First update with role1
+        self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        # Second update with role2 only
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role2.uuid)],
+        )
+
+        # Should have only role2 now
+        self.assertEqual(len(result.roles), 1)
+        self.assertEqual(result.roles[0].uuid, self.role2.uuid)
+
+    def test_update_raises_error_for_invalid_group(self):
+        """Test that update raises error for non-existent group."""
+        import uuid
+
+        from management.subject import SubjectNotFoundError
+
+        fake_uuid = str(uuid.uuid4())
+        with self.assertRaises(SubjectNotFoundError):
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="group",
+                subject_id=fake_uuid,
+                role_ids=[str(self.role1.uuid)],
+            )
+
+    def test_update_raises_error_for_invalid_principal(self):
+        """Test that update raises error for non-existent principal."""
+        import uuid
+
+        from management.subject import SubjectNotFoundError
+
+        fake_uuid = str(uuid.uuid4())
+        with self.assertRaises(SubjectNotFoundError):
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="user",
+                subject_id=fake_uuid,
+                role_ids=[str(self.role1.uuid)],
+            )
+
+    def test_update_raises_error_for_invalid_role(self):
+        """Test that update raises error for non-existent role."""
+        import uuid
+
+        from management.role_binding.exceptions import RolesNotFoundError
+
+        fake_uuid = str(uuid.uuid4())
+        with self.assertRaises(RolesNotFoundError) as context:
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="group",
+                subject_id=str(self.group.uuid),
+                role_ids=[fake_uuid],
+            )
+        self.assertIn(fake_uuid, str(context.exception))
+
+    def test_update_raises_error_for_unsupported_subject_type(self):
+        """Test that update raises error for unsupported subject type."""
+        from management.subject import UnsupportedSubjectTypeError
+
+        with self.assertRaises(UnsupportedSubjectTypeError):
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="invalid_type",
+                subject_id=str(self.group.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+    def test_update_raises_error_for_invalid_resource(self):
+        """Test that update raises error for non-existent resource."""
+        import uuid
+
+        from management.role_binding.exceptions import ResourceNotFoundError
+
+        fake_workspace_uuid = str(uuid.uuid4())
+        with self.assertRaises(ResourceNotFoundError):
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=fake_workspace_uuid,
+                subject_type="group",
+                subject_id=str(self.group.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )

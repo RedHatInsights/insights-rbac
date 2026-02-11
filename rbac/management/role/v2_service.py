@@ -31,7 +31,7 @@ from management.role.v2_exceptions import (
     RoleAlreadyExistsError,
     RoleDatabaseError,
 )
-from management.role.v2_model import CustomRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2
 
 from api.models import Tenant
 
@@ -110,3 +110,22 @@ class RoleV2Service:
                 raise RoleAlreadyExistsError(name)
             logger.exception("Database error creating role '%s'", name)
             raise RoleDatabaseError()
+
+    def get_assignable_roles(self, role_ids: list[str]) -> list[RoleV2]:
+        """Get roles by UUIDs that can be assigned to bindings.
+
+        Only custom and seeded roles can be directly assigned.
+        Platform roles are internal aggregations and cannot be assigned directly.
+
+        Args:
+            role_ids: List of role UUIDs to retrieve
+
+        Returns:
+            List of RoleV2 objects (excludes platform roles)
+
+        Note:
+            This method returns only the roles that exist and are assignable.
+            It does not validate that all requested role_ids were found.
+            Callers should check the returned count if validation is needed.
+        """
+        return list(RoleV2.objects.filter(uuid__in=role_ids).exclude(type=RoleV2.Types.PLATFORM))

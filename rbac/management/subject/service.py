@@ -14,19 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Domain types and services for subjects in the RBAC system.
-
-A "subject" is an entity that can be granted permissions via role bindings.
-Currently supported subjects are:
-- Groups (collections of users)
-- Users (individual principals)
-"""
+"""Service layer for subject operations."""
 
 from enum import StrEnum
 
 from django.db.models import Count, Q
 from management.group.model import Group
 from management.principal.model import Principal
+from management.subject.exceptions import SubjectNotFoundError, UnsupportedSubjectTypeError
 from management.tenant_mapping.model import Tenant
 
 
@@ -49,33 +44,6 @@ class SubjectType(StrEnum):
     def values(cls) -> list[str]:
         """Return list of all valid subject type values."""
         return list(cls._value2member_map_.keys())
-
-
-class SubjectError(Exception):
-    """Base exception for Subject domain errors."""
-
-    pass
-
-
-class SubjectNotFoundError(SubjectError):
-    """Raised when the specified subject cannot be found."""
-
-    def __init__(self, subject_type: str, subject_id: str):
-        """Initialize with the subject details."""
-        self.subject_type = subject_type
-        self.subject_id = subject_id
-        super().__init__(f"Subject not found: {subject_type} with id '{subject_id}'")
-
-
-class UnsupportedSubjectTypeError(SubjectError):
-    """Raised when an unsupported subject type is provided."""
-
-    def __init__(self, subject_type: str, supported: list[str] | None = None):
-        """Initialize with the unsupported subject type."""
-        self.subject_type = subject_type
-        self.supported = supported or SubjectType.values()
-        supported_str = ", ".join(self.supported)
-        super().__init__(f"Unsupported subject type: '{subject_type}'. Supported types: {supported_str}")
 
 
 class SubjectService:
@@ -128,3 +96,24 @@ class SubjectService:
             return Principal.objects.get(uuid=subject_id, tenant=self.tenant)
         except Principal.DoesNotExist:
             raise SubjectNotFoundError(SubjectType.USER, subject_id)
+
+    def get_subject(self, subject_type: str, subject_id: str) -> Group | Principal:
+        """Get a subject by type and ID.
+
+        Args:
+            subject_type: The type of subject ('group' or 'user')
+            subject_id: The subject UUID
+
+        Returns:
+            The subject (Group or Principal)
+
+        Raises:
+            UnsupportedSubjectTypeError: If the subject type is not supported
+            SubjectNotFoundError: If the subject cannot be found
+        """
+        if subject_type == SubjectType.GROUP:
+            return self.get_group(subject_id)
+        elif subject_type == SubjectType.USER:
+            return self.get_principal(subject_id)
+        else:
+            raise UnsupportedSubjectTypeError(subject_type)

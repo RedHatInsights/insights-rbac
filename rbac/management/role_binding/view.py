@@ -168,8 +168,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
                 "type": validated["resource_type"],
                 "name": resource_name,
             },
-            "modified": last_modified,
+            "last_modified": last_modified,
         }
 
-        output_serializer = RoleBindingOutputSerializer(response_data, context={"request": request})
-        return Response(output_serializer.data, status=status.HTTP_200_OK)
+        return Response(response_data, status=status.HTTP_200_OK)

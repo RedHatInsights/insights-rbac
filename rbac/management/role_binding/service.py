@@ -36,8 +36,8 @@ from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.exceptions import ResourceNotFoundError, RolesNotFoundError
-from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
-from management.subject import SubjectService, SubjectType, UnsupportedSubjectTypeError
+from management.role_binding.model import RoleBinding, RoleBindingGroup
+from management.subject import SubjectService, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
@@ -71,8 +71,11 @@ class RoleBindingService:
 
     def __init__(self, tenant: Tenant):
         """Initialize the service with a tenant."""
+        from management.role.v2_service import RoleV2Service
+
         self.tenant = tenant
         self.subject_service = SubjectService(tenant)
+        self.role_service = RoleV2Service()
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject (group) from a dictionary of parameters.
@@ -613,47 +616,37 @@ class RoleBindingService:
             ResourceNotFoundError: If the resource cannot be found
             RolesNotFoundError: If one or more roles cannot be found
         """
-        # Validate the resource exists
         self._validate_resource(resource_type, resource_id)
 
-        # Validate and get the roles
         roles = self._get_roles(role_ids)
 
-        # Handle based on subject type
+        subject = self.subject_service.get_subject(subject_type, subject_id)
+
+        RoleBinding.set_roles_for_subject(
+            tenant=self.tenant,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            subject=subject,
+            roles=roles,
+        )
+
+        # Build result based on subject type
         if subject_type == SubjectType.GROUP:
-            group = self.subject_service.get_group(subject_id)
-            self._update_bindings_for_group(
-                group=group,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                roles=roles,
-            )
             result = UpdateRoleBindingResult(
                 subject_type=subject_type,
                 roles=roles,
                 resource_id=resource_id,
                 resource_type=resource_type,
-                group=group,
+                group=subject,
             )
-
-        elif subject_type == SubjectType.USER:
-            principal = self.subject_service.get_principal(subject_id)
-            self._update_bindings_for_principal(
-                principal=principal,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                roles=roles,
-            )
-            result = UpdateRoleBindingResult(
-                subject_type=subject_type,
-                roles=roles,
-                resource_id=resource_id,
-                resource_type=resource_type,
-                principal=principal,
-            )
-
         else:
-            raise UnsupportedSubjectTypeError(subject_type)
+            result = UpdateRoleBindingResult(
+                subject_type=subject_type,
+                roles=roles,
+                resource_id=resource_id,
+                resource_type=resource_type,
+                principal=subject,
+            )
 
         logger.info(
             "Updated role bindings for %s '%s' on %s '%s': %d roles assigned",
@@ -679,25 +672,11 @@ class RoleBindingService:
         if resource_type == "workspace":
             if not Workspace.objects.filter(id=resource_id, tenant=self.tenant).exists():
                 raise ResourceNotFoundError(resource_type, resource_id)
-        # Add additional resource type checks here as needed
 
     def _get_roles(self, role_ids: list[str]) -> list[RoleV2]:
-        """Get roles by their UUIDs, validating all exist.
+        """Get roles by their UUIDs, validating all exist."""
+        roles = self.role_service.get_assignable_roles(role_ids)
 
-        Only custom and seeded roles can be directly assigned.
-        Platform roles are internal aggregations and cannot be assigned directly.
-
-        Args:
-            role_ids: List of role UUIDs
-
-        Returns:
-            List of RoleV2 objects
-
-        Raises:
-            RolesNotFoundError: If one or more roles cannot be found
-        """
-        # Filter out platform roles - they are internal and cannot be directly assigned
-        roles = list(RoleV2.objects.filter(uuid__in=role_ids).exclude(type=RoleV2.Types.PLATFORM))
         found_ids = {str(r.uuid) for r in roles}
         requested_ids = set(role_ids)
 
@@ -706,119 +685,3 @@ class RoleBindingService:
             raise RolesNotFoundError(missing)
 
         return roles
-
-    def _update_bindings_for_group(
-        self,
-        group: Group,
-        resource_type: str,
-        resource_id: str,
-        roles: list[RoleV2],
-    ) -> None:
-        """Update role bindings for a group on a resource.
-
-        This removes all existing bindings for the group on the resource
-        and creates new bindings for the provided roles.
-
-        Args:
-            group: The group to update bindings for
-            resource_type: The resource type
-            resource_id: The resource identifier
-            roles: List of roles to assign
-        """
-        # Delete existing bindings for this group on this resource
-        existing_binding_ids = RoleBindingGroup.objects.filter(
-            group=group,
-            binding__resource_type=resource_type,
-            binding__resource_id=resource_id,
-            binding__tenant=self.tenant,
-        ).values_list("binding_id", flat=True)
-
-        # Remove group from these bindings
-        RoleBindingGroup.objects.filter(
-            group=group,
-            binding_id__in=existing_binding_ids,
-        ).delete()
-
-        # Clean up any orphaned bindings (bindings with no groups or principals)
-        RoleBinding.objects.filter(
-            id__in=existing_binding_ids,
-        ).annotate(
-            group_count=Count("group_entries"),
-            principal_count=Count("principal_entries"),
-        ).filter(
-            group_count=0,
-            principal_count=0,
-        ).delete()
-
-        # Create new bindings for each role
-        for role in roles:
-            binding, _ = RoleBinding.objects.get_or_create(
-                role=role,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                tenant=self.tenant,
-            )
-            RoleBindingGroup.objects.get_or_create(
-                group=group,
-                binding=binding,
-            )
-
-    def _update_bindings_for_principal(
-        self,
-        principal: Principal,
-        resource_type: str,
-        resource_id: str,
-        roles: list[RoleV2],
-    ) -> None:
-        """Update role bindings for a principal (user) on a resource.
-
-        This removes all existing bindings for the principal on the resource
-        and creates new bindings for the provided roles.
-
-        Args:
-            principal: The principal to update bindings for
-            resource_type: The resource type
-            resource_id: The resource identifier
-            roles: List of roles to assign
-        """
-        # Source identifier for bindings created via the V2 API
-        source = "v2_api"
-
-        # Delete existing bindings for this principal on this resource
-        existing_binding_ids = RoleBindingPrincipal.objects.filter(
-            principal=principal,
-            binding__resource_type=resource_type,
-            binding__resource_id=resource_id,
-            binding__tenant=self.tenant,
-        ).values_list("binding_id", flat=True)
-
-        # Remove principal from these bindings
-        RoleBindingPrincipal.objects.filter(
-            principal=principal,
-            binding_id__in=existing_binding_ids,
-        ).delete()
-
-        # Clean up any orphaned bindings (bindings with no groups or principals)
-        RoleBinding.objects.filter(
-            id__in=existing_binding_ids,
-        ).annotate(
-            group_count=Count("group_entries"),
-            principal_count=Count("principal_entries"),
-        ).filter(
-            group_count=0,
-            principal_count=0,
-        ).delete()
-
-        # Create new bindings for each role
-        for role in roles:
-            binding, _ = RoleBinding.objects.get_or_create(
-                role=role,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                tenant=self.tenant,
-            )
-            RoleBindingPrincipal.objects.get_or_create(
-                principal=principal,
-                binding=binding,
-                source=source,
-            )
