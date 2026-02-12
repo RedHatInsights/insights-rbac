@@ -2806,9 +2806,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch("management.workspace.utils.access.get_principal_from_request")
-    def test_is_user_allowed_v2_reloads_tenant_for_fresh_consistency_token(
-        self, mock_get_principal, mock_channel
-    ):
+    def test_is_user_allowed_v2_reloads_tenant_for_fresh_consistency_token(self, mock_get_principal, mock_channel):
         """Test that is_user_allowed_v2 reloads tenant from DB to get the latest consistency token.
 
         The tenant on request may be cached (via Redis TenantCache) with a stale
