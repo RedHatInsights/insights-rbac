@@ -248,16 +248,29 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         In V2, we use the Inventory API to check if the user has 'create' permission
         on the target workspace (from SpiceDB schema: create, view, edit, move, delete).
 
+        Also verifies the target workspace exists in the local database to prevent
+        information leakage: non-admin users receive 403 (not 400) for non-existent
+        target workspaces, so they cannot determine whether a workspace exists.
+
         Args:
             request: The HTTP request object
 
         Returns:
             bool: True if the user has 'create' permission on target workspace
         """
+        from management.workspace.model import Workspace
+
         target_workspace_id = self._get_target_workspace_id(request)
         if target_workspace_id is None:
             # Let validation handle missing/invalid parent_id
             return True
+
+        # Check if target workspace exists before calling Inventory API.
+        # This prevents information leakage: non-admin users get 403 for
+        # non-existent workspaces instead of 400 from the service layer.
+        if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
 
         # V2: Check 'create' permission on target workspace via Inventory API
         if not is_user_allowed_v2(request, "create", target_workspace_id):
@@ -272,16 +285,29 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         In V1, we use legacy role-based checks with 'write' operation.
 
+        Also verifies the target workspace exists in the local database to prevent
+        information leakage: non-admin users receive 403 (not 400) for non-existent
+        target workspaces, so they cannot determine whether a workspace exists.
+
         Args:
             request: The HTTP request object
 
         Returns:
             bool: True if the user has 'write' access on target workspace
         """
+        from management.workspace.model import Workspace
+
         target_workspace_id = self._get_target_workspace_id(request)
         if target_workspace_id is None:
             # Let validation handle missing/invalid parent_id
             return True
+
+        # Check if target workspace exists before checking permissions.
+        # This prevents information leakage: non-admin users get 403 for
+        # non-existent workspaces instead of 400 from the service layer.
+        if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
 
         # V1: Check 'write' operation on target workspace
         if not is_user_allowed_v1(request, "write", target_workspace_id):
