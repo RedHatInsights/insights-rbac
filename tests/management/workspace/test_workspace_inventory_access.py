@@ -446,10 +446,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_access_denied(self, mock_flag, mock_channel):
         """Test workspace access is denied when Inventory API returns not allowed.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with an intentionally ambiguous message so the user cannot
+        determine whether the resource exists or not.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -474,8 +474,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 with ambiguous message
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -863,10 +864,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_update_access_denied(self, mock_flag, mock_channel):
         """Test workspace update is denied when Inventory API returns not allowed.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with an intentionally ambiguous message so the user cannot
+        determine whether the resource exists or not.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -896,9 +897,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.put(url, updated_data, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            # User cannot tell if workspace doesn't exist or they lack access
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 with ambiguous message
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1008,10 +1009,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_patch_access_denied(self, mock_flag, mock_channel):
         """Test workspace partial update (PATCH) is denied when user lacks permissions.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with an intentionally ambiguous message so the user cannot
+        determine whether the resource exists or not.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -1038,8 +1039,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.patch(url, updated_data, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 with ambiguous message
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1104,10 +1106,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_delete_access_denied(self, mock_flag, mock_channel):
         """Test workspace deletion is denied when user lacks permissions.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with ambiguous message - permission check happens before
+        existence check to prevent timing-based existence leakage.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - Permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -1132,8 +1134,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.delete(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 - permission check happens before existence check
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -2800,3 +2803,57 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             request_proto = call_args[0][0]
 
             self.assertFalse(request_proto.HasField("consistency"))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch("management.workspace.utils.access.get_principal_from_request")
+    def test_is_user_allowed_v2_reloads_tenant_for_fresh_consistency_token(self, mock_get_principal, mock_channel):
+        """Test that is_user_allowed_v2 reloads tenant from DB to get the latest consistency token.
+
+        The tenant on request may be cached (via Redis TenantCache) with a stale
+        consistency token. The Kafka consumer updates the token in the DB, so
+        is_user_allowed_v2 must refresh_from_db before passing it to StreamedListObjects.
+        """
+        # Mock principal with user_id to skip IT service lookup
+        mock_principal = Mock()
+        mock_principal.user_id = "1111111"
+        mock_get_principal.return_value = mock_principal
+
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            # Set a stale token on the in-memory tenant (simulates cached tenant)
+            self.tenant.relations_consistency_token = "stale-token"
+            # Do NOT save — this is the in-memory (cached) state
+
+            # Update the DB directly with a fresh token (simulates Kafka consumer updating it)
+            Tenant.objects.filter(pk=self.tenant.pk).update(relations_consistency_token="fresh-db-token")
+
+            # Build a mock request whose tenant is the stale cached object
+            mock_request = Mock()
+            mock_request.user.username = "testuser"
+            mock_request.user.user_id = "1111111"
+            mock_request.user.org_id = self.tenant.org_id
+            mock_request.user.system = False
+            mock_request.tenant = self.tenant
+            mock_request.path = "/api/v2/workspaces/"
+            mock_request.method = "GET"
+            mock_request.req_id = "test-req-id"
+
+            is_user_allowed_v2(mock_request, "view", None)
+
+            # Verify StreamedListObjects was called
+            mock_stub.StreamedListObjects.assert_called_once()
+            call_args = mock_stub.StreamedListObjects.call_args
+            request_proto = call_args[0][0]
+
+            # The consistency token should be the fresh DB value, not the stale cached one
+            self.assertTrue(request_proto.HasField("consistency"))
+            self.assertEqual(
+                request_proto.consistency.at_least_as_fresh.token,
+                "fresh-db-token",
+            )
