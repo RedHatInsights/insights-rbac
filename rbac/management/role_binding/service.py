@@ -53,9 +53,7 @@ class UpdateRoleBindingResult:
     roles: list[RoleV2]
     resource_id: str
     resource_type: str
-    # One of these will be set based on subject_type
-    group: Optional[Group] = None
-    principal: Optional[Principal] = None
+    subject: Group | Principal
 
 
 logger = logging.getLogger(__name__)
@@ -612,8 +610,7 @@ class RoleBindingService:
 
         Raises:
             UnsupportedSubjectTypeError: If the subject type is not supported
-            SubjectNotFoundError: If the subject cannot be found
-            NotFoundError: If the resource cannot be found
+            NotFoundError: If the subject or resource cannot be found
             InvalidFieldError: If one or more roles cannot be found
         """
         self._validate_resource(resource_type, resource_id)
@@ -630,23 +627,13 @@ class RoleBindingService:
             roles=roles,
         )
 
-        # Build result based on subject type
-        if subject_type == SubjectType.GROUP:
-            result = UpdateRoleBindingResult(
-                subject_type=subject_type,
-                roles=roles,
-                resource_id=resource_id,
-                resource_type=resource_type,
-                group=subject,
-            )
-        else:
-            result = UpdateRoleBindingResult(
-                subject_type=subject_type,
-                roles=roles,
-                resource_id=resource_id,
-                resource_type=resource_type,
-                principal=subject,
-            )
+        result = UpdateRoleBindingResult(
+            subject_type=subject_type,
+            roles=roles,
+            resource_id=resource_id,
+            resource_type=resource_type,
+            subject=subject,
+        )
 
         logger.info(
             "Updated role bindings for %s '%s' on %s '%s': %d roles assigned",

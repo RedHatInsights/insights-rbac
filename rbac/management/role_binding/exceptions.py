@@ -17,11 +17,10 @@
 """Domain exceptions for RoleBinding operations."""
 
 # Re-export subject exceptions for backward compatibility
-from management.subject import SubjectNotFoundError, UnsupportedSubjectTypeError
+from management.subject import UnsupportedSubjectTypeError
 
 # Expose in __all__ for explicit re-export
 __all__ = [
-    "SubjectNotFoundError",
     "UnsupportedSubjectTypeError",
     "RoleBindingError",
 ]

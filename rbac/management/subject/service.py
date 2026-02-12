@@ -19,9 +19,10 @@
 from enum import StrEnum
 
 from django.db.models import Count, Q
+from management.exceptions import NotFoundError
 from management.group.model import Group
 from management.principal.model import Principal
-from management.subject.exceptions import SubjectNotFoundError, UnsupportedSubjectTypeError
+from management.subject.exceptions import UnsupportedSubjectTypeError
 from management.tenant_mapping.model import Tenant
 
 
@@ -71,14 +72,14 @@ class SubjectService:
             The Group object with principal count annotation
 
         Raises:
-            SubjectNotFoundError: If the group cannot be found
+            NotFoundError: If the group cannot be found
         """
         try:
             return Group.objects.annotate(
                 principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True)
             ).get(uuid=subject_id)
         except Group.DoesNotExist:
-            raise SubjectNotFoundError(SubjectType.GROUP, subject_id)
+            raise NotFoundError(SubjectType.GROUP, subject_id)
 
     def get_principal(self, subject_id: str) -> Principal:
         """Get a principal (user) by UUID.
@@ -90,12 +91,12 @@ class SubjectService:
             The Principal object
 
         Raises:
-            SubjectNotFoundError: If the principal cannot be found
+            NotFoundError: If the principal cannot be found
         """
         try:
             return Principal.objects.get(uuid=subject_id, tenant=self.tenant)
         except Principal.DoesNotExist:
-            raise SubjectNotFoundError(SubjectType.USER, subject_id)
+            raise NotFoundError(SubjectType.USER, subject_id)
 
     def get_subject(self, subject_type: str, subject_id: str) -> Group | Principal:
         """Get a subject by type and ID.
@@ -109,7 +110,7 @@ class SubjectService:
 
         Raises:
             UnsupportedSubjectTypeError: If the subject type is not supported
-            SubjectNotFoundError: If the subject cannot be found
+            NotFoundError: If the subject cannot be found
         """
         if subject_type == SubjectType.GROUP:
             return self.get_group(subject_id)

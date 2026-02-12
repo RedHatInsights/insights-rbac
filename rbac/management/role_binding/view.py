@@ -24,10 +24,7 @@ from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
-from management.role_binding.exceptions import (
-    SubjectNotFoundError,
-    UnsupportedSubjectTypeError,
-)
+from management.role_binding.exceptions import UnsupportedSubjectTypeError
 from management.subject import SubjectType
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import serializers, status
@@ -134,7 +131,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
                 subject_id=validated["subject_id"],
                 role_ids=role_ids,
             )
-        except (SubjectNotFoundError, NotFoundError) as e:
+        except NotFoundError as e:
             raise NotFound(detail=str(e))
         except (UnsupportedSubjectTypeError, InvalidFieldError) as e:
             raise serializers.ValidationError({getattr(e, "field", "detail"): str(e)})
@@ -142,16 +139,14 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         resource_name = service.get_resource_name(validated["resource_id"], validated["resource_type"])
         last_modified = max((role.modified for role in result.roles), default=None) if result.roles else None
 
-        if result.subject_type == SubjectType.GROUP and result.group:
-            subject = {"id": result.group.uuid, "type": SubjectType.GROUP}
-        elif result.subject_type == SubjectType.USER and result.principal:
-            subject = {
-                "id": result.principal.uuid,
-                "type": SubjectType.USER,
-                "user": {"username": result.principal.username},
-            }
+        if result.subject_type == SubjectType.GROUP:
+            subject = {"id": result.subject.uuid, "type": SubjectType.GROUP}
         else:
-            subject = {"type": result.subject_type}
+            subject = {
+                "id": result.subject.uuid,
+                "type": SubjectType.USER,
+                "user": {"username": result.subject.username},
+            }
 
         response_data = {
             "subject": subject,

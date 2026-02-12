@@ -22,17 +22,12 @@ Currently supported subjects are:
 - Users (individual principals)
 """
 
-from management.subject.exceptions import (
-    SubjectError,
-    SubjectNotFoundError,
-    UnsupportedSubjectTypeError,
-)
+from management.subject.exceptions import SubjectError, UnsupportedSubjectTypeError
 from management.subject.service import SubjectService, SubjectType
 
 __all__ = [
     "SubjectType",
     "SubjectError",
-    "SubjectNotFoundError",
     "UnsupportedSubjectTypeError",
     "SubjectService",
 ]

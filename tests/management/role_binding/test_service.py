@@ -932,11 +932,21 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
             role_ids=[str(self.role1.uuid), str(self.role2.uuid)],
         )
 
-        self.assertEqual(result.subject_type, "group")
-        self.assertEqual(result.group, self.group)
-        self.assertIsNone(result.principal)
-        self.assertEqual(len(result.roles), 2)
-        self.assertEqual({r.uuid for r in result.roles}, {self.role1.uuid, self.role2.uuid})
+        expected = {
+            "subject_type": "group",
+            "subject": self.group,
+            "resource_type": "workspace",
+            "resource_id": str(self.workspace.id),
+            "role_uuids": {self.role1.uuid, self.role2.uuid},
+        }
+        actual = {
+            "subject_type": result.subject_type,
+            "subject": result.subject,
+            "resource_type": result.resource_type,
+            "resource_id": result.resource_id,
+            "role_uuids": {r.uuid for r in result.roles},
+        }
+        self.assertEqual(actual, expected)
 
     def test_update_role_bindings_for_principal(self):
         """Test updating role bindings for a principal."""
@@ -948,11 +958,21 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
             role_ids=[str(self.role1.uuid)],
         )
 
-        self.assertEqual(result.subject_type, "user")
-        self.assertIsNone(result.group)
-        self.assertEqual(result.principal, self.principal)
-        self.assertEqual(len(result.roles), 1)
-        self.assertEqual(result.roles[0].uuid, self.role1.uuid)
+        expected = {
+            "subject_type": "user",
+            "subject": self.principal,
+            "resource_type": "workspace",
+            "resource_id": str(self.workspace.id),
+            "role_uuids": {self.role1.uuid},
+        }
+        actual = {
+            "subject_type": result.subject_type,
+            "subject": result.subject,
+            "resource_type": result.resource_type,
+            "resource_id": result.resource_id,
+            "role_uuids": {r.uuid for r in result.roles},
+        }
+        self.assertEqual(actual, expected)
 
     def test_update_replaces_existing_bindings(self):
         """Test that update replaces existing bindings."""
@@ -974,18 +994,31 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
             role_ids=[str(self.role2.uuid)],
         )
 
-        # Should have only role2 now
-        self.assertEqual(len(result.roles), 1)
-        self.assertEqual(result.roles[0].uuid, self.role2.uuid)
+        # Should have only role2 now (role1 was replaced)
+        expected = {
+            "subject_type": "group",
+            "subject": self.group,
+            "resource_type": "workspace",
+            "resource_id": str(self.workspace.id),
+            "role_uuids": {self.role2.uuid},
+        }
+        actual = {
+            "subject_type": result.subject_type,
+            "subject": result.subject,
+            "resource_type": result.resource_type,
+            "resource_id": result.resource_id,
+            "role_uuids": {r.uuid for r in result.roles},
+        }
+        self.assertEqual(actual, expected)
 
     def test_update_raises_error_for_invalid_group(self):
         """Test that update raises error for non-existent group."""
         import uuid
 
-        from management.subject import SubjectNotFoundError
+        from management.exceptions import NotFoundError
 
         fake_uuid = str(uuid.uuid4())
-        with self.assertRaises(SubjectNotFoundError):
+        with self.assertRaises(NotFoundError):
             self.service.update_role_bindings_for_subject(
                 resource_type="workspace",
                 resource_id=str(self.workspace.id),
@@ -998,10 +1031,10 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
         """Test that update raises error for non-existent principal."""
         import uuid
 
-        from management.subject import SubjectNotFoundError
+        from management.exceptions import NotFoundError
 
         fake_uuid = str(uuid.uuid4())
-        with self.assertRaises(SubjectNotFoundError):
+        with self.assertRaises(NotFoundError):
             self.service.update_role_bindings_for_subject(
                 resource_type="workspace",
                 resource_id=str(self.workspace.id),

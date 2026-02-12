@@ -40,6 +40,7 @@ from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService
+from management.subject import SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator
@@ -1259,8 +1260,8 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_update_role_bindings_for_group(self, mock_permission):
-        """Test updating role bindings for a group via PUT."""
+    def test_success_for_group(self, mock_permission):
+        """Test successful update for a group subject."""
         url = self._get_by_subject_url()
         response = self.client.put(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
@@ -1271,24 +1272,44 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("subject", response.data)
-        self.assertIn("roles", response.data)
-        self.assertIn("resource", response.data)
 
-        # Verify subject
-        self.assertEqual(response.data["subject"]["type"], "group")
-        self.assertEqual(str(response.data["subject"]["id"]), str(self.group.uuid))
+        # Verify last_modified exists
+        self.assertIn("last_modified", response.data)
 
-        # Verify roles
-        role_ids = {str(r["id"]) for r in response.data["roles"]}
-        self.assertEqual(role_ids, {str(self.role1.uuid), str(self.role2.uuid)})
+        # Convert response to comparable format (UUIDs to strings)
+        actual = response.data
+        actual_subject_id = str(actual["subject"]["id"])
+        actual_roles = [{"id": str(r["id"]), "name": r["name"]} for r in actual["roles"]]
+
+        expected = {
+            "subject": {"id": str(self.group.uuid), "type": SubjectType.GROUP},
+            "roles": [
+                {"id": str(self.role1.uuid), "name": self.role1.name},
+                {"id": str(self.role2.uuid), "name": self.role2.name},
+            ],
+            "resource": {
+                "id": str(self.workspace.id),
+                "type": "workspace",
+                "name": self.workspace.name,
+            },
+            "last_modified": actual["last_modified"],  # Dynamic field
+        }
+
+        # Compare by converting response UUIDs to strings
+        actual_normalized = {
+            "subject": {"id": actual_subject_id, "type": actual["subject"]["type"]},
+            "roles": actual_roles,
+            "resource": actual["resource"],
+            "last_modified": actual["last_modified"],
+        }
+        self.assertEqual(actual_normalized, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_update_role_bindings_for_principal(self, mock_permission):
-        """Test updating role bindings for a principal via PUT."""
+    def test_success_for_principal(self, mock_permission):
+        """Test successful update for a principal/user subject."""
         url = self._get_by_subject_url()
         response = self.client.put(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
@@ -1300,17 +1321,47 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Verify subject
-        self.assertEqual(response.data["subject"]["type"], "user")
-        self.assertEqual(str(response.data["subject"]["id"]), str(self.principal.uuid))
-        self.assertIn("user", response.data["subject"])
-        self.assertEqual(response.data["subject"]["user"]["username"], self.principal.username)
+        # Verify last_modified exists
+        self.assertIn("last_modified", response.data)
+
+        # Convert response to comparable format (UUIDs to strings)
+        actual = response.data
+        actual_subject_id = str(actual["subject"]["id"])
+        actual_roles = [{"id": str(r["id"]), "name": r["name"]} for r in actual["roles"]]
+
+        expected = {
+            "subject": {
+                "id": str(self.principal.uuid),
+                "type": SubjectType.USER,
+                "user": {"username": self.principal.username},
+            },
+            "roles": [{"id": str(self.role1.uuid), "name": self.role1.name}],
+            "resource": {
+                "id": str(self.workspace.id),
+                "type": "workspace",
+                "name": self.workspace.name,
+            },
+            "last_modified": actual["last_modified"],  # Dynamic field
+        }
+
+        # Compare by converting response UUIDs to strings
+        actual_normalized = {
+            "subject": {
+                "id": actual_subject_id,
+                "type": actual["subject"]["type"],
+                "user": actual["subject"]["user"],
+            },
+            "roles": actual_roles,
+            "resource": actual["resource"],
+            "last_modified": actual["last_modified"],
+        }
+        self.assertEqual(actual_normalized, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_update_replaces_existing_bindings(self, mock_permission):
+    def test_replaces_existing_bindings(self, mock_permission):
         """Test that PUT replaces existing bindings."""
         url = self._get_by_subject_url()
 
@@ -1323,7 +1374,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
             **self.headers,
         )
 
-        # Second update with role2
+        # Second update with role2 (should replace role1)
         response = self.client.put(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
             f"&subject_id={self.group.uuid}&subject_type=group",
@@ -1334,112 +1385,248 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Verify only role2 in response
-        self.assertEqual(len(response.data["roles"]), 1)
-        self.assertEqual(str(response.data["roles"][0]["id"]), str(self.role2.uuid))
+        # Verify last_modified exists
+        self.assertIn("last_modified", response.data)
 
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_update_missing_resource_id_returns_400(self, mock_permission):
-        """Test that missing resource_id returns 400."""
-        url = self._get_by_subject_url()
-        response = self.client.put(
-            f"{url}?resource_type=workspace&subject_id={self.group.uuid}&subject_type=group",
-            data={"roles": [{"id": str(self.role1.uuid)}]},
-            format="json",
-            **self.headers,
-        )
+        # Convert response to comparable format (UUIDs to strings)
+        actual = response.data
+        actual_subject_id = str(actual["subject"]["id"])
+        actual_roles = [{"id": str(r["id"]), "name": r["name"]} for r in actual["roles"]]
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # Should only have role2 (role1 was replaced)
         expected = {
-            "status": 400,
-            "title": "The request payload contains invalid syntax.",
-            "detail": "This field is required.",
-            "errors": [{"message": "This field is required.", "field": "resource_id"}],
-            "instance": "/api/v2/role-bindings/by-subject/",
+            "subject": {"id": str(self.group.uuid), "type": SubjectType.GROUP},
+            "roles": [{"id": str(self.role2.uuid), "name": self.role2.name}],
+            "resource": {
+                "id": str(self.workspace.id),
+                "type": "workspace",
+                "name": self.workspace.name,
+            },
+            "last_modified": actual["last_modified"],  # Dynamic field
         }
-        self.assertEqual(response.data, expected)
 
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_update_empty_roles_returns_400(self, mock_permission):
-        """Test that empty roles list returns 400."""
-        url = self._get_by_subject_url()
-        response = self.client.put(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
-            f"&subject_id={self.group.uuid}&subject_type=group",
-            data={"roles": []},
-            format="json",
-            **self.headers,
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        expected = {
-            "status": 400,
-            "title": "The request payload contains invalid syntax.",
-            "detail": "At least one role is required.",
-            "errors": [{"message": "At least one role is required.", "field": "roles"}],
-            "instance": "/api/v2/role-bindings/by-subject/",
+        # Compare by converting response UUIDs to strings
+        actual_normalized = {
+            "subject": {"id": actual_subject_id, "type": actual["subject"]["type"]},
+            "roles": actual_roles,
+            "resource": actual["resource"],
+            "last_modified": actual["last_modified"],
         }
-        self.assertEqual(response.data, expected)
+        self.assertEqual(actual_normalized, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_update_invalid_group_returns_404(self, mock_permission):
-        """Test that invalid group UUID returns 404."""
+    def test_missing_required_query_params_returns_400(self, mock_permission):
+        """Test that missing required query parameters return 400."""
         url = self._get_by_subject_url()
-        fake_uuid = str(uuid.uuid4())
-        response = self.client.put(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
-            f"&subject_id={fake_uuid}&subject_type=group",
-            data={"roles": [{"id": str(self.role1.uuid)}]},
-            format="json",
-            **self.headers,
-        )
+        body = {"roles": [{"id": str(self.role1.uuid)}]}
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        expected = {
-            "status": 404,
-            "title": "Not found.",
-            "detail": f"Subject not found: group with id '{fake_uuid}'",
-            "errors": [{"message": f"Subject not found: group with id '{fake_uuid}'", "field": "detail"}],
-            "instance": "/api/v2/role-bindings/by-subject/",
-        }
-        self.assertEqual(response.data, expected)
+        # Each case: (query_string, missing_field)
+        test_cases = [
+            # Missing resource_id
+            (
+                f"resource_type=workspace&subject_id={self.group.uuid}&subject_type=group",
+                "resource_id",
+            ),
+            # Missing resource_type
+            (
+                f"resource_id={self.workspace.id}&subject_id={self.group.uuid}&subject_type=group",
+                "resource_type",
+            ),
+            # Missing subject_id
+            (
+                f"resource_id={self.workspace.id}&resource_type=workspace&subject_type=group",
+                "subject_id",
+            ),
+            # Missing subject_type
+            (
+                f"resource_id={self.workspace.id}&resource_type=workspace&subject_id={self.group.uuid}",
+                "subject_type",
+            ),
+        ]
 
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_update_invalid_role_returns_400(self, mock_permission):
-        """Test that non-existent role UUID returns 400 (roles error)."""
-        url = self._get_by_subject_url()
-        fake_uuid = str(uuid.uuid4())
-        response = self.client.put(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
-            f"&subject_id={self.group.uuid}&subject_type=group",
-            data={"roles": [{"id": fake_uuid}]},
-            format="json",
-            **self.headers,
-        )
+        for query_string, missing_field in test_cases:
+            with self.subTest(missing_field=missing_field):
+                response = self.client.put(
+                    f"{url}?{query_string}",
+                    data=body,
+                    format="json",
+                    **self.headers,
+                )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        expected = {
-            "status": 400,
-            "title": "The request payload contains invalid syntax.",
-            "detail": f"Invalid field 'roles': The following roles do not exist: {fake_uuid}",
-            "errors": [
-                {
-                    "message": f"Invalid field 'roles': The following roles do not exist: {fake_uuid}",
-                    "field": "roles",
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                expected = {
+                    "status": 400,
+                    "title": "The request payload contains invalid syntax.",
+                    "detail": "This field is required.",
+                    "errors": [{"message": "This field is required.", "field": missing_field}],
+                    "instance": "/api/v2/role-bindings/by-subject/",
                 }
-            ],
-            "instance": "/api/v2/role-bindings/by-subject/",
-        }
-        self.assertEqual(response.data, expected)
+                self.assertEqual(response.data, expected)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_missing_or_invalid_body_returns_400(self, mock_permission):
+        """Test that missing or invalid request body returns 400."""
+        url = self._get_by_subject_url()
+        query_string = (
+            f"resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group"
+        )
+
+        # Each case: (body, expected_field, expected_message)
+        test_cases = [
+            # Empty roles list
+            (
+                {"roles": []},
+                "roles",
+                "At least one role is required.",
+            ),
+            # Missing roles key
+            (
+                {},
+                "roles",
+                "This field is required.",
+            ),
+            # Empty body (None becomes {} in DRF)
+            (
+                None,
+                "roles",
+                "This field is required.",
+            ),
+        ]
+
+        for body, expected_field, expected_message in test_cases:
+            with self.subTest(body=body, expected_field=expected_field):
+                response = self.client.put(
+                    f"{url}?{query_string}",
+                    data=body,
+                    format="json",
+                    **self.headers,
+                )
+
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                expected = {
+                    "status": 400,
+                    "title": "The request payload contains invalid syntax.",
+                    "detail": expected_message,
+                    "errors": [{"message": expected_message, "field": expected_field}],
+                    "instance": "/api/v2/role-bindings/by-subject/",
+                }
+                self.assertEqual(response.data, expected)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_not_found_returns_404(self, mock_permission):
+        """Test that non-existent entities return 404."""
+        url = self._get_by_subject_url()
+
+        # Each case: (description, query_params_fn, body_fn, detail_fn)
+        # Using lambdas to generate dynamic UUIDs per test case
+        def make_cases():
+            fake_group_id = str(uuid.uuid4())
+            fake_principal_id = str(uuid.uuid4())
+            fake_workspace_id = str(uuid.uuid4())
+
+            return [
+                # Non-existent group
+                (
+                    "invalid_group",
+                    f"resource_id={self.workspace.id}&resource_type=workspace"
+                    f"&subject_id={fake_group_id}&subject_type=group",
+                    {"roles": [{"id": str(self.role1.uuid)}]},
+                    f"group with id '{fake_group_id}' not found",
+                ),
+                # Non-existent principal/user
+                (
+                    "invalid_principal",
+                    f"resource_id={self.workspace.id}&resource_type=workspace"
+                    f"&subject_id={fake_principal_id}&subject_type=user",
+                    {"roles": [{"id": str(self.role1.uuid)}]},
+                    f"user with id '{fake_principal_id}' not found",
+                ),
+                # Non-existent workspace
+                (
+                    "invalid_resource",
+                    f"resource_id={fake_workspace_id}&resource_type=workspace"
+                    f"&subject_id={self.group.uuid}&subject_type=group",
+                    {"roles": [{"id": str(self.role1.uuid)}]},
+                    f"workspace with id '{fake_workspace_id}' not found",
+                ),
+            ]
+
+        for description, query_params, body, expected_detail in make_cases():
+            with self.subTest(case=description):
+                response = self.client.put(
+                    f"{url}?{query_params}",
+                    data=body,
+                    format="json",
+                    **self.headers,
+                )
+
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+                expected = {
+                    "status": 404,
+                    "title": "Not found.",
+                    "detail": expected_detail,
+                    "errors": [{"message": expected_detail, "field": "detail"}],
+                    "instance": "/api/v2/role-bindings/by-subject/",
+                }
+                self.assertEqual(response.data, expected)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_domain_validation_returns_400(self, mock_permission):
+        """Test that domain validation errors return 400."""
+        url = self._get_by_subject_url()
+
+        def make_cases():
+            fake_role_id = str(uuid.uuid4())
+
+            return [
+                # Non-existent role
+                (
+                    "invalid_role",
+                    f"resource_id={self.workspace.id}&resource_type=workspace"
+                    f"&subject_id={self.group.uuid}&subject_type=group",
+                    {"roles": [{"id": fake_role_id}]},
+                    f"Invalid field 'roles': The following roles do not exist: {fake_role_id}",
+                    "roles",
+                ),
+                # Unsupported subject type
+                (
+                    "unsupported_subject_type",
+                    f"resource_id={self.workspace.id}&resource_type=workspace"
+                    f"&subject_id={self.group.uuid}&subject_type=invalid_type",
+                    {"roles": [{"id": str(self.role1.uuid)}]},
+                    "Unsupported subject type: 'invalid_type'. Supported types: group, user",
+                    "detail",
+                ),
+            ]
+
+        for description, query_params, body, expected_detail, expected_field in make_cases():
+            with self.subTest(case=description):
+                response = self.client.put(
+                    f"{url}?{query_params}",
+                    data=body,
+                    format="json",
+                    **self.headers,
+                )
+
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                expected = {
+                    "status": 400,
+                    "title": "The request payload contains invalid syntax.",
+                    "detail": expected_detail,
+                    "errors": [{"message": expected_detail, "field": expected_field}],
+                    "instance": "/api/v2/role-bindings/by-subject/",
+                }
+                self.assertEqual(response.data, expected)

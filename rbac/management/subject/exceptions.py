@@ -23,16 +23,6 @@ class SubjectError(Exception):
     pass
 
 
-class SubjectNotFoundError(SubjectError):
-    """Raised when the specified subject cannot be found."""
-
-    def __init__(self, subject_type: str, subject_id: str):
-        """Initialize with the subject details."""
-        self.subject_type = subject_type
-        self.subject_id = subject_id
-        super().__init__(f"Subject not found: {subject_type} with id '{subject_id}'")
-
-
 class UnsupportedSubjectTypeError(SubjectError):
     """Raised when an unsupported subject type is provided."""
 
