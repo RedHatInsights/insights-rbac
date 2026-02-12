@@ -26,7 +26,7 @@ from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
-from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
+from management.workspace.filters import WorkspaceAccessFilterBackend
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
@@ -54,7 +54,7 @@ class WorkspacePagination(V2ResultsSetPagination):
     max_limit = 3000
 
 
-class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
+class WorkspaceViewSet(BaseV2ViewSet):
     """Workspace View.
 
     A viewset that provides default `create()`, `destroy` and `retrieve()`.

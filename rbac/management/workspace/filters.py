@@ -107,25 +107,3 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
             permitted_ws_ids = [tuple[1] for tuple in request.permission_tuples]
             return queryset.filter(id__in=permitted_ws_ids)
         return queryset
-
-
-class WorkspaceObjectAccessMixin:
-    """
-    Mixin for workspace detail views.
-
-    Access control is handled by WorkspaceAccessPermission (returns 403 for
-    denied access). This mixin provides the standard DRF get_object() behavior
-    where a 404 is returned only for truly non-existent resources.
-    """
-
-    def get_object(self):
-        """
-        Get object from the filtered queryset.
-
-        Access is already checked by WorkspaceAccessPermission (403).
-        If the workspace doesn't exist, DRF raises 404.
-        """
-        # Access check is done by WorkspaceAccessPermission
-        # FilterBackend filters queryset to the specific workspace by ID
-        # DRF raises 404 only if the workspace doesn't exist
-        return super().get_object()
