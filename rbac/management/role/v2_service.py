@@ -59,28 +59,35 @@ class RoleV2Service:
         self.tenant = tenant
         self.permission_service = PermissionService()
 
-    def get_role(self, uuid: UUID) -> RoleV2:
+    def get_role(self, uuid: str | UUID) -> RoleV2:
         """
         Get a single role by UUID.
 
         Args:
-            uuid: The UUID of the role to retrieve
+            uuid: The UUID of the role to retrieve (string or UUID object)
 
         Returns:
             RoleV2 instance
 
         Raises:
-            RoleNotFoundError: If role not found for this tenant
+            RoleNotFoundError: If role not found for this tenant or if UUID format is invalid
         """
+        # Convert string to UUID if needed, raise RoleNotFoundError for invalid format
         try:
-            role = RoleV2.objects.filter(tenant=self.tenant, uuid=uuid).prefetch_related("permissions").get()
+            uuid_obj = UUID(uuid) if isinstance(uuid, str) else uuid
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Invalid UUID format: {uuid}")
+            raise RoleNotFoundError(uuid) from e
+
+        try:
+            role = RoleV2.objects.filter(tenant=self.tenant, uuid=uuid_obj).prefetch_related("permissions").get()
             tenant_org_id = self.tenant.org_id if self.tenant else "unknown"
-            logger.debug(f"Retrieved role {uuid} for tenant {tenant_org_id}")
+            logger.debug(f"Retrieved role {uuid_obj} for tenant {tenant_org_id}")
             return role
         except RoleV2.DoesNotExist:
             tenant_org_id = self.tenant.org_id if self.tenant else "unknown"
-            logger.warning(f"Role {uuid} not found for tenant {tenant_org_id}")
-            raise RoleNotFoundError(uuid)
+            logger.warning(f"Role {uuid_obj} not found for tenant {tenant_org_id}")
+            raise RoleNotFoundError(uuid_obj)
 
     @atomic
     def create(

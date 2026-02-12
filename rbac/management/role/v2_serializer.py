@@ -101,6 +101,35 @@ class RoleFieldSelection(FieldSelection):
     VALID_ROOT_FIELDS = set(RoleV2ResponseSerializer.Meta.fields)
 
 
+def _validate_fields_parameter(value: str, default_fields: set) -> set:
+    """
+    Validate and parse the fields parameter for role endpoints.
+
+    Args:
+        value: The raw fields parameter value from request
+        default_fields: The default fields to return when value is empty
+
+    Returns:
+        Set of field names to include in response
+
+    Raises:
+        ValidationError: If fields parameter has invalid syntax
+    """
+    if not value:
+        return default_fields
+
+    try:
+        field_selection = RoleFieldSelection.parse(value)
+    except FieldSelectionValidationError as e:
+        raise serializers.ValidationError(e.message)
+
+    if not field_selection:
+        return default_fields
+
+    resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+    return resolved or default_fields
+
+
 class RoleV2ListSerializer(serializers.Serializer):
     """Input serializer for RoleV2 list query parameters."""
 
@@ -120,18 +149,24 @@ class RoleV2ListSerializer(serializers.Serializer):
 
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
-        if not value:
-            return RoleV2Service.DEFAULT_LIST_FIELDS
-        try:
-            field_selection = RoleFieldSelection.parse(value)
-        except FieldSelectionValidationError as e:
-            raise serializers.ValidationError(e.message)
+        return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
 
-        if not field_selection:
-            return RoleV2Service.DEFAULT_LIST_FIELDS
 
-        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return resolved or RoleV2Service.DEFAULT_LIST_FIELDS
+class RoleV2RetrieveSerializer(serializers.Serializer):
+    """Input serializer for RoleV2 retrieve query parameters."""
+
+    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
+
+    def to_internal_value(self, data):
+        """Sanitize input data by stripping NUL bytes before field validation."""
+        sanitized = {
+            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
+        }
+        return super().to_internal_value(sanitized)
+
+    def validate_fields(self, value):
+        """Parse, validate, and resolve fields parameter into a set of field names."""
+        return _validate_fields_parameter(value, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
