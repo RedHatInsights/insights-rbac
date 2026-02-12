@@ -32,6 +32,7 @@ import uuid
 
 from feature_flags import FEATURE_FLAGS
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
+from management.workspace.model import Workspace
 from management.workspace.utils import (
     is_user_allowed_v1,
     is_user_allowed_v2,
@@ -39,7 +40,6 @@ from management.workspace.utils import (
     permission_from_request,
     workspace_from_request,
 )
-from management.workspace.model import Workspace
 from rest_framework import permissions
 
 # Custom message for target workspace access denial
