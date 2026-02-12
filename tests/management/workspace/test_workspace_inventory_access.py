@@ -19,6 +19,7 @@
 import random
 import string
 from importlib import reload
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
@@ -39,8 +40,13 @@ from management.models import (
 )
 from management.permissions.workspace_access import (
     TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE,
+    WorkspaceAccessPermission,
+)
+from management.permissions.workspace_inventory_access import (
+    WorkspaceInventoryAccessChecker,
 )
 from management.workspace.service import WorkspaceService
+from management.workspace.utils.access import is_user_allowed_v2
 from rest_framework import status
 from rest_framework.test import APIClient
 from tests.identity_request import BaseIdentityRequest
@@ -440,10 +446,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_access_denied(self, mock_flag, mock_channel):
         """Test workspace access is denied when Inventory API returns not allowed.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with an intentionally ambiguous message so the user cannot
+        determine whether the resource exists or not.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -468,8 +474,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 with ambiguous message
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -857,10 +864,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_update_access_denied(self, mock_flag, mock_channel):
         """Test workspace update is denied when Inventory API returns not allowed.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with an intentionally ambiguous message so the user cannot
+        determine whether the resource exists or not.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -890,9 +897,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.put(url, updated_data, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            # User cannot tell if workspace doesn't exist or they lack access
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 with ambiguous message
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1002,10 +1009,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_patch_access_denied(self, mock_flag, mock_channel):
         """Test workspace partial update (PATCH) is denied when user lacks permissions.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with an intentionally ambiguous message so the user cannot
+        determine whether the resource exists or not.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -1032,8 +1039,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.patch(url, updated_data, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 with ambiguous message
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1098,10 +1106,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_delete_access_denied(self, mock_flag, mock_channel):
         """Test workspace deletion is denied when user lacks permissions.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 with ambiguous message - permission check happens before
+        existence check to prevent timing-based existence leakage.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - Permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -1126,8 +1134,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.delete(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 - permission check happens before existence check
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1384,9 +1393,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         self, mock_get_principal, mock_proxy_class, mock_channel
     ):
         """Test workspace access when get_principal_from_request returns None, falls back to IT service."""
-        from management.principal.model import Principal
-        from management.workspace.utils.access import is_user_allowed_v2
-
         # Mock PrincipalProxy to return user_id from IT service
         test_user_id = "it-service-user-456"
         mock_proxy = MagicMock()
@@ -1441,7 +1447,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_access_with_none_principal_it_service_failure(self, mock_get_principal, mock_proxy_class):
         """Test workspace access when IT service fails to return user_id."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         # Mock PrincipalProxy to return error
         mock_proxy = MagicMock()
@@ -1481,7 +1486,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         self, mock_get_principal, mock_proxy_class
     ):
         """Test workspace access when IT service returns empty data."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         # Mock PrincipalProxy to return empty data
         mock_proxy = MagicMock()
@@ -1518,7 +1522,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_access_with_none_principal_and_no_username(self, mock_get_principal):
         """Test workspace access when get_principal_from_request returns None and no username available."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         # Create a mock request with no username and no user_id
         mock_request = Mock()
@@ -1543,7 +1546,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_workspace_access_with_none_principal_and_no_org_id(self, mock_get_principal):
         """Test workspace access when get_principal_from_request returns None and no org_id available."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         # Create a mock request with username but no org_id or user_id
         mock_request = Mock()
@@ -1573,7 +1575,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         self, mock_get_principal, mock_proxy_class, mock_channel
     ):
         """Test that workspace access logs debug message when user_id retrieved from IT service."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         # Mock PrincipalProxy to return user_id from IT service
         test_user_id = "it-service-user-789"
@@ -1701,9 +1702,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     def test_workspace_inventory_access_checker_pagination_constants(self):
         """Test that WorkspaceInventoryAccessChecker uses correct pagination constants."""
-        from management.permissions.workspace_inventory_access import (
-            WorkspaceInventoryAccessChecker,
-        )
 
         checker = WorkspaceInventoryAccessChecker()
         # Verify PAGE_SIZE is set to 1000 for pagination
@@ -1715,9 +1713,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     @patch("management.inventory_client.create_client_channel_inventory")
     def test_lookup_accessible_workspaces_duplicate_continuation_token_guard(self, mock_channel, mock_logger):
         """Guard rail: stop when the server returns the same continuation token that was sent."""
-        from management.permissions.workspace_inventory_access import (
-            WorkspaceInventoryAccessChecker,
-        )
 
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -1763,9 +1758,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     @patch("management.inventory_client.create_client_channel_inventory")
     def test_lookup_accessible_workspaces_max_pages_guard(self, mock_channel, mock_logger):
         """Guard rail: stop pagination when MAX_PAGES is reached even if server keeps returning tokens."""
-        from management.permissions.workspace_inventory_access import (
-            WorkspaceInventoryAccessChecker,
-        )
 
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2257,7 +2249,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     def test_system_user_with_admin_bypasses_v2_access_checks(self):
         """Test that system users (s2s communication) with admin=True bypass v2 access checks."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         # Create a mock request for a system user with admin privileges
         mock_request = Mock()
@@ -2273,7 +2264,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     def test_system_user_without_admin_denied_in_v2_access_checks(self):
         """Test that system users (s2s communication) without admin=True are denied access in v2."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         # Create a mock request for a system user without admin privileges
         mock_request = Mock()
@@ -2293,10 +2283,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         This validates the default-deny behavior in is_system_user_admin when the
         admin attribute is missing from the user object.
         """
-        from types import SimpleNamespace
-
-        from management.workspace.utils.access import is_user_allowed_v2
-
         # Create a mock request for a system user WITHOUT an admin attribute
         mock_request = Mock()
         mock_request.user = SimpleNamespace(system=True)  # No admin attribute
@@ -2310,7 +2296,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     def test_system_user_admin_bypasses_v2_for_any_operation(self):
         """Test that system admin users bypass v2 access checks for all operations."""
-        from management.workspace.utils.access import is_user_allowed_v2
 
         operations = ["view", "create", "edit", "move", "delete"]
 
@@ -2331,7 +2316,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_permission_class_system_admin_bypasses_v2_for_list(self, mock_flag, mock_is_user_allowed_v2):
         """Test that WorkspaceAccessPermission bypasses v2 checks for system admin users on list action."""
-        from management.permissions.workspace_access import WorkspaceAccessPermission
 
         permission = WorkspaceAccessPermission()
 
@@ -2362,7 +2346,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     )
     def test_permission_class_system_non_admin_denied(self, mock_flag, mock_is_user_allowed_v2):
         """Test that WorkspaceAccessPermission denies access for system users without admin."""
-        from management.permissions.workspace_access import WorkspaceAccessPermission
 
         permission = WorkspaceAccessPermission()
 
@@ -2396,7 +2379,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         self, mock_flag, mock_is_user_allowed_v2, mock_workspace_objects
     ):
         """Test that system admin users performing move use v1 target existence check, not v2."""
-        from management.permissions.workspace_access import WorkspaceAccessPermission
 
         permission = WorkspaceAccessPermission()
 
@@ -2442,10 +2424,6 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         This tests the deny branch of the v1 existence logic for system users,
         asserting that v2 is never called even in the deny case.
         """
-        from management.permissions.workspace_access import (
-            TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE,
-            WorkspaceAccessPermission,
-        )
 
         permission = WorkspaceAccessPermission()
 
@@ -2743,3 +2721,85 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             returned_ids = {str(ws["id"]) for ws in response.data["data"]}
             self.assertIn(str(self.default_workspace.id), returned_ids)
+
+    def test_build_streamed_request_with_consistency_token(self):
+        """Test that _build_streamed_request sets consistency when a token is provided."""
+
+        checker = WorkspaceInventoryAccessChecker()
+        token_value = "test-consistency-token-abc123"
+        request = checker._build_streamed_request(
+            principal_id="localhost/testuser",
+            relation="view",
+            continuation_token=None,
+            consistency_token=token_value,
+        )
+
+        self.assertTrue(request.HasField("consistency"))
+        self.assertEqual(
+            request.consistency.at_least_as_fresh.token,
+            token_value,
+        )
+
+    def test_build_streamed_request_without_consistency_token(self):
+        """Test that _build_streamed_request does not set consistency when no token is provided."""
+
+        checker = WorkspaceInventoryAccessChecker()
+        request = checker._build_streamed_request(
+            principal_id="localhost/testuser",
+            relation="view",
+            continuation_token=None,
+            consistency_token=None,
+        )
+
+        self.assertFalse(request.HasField("consistency"))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    def test_lookup_accessible_workspaces_passes_consistency_token_to_request(self, mock_channel):
+        """Test that consistency_token parameter is used in the actual StreamedListObjects gRPC call."""
+
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            checker = WorkspaceInventoryAccessChecker()
+            checker.lookup_accessible_workspaces(
+                principal_id="localhost/testuser",
+                relation="view",
+                consistency_token="my-token-xyz",
+            )
+
+            mock_stub.StreamedListObjects.assert_called_once()
+            call_args = mock_stub.StreamedListObjects.call_args
+            request_proto = call_args[0][0]
+
+            self.assertTrue(request_proto.HasField("consistency"))
+            self.assertEqual(request_proto.consistency.at_least_as_fresh.token, "my-token-xyz")
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    def test_lookup_accessible_workspaces_no_consistency_when_token_is_none(self, mock_channel):
+        """Test that consistency field is not set when consistency_token is None."""
+
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            checker = WorkspaceInventoryAccessChecker()
+            checker.lookup_accessible_workspaces(
+                principal_id="localhost/testuser",
+                relation="view",
+                consistency_token=None,
+            )
+
+            mock_stub.StreamedListObjects.assert_called_once()
+            call_args = mock_stub.StreamedListObjects.call_args
+            request_proto = call_args[0][0]
+
+            self.assertFalse(request_proto.HasField("consistency"))

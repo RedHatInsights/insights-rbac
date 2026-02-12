@@ -17,9 +17,11 @@
 """Service for RoleV2 management."""
 
 import logging
+from typing import List
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import Count, QuerySet
 from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
@@ -46,8 +48,11 @@ class RoleV2Service:
     to HTTP-level errors by the serializer layer.
     """
 
-    def __init__(self):
-        """Initialize the service with its dependencies."""
+    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
+
+    def __init__(self, tenant: Tenant | None = None):
+        """Initialize the service."""
+        self.tenant = tenant
         self.permission_service = PermissionService()
 
     @atomic
@@ -111,7 +116,24 @@ class RoleV2Service:
             logger.exception("Database error creating role '%s'", name)
             raise RoleDatabaseError()
 
-    def get_assignable_roles(self, role_ids: list[str]) -> list[RoleV2]:
+    def list(self, params: dict) -> QuerySet:
+        """Get a list of roles for the tenant."""
+        queryset = RoleV2.objects.filter(tenant=self.tenant).exclude(type=RoleV2.Types.PLATFORM)
+
+        name = params.get("name")
+        if name:
+            queryset = queryset.filter(name__exact=name)
+
+        fields = params.get("fields")
+        if fields:
+            if "permissions_count" in fields:
+                queryset = queryset.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+            if "permissions" in fields:
+                queryset = queryset.prefetch_related("permissions")
+
+        return queryset
+
+    def get_assignable_roles(self, role_ids: List[str]) -> List[RoleV2]:
         """Get roles by UUIDs that can be assigned to bindings.
 
         Only custom and seeded roles can be directly assigned.
@@ -121,11 +143,6 @@ class RoleV2Service:
             role_ids: List of role UUIDs to retrieve
 
         Returns:
-            List of RoleV2 objects (excludes platform roles)
-
-        Note:
-            This method returns only the roles that exist and are assignable.
-            It does not validate that all requested role_ids were found.
-            Callers should check the returned count if validation is needed.
+            List of RoleV2 objects that exist and are assignable
         """
-        return list(RoleV2.objects.filter(uuid__in=role_ids).exclude(type=RoleV2.Types.PLATFORM))
+        return [r for r in RoleV2.objects.filter(uuid__in=role_ids).exclude(type=RoleV2.Types.PLATFORM)]
