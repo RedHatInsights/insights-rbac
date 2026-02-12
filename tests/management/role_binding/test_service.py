@@ -20,7 +20,8 @@ from django.test import TestCase
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import FieldSelection, RoleBindingByGroupSerializer
+from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
+from management.utils import FieldSelectionValidationError
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import TenantMapping
 
@@ -28,112 +29,102 @@ from tests.identity_request import IdentityRequest
 
 
 class FieldSelectionTests(TestCase):
-    """Tests for FieldSelection dataclass and parsing."""
+    """Tests for RoleBindingFieldSelection dataclass and parsing."""
 
     def test_parse_returns_none_for_empty_string(self):
         """Test that parse returns None for empty string."""
-        result = FieldSelection.parse("")
+        result = RoleBindingFieldSelection.parse("")
         self.assertIsNone(result)
 
     def test_parse_returns_none_for_none(self):
         """Test that parse returns None for None input."""
-        result = FieldSelection.parse(None)
+        result = RoleBindingFieldSelection.parse(None)
         self.assertIsNone(result)
 
     def test_parse_root_level_field(self):
         """Test parsing a root level field."""
-        result = FieldSelection.parse("last_modified")
+        result = RoleBindingFieldSelection.parse("last_modified")
         self.assertIsNotNone(result)
         self.assertIn("last_modified", result.root_fields)
 
     def test_parse_subject_fields(self):
         """Test parsing subject fields."""
-        result = FieldSelection.parse("subject(group.name,group.description)")
+        result = RoleBindingFieldSelection.parse("subject(group.name,group.description)")
         self.assertIsNotNone(result)
-        self.assertIn("group.name", result.subject_fields)
-        self.assertIn("group.description", result.subject_fields)
+        self.assertIn("group.name", result.get_nested("subject"))
+        self.assertIn("group.description", result.get_nested("subject"))
 
     def test_parse_role_fields(self):
         """Test parsing role fields."""
-        result = FieldSelection.parse("role(name,id)")
+        result = RoleBindingFieldSelection.parse("role(name,id)")
         self.assertIsNotNone(result)
-        self.assertIn("name", result.role_fields)
-        self.assertIn("id", result.role_fields)
+        self.assertIn("name", result.get_nested("role"))
+        self.assertIn("id", result.get_nested("role"))
 
     def test_parse_resource_fields(self):
         """Test parsing resource fields."""
-        result = FieldSelection.parse("resource(name,type)")
+        result = RoleBindingFieldSelection.parse("resource(name,type)")
         self.assertIsNotNone(result)
-        self.assertIn("name", result.resource_fields)
-        self.assertIn("type", result.resource_fields)
+        self.assertIn("name", result.get_nested("resource"))
+        self.assertIn("type", result.get_nested("resource"))
 
     def test_parse_multiple_objects(self):
         """Test parsing multiple object field selections."""
-        result = FieldSelection.parse("subject(group.name),role(name),resource(type)")
+        result = RoleBindingFieldSelection.parse("subject(group.name),role(name),resource(type)")
         self.assertIsNotNone(result)
-        self.assertIn("group.name", result.subject_fields)
-        self.assertIn("name", result.role_fields)
-        self.assertIn("type", result.resource_fields)
+        self.assertIn("group.name", result.get_nested("subject"))
+        self.assertIn("name", result.get_nested("role"))
+        self.assertIn("type", result.get_nested("resource"))
 
     def test_parse_mixed_root_and_object_fields(self):
         """Test parsing mixed root and object fields."""
-        result = FieldSelection.parse("last_modified,subject(group.name)")
+        result = RoleBindingFieldSelection.parse("last_modified,subject(group.name)")
         self.assertIsNotNone(result)
         self.assertIn("last_modified", result.root_fields)
-        self.assertIn("group.name", result.subject_fields)
+        self.assertIn("group.name", result.get_nested("subject"))
 
     def test_parse_handles_whitespace(self):
         """Test that parsing handles whitespace correctly."""
-        result = FieldSelection.parse(" subject( group.name , group.description ) ")
+        result = RoleBindingFieldSelection.parse(" subject( group.name , group.description ) ")
         self.assertIsNotNone(result)
-        self.assertIn("group.name", result.subject_fields)
-        self.assertIn("group.description", result.subject_fields)
+        self.assertIn("group.name", result.get_nested("subject"))
+        self.assertIn("group.description", result.get_nested("subject"))
 
     def test_split_fields_respects_parentheses(self):
         """Test that field splitting respects parentheses."""
-        parts = FieldSelection._split_fields("subject(a,b),role(c)")
+        parts = RoleBindingFieldSelection._split_fields("subject(a,b),role(c)")
         self.assertEqual(len(parts), 2)
         self.assertEqual(parts[0], "subject(a,b)")
         self.assertEqual(parts[1], "role(c)")
 
     def test_parse_raises_error_for_invalid_subject_field(self):
         """Test that parse raises error for invalid subject field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
-
         with self.assertRaises(FieldSelectionValidationError) as context:
-            FieldSelection.parse("subject(invalid_field)")
+            RoleBindingFieldSelection.parse("subject(invalid_field)")
         self.assertIn("invalid_field", str(context.exception))
 
     def test_parse_raises_error_for_invalid_role_field(self):
         """Test that parse raises error for invalid role field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
-
         with self.assertRaises(FieldSelectionValidationError) as context:
-            FieldSelection.parse("role(invalid_field)")
+            RoleBindingFieldSelection.parse("role(invalid_field)")
         self.assertIn("invalid_field", str(context.exception))
 
     def test_parse_raises_error_for_invalid_resource_field(self):
         """Test that parse raises error for invalid resource field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
-
         with self.assertRaises(FieldSelectionValidationError) as context:
-            FieldSelection.parse("resource(invalid_field)")
+            RoleBindingFieldSelection.parse("resource(invalid_field)")
         self.assertIn("invalid_field", str(context.exception))
 
     def test_parse_raises_error_for_unknown_object_type(self):
         """Test that parse raises error for unknown object type."""
-        from management.role_binding.serializer import FieldSelectionValidationError
-
         with self.assertRaises(FieldSelectionValidationError) as context:
-            FieldSelection.parse("unknown(field)")
+            RoleBindingFieldSelection.parse("unknown(field)")
         self.assertIn("Unknown object type", str(context.exception))
 
     def test_parse_raises_error_for_invalid_root_field(self):
         """Test that parse raises error for invalid root field."""
-        from management.role_binding.serializer import FieldSelectionValidationError
-
         with self.assertRaises(FieldSelectionValidationError) as context:
-            FieldSelection.parse("invalid_root_field")
+            RoleBindingFieldSelection.parse("invalid_root_field")
         self.assertIn("Unknown field", str(context.exception))
 
 
@@ -341,7 +332,7 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_build_context_with_fields(self):
         """Test building context with field selection (pre-parsed by input serializer)."""
-        field_selection = FieldSelection.parse("subject(group.name)")
+        field_selection = RoleBindingFieldSelection.parse("subject(group.name)")
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
@@ -350,7 +341,7 @@ class RoleBindingServiceTests(IdentityRequest):
         context = self.service.build_context(params)
 
         self.assertIsNotNone(context["field_selection"])
-        self.assertIn("group.name", context["field_selection"].subject_fields)
+        self.assertIn("group.name", context["field_selection"].get_nested("subject"))
 
     def test_parse_resource_type_with_namespace(self):
         """Test parsing resource type with namespace prefix."""
@@ -754,7 +745,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         Only subject.type is always included. Other fields require explicit request.
         """
-        field_selection = FieldSelection.parse("subject(group.name)")
+        field_selection = RoleBindingFieldSelection.parse("subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
@@ -776,7 +767,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         id is always included, plus explicitly requested fields.
         """
-        field_selection = FieldSelection.parse("role(name)")
+        field_selection = RoleBindingFieldSelection.parse("role(name)")
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
@@ -792,7 +783,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         id is always included, plus explicitly requested fields.
         """
-        field_selection = FieldSelection.parse("resource(type)")
+        field_selection = RoleBindingFieldSelection.parse("resource(type)")
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
@@ -806,7 +797,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
     def test_field_selection_excludes_last_modified_when_not_requested(self):
         """Test that last_modified is excluded when not in field selection."""
-        field_selection = FieldSelection.parse("subject(group.name)")
+        field_selection = RoleBindingFieldSelection.parse("subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
@@ -816,7 +807,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
     def test_field_selection_includes_last_modified_when_requested(self):
         """Test that last_modified is included when in field selection."""
-        field_selection = FieldSelection.parse("last_modified,subject(group.name)")
+        field_selection = RoleBindingFieldSelection.parse("last_modified,subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
@@ -826,7 +817,9 @@ class RoleBindingSerializerTests(IdentityRequest):
 
     def test_combined_field_selection(self):
         """Test combined field selection across multiple objects."""
-        field_selection = FieldSelection.parse("subject(group.name),role(name),resource(name,type),last_modified")
+        field_selection = RoleBindingFieldSelection.parse(
+            "subject(group.name),role(name),resource(name,type),last_modified"
+        )
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
