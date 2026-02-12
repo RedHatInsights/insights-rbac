@@ -19,7 +19,12 @@
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
-from management.role.v2_serializer import RoleV2ListSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.role.v2_serializer import (
+    RoleV2ListSerializer,
+    RoleV2RequestSerializer,
+    RoleV2ResponseSerializer,
+    RoleV2RetrieveSerializer,
+)
 from management.role.v2_service import RoleV2Service
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
@@ -44,6 +49,48 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     pagination_class = RoleV2CursorPagination
     lookup_field = "uuid"
     http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        """Get the queryset for roles filtered by tenant."""
+        base_qs = (
+            RoleV2.objects.filter(tenant=self.request.tenant)
+            .prefetch_related("permissions")
+            .order_by("name", "-modified")
+        )
+
+        if self.action in ("list", "retrieve"):
+            return base_qs
+        else:
+            return base_qs.filter(type=RoleV2.Types.CUSTOM)
+
+    def get_object(self):
+        """
+        Get a single role using the service layer.
+
+        Overrides DRF's get_object() to use service layer for business logic.
+        RoleNotFoundError is automatically converted to Http404 by the exception handler.
+        """
+        uuid_str = self.kwargs.get(self.lookup_field)
+        service = RoleV2Service(tenant=self.request.tenant)
+        return service.get_role(uuid_str)
+
+    def retrieve(self, request, *args, **kwargs):
+        """Retrieve a single role by UUID."""
+        input_serializer = RoleV2RetrieveSerializer(
+            data={"fields": request.query_params.get("fields", "")}, context={"request": request}
+        )
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
+
+        instance = self.get_object()
+
+        # Serializer returns DEFAULT_RETRIEVE_FIELDS when no fields param provided
+        context = {
+            "request": request,
+            "fields": validated_params.get("fields"),
+        }
+        serializer = RoleV2ResponseSerializer(instance, context=context)
+        return Response(serializer.data)
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""

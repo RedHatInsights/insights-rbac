@@ -20,9 +20,11 @@
 import copy
 
 from django.db import IntegrityError
+from django.http import Http404
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
+from management.role.v2_exceptions import RoleNotFoundError
 from management.utils import api_path_prefix, v2response_error_from_errors
 from rest_framework import status
 from rest_framework.views import Response, exception_handler
@@ -144,6 +146,13 @@ def custom_exception_handler_v2(exc, context):
             content_type="application/json",
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+    elif isinstance(exc, RoleNotFoundError):
+        # Convert RoleNotFoundError to Http404 and let standard handler process it
+        response = exception_handler(Http404(str(exc)), context)
+        if response is not None:
+            response.content_type = "application/problem+json"
+            errors = _generate_errors_from_dict(response.data, **{"status_code": str(response.status_code)})
+            response.data = v2response_error_from_errors(errors=errors, exc=exc, context=context)
 
     return response
 

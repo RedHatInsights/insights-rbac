@@ -17,6 +17,7 @@
 """Service for RoleV2 management."""
 
 import logging
+from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
@@ -31,6 +32,7 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
+    RoleNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
 
@@ -41,18 +43,51 @@ logger = logging.getLogger(__name__)
 
 class RoleV2Service:
     """
-    Application service for RoleV2 operations.
+    Domain service for RoleV2 operations.
+
+    This service encapsulates business logic for role management.
 
     Raises domain-specific exceptions that should be caught and converted
-    to HTTP-level errors by the serializer layer.
+    to HTTP-level errors by the view layer.
     """
 
     DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
+    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
 
     def __init__(self, tenant: Tenant | None = None):
         """Initialize the service."""
         self.tenant = tenant
         self.permission_service = PermissionService()
+
+    def get_role(self, uuid: str | UUID) -> RoleV2:
+        """
+        Get a single role by UUID.
+
+        Args:
+            uuid: The UUID of the role to retrieve (string or UUID object)
+
+        Returns:
+            RoleV2 instance
+
+        Raises:
+            RoleNotFoundError: If role not found for this tenant or if UUID format is invalid
+        """
+        # Convert string to UUID if needed, raise RoleNotFoundError for invalid format
+        try:
+            uuid_obj = UUID(uuid) if isinstance(uuid, str) else uuid
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Invalid UUID format: {uuid}")
+            raise RoleNotFoundError(uuid) from e
+
+        try:
+            role = RoleV2.objects.filter(tenant=self.tenant, uuid=uuid_obj).prefetch_related("permissions").get()
+            tenant_org_id = self.tenant.org_id if self.tenant else "unknown"
+            logger.debug(f"Retrieved role {uuid_obj} for tenant {tenant_org_id}")
+            return role
+        except RoleV2.DoesNotExist:
+            tenant_org_id = self.tenant.org_id if self.tenant else "unknown"
+            logger.warning(f"Role {uuid_obj} not found for tenant {tenant_org_id}")
+            raise RoleNotFoundError(uuid_obj)
 
     @atomic
     def create(
