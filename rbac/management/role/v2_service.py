@@ -26,8 +26,8 @@ from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
-from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
-from management.relation_replicator.replicating_mixin import ReplicatingServiceMixin
+from management.relation_replicator.relation_replication_service import RelationReplicationService
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
@@ -41,7 +41,7 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)
 
 
-class RoleV2Service(ReplicatingServiceMixin):
+class RoleV2Service:
     """
     Application service for RoleV2 operations.
 
@@ -51,11 +51,15 @@ class RoleV2Service(ReplicatingServiceMixin):
 
     DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
 
-    def __init__(self, tenant: Tenant | None = None, replicator: RelationReplicator | None = None):
+    def __init__(
+        self,
+        tenant: Tenant | None = None,
+        replication_service: RelationReplicationService | None = None,
+    ):
         """Initialize the service."""
-        super().__init__(replicator)
         self.tenant = tenant
         self.permission_service = PermissionService()
+        self.replication_service = replication_service or RelationReplicationService()
 
     @atomic
     def create(
@@ -96,7 +100,7 @@ class RoleV2Service(ReplicatingServiceMixin):
             role.save()
             role.permissions.set(permissions)
 
-            self.replicate_create(
+            self.replication_service.replicate_create(
                 event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
                 info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
                 tuples=role.as_tuples(),

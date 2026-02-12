@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Mixin for services that need to replicate relations to SpiceDB."""
+"""Service for replicating relations to SpiceDB (Anti-Corruption Layer)."""
 
 from django.conf import settings
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -28,18 +28,19 @@ from management.relation_replicator.relation_replicator import (
 from management.types import RelationTuple
 
 
-class ReplicatingServiceMixin:
-    """Mixin for services that need to replicate relations to SpiceDB.
+class RelationReplicationService:
+    """Service for replicating relations to SpiceDB.
 
-    This mixin provides shared plumbing for replication. It accepts domain types
-    (RelationTuple) and converts them to infrastructure types (protobuf Relationship)
-    before sending to the replicator.
+    This is an Anti-Corruption Layer that translates domain types (RelationTuple)
+    to infrastructure types (protobuf Relationship) before sending to the replicator.
+
+    Use via composition (injection) rather than inheritance.
     """
 
     _replicator: RelationReplicator
 
     def __init__(self, replicator: RelationReplicator | None = None):
-        """Initialize the replicator."""
+        """Initialize the service with an optional replicator."""
         if settings.REPLICATION_TO_RELATION_ENABLED:
             self._replicator = replicator if replicator is not None else OutboxReplicator()
         else:

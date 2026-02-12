@@ -153,6 +153,7 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
     objects = TypedRoleV2Manager(role_type=_expected_type)
 
     def as_tuples(self) -> list[RelationTuple]:
+        """Return relation tuples for this role's permissions."""
         return [
             RelationTuple(
                 resource_type_namespace="rbac",

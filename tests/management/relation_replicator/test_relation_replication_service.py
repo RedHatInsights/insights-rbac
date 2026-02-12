@@ -14,32 +14,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test ReplicatingServiceMixin."""
+"""Test RelationReplicationService."""
 
 from django.test import TestCase, override_settings
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator
+from management.relation_replicator.relation_replication_service import RelationReplicationService
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.relation_replicator.replicating_mixin import ReplicatingServiceMixin
 from management.types import RelationTuple
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 
 
-class TestService(ReplicatingServiceMixin):
-    """A test service that uses the mixin."""
-
-    def __init__(self, replicator=None):
-        super().__init__(replicator)
-
-
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
-class ReplicatingServiceMixinTest(TestCase):
-    """Test ReplicatingServiceMixin functionality."""
+class RelationReplicationServiceTest(TestCase):
+    """Test RelationReplicationService functionality."""
 
     def setUp(self):
         """Set up test fixtures."""
         self.tuples = InMemoryTuples()
         self.replicator = InMemoryRelationReplicator(self.tuples)
-        self.service = TestService(replicator=self.replicator)
+        self.service = RelationReplicationService(replicator=self.replicator)
 
     def _make_permission_tuple(self, role_id: str, permission: str) -> RelationTuple:
         """Create a permission tuple for testing."""
@@ -127,7 +120,7 @@ class ReplicatingServiceMixinTest(TestCase):
         """Test that RelationTuple is correctly converted to protobuf Relationship."""
         log = InMemoryLog()
         replicator = OutboxReplicator(log)
-        service = TestService(replicator=replicator)
+        service = RelationReplicationService(replicator=replicator)
 
         tuples = [
             self._make_permission_tuple("role-456", "inventory_hosts_read"),
@@ -158,21 +151,21 @@ class ReplicatingServiceMixinTest(TestCase):
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
-class ReplicatingServiceMixinDisabledTest(TestCase):
-    """Test ReplicatingServiceMixin when replication is disabled."""
+class RelationReplicationServiceDisabledTest(TestCase):
+    """Test RelationReplicationService when replication is disabled."""
 
     def test_uses_noop_replicator_when_disabled(self):
         """Test that NoopReplicator is used when replication is disabled."""
         from management.relation_replicator.noop_replicator import NoopReplicator
 
-        service = TestService()
+        service = RelationReplicationService()
 
         # Should use NoopReplicator
         self.assertIsInstance(service._replicator, NoopReplicator)
 
     def test_replicate_create_does_nothing_when_disabled(self):
         """Test that replicate_create is a no-op when disabled."""
-        service = TestService()
+        service = RelationReplicationService()
 
         tuples = [
             RelationTuple(
