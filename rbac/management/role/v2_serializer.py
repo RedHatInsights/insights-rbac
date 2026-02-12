@@ -25,10 +25,8 @@ from management.role.v2_exceptions import (
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
-from management.utils import FieldSelection, FieldSelectionValidationError
+from management.utils import FieldSelection, FieldSelectionValidationError, UUIDStringField
 from rest_framework import serializers
-
-from management.utils import UUIDStringField
 
 # Centralized mapping from domain exceptions to API error fields
 ERROR_MAPPING = {

@@ -19,7 +19,7 @@
 from management.atomic_transactions import atomic
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
-from management.role.v2_exceptions import RoleNotFoundError, CustomRoleRequiredError
+from management.role.v2_exceptions import CustomRoleRequiredError, RoleNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
     RoleV2BulkDeleteRequestSerializer,
