@@ -181,14 +181,17 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
         self.assertIn("id__in", call_args.kwargs)
         self.assertEqual(set(call_args.kwargs["id__in"]), {"ws-1", "ws-2"})
 
+    @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_detail_actions_filter_to_workspace_id(self, mock_flags):
+    def test_detail_actions_filter_to_workspace_id(self, mock_flags, mock_is_user_allowed_v2):
         """All detail action types filter queryset to the specific workspace ID."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
 
         detail_actions = ["retrieve", "update", "partial_update", "destroy", "move"]
 
         for action in detail_actions:
+            mock_is_user_allowed_v2.reset_mock()
+
             request = Mock(tenant=Mock())
             request.method = "GET" if action == "retrieve" else "POST"
             queryset = Mock()
@@ -200,6 +203,9 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
             queryset.filter.assert_called_once_with(
                 id="ws-456",
             ), f"Action {action} should filter queryset to workspace ws-456"
+            # FilterBackend must NOT call is_user_allowed_v2 for detail actions;
+            # access checks are handled by WorkspaceAccessPermission
+            mock_is_user_allowed_v2.assert_not_called()
             queryset.reset_mock()
 
 

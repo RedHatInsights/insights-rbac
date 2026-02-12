@@ -165,9 +165,22 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # For move operations, check both source and target workspace access
         if view.action == "move":
             # Check source workspace access first (returns 403 if denied)
-            if ws_id and not is_user_allowed_v2(request, perm, ws_id):
-                self.message = WORKSPACE_ACCESS_DENIED_MESSAGE
-                return False
+            if ws_id:
+                try:
+                    if not is_user_allowed_v2(request, perm, ws_id):
+                        self.message = WORKSPACE_ACCESS_DENIED_MESSAGE
+                        return False
+                except Exception:
+                    logger.exception(
+                        "Error checking workspace access for move source: "
+                        "user=%s, org_id=%s, workspace_id=%s, permission=%s",
+                        getattr(request.user, "username", "unknown"),
+                        getattr(request.user, "org_id", "unknown"),
+                        ws_id,
+                        perm,
+                    )
+                    self.message = WORKSPACE_ACCESS_DENIED_MESSAGE
+                    return False
             return self._check_move_target_access_v2(request)
 
         # For detail operations (retrieve, update, partial_update, destroy),
@@ -175,7 +188,20 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # denial is reported as 403 rather than 404 (which would be misleading).
         # The 403 message is intentionally ambiguous to avoid leaking resource existence.
         if ws_id is not None:
-            if not is_user_allowed_v2(request, perm, ws_id):
+            try:
+                if not is_user_allowed_v2(request, perm, ws_id):
+                    self.message = WORKSPACE_ACCESS_DENIED_MESSAGE
+                    return False
+            except Exception:
+                logger.exception(
+                    "Error checking workspace access for detail action: "
+                    "user=%s, org_id=%s, workspace_id=%s, permission=%s, action=%s",
+                    getattr(request.user, "username", "unknown"),
+                    getattr(request.user, "org_id", "unknown"),
+                    ws_id,
+                    perm,
+                    getattr(view, "action", None),
+                )
                 self.message = WORKSPACE_ACCESS_DENIED_MESSAGE
                 return False
 
