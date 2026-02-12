@@ -19,7 +19,7 @@
 from enum import StrEnum
 
 from django.db.models import Count, Q
-from management.exceptions import NotFoundError
+from management.exceptions import NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.principal.model import Principal
 from management.subject.exceptions import UnsupportedSubjectTypeError
@@ -109,9 +109,13 @@ class SubjectService:
             The subject (Group or Principal)
 
         Raises:
+            RequiredFieldError: If subject_id is empty
             UnsupportedSubjectTypeError: If the subject type is not supported
             NotFoundError: If the subject cannot be found
         """
+        if not subject_id:
+            raise RequiredFieldError("subject_id")
+
         if subject_type == SubjectType.GROUP:
             return self.get_group(subject_id)
         elif subject_type == SubjectType.USER:

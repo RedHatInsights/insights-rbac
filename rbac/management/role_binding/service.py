@@ -29,7 +29,7 @@ from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
 from management.atomic_transactions import atomic
 from management.cache import JWTCache
-from management.exceptions import InvalidFieldError, NotFoundError
+from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import Scope
@@ -654,8 +654,12 @@ class RoleBindingService:
             resource_id: The resource identifier
 
         Raises:
+            RequiredFieldError: If resource_id is empty
             NotFoundError: If the resource cannot be found
         """
+        if not resource_id:
+            raise RequiredFieldError("resource_id")
+
         if resource_type == "workspace":
             if not Workspace.objects.filter(id=resource_id, tenant=self.tenant).exists():
                 raise NotFoundError(resource_type, resource_id)

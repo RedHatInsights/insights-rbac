@@ -1011,40 +1011,70 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
         }
         self.assertEqual(actual, expected)
 
-    def test_update_raises_error_for_invalid_group(self):
-        """Test that update raises error for non-existent group."""
+    def test_update_raises_not_found_error(self):
+        """Test that update raises NotFoundError for non-existent entities."""
         import uuid
 
         from management.exceptions import NotFoundError
 
-        fake_uuid = str(uuid.uuid4())
-        with self.assertRaises(NotFoundError):
-            self.service.update_role_bindings_for_subject(
-                resource_type="workspace",
-                resource_id=str(self.workspace.id),
-                subject_type="group",
-                subject_id=fake_uuid,
-                role_ids=[str(self.role1.uuid)],
-            )
+        def make_cases():
+            fake_group_id = str(uuid.uuid4())
+            fake_principal_id = str(uuid.uuid4())
+            fake_workspace_id = str(uuid.uuid4())
 
-    def test_update_raises_error_for_invalid_principal(self):
-        """Test that update raises error for non-existent principal."""
-        import uuid
+            return [
+                # Non-existent group
+                (
+                    "invalid_group",
+                    {
+                        "resource_type": "workspace",
+                        "resource_id": str(self.workspace.id),
+                        "subject_type": "group",
+                        "subject_id": fake_group_id,
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "group",
+                    fake_group_id,
+                ),
+                # Non-existent principal
+                (
+                    "invalid_principal",
+                    {
+                        "resource_type": "workspace",
+                        "resource_id": str(self.workspace.id),
+                        "subject_type": "user",
+                        "subject_id": fake_principal_id,
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "user",
+                    fake_principal_id,
+                ),
+                # Non-existent workspace
+                (
+                    "invalid_resource",
+                    {
+                        "resource_type": "workspace",
+                        "resource_id": fake_workspace_id,
+                        "subject_type": "group",
+                        "subject_id": str(self.group.uuid),
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "workspace",
+                    fake_workspace_id,
+                ),
+            ]
 
-        from management.exceptions import NotFoundError
+        for description, params, expected_resource_type, expected_resource_id in make_cases():
+            with self.subTest(case=description):
+                with self.assertRaises(NotFoundError) as context:
+                    self.service.update_role_bindings_for_subject(**params)
 
-        fake_uuid = str(uuid.uuid4())
-        with self.assertRaises(NotFoundError):
-            self.service.update_role_bindings_for_subject(
-                resource_type="workspace",
-                resource_id=str(self.workspace.id),
-                subject_type="user",
-                subject_id=fake_uuid,
-                role_ids=[str(self.role1.uuid)],
-            )
+                self.assertEqual(context.exception.resource_type, expected_resource_type)
+                self.assertEqual(context.exception.resource_id, expected_resource_id)
+                self.assertIn(expected_resource_id, str(context.exception))
 
     def test_update_raises_error_for_invalid_role(self):
-        """Test that update raises error for non-existent role."""
+        """Test that update raises InvalidFieldError for non-existent role."""
         import uuid
 
         from management.exceptions import InvalidFieldError
@@ -1058,34 +1088,92 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
                 subject_id=str(self.group.uuid),
                 role_ids=[fake_uuid],
             )
+
         self.assertEqual(context.exception.field, "roles")
         self.assertIn(fake_uuid, str(context.exception))
 
     def test_update_raises_error_for_unsupported_subject_type(self):
-        """Test that update raises error for unsupported subject type."""
+        """Test that update raises UnsupportedSubjectTypeError for invalid subject type."""
         from management.subject import UnsupportedSubjectTypeError
 
-        with self.assertRaises(UnsupportedSubjectTypeError):
-            self.service.update_role_bindings_for_subject(
-                resource_type="workspace",
-                resource_id=str(self.workspace.id),
-                subject_type="invalid_type",
-                subject_id=str(self.group.uuid),
-                role_ids=[str(self.role1.uuid)],
-            )
+        test_cases = [
+            ("invalid_type", "invalid_type"),
+            ("empty_string", ""),
+        ]
 
-    def test_update_raises_error_for_invalid_resource(self):
-        """Test that update raises error for non-existent resource."""
-        import uuid
+        for description, subject_type in test_cases:
+            with self.subTest(case=description):
+                with self.assertRaises(UnsupportedSubjectTypeError) as context:
+                    self.service.update_role_bindings_for_subject(
+                        resource_type="workspace",
+                        resource_id=str(self.workspace.id),
+                        subject_type=subject_type,
+                        subject_id=str(self.group.uuid),
+                        role_ids=[str(self.role1.uuid)],
+                    )
 
-        from management.exceptions import NotFoundError
+                self.assertEqual(context.exception.subject_type, subject_type)
+                self.assertIn("group", context.exception.supported)
+                self.assertIn("user", context.exception.supported)
 
-        fake_workspace_uuid = str(uuid.uuid4())
-        with self.assertRaises(NotFoundError) as context:
-            self.service.update_role_bindings_for_subject(
-                resource_type="workspace",
-                resource_id=fake_workspace_uuid,
-                subject_type="group",
-                subject_id=str(self.group.uuid),
-                role_ids=[str(self.role1.uuid)],
-            )
+    def test_update_raises_error_for_missing_required_fields(self):
+        """Test that update raises RequiredFieldError for missing required fields."""
+        from management.exceptions import RequiredFieldError
+
+        test_cases = [
+            # Empty resource_type - caught by model validation
+            (
+                "empty_resource_type",
+                {
+                    "resource_type": "",
+                    "resource_id": str(self.workspace.id),
+                    "subject_type": "group",
+                    "subject_id": str(self.group.uuid),
+                    "role_ids": [str(self.role1.uuid)],
+                },
+                "resource_type",
+            ),
+            # Empty resource_id - caught by service validation
+            (
+                "empty_resource_id",
+                {
+                    "resource_type": "workspace",
+                    "resource_id": "",
+                    "subject_type": "group",
+                    "subject_id": str(self.group.uuid),
+                    "role_ids": [str(self.role1.uuid)],
+                },
+                "resource_id",
+            ),
+            # Empty subject_id - caught by SubjectService validation
+            (
+                "empty_subject_id",
+                {
+                    "resource_type": "workspace",
+                    "resource_id": str(self.workspace.id),
+                    "subject_type": "group",
+                    "subject_id": "",
+                    "role_ids": [str(self.role1.uuid)],
+                },
+                "subject_id",
+            ),
+            # Empty roles list - caught by model validation
+            (
+                "empty_roles",
+                {
+                    "resource_type": "workspace",
+                    "resource_id": str(self.workspace.id),
+                    "subject_type": "group",
+                    "subject_id": str(self.group.uuid),
+                    "role_ids": [],
+                },
+                "roles",
+            ),
+        ]
+
+        for description, params, expected_field in test_cases:
+            with self.subTest(case=description):
+                with self.assertRaises(RequiredFieldError) as context:
+                    self.service.update_role_bindings_for_subject(**params)
+
+                self.assertEqual(context.exception.field_name, expected_field)
