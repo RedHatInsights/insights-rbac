@@ -108,6 +108,9 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             # This should be impossible. We constrain deletions to be from the user's tenant. Non-custom roles should
             # only exist in the public tenant, and there shouldn't be any users in the public tenant. Thus,
             # we will never find any non-custom roles to try to delete.
-            return Response({"title": "An internal error occurred.", "detail": str(e)})
+            return Response(
+                {"title": "An internal error occurred.", "detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
