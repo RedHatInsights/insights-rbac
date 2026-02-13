@@ -248,13 +248,10 @@ class RoleV2ServiceTests(IdentityRequest):
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_create_role_replicates_permission_tuples(self):
         """Test that creating a role replicates permission tuples to SpiceDB."""
-        from management.relation_replicator.relation_replication_service import RelationReplicationService
-
         # Set up in-memory replicator (stub, not mock!)
         tuples = InMemoryTuples()
         replicator = InMemoryRelationReplicator(tuples)
-        replication_service = RelationReplicationService(replicator=replicator)
-        service = RoleV2Service(tenant=self.tenant, replication_service=replication_service)
+        service = RoleV2Service(tenant=self.tenant, replicator=replicator)
 
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
