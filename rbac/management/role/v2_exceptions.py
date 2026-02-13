@@ -55,3 +55,19 @@ class InvalidRolePermissionsError(RoleV2Error):
     def __init__(self, message: str):
         """Initialize with the validation error message."""
         super().__init__(message)
+
+
+class RoleNotFoundError(RoleV2Error):
+    """Raised when an operation fails to locate a requested role."""
+
+    def __init__(self, message: str):
+        """Initialize the exception with a message."""
+        super().__init__(message)
+
+
+class CustomRoleRequiredError(RoleV2Error):
+    """Raised when an operation requires a custom role, but a custom role was not provided."""
+
+    def __init__(self, message: str):
+        """Initialize the exception with a message."""
+        super().__init__(message)

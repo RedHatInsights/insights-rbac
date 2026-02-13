@@ -40,6 +40,7 @@ from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers
+from rest_framework.fields import UUIDField
 from rest_framework.request import Request
 from rest_framework.serializers import ValidationError
 
@@ -514,6 +515,18 @@ def validate_uuid(uuid, key="UUID Validation"):
         raise serializers.ValidationError({key: _(message)})
 
 
+def as_uuid(value: str | UUID) -> UUID:
+    """
+    Convert a string (or UUID) to a UUID.
+
+    A provided UUID is returned unchanged.
+    """
+    if isinstance(value, UUID):
+        return value
+
+    return UUID(value)
+
+
 def validate_group_name(name):
     """Verify name provided is valid."""
     if name and name.lower() in ["custom default access", "default access"]:
@@ -763,3 +776,32 @@ class FieldSelection:
 
         parts.append(fields_str[start:].strip())
         return parts
+
+
+class UUIDStringField(UUIDField):
+    """A UUID field that is always represented as a hex string with hyphens (the hex_verbose) format."""
+
+    _pattern = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+    def __init__(self, **kwargs):
+        """Create a new UUIDStringField."""
+        format = kwargs.get("format")
+
+        if format not in (None, "hex_verbose"):
+            raise ValueError("Format, if provided, must be hex_verbose")
+
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data):
+        """Convert data to a UUID; it must either already be a UUID or be a hex string with hyphens."""
+        if isinstance(data, UUID):
+            return super().to_internal_value(data)
+
+        if isinstance(data, str):
+            if not re.fullmatch(self._pattern, data):
+                self.fail("invalid", value=data)
+
+            return super().to_internal_value(data)
+
+        self.fail("invalid", value=data)
+        raise AssertionError("unreachable")
