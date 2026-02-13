@@ -1783,6 +1783,66 @@ def check_relation(request):
         )
 
 
+def lookup_subjects(request):
+    """POST to retrieve subjects that have a relationship with a given resource."""
+    # Parse JSON data from the POST request body
+    req_data = load_request_body(request)
+
+    if not validate_relations_input("lookup_subjects", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_subjects."}, status=500)
+
+    # Request parameters for subject lookup on relations api from post request
+    resource_type_name = req_data["resource"]["type"]["name"]
+    resource_type_namespace = req_data["resource"]["type"]["namespace"]
+    resource_id = req_data["resource"]["id"]
+    subject_type_name = req_data["subject_type"]["name"]
+    subject_type_namespace = req_data["subject_type"]["namespace"]
+    relation = req_data["relation"]
+    subject_relation = req_data.get("subject_relation") or None
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+            request_data = lookup_pb2.LookupSubjectsRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(
+                        name=resource_type_name,
+                        namespace=resource_type_namespace,
+                    ),
+                    id=resource_id,
+                ),
+                relation=relation,
+                subject_type=common_pb2.ObjectType(
+                    name=subject_type_name,
+                    namespace=subject_type_namespace,
+                ),
+                subject_relation=subject_relation,
+            )
+
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.LookupSubjects(request_data, metadata=metadata)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"subjects": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No subjects found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to lookup subjects endpoint", "error": str(e)}, status=500
+        )
+
+
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)

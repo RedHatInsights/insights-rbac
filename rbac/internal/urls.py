@@ -99,6 +99,7 @@ urlpatterns = [
     path("api/utils/principal/", views.principal_removal),
     path("api/utils/user_lookup/", views.user_lookup),
     path("api/relations/lookup_resource/", views.lookup_resource),
+    path("api/relations/lookup_subjects/", views.lookup_subjects),
     path("api/relations/check_relation/", views.check_relation),
     path("api/relations/read_tuples/", views.read_tuples),
     path("api/inventory/bootstrap_tenants/<org_id>/", views.check_bootstrapped_tenants),
