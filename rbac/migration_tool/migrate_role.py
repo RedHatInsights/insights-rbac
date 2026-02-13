@@ -19,7 +19,7 @@ from typing import Iterable
 
 from management.role.model import BindingMapping, Role
 from management.role.v2_model import CustomRoleV2
-from management.types import RelationTuple
+from management.relation_replicator.types import RelationTuple
 from migration_tool.models import V2boundresource, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import MigrateCustomRoleResult, v1_role_to_v2_bindings
 

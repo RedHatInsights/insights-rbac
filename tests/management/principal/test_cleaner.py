@@ -43,7 +43,7 @@ from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import get_tenant_bootstrap_service
 from management.workspace.model import Workspace
 from api.models import Tenant, User
-from management.types import ObjectReference, ObjectType, SubjectReference
+from management.relation_replicator.types import ObjectReference, ObjectType, SubjectReference
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,

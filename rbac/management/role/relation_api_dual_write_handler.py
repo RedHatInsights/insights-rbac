@@ -25,7 +25,7 @@ from django.conf import settings
 from django.db.models import Model
 from kessel.relations.v1beta1 import common_pb2
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.types import RelationTuple
+from management.relation_replicator.types import RelationTuple
 from management.models import Workspace
 from management.permission.scope_service import ImplicitResourceService, Scope, bound_model_for_scope
 from management.relation_replicator.noop_replicator import NoopReplicator

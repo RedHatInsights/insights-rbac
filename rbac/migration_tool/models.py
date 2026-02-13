@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional, Tuple
 
 from management.principal.model import Principal
-from management.types import RelationTuple
+from management.relation_replicator.types import RelationTuple
 from management.workspace.model import Workspace
 from migration_tool.utils import create_relationship
 

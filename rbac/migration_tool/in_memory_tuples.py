@@ -5,7 +5,7 @@ from typing import Callable, Hashable, Iterable, List, Optional, Set, Tuple, Typ
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.relation_replicator.relation_replicator import RelationReplicator
-from management.types import RelationTuple  # noqa: F401 - Re-exported for backward compatibility
+from management.relation_replicator.types import RelationTuple  # noqa: F401 - Re-exported for backward compatibility
 
 RelationPredicate = Callable[["RelationTuple"], bool]
 T = TypeVar("T", bound=Hashable)

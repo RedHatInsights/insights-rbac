@@ -25,7 +25,7 @@ from django.utils import timezone
 from management.exceptions import RequiredFieldError
 from management.models import Group, Permission, Principal, Role
 from management.rbac_fields import AutoDateTimeField
-from management.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from rest_framework import serializers
 from uuid_utils.compat import UUID, uuid7

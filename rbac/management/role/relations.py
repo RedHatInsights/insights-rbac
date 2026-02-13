@@ -22,7 +22,7 @@ from uuid import UUID
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
-from management.types import RelationTuple
+from management.relation_replicator.types import RelationTuple
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)

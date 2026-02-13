@@ -20,7 +20,7 @@ import logging
 from typing import Iterable, Optional
 
 from management.group.platform import GlobalPolicyIdService
-from management.types import RelationTuple
+from management.relation_replicator.types import RelationTuple
 from management.permission.scope_service import Scope, TenantScopeResources
 from management.role.platform import platform_v2_role_uuid_for
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping

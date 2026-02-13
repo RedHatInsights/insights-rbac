@@ -27,7 +27,7 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 
 if TYPE_CHECKING:
-    from management.types import RelationTuple
+    from management.relation_replicator.types import RelationTuple
 
 logger = logging.getLogger(__name__)
 

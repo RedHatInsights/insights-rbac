@@ -22,7 +22,7 @@ from typing import Union
 
 from kessel.relations.v1beta1 import common_pb2
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
-from management.types import RelationTuple
+from management.relation_replicator.types import RelationTuple
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

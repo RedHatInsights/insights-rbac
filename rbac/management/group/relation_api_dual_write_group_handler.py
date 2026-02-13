@@ -21,7 +21,7 @@ import logging
 from typing import Iterable, Optional
 
 from management.group.model import Group
-from management.types import RelationTuple
+from management.relation_replicator.types import RelationTuple
 from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
