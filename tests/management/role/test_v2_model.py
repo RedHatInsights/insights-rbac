@@ -34,6 +34,7 @@ from management.models import (
     SeededRoleV2,
 )
 from management.principal.model import Principal
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role.model import Access
 from management.role.v2_model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
@@ -422,6 +423,39 @@ class RoleV2ModelTests(IdentityRequest):
         self.assertEqual(custom_role.type, RoleV2.Types.CUSTOM)
         self.assertEqual(seeded_role.type, RoleV2.Types.SEEDED)
         self.assertEqual(platform_role.type, RoleV2.Types.PLATFORM)
+
+    def test_custom_role_as_tuples(self):
+        """Test that as_tuples returns correct relation tuples for role permissions."""
+        role = CustomRoleV2.objects.create(name="test_role_tuples", tenant=self.tenant)
+        role.permissions.add(self.permission1, self.permission2)
+
+        tuples = role.as_tuples()
+
+        def make_tuple(permission):
+            return RelationTuple(
+                resource=ObjectReference(
+                    type=ObjectType(namespace="rbac", name="role"),
+                    id=str(role.uuid),
+                ),
+                relation=permission.v2_string(),
+                subject=SubjectReference(
+                    subject=ObjectReference(
+                        type=ObjectType(namespace="rbac", name="principal"),
+                        id="*",
+                    ),
+                ),
+            )
+
+        expected = {make_tuple(self.permission1), make_tuple(self.permission2)}
+        self.assertEqual(set(tuples), expected)
+
+    def test_custom_role_as_tuples_empty_permissions(self):
+        """Test that as_tuples returns empty list when role has no permissions."""
+        role = CustomRoleV2.objects.create(name="test_role_empty", tenant=self.tenant)
+
+        tuples = role.as_tuples()
+
+        self.assertEqual(tuples, [])
 
 
 class RoleBindingModelTests(IdentityRequest):
