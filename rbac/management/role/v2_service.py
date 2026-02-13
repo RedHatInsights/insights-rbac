@@ -26,6 +26,8 @@ from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
+from management.relation_replicator.relation_replication_service import RelationReplicationService
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
@@ -49,10 +51,15 @@ class RoleV2Service:
 
     DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
 
-    def __init__(self, tenant: Tenant | None = None):
+    def __init__(
+        self,
+        tenant: Tenant | None = None,
+        replication_service: RelationReplicationService | None = None,
+    ):
         """Initialize the service."""
         self.tenant = tenant
         self.permission_service = PermissionService()
+        self.replication_service = replication_service or RelationReplicationService()
 
     @atomic
     def create(
@@ -92,6 +99,12 @@ class RoleV2Service:
             )
             role.save()
             role.permissions.set(permissions)
+
+            self.replication_service.replicate_create(
+                event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
+                info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
+                tuples=role.as_tuples(),
+            )
 
             logger.info(
                 "Created custom role '%s' (uuid=%s) with %d permissions for tenant %s",

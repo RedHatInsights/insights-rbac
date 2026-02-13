@@ -22,6 +22,14 @@ from management.models import Permission
 from management.role.v2_exceptions import RoleAlreadyExistsError
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_service import RoleV2Service
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 from tests.identity_request import IdentityRequest
 
 from api.models import Tenant
@@ -232,6 +240,60 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
+
+    # ==========================================================================
+    # Tests for replication
+    # ==========================================================================
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_create_role_replicates_permission_tuples(self):
+        """Test that creating a role replicates permission tuples to SpiceDB."""
+        from management.relation_replicator.relation_replication_service import RelationReplicationService
+
+        # Set up in-memory replicator (stub, not mock!)
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replication_service = RelationReplicationService(replicator=replicator)
+        service = RoleV2Service(tenant=self.tenant, replication_service=replication_service)
+
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+        ]
+
+        # When: Create a role
+        role = service.create(
+            name="Replication Test Role",
+            description="A test role for replication",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        # Then: Permission tuples are replicated
+        role_uuid = str(role.uuid)
+
+        # Should have 2 permission tuples (one per permission)
+        self.assertEqual(len(tuples), 2)
+
+        # Verify the read permission tuple exists
+        read_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_read"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(read_tuples), 1, "Expected 1 read permission tuple")
+
+        # Verify the write permission tuple exists
+        write_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_write"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
