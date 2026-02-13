@@ -18,9 +18,84 @@
 
 import dataclasses
 import re
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 
-from kessel.relations.v1beta1.common_pb2 import ObjectReference, ObjectType, Relationship, SubjectReference
+from kessel.relations.v1beta1 import common_pb2
+
+
+def _validate_required_str(field: str, value: object):
+    """Validate that a field is a non-empty string."""
+    if value is None:
+        raise TypeError(f"{field} is required, but was None.")
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be a string, but got {type(value).__name__}.")
+    if value == "":
+        raise ValueError(f"{field} cannot be empty.")
+
+
+def _validate_optional_str(field: str, value: object):
+    """Validate that a field is None or a non-empty string."""
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be a string or None, but got {type(value).__name__}.")
+    if value == "":
+        raise ValueError(f"{field} cannot be empty (for an absent value, use None).")
+
+
+def _validate_pattern(field: str, value: str, pattern: re.Pattern, description: str):
+    """Validate that a string matches a regex pattern."""
+    if not re.fullmatch(pattern, value):
+        raise ValueError(f"Expected {field} to be composed of {description}, but got: {value!r}")
+
+
+@dataclasses.dataclass(frozen=True)
+class ObjectType:
+    """Resource or subject type (namespace + name)."""
+
+    namespace: str
+    name: str
+
+    _type_regex: ClassVar[re.Pattern] = re.compile(r"^[A-Za-z0-9_]+$")
+
+    def __post_init__(self):
+        """Validate namespace and name."""
+        _validate_required_str("namespace", self.namespace)
+        _validate_required_str("name", self.name)
+        _validate_pattern("name", self.name, self._type_regex, "alphanumeric characters and underscores")
+
+
+@dataclasses.dataclass(frozen=True)
+class ObjectReference:
+    """Reference to a resource or subject (type + id)."""
+
+    type: ObjectType
+    id: str
+
+    _id_regex: ClassVar[re.Pattern] = re.compile(r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$")
+
+    def __post_init__(self):
+        """Validate id."""
+        _validate_required_str("id", self.id)
+        _validate_pattern(
+            "id",
+            self.id,
+            self._id_regex,
+            "alphanumeric characters, underscores, hyphens, pipes, "
+            "equals signs, plus signs, and forward slashes, or exactly '*'",
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class SubjectReference:
+    """Reference to a subject with optional relation."""
+
+    subject: ObjectReference
+    relation: Optional[str] = None
+
+    def __post_init__(self):
+        """Validate optional relation."""
+        _validate_optional_str("relation", self.relation)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -29,92 +104,25 @@ class RelationTuple:
     Domain representation of a relation tuple.
 
     This is an internal abstraction over the external SpiceDB/Kessel relation concept.
-    Use as_message() to convert to the protobuf Relationship type for replication.
+    Fields mirror the protobuf Relationship message structure so that
+    tuple.resource.type.namespace matches relationship.resource.type.namespace on the proto.
+
+    Use as_message() to convert to the protobuf Relationship type when needed.
+    Use to_dict() to serialize to JSON matching the protobuf JSON format.
     """
 
-    resource_type_namespace: str
-    resource_type_name: str
-    resource_id: str
+    resource: ObjectReference
     relation: str
-    subject_type_namespace: str
-    subject_type_name: str
-    subject_id: str
-    subject_relation: Optional[str]
-
-    _type_regex: ClassVar[re.Pattern] = re.compile(r"^[A-Za-z0-9_]+$")
-    _id_regex: ClassVar[re.Pattern] = re.compile(r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$")
-
-    def _relation_type_error(self, msg: str) -> TypeError:
-        return TypeError(msg + f"\nFull relationship: {self!r}")
-
-    def _relation_value_error(self, msg: str) -> ValueError:
-        return ValueError(msg + f"\nFull relationship: {self!r}")
-
-    def _validate_required(self, attr: str):
-        value = getattr(self, attr)
-
-        if value is None:
-            raise self._relation_type_error(f"{attr} is required, but was None.")
-
-        if not isinstance(value, str):
-            raise self._relation_type_error(f"{attr} must be a string.")
-
-        if value == "":
-            raise self._relation_value_error(
-                f"{attr} cannot be empty. (You may have initialized a message with None.)"
-            )
-
-    def _validate_optional(self, attr: str):
-        value = getattr(self, attr)
-
-        if value is None:
-            return
-
-        if not isinstance(value, str):
-            raise self._relation_type_error(f"{attr} must be a string or None.")
-
-        if value == "":
-            raise self._relation_value_error(f"{attr} cannot be empty (for an absent value, use None).")
-
-    def _validate_type_name(self, attr: str):
-        value = getattr(self, attr)
-
-        if not re.fullmatch(self._type_regex, value):
-            raise self._relation_value_error(
-                f"Expected {attr} to be composed of alphanumeric characters and underscores, but got: {value!r}"
-            )
-
-    def _validate_object_id(self, attr: str, allow_asterisk: bool):
-        value = getattr(self, attr)
-
-        if not allow_asterisk and value == "*":
-            raise self._relation_value_error(f"Expected {attr} not to be an asterisk.")
-
-        if not re.fullmatch(self._id_regex, value):
-            raise self._relation_value_error(
-                f"Expected {attr} to be composed of alphanumeric characters, underscores, hyphens, pipes, "
-                f"equals signs, plus signs, and forward slashes, "
-                + (", or to be exactly '*', " if allow_asterisk else "")
-                + f"but got: {value!r}"
-            )
+    subject: SubjectReference
 
     def __post_init__(self):
-        """Check that this RelationTuple is valid."""
-        self._validate_required("resource_type_namespace")
-        self._validate_required("resource_type_name")
-        self._validate_required("resource_id")
-        self._validate_required("relation")
-        self._validate_required("subject_type_namespace")
-        self._validate_required("subject_type_name")
-        self._validate_required("subject_id")
-
-        self._validate_optional("subject_relation")
-
-        self._validate_type_name("resource_type_name")
-        self._validate_type_name("subject_type_name")
-
-        self._validate_object_id("resource_id", allow_asterisk=False)
-        self._validate_object_id("subject_id", allow_asterisk=True)
+        """Validate the relation tuple."""
+        _validate_required_str("relation", self.relation)
+        if self.resource.id == "*":
+            raise ValueError(
+                "resource.id cannot be '*' (asterisk is only allowed for subjects)."
+                f"\nFull relationship: {self!r}"
+            )
 
     @classmethod
     def from_message_dict(cls, relationship: dict) -> "RelationTuple":
@@ -124,69 +132,121 @@ class RelationTuple:
             return value if value != "" else None
 
         return RelationTuple(
-            resource_type_namespace=relationship["resource"]["type"]["namespace"],
-            resource_type_name=relationship["resource"]["type"]["name"],
-            resource_id=relationship["resource"]["id"],
+            resource=ObjectReference(
+                type=ObjectType(
+                    namespace=relationship["resource"]["type"]["namespace"],
+                    name=relationship["resource"]["type"]["name"],
+                ),
+                id=relationship["resource"]["id"],
+            ),
             relation=relationship["relation"],
-            subject_type_namespace=relationship["subject"]["subject"]["type"]["namespace"],
-            subject_type_name=relationship["subject"]["subject"]["type"]["name"],
-            subject_id=relationship["subject"]["subject"]["id"],
-            subject_relation=as_optional(relationship["subject"]["relation"]),
+            subject=SubjectReference(
+                subject=ObjectReference(
+                    type=ObjectType(
+                        namespace=relationship["subject"]["subject"]["type"]["namespace"],
+                        name=relationship["subject"]["subject"]["type"]["name"],
+                    ),
+                    id=relationship["subject"]["subject"]["id"],
+                ),
+                relation=as_optional(relationship["subject"].get("relation", "")),
+            ),
         )
 
     @classmethod
-    def from_message(cls, relationship: Relationship) -> "RelationTuple":
+    def from_message(cls, relationship: common_pb2.Relationship) -> "RelationTuple":
         """Create a RelationTuple from a protobuf Relationship message."""
 
         def as_optional(value: str) -> Optional[str]:
             return value if value != "" else None
 
         return RelationTuple(
-            resource_type_namespace=relationship.resource.type.namespace,
-            resource_type_name=relationship.resource.type.name,
-            resource_id=relationship.resource.id,
-            relation=relationship.relation,
-            subject_type_namespace=relationship.subject.subject.type.namespace,
-            subject_type_name=relationship.subject.subject.type.name,
-            subject_id=relationship.subject.subject.id,
-            subject_relation=as_optional(relationship.subject.relation),
-        )
-
-    def as_message(self) -> Relationship:
-        """Convert to a protobuf Relationship message for replication."""
-        return Relationship(
             resource=ObjectReference(
                 type=ObjectType(
-                    namespace=self.resource_type_namespace,
-                    name=self.resource_type_name,
+                    namespace=relationship.resource.type.namespace,
+                    name=relationship.resource.type.name,
                 ),
-                id=self.resource_id,
+                id=relationship.resource.id,
             ),
-            relation=self.relation,
+            relation=relationship.relation,
             subject=SubjectReference(
                 subject=ObjectReference(
                     type=ObjectType(
-                        namespace=self.subject_type_namespace,
-                        name=self.subject_type_name,
+                        namespace=relationship.subject.subject.type.namespace,
+                        name=relationship.subject.subject.type.name,
                     ),
-                    id=self.subject_id,
+                    id=relationship.subject.subject.id,
                 ),
-                relation=self.subject_relation,
+                relation=as_optional(relationship.subject.relation),
             ),
         )
 
+    def as_message(self) -> common_pb2.Relationship:
+        """Convert to a protobuf Relationship message for replication."""
+        return common_pb2.Relationship(
+            resource=common_pb2.ObjectReference(
+                type=common_pb2.ObjectType(
+                    namespace=self.resource.type.namespace,
+                    name=self.resource.type.name,
+                ),
+                id=self.resource.id,
+            ),
+            relation=self.relation,
+            subject=common_pb2.SubjectReference(
+                subject=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(
+                        namespace=self.subject.subject.type.namespace,
+                        name=self.subject.subject.type.name,
+                    ),
+                    id=self.subject.subject.id,
+                ),
+                relation=self.subject.relation,
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a dict matching the protobuf JSON format.
+
+        The output is identical to json_format.MessageToDict(self.as_message()).
+        None values are omitted to match protobuf JSON serialization behavior.
+        """
+        subject_dict: dict[str, Any] = {
+            "subject": {
+                "type": {
+                    "namespace": self.subject.subject.type.namespace,
+                    "name": self.subject.subject.type.name,
+                },
+                "id": self.subject.subject.id,
+            },
+        }
+        if self.subject.relation is not None:
+            subject_dict["relation"] = self.subject.relation
+
+        return {
+            "resource": {
+                "type": {
+                    "namespace": self.resource.type.namespace,
+                    "name": self.resource.type.name,
+                },
+                "id": self.resource.id,
+            },
+            "relation": self.relation,
+            "subject": subject_dict,
+        }
+
     @classmethod
-    def validate_message(cls, message: Relationship):
+    def validate_message(cls, message: common_pb2.Relationship):
         """Check that the provided Relationship represents a valid tuple."""
         parsed = RelationTuple.from_message(message)
         assert parsed.as_message() == message
 
     def stringify(self) -> str:
         """Display all attributes in one line."""
-        subject_part = f"{self.subject_type_namespace}/{self.subject_type_name}:{self.subject_id}"
-        if self.subject_relation:
-            subject_part += f"#{self.subject_relation}"
+        subject_part = (
+            f"{self.subject.subject.type.namespace}/{self.subject.subject.type.name}:{self.subject.subject.id}"
+        )
+        if self.subject.relation:
+            subject_part += f"#{self.subject.relation}"
         return (
-            f"{self.resource_type_namespace}/{self.resource_type_name}:{self.resource_id}#{self.relation}"
+            f"{self.resource.type.namespace}/{self.resource.type.name}:{self.resource.id}#{self.relation}"
             f"@{subject_part}"
         )

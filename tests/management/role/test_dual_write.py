@@ -329,9 +329,9 @@ class DualWriteTestCase(TestCase):
                 for permission in permissions
             ],
             group_by=lambda t: (
-                t.resource_type_namespace,
-                t.resource_type_name,
-                t.resource_id,
+                t.resource.type.namespace,
+                t.resource.type.name,
+                t.resource.id,
             ),
             group_filter=lambda group: group[0] == "rbac" and group[1] == "role",
             require_full_match=True,
@@ -352,9 +352,9 @@ class DualWriteTestCase(TestCase):
         role_bindings = self.tuples.find_tuples_grouped(
             subject_type("rbac", "role_binding"),
             group_by=lambda t: (
-                t.resource_type_namespace,
-                t.resource_type_name,
-                t.resource_id,
+                t.resource.type.namespace,
+                t.resource.type.name,
+                t.resource.id,
             ),
         )
         num_role_bindings = len(role_bindings)
@@ -375,9 +375,9 @@ class DualWriteTestCase(TestCase):
                 relation("binding"),
             ),
             group_by=lambda t: (
-                t.resource_type_namespace,
-                t.resource_type_name,
-                t.resource_id,
+                t.resource.type.namespace,
+                t.resource.type.name,
+                t.resource.id,
             ),
         )
 
@@ -387,7 +387,7 @@ class DualWriteTestCase(TestCase):
             [
                 all_of(
                     resource_type("rbac", "role_binding"),
-                    one_of(*[resource_id(t.subject_id) for _, tuples in resources.items() for t in tuples]),
+                    one_of(*[resource_id(t.subject.subject.id) for _, tuples in resources.items() for t in tuples]),
                     relation("role"),
                     subject("rbac", "role", role_id),
                 )
@@ -402,9 +402,9 @@ class DualWriteTestCase(TestCase):
                 for group_id in for_groups
             ],
             group_by=lambda t: (
-                t.resource_type_namespace,
-                t.resource_type_name,
-                t.resource_id,
+                t.resource.type.namespace,
+                t.resource.type.name,
+                t.resource.id,
             ),
             group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
             require_full_match=True,
@@ -543,7 +543,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEqual(len(tuples), 2)
         self.assertEqual(
-            {t.subject_id for t in tuples},
+            {t.subject.subject.id for t in tuples},
             {f"localhost/{p.user_id}" for p in principals},
         )
 
@@ -556,7 +556,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEqual(len(tuples), 3)
         self.assertEqual(
-            {t.subject_id for t in tuples},
+            {t.subject.subject.id for t in tuples},
             {f"localhost/{p.user_id}" for p in principals},
         )
 
@@ -566,7 +566,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEqual(len(tuples), 2)
         self.assertEqual(
-            {t.subject_id for t in tuples},
+            {t.subject.subject.id for t in tuples},
             {f"localhost/{p.user_id}" for p in principals},
         )
 
@@ -607,7 +607,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                     )
                 )
                 self.assertEqual(len(tuples), 1)
-                self.assertEqual(tuples.only.subject_id, mapping["groups"][0])
+                self.assertEqual(tuples.only.subject.subject.id, mapping["groups"][0])
 
         self.given_roles_unassigned_from_group(group, [role_1, role_2])
 
@@ -827,7 +827,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
             )
         )
 
-        self.assertEqual({t.subject_id for t in tuples}, {str(group_2.uuid)})
+        self.assertEqual({t.subject.subject.id for t in tuples}, {str(group_2.uuid)})
         # 2 resources * 2 roles * 1 group = 4 role bindings
         self.assertEqual(len(tuples), 4)
 
@@ -1228,7 +1228,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 4)
 
-        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
+        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(
@@ -1245,7 +1245,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if only 2 relations exists in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 2)
-        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
+        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # ensure no relations exist in replicator.
@@ -1278,7 +1278,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if relations exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 4)
-        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
+        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(
@@ -1295,7 +1295,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 1)
-        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
+        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # Delete system role
@@ -1313,7 +1313,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 1)
-        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
+        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
         self.assertSetEqual(set([admin_default]), set(parents))
 
         # Delete system role
@@ -2261,7 +2261,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         v2_role_uuid = self.expect_1_v2_role_with_permissions(permissions=["app1:hosts:read", "inventory:hosts:write"])
 
         role_binding_uuids = {
-            t.resource_id
+            t.resource.id
             for t in self.tuples.find_tuples(
                 all_of(
                     resource_type("rbac", "role_binding"),

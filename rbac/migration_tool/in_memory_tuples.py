@@ -11,6 +11,13 @@ RelationPredicate = Callable[["RelationTuple"], bool]
 T = TypeVar("T", bound=Hashable)
 
 
+def _to_relation_tuple(item: Union[RelationTuple, Relationship]) -> RelationTuple:
+    """Convert a proto Relationship or RelationTuple to a RelationTuple."""
+    if isinstance(item, RelationTuple):
+        return item
+    return RelationTuple.from_message(item)
+
+
 class TupleSet:
     """A set of relation tuples with various utility methods."""
 
@@ -188,12 +195,16 @@ class TupleSet:
         for tuple in self:
             # Intentionally use full set here to traverse to tuples which may not be in this set
             traversed = self._full_set.find_tuples(
-                resource(tuple.subject_type_namespace, tuple.subject_type_name, tuple.subject_id)
+                resource(
+                    tuple.subject.subject.type.namespace,
+                    tuple.subject.subject.type.name,
+                    tuple.subject.subject.id,
+                )
             )
             # Now match these if those found match the predicates.
             matching, _ = traversed.find_group_with_tuples(
                 predicates,
-                group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+                group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
                 require_full_match=require_full_match,
                 match_once=match_once,
             )
@@ -217,7 +228,10 @@ class TupleSet:
 
         def predicate(rel: RelationTuple) -> bool:
             count = self.count_tuples(
-                all_of(tuple_matching, subject(rel.resource_type_namespace, rel.resource_type_name, rel.resource_id))
+                all_of(
+                    tuple_matching,
+                    subject(rel.resource.type.namespace, rel.resource.type.name, rel.resource.id),
+                )
             )
             return count > 0
 
@@ -248,7 +262,14 @@ class TupleSet:
         def predicate(rel: RelationTuple) -> bool:
             for predicate in predicates:
                 matched = self.count_tuples(
-                    all_of(predicate, resource(rel.subject_type_namespace, rel.subject_type_name, rel.subject_id))
+                    all_of(
+                        predicate,
+                        resource(
+                            rel.subject.subject.type.namespace,
+                            rel.subject.subject.type.name,
+                            rel.subject.subject.id,
+                        ),
+                    )
                 )
                 if matched == 0:
                     return False
@@ -257,7 +278,11 @@ class TupleSet:
                 matched = self.count_tuples(
                     all_of(
                         none_of(*predicates),
-                        resource(rel.subject_type_namespace, rel.subject_type_name, rel.subject_id),
+                        resource(
+                            rel.subject.subject.type.namespace,
+                            rel.subject.subject.type.name,
+                            rel.subject.subject.id,
+                        ),
                     )
                 )
                 if matched > 0:
@@ -276,15 +301,15 @@ class InMemoryTuples(TupleSet):
         self._tuples: Set[RelationTuple] = set(tuples) if tuples is not None else set()
         super().__init__(self, self._tuples)
 
-    def add(self, tuple: Relationship):
+    def add(self, item: Union[RelationTuple, Relationship]):
         """Add a tuple to the store."""
-        self._tuples.add(RelationTuple.from_message(tuple))
+        self._tuples.add(_to_relation_tuple(item))
 
-    def remove(self, tuple: Relationship):
+    def remove(self, item: Union[RelationTuple, Relationship]):
         """Remove a tuple from the store."""
-        self._tuples.discard(RelationTuple.from_message(tuple))
+        self._tuples.discard(_to_relation_tuple(item))
 
-    def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
+    def write(self, add: Iterable[Union[RelationTuple, Relationship]], remove: Iterable[Union[RelationTuple, Relationship]]):
         """
         Add / remove tuples, checking for duplicates within this batch.
 
@@ -293,11 +318,11 @@ class InMemoryTuples(TupleSet):
         """
         # Check for duplicates within tuples_to_add (indicates bug in tuple generation)
         seen_in_batch = set()
-        for tuple in add:
-            key = RelationTuple.from_message(tuple)
+        for item in add:
+            key = _to_relation_tuple(item)
             tuple_str = (
-                f"{key.resource_type_name}:{key.resource_id}#{key.relation}"
-                f"@{key.subject_type_name}:{key.subject_id}"
+                f"{key.resource.type.name}:{key.resource.id}#{key.relation}"
+                f"@{key.subject.subject.type.name}:{key.subject.subject.id}"
             )
 
             if key in seen_in_batch:
@@ -308,10 +333,10 @@ class InMemoryTuples(TupleSet):
             seen_in_batch.add(key)
 
         # Now add all tuples (duplicates with existing tuples are OK - Kessel handles this)
-        for tuple in remove:
-            self.remove(tuple)
-        for tuple in add:
-            self.add(tuple)
+        for item in remove:
+            self.remove(item)
+        for item in add:
+            self.add(item)
 
     def clear(self):
         """Clear all tuples from the store."""
@@ -382,7 +407,7 @@ def resource_type(namespace: str, name: str) -> RelationPredicate:
     """Return a predicate that is true if the resource type matches the given namespace and name."""
 
     def predicate(rel: RelationTuple) -> bool:
-        return rel.resource_type_namespace == namespace and rel.resource_type_name == name
+        return rel.resource.type.namespace == namespace and rel.resource.type.name == name
 
     return TuplePredicate(predicate, f'resource_type("{namespace}", "{name}")')
 
@@ -391,7 +416,7 @@ def resource_id(id: str) -> RelationPredicate:
     """Return a predicate that is true if the resource ID matches the given ID."""
 
     def predicate(rel: RelationTuple) -> bool:
-        return rel.resource_id == id
+        return rel.resource.id == id
 
     return TuplePredicate(predicate, f'resource_id("{id}")')
 
@@ -415,9 +440,9 @@ def subject_type(namespace: str, name: str, relation: Optional[str] = None) -> R
 
     def predicate(rel: RelationTuple) -> bool:
         return (
-            rel.subject_type_namespace == namespace
-            and rel.subject_type_name == name
-            and rel.subject_relation == relation
+            rel.subject.subject.type.namespace == namespace
+            and rel.subject.subject.type.name == name
+            and rel.subject.relation == relation
         )
 
     return TuplePredicate(predicate, f'subject_type("{namespace}", "{name}")')
@@ -427,7 +452,7 @@ def subject_id(id: str) -> RelationPredicate:
     """Return a predicate that is true if the subject ID matches the given ID."""
 
     def predicate(rel: RelationTuple) -> bool:
-        return rel.subject_id == id
+        return rel.subject.subject.id == id
 
     return TuplePredicate(predicate, f'subject_id("{id}")')
 

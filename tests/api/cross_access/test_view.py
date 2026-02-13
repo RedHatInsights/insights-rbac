@@ -1001,11 +1001,11 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -1024,7 +1024,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID
@@ -1055,7 +1055,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
         )
 
-        previous_subject_ids = {str(binding.subject_id) for binding in previous_default_bindings}
+        previous_subject_ids = {str(binding.subject.subject.id) for binding in previous_default_bindings}
 
         # generated relations to approve request
         self.approve_request(self.request_4)
@@ -1069,18 +1069,18 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # Collect default bindings which were added by approving request
         default_bindings = []
         for binding in all_default_bindings:
-            if str(binding.subject_id) not in previous_subject_ids:
+            if str(binding.subject.subject.id) not in previous_subject_ids:
                 default_bindings.append(binding)
 
         # Of these bindings, look for the ones that are for the user 2222222
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -1099,7 +1099,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID
@@ -1115,11 +1115,11 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -1146,7 +1146,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         default_bindings = []
         for binding in all_default_bindings:
-            if str(binding.subject_id) not in previous_subject_ids:
+            if str(binding.subject.subject.id) not in previous_subject_ids:
                 default_bindings.append(binding)
 
         self.assertEqual(len(default_bindings), 0, "Default bindings for cross access request roles still exists")

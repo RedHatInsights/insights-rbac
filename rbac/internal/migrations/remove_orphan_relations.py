@@ -434,7 +434,7 @@ class _RemoteWorkspaceData:
         return set(self._parents_by_workspace.keys())
 
 
-def _workspace_parent_relationship(workspace_id: str, parent: V2boundresource) -> Relationship:
+def _workspace_parent_relationship(workspace_id: str, parent: V2boundresource) -> RelationTuple:
     return create_relationship(
         resource_name=("rbac", "workspace"),
         resource_id=workspace_id,

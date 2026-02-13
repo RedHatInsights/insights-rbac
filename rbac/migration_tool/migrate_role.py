@@ -17,17 +17,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Iterable
 
-from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role
 from management.role.v2_model import CustomRoleV2
+from management.types import RelationTuple
 from migration_tool.models import V2boundresource, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import MigrateCustomRoleResult, v1_role_to_v2_bindings
 
 
 def _get_kessel_relation_tuples(
     v2_role_bindings: Iterable[V2rolebinding],
-) -> list[common_pb2.Relationship]:
-    relationships: list[common_pb2.Relationship] = list()
+) -> list[RelationTuple]:
+    relationships: list[RelationTuple] = list()
 
     for v2_role_binding in v2_role_bindings:
         relationships.extend(v2_role_binding.as_tuples())
@@ -35,7 +35,7 @@ def _get_kessel_relation_tuples(
     return relationships
 
 
-def relation_tuples_for_bindings(bindings: Iterable[BindingMapping]) -> list[common_pb2.Relationship]:
+def relation_tuples_for_bindings(bindings: Iterable[BindingMapping]) -> list[RelationTuple]:
     """Generate a set of relationships for a given set of BindingMappings."""
     return _get_kessel_relation_tuples([m.get_role_binding() for m in bindings])
 
@@ -45,7 +45,7 @@ def migrate_role(
     default_resource: V2boundresource,
     current_bindings: Iterable[BindingMapping],
     current_v2_roles: Iterable[CustomRoleV2],
-) -> tuple[list[common_pb2.Relationship], MigrateCustomRoleResult]:
+) -> tuple[list[RelationTuple], MigrateCustomRoleResult]:
     """
     Migrate a role from v1 to v2, returning the tuples and mappings.
 

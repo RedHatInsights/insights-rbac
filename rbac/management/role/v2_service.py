@@ -115,7 +115,7 @@ class RoleV2Service:
                     event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
                     info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
                     partition_key=PartitionKey.byEnvironment(),
-                    add=[t.as_message() for t in role.as_tuples()],
+                    add=role.as_tuples(),
                 )
             )
 

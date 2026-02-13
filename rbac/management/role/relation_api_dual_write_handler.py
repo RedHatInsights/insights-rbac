@@ -25,6 +25,7 @@ from django.conf import settings
 from django.db.models import Model
 from kessel.relations.v1beta1 import common_pb2
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.types import RelationTuple
 from management.models import Workspace
 from management.permission.scope_service import ImplicitResourceService, Scope, bound_model_for_scope
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -78,7 +79,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations specific to the seeding process."""
 
     _replicator: RelationReplicator
-    _current_role_relations: list[common_pb2.Relationship]
+    _current_role_relations: list[RelationTuple]
 
     _public_tenant: Optional[Tenant] = None
 
@@ -174,7 +175,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
     def _generate_relations_for_role(
         self, list_all_possible_scopes_for_removal=False
-    ) -> list[common_pb2.Relationship]:
+    ) -> list[RelationTuple]:
         """Generate system role permissions."""
         relations = []
         # Gather v1 and v2 permissions for the role
@@ -213,8 +214,8 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         self,
         event_type: ReplicationEventType,
         metadata: dict[str, object],
-        remove: list[common_pb2.Relationship],
-        add: list[common_pb2.Relationship],
+        remove: list[RelationTuple],
+        add: list[RelationTuple],
     ):
         if not self.replication_enabled():
             return
@@ -284,8 +285,8 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             return
         try:
             self.event_type = event_type
-            self.role_relations: list[common_pb2.Relationship] = []
-            self.current_role_relations: list[common_pb2.Relationship] = []
+            self.role_relations: list[RelationTuple] = []
+            self.current_role_relations: list[RelationTuple] = []
             self.role = role
             self.binding_mappings: dict[int, BindingMapping] = {}
             self.role_bindings: dict[int, RoleBinding] = {}

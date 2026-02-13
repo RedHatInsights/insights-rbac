@@ -20,8 +20,8 @@
 import logging
 from typing import Iterable, Optional
 
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.types import RelationTuple
 from management.group.platform import GlobalPolicyIdService
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
@@ -287,7 +287,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         self,
         resource_binding_only: bool,
         mapping: Optional[TenantMapping] = None,
-    ) -> list[Relationship]:
+    ) -> list[RelationTuple]:
         """
         Calculate default bindings from tenant mapping.
 

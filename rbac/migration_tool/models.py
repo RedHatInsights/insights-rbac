@@ -19,8 +19,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Iterable, Optional, Tuple
 
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.principal.model import Principal
+from management.types import RelationTuple
 from management.workspace.model import Workspace
 from migration_tool.utils import create_relationship
 
@@ -177,7 +177,7 @@ class V2rolebinding:
 
     def as_tuples(self):
         """Create tuples from V2rolebinding model."""
-        tuples: list[Relationship] = list()
+        tuples: list[RelationTuple] = list()
 
         tuples.append(create_relationship(("rbac", "role_binding"), self.id, ("rbac", "role"), self.role.id, "role"))
 
@@ -204,7 +204,7 @@ class V2rolebinding:
         return tuples
 
 
-def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> Relationship:
+def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> RelationTuple:
     """Create a relationship tuple for a role binding and a group."""
     return create_relationship(
         ("rbac", "role_binding"),
@@ -216,7 +216,7 @@ def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> R
     )
 
 
-def role_binding_user_subject_tuple(role_binding_id: str, user_id: str) -> Relationship:
+def role_binding_user_subject_tuple(role_binding_id: str, user_id: str) -> RelationTuple:
     """Create a relationship tuple for a role binding and a user."""
     id = Principal.user_id_to_principal_resource_id(user_id)
     return create_relationship(
@@ -228,7 +228,7 @@ def role_binding_user_subject_tuple(role_binding_id: str, user_id: str) -> Relat
     )
 
 
-def role_permission_tuple(role_id: str, permission: str) -> Relationship:
+def role_permission_tuple(role_id: str, permission: str) -> RelationTuple:
     """Create a relationship tuple for a role having a given permission."""
     return create_relationship(
         ("rbac", "role"),
