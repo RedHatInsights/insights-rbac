@@ -309,7 +309,11 @@ class InMemoryTuples(TupleSet):
         """Remove a tuple from the store."""
         self._tuples.discard(_to_relation_tuple(item))
 
-    def write(self, add: Iterable[Union[RelationTuple, Relationship]], remove: Iterable[Union[RelationTuple, Relationship]]):
+    def write(
+        self,
+        add: Iterable[Union[RelationTuple, Relationship]],
+        remove: Iterable[Union[RelationTuple, Relationship]],
+    ):
         """
         Add / remove tuples, checking for duplicates within this batch.
 

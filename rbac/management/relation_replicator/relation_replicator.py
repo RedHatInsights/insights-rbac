@@ -21,7 +21,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, Union
+from typing import Dict, TYPE_CHECKING, Union
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2

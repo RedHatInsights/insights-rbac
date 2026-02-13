@@ -120,8 +120,7 @@ class RelationTuple:
         _validate_required_str("relation", self.relation)
         if self.resource.id == "*":
             raise ValueError(
-                "resource.id cannot be '*' (asterisk is only allowed for subjects)."
-                f"\nFull relationship: {self!r}"
+                "resource.id cannot be '*' (asterisk is only allowed for subjects)." f"\nFull relationship: {self!r}"
             )
 
     @classmethod

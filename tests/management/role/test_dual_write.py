@@ -1228,7 +1228,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 4)
 
-        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
+        parents = [
+            rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)
+        ]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(
@@ -1245,7 +1247,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if only 2 relations exists in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 2)
-        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
+        parents = [
+            rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)
+        ]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # ensure no relations exist in replicator.
@@ -1278,7 +1282,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if relations exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 4)
-        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
+        parents = [
+            rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)
+        ]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(
@@ -1295,7 +1301,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 1)
-        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
+        parents = [
+            rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)
+        ]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # Delete system role
@@ -1313,7 +1321,9 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEqual(len(tuples), 1)
-        parents = [rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)]
+        parents = [
+            rel.resource.id for rel in tuples if rel.relation == "child" and rel.subject.subject.id == str(role.uuid)
+        ]
         self.assertSetEqual(set([admin_default]), set(parents))
 
         # Delete system role

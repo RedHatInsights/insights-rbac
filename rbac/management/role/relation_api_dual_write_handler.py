@@ -23,9 +23,7 @@ from typing import Any, Iterable, Optional
 
 from django.conf import settings
 from django.db.models import Model
-from kessel.relations.v1beta1 import common_pb2
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.relation_replicator.types import RelationTuple
 from management.models import Workspace
 from management.permission.scope_service import ImplicitResourceService, Scope, bound_model_for_scope
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -34,6 +32,7 @@ from management.relation_replicator.relation_replicator import DualWriteExceptio
 from management.relation_replicator.relation_replicator import RelationReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.relation_replicator.types import RelationTuple
 from management.role.model import BindingMapping, Role
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.relations import deduplicate_role_permission_relationships, role_child_relationship
@@ -173,9 +172,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 
         return create_relations
 
-    def _generate_relations_for_role(
-        self, list_all_possible_scopes_for_removal=False
-    ) -> list[RelationTuple]:
+    def _generate_relations_for_role(self, list_all_possible_scopes_for_removal=False) -> list[RelationTuple]:
         """Generate system role permissions."""
         relations = []
         # Gather v1 and v2 permissions for the role

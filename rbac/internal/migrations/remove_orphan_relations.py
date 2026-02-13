@@ -142,7 +142,7 @@ def _collect_remote_relations_for_binding(
     result.add_relations(role_tuples)
 
     for t in role_tuples:
-        role_id = t.subject_id
+        role_id = t.subject.subject.id
 
         if role_id not in system_role_uuids:
             result.add_custom_role(role_id)
@@ -262,7 +262,7 @@ def _remove_orphaned_role_bindings(
     )
 
     for batch in itertools.batched(binding_tuples, 100):
-        binding_ids: set[str] = {t.subject_id for t in batch}
+        binding_ids: set[str] = {t.subject.subject.id for t in batch}
 
         lookup_result_by_binding = {
             b: _collect_remote_relations_for_binding(
@@ -307,7 +307,7 @@ def _remove_orphaned_role_bindings(
                     # If there is a custom default group: remove only the resource->binding relation.
                     # If there is not a custom default group, leave the binding untouched.
                     if bootstrap_lock.custom_default_group is not None:
-                        to_remove.extend(
+                        to_remove.append(
                             create_relationship(
                                 ("rbac", resource_type),
                                 resource_id,
@@ -479,7 +479,7 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_typed: _Read
     )
 
     for t in root_tuples:
-        add_seen_workspace(t.resource_id, V2boundresource(("rbac", "tenant"), tenant_resource_id))
+        add_seen_workspace(t.resource.id, V2boundresource(("rbac", "tenant"), tenant_resource_id))
 
     # DFS to find child workspaces
     while stack:
@@ -495,7 +495,7 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_typed: _Read
         )
 
         for t in child_tuples:
-            add_seen_workspace(t.resource_id, V2boundresource(("rbac", "workspace"), parent_ws_id))
+            add_seen_workspace(t.resource.id, V2boundresource(("rbac", "workspace"), parent_ws_id))
 
     return workspace_data
 

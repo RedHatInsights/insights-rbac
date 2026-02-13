@@ -1024,7 +1024,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject.subject.id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id
+            for _, tuples in cross_account_bindings.items()
+            for t in tuples
+            if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID
@@ -1099,7 +1102,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject.subject.id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id
+            for _, tuples in cross_account_bindings.items()
+            for t in tuples
+            if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID

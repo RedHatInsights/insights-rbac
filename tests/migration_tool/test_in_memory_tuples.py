@@ -19,7 +19,11 @@ def _make_tuple(
     subject_relation: Optional[str] = None,
 ) -> RelationTuple:
     """Build a RelationTuple from flat keyword arguments for test convenience."""
-    from management.relation_replicator.types import ObjectReference as ObjRef, ObjectType as ObjType, SubjectReference as SubRef
+    from management.relation_replicator.types import (
+        ObjectReference as ObjRef,
+        ObjectType as ObjType,
+        SubjectReference as SubRef,
+    )
 
     return RelationTuple(
         resource=ObjRef(type=ObjType(namespace=resource_type_namespace, name=resource_type_name), id=resource_id),

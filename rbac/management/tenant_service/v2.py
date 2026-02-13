@@ -6,7 +6,6 @@ from typing import Callable, Iterable, List, Optional
 from django.conf import settings
 from django.db.models import Prefetch, Q, QuerySet
 from management.group.model import Group
-from management.relation_replicator.types import RelationTuple
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import TenantScopeResources
 from management.principal.model import Principal
@@ -16,6 +15,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.relation_replicator.types import RelationTuple
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
 from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant

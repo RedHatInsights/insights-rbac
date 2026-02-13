@@ -1330,7 +1330,11 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         found_admin_binding = False
         for t in tuples:
             # RelationTuple has: relation, subject.subject.type.name, subject.subject.id
-            if t.relation == "subject" and t.subject.subject.type.name == "group" and admin_group_uuid in t.subject.subject.id:
+            if (
+                t.relation == "subject"
+                and t.subject.subject.type.name == "group"
+                and admin_group_uuid in t.subject.subject.id
+            ):
                 found_admin_binding = True
                 break
         self.assertTrue(found_admin_binding, f"No admin binding found for group {admin_group_uuid}")
