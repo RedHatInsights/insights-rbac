@@ -16,15 +16,16 @@
 #
 """Tests for the RoleBindingService and Serializer."""
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from management.models import Group, Permission, Principal, Workspace
-from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
+from management.role.v2_model import RoleV2
+from management.role.v2_service import RoleV2Service
+from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
-from management.utils import FieldSelectionValidationError
 from management.role_binding.service import RoleBindingService
+from management.utils import FieldSelectionValidationError
 from management.tenant_mapping.model import TenantMapping
-
 from tests.identity_request import IdentityRequest
 
 
@@ -838,3 +839,334 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         # Check last_modified
         self.assertIn("last_modified", data)
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class UpdateRoleBindingsForSubjectTests(IdentityRequest):
+    """Tests for RoleBindingService.update_role_bindings_for_subject method."""
+
+    def setUp(self):
+        """Set up test data using services."""
+        super().setUp()
+
+        # Create workspace hierarchy
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            description="Test workspace description",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        # Create permissions and roles using RoleV2Service
+        self.permission1 = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+
+        self.role_service = RoleV2Service()
+        self.role1 = self.role_service.create(
+            name="role1",
+            description="Test role 1",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+        self.role2 = self.role_service.create(
+            name="role2",
+            description="Test role 2",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "write"}],
+            tenant=self.tenant,
+        )
+
+        # Create group and principal
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group description",
+            tenant=self.tenant,
+        )
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            user_id="testuser",
+            type=Principal.Types.USER,
+        )
+
+        self.service = RoleBindingService(tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    def test_update_role_bindings_for_group(self):
+        """Test updating role bindings for a group."""
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid), str(self.role2.uuid)],
+        )
+
+        expected = {
+            "subject_type": "group",
+            "subject": self.group,
+            "resource_type": "workspace",
+            "resource_id": str(self.workspace.id),
+            "role_uuids": {self.role1.uuid, self.role2.uuid},
+        }
+        actual = {
+            "subject_type": result.subject_type,
+            "subject": result.subject,
+            "resource_type": result.resource_type,
+            "resource_id": result.resource_id,
+            "role_uuids": {r.uuid for r in result.roles},
+        }
+        self.assertEqual(actual, expected)
+
+    def test_update_role_bindings_for_principal(self):
+        """Test updating role bindings for a principal."""
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="user",
+            subject_id=str(self.principal.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        expected = {
+            "subject_type": "user",
+            "subject": self.principal,
+            "resource_type": "workspace",
+            "resource_id": str(self.workspace.id),
+            "role_uuids": {self.role1.uuid},
+        }
+        actual = {
+            "subject_type": result.subject_type,
+            "subject": result.subject,
+            "resource_type": result.resource_type,
+            "resource_id": result.resource_id,
+            "role_uuids": {r.uuid for r in result.roles},
+        }
+        self.assertEqual(actual, expected)
+
+    def test_update_replaces_existing_bindings(self):
+        """Test that update replaces existing bindings."""
+        # First update with role1
+        self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        # Second update with role2 only
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role2.uuid)],
+        )
+
+        # Should have only role2 now (role1 was replaced)
+        expected = {
+            "subject_type": "group",
+            "subject": self.group,
+            "resource_type": "workspace",
+            "resource_id": str(self.workspace.id),
+            "role_uuids": {self.role2.uuid},
+        }
+        actual = {
+            "subject_type": result.subject_type,
+            "subject": result.subject,
+            "resource_type": result.resource_type,
+            "resource_id": result.resource_id,
+            "role_uuids": {r.uuid for r in result.roles},
+        }
+        self.assertEqual(actual, expected)
+
+    def test_update_raises_not_found_error(self):
+        """Test that update raises NotFoundError for non-existent entities."""
+        import uuid
+
+        from management.exceptions import NotFoundError
+
+        def make_cases():
+            fake_group_id = str(uuid.uuid4())
+            fake_principal_id = str(uuid.uuid4())
+            fake_workspace_id = str(uuid.uuid4())
+
+            return [
+                # Non-existent group
+                (
+                    "invalid_group",
+                    {
+                        "resource_type": "workspace",
+                        "resource_id": str(self.workspace.id),
+                        "subject_type": "group",
+                        "subject_id": fake_group_id,
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "group",
+                    fake_group_id,
+                ),
+                # Non-existent principal
+                (
+                    "invalid_principal",
+                    {
+                        "resource_type": "workspace",
+                        "resource_id": str(self.workspace.id),
+                        "subject_type": "user",
+                        "subject_id": fake_principal_id,
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "user",
+                    fake_principal_id,
+                ),
+                # Non-existent workspace
+                (
+                    "invalid_resource",
+                    {
+                        "resource_type": "workspace",
+                        "resource_id": fake_workspace_id,
+                        "subject_type": "group",
+                        "subject_id": str(self.group.uuid),
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "workspace",
+                    fake_workspace_id,
+                ),
+            ]
+
+        for description, params, expected_resource_type, expected_resource_id in make_cases():
+            with self.subTest(case=description):
+                with self.assertRaises(NotFoundError) as context:
+                    self.service.update_role_bindings_for_subject(**params)
+
+                self.assertEqual(context.exception.resource_type, expected_resource_type)
+                self.assertEqual(context.exception.resource_id, expected_resource_id)
+                self.assertIn(expected_resource_id, str(context.exception))
+
+    def test_update_raises_error_for_invalid_role(self):
+        """Test that update raises InvalidFieldError for non-existent role."""
+        import uuid
+
+        from management.exceptions import InvalidFieldError
+
+        fake_uuid = str(uuid.uuid4())
+        with self.assertRaises(InvalidFieldError) as context:
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="group",
+                subject_id=str(self.group.uuid),
+                role_ids=[fake_uuid],
+            )
+
+        self.assertEqual(context.exception.field, "roles")
+        self.assertIn(fake_uuid, str(context.exception))
+
+    def test_update_raises_error_for_unsupported_subject_type(self):
+        """Test that update raises UnsupportedSubjectTypeError for invalid subject type."""
+        from management.subject import UnsupportedSubjectTypeError
+
+        test_cases = [
+            ("invalid_type", "invalid_type"),
+            ("empty_string", ""),
+        ]
+
+        for description, subject_type in test_cases:
+            with self.subTest(case=description):
+                with self.assertRaises(UnsupportedSubjectTypeError) as context:
+                    self.service.update_role_bindings_for_subject(
+                        resource_type="workspace",
+                        resource_id=str(self.workspace.id),
+                        subject_type=subject_type,
+                        subject_id=str(self.group.uuid),
+                        role_ids=[str(self.role1.uuid)],
+                    )
+
+                self.assertEqual(context.exception.subject_type, subject_type)
+                self.assertIn("group", context.exception.supported)
+                self.assertIn("user", context.exception.supported)
+
+    def test_update_raises_error_for_missing_required_fields(self):
+        """Test that update raises RequiredFieldError for missing required fields."""
+        from management.exceptions import RequiredFieldError
+
+        test_cases = [
+            # Empty resource_type - caught by model validation
+            (
+                "empty_resource_type",
+                {
+                    "resource_type": "",
+                    "resource_id": str(self.workspace.id),
+                    "subject_type": "group",
+                    "subject_id": str(self.group.uuid),
+                    "role_ids": [str(self.role1.uuid)],
+                },
+                "resource_type",
+            ),
+            # Empty resource_id - caught by service validation
+            (
+                "empty_resource_id",
+                {
+                    "resource_type": "workspace",
+                    "resource_id": "",
+                    "subject_type": "group",
+                    "subject_id": str(self.group.uuid),
+                    "role_ids": [str(self.role1.uuid)],
+                },
+                "resource_id",
+            ),
+            # Empty subject_id
+            (
+                "empty_subject_id",
+                {
+                    "resource_type": "workspace",
+                    "resource_id": str(self.workspace.id),
+                    "subject_type": "group",
+                    "subject_id": "",
+                    "role_ids": [str(self.role1.uuid)],
+                },
+                "subject_id",
+            ),
+            # Empty roles list - caught by model validation
+            (
+                "empty_roles",
+                {
+                    "resource_type": "workspace",
+                    "resource_id": str(self.workspace.id),
+                    "subject_type": "group",
+                    "subject_id": str(self.group.uuid),
+                    "role_ids": [],
+                },
+                "roles",
+            ),
+        ]
+
+        for description, params, expected_field in test_cases:
+            with self.subTest(case=description):
+                with self.assertRaises(RequiredFieldError) as context:
+                    self.service.update_role_bindings_for_subject(**params)
+
+                self.assertEqual(context.exception.field_name, expected_field)

@@ -19,23 +19,34 @@
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
+from management.exceptions import InvalidFieldError, NotFoundError
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
+from management.role_binding.exceptions import UnsupportedSubjectTypeError
+from management.subject import SubjectType
+from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import serializers, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
+from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
+from .serializer import (
+    RoleBindingInputSerializer,
+    RoleBindingOutputSerializer,
+    UpdateRoleBindingSerializer,
+)
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
 
 
-class RoleBindingViewSet(BaseV2ViewSet):
+class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """Role Binding ViewSet.
 
-    Provides read-only access to role bindings currently.
+    Provides access to role bindings with support for listing and updating.
 
     Query Parameters (by-subject endpoint):
         Required:
@@ -56,8 +67,18 @@ class RoleBindingViewSet(BaseV2ViewSet):
     )
     pagination_class = V2CursorPagination
 
-    @action(detail=False, methods=["get"], url_path="by-subject")
+    @action(detail=False, methods=["get", "put"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
+        """Handle role bindings by subject.
+
+        GET: List role bindings grouped by subject.
+        PUT: Update role bindings for a specific subject on a resource.
+        """
+        if request.method == "PUT":
+            return self._update_by_subject(request)
+        return self._list_by_subject(request)
+
+    def _list_by_subject(self, request):
         """List role bindings grouped by subject.
 
         Required query parameters:
@@ -89,3 +110,53 @@ class RoleBindingViewSet(BaseV2ViewSet):
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
+
+    def _update_by_subject(self, request):
+        """Update role bindings for a specific subject on a resource."""
+        data = {**request.query_params.dict(), **request.data}
+
+        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+
+        role_ids = [str(role["id"]) for role in validated["roles"]]
+
+        service = RoleBindingService(tenant=request.tenant)
+
+        try:
+            result = service.update_role_bindings_for_subject(
+                resource_type=validated["resource_type"],
+                resource_id=validated["resource_id"],
+                subject_type=validated["subject_type"],
+                subject_id=validated["subject_id"],
+                role_ids=role_ids,
+            )
+        except NotFoundError as e:
+            raise NotFound(detail=str(e))
+        except (UnsupportedSubjectTypeError, InvalidFieldError) as e:
+            raise serializers.ValidationError({getattr(e, "field", "detail"): str(e)})
+
+        resource_name = service.get_resource_name(validated["resource_id"], validated["resource_type"])
+        last_modified = max((role.modified for role in result.roles), default=None) if result.roles else None
+
+        if result.subject_type == SubjectType.GROUP:
+            subject = {"id": result.subject.uuid, "type": SubjectType.GROUP}
+        else:
+            subject = {
+                "id": result.subject.uuid,
+                "type": SubjectType.USER,
+                "user": {"username": result.subject.username},
+            }
+
+        response_data = {
+            "subject": subject,
+            "roles": [{"id": role.uuid, "name": role.name} for role in result.roles],
+            "resource": {
+                "id": validated["resource_id"],
+                "type": validated["resource_type"],
+                "name": resource_name,
+            },
+            "last_modified": last_modified,
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)

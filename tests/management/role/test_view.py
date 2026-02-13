@@ -40,7 +40,8 @@ from management.models import (
     Workspace,
     BindingMapping,
 )
-from management.role.v2_model import CustomRoleV2, RoleBinding
+from management.role.v2_model import CustomRoleV2
+from management.role_binding.model import RoleBinding
 from migration_tool.in_memory_tuples import (
     all_of,
     InMemoryRelationReplicator,
