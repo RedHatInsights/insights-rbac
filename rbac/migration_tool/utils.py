@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Tuple
 
 from kessel.relations.v1beta1 import common_pb2
-from migration_tool.in_memory_tuples import RelationTuple
+from models import RelationTuple
 from protoc_gen_validate.validator import ValidationFailed, validate_all
 
 logger = logging.getLogger(__name__)

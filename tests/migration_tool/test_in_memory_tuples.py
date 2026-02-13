@@ -3,7 +3,8 @@ import uuid
 from typing import Optional
 
 from kessel.relations.v1beta1.common_pb2 import Relationship, ObjectReference, ObjectType, SubjectReference
-from migration_tool.in_memory_tuples import InMemoryTuples, RelationTuple
+from migration_tool.in_memory_tuples import InMemoryTuples
+from models import RelationTuple
 from migration_tool.utils import create_relationship
 
 

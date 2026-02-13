@@ -30,7 +30,7 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
 from management.role.v2_model import RoleV2, SeededRoleV2
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
-from migration_tool.in_memory_tuples import RelationTuple
+from models import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple
 from migration_tool.utils import create_relationship
 from kessel.relations.v1beta1.common_pb2 import Relationship
