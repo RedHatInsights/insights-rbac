@@ -28,7 +28,7 @@ class UnsupportedSubjectTypeError(SubjectError):
 
     def __init__(self, subject_type: str, supported: list[str] | None = None):
         """Initialize with the unsupported subject type."""
-        from management.subject.service import SubjectType
+        from management.subject.model import SubjectType
 
         self.subject_type = subject_type
         self.supported = supported or SubjectType.values()

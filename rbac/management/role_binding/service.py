@@ -37,7 +37,7 @@ from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup
-from management.subject import SubjectService, SubjectType
+from management.subject import Subject, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
@@ -72,7 +72,6 @@ class RoleBindingService:
         from management.role.v2_service import RoleV2Service
 
         self.tenant = tenant
-        self.subject_service = SubjectService(tenant)
         self.role_service = RoleV2Service()
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
@@ -617,13 +616,13 @@ class RoleBindingService:
 
         roles = self._get_roles(role_ids)
 
-        subject = self.subject_service.get_subject(subject_type, subject_id)
+        subject = Subject.objects.by_type(type=subject_type, id=subject_id, tenant=self.tenant)
 
         RoleBinding.set_roles_for_subject(
             tenant=self.tenant,
             resource_type=resource_type,
             resource_id=resource_id,
-            subject=subject,
+            subject=subject.entity,
             roles=roles,
         )
 
@@ -632,7 +631,7 @@ class RoleBindingService:
             roles=roles,
             resource_id=resource_id,
             resource_type=resource_type,
-            subject=subject,
+            subject=subject.entity,
         )
 
         logger.info(

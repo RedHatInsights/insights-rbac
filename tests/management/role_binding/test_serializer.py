@@ -746,7 +746,7 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         # fields should be parsed into FieldSelection object
         self.assertIsInstance(serializer.validated_data["fields"], FieldSelection)
-        self.assertIn("group.name", serializer.validated_data["fields"].subject_fields)
+        self.assertIn("group.name", serializer.validated_data["fields"].get_nested("subject"))
 
     def test_user_subject_type_valid(self):
         """Test that 'user' is a valid subject_type."""

@@ -1138,7 +1138,7 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
                 },
                 "resource_id",
             ),
-            # Empty subject_id - caught by SubjectService validation
+            # Empty subject_id
             (
                 "empty_subject_id",
                 {

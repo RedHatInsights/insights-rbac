@@ -23,11 +23,13 @@ Currently supported subjects are:
 """
 
 from management.subject.exceptions import SubjectError, UnsupportedSubjectTypeError
-from management.subject.service import SubjectService, SubjectType
+from management.subject.model import Subject, SubjectType
+from management.subject.queryset import SubjectQuerySet
 
 __all__ = [
+    "Subject",
+    "SubjectQuerySet",
     "SubjectType",
     "SubjectError",
     "UnsupportedSubjectTypeError",
-    "SubjectService",
 ]

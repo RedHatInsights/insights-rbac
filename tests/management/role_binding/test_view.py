@@ -1462,7 +1462,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     "title": "The request payload contains invalid syntax.",
                     "detail": "This field is required.",
                     "errors": [{"message": "This field is required.", "field": missing_field}],
-                    "instance": "/api/v2/role-bindings/by-subject/",
+                    "instance": "/api/rbac/v2/role-bindings/by-subject/",
                 }
                 self.assertEqual(response.data, expected)
 
@@ -1515,7 +1515,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     "title": "The request payload contains invalid syntax.",
                     "detail": expected_message,
                     "errors": [{"message": expected_message, "field": expected_field}],
-                    "instance": "/api/v2/role-bindings/by-subject/",
+                    "instance": "/api/rbac/v2/role-bindings/by-subject/",
                 }
                 self.assertEqual(response.data, expected)
 
@@ -1576,7 +1576,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     "title": "Not found.",
                     "detail": expected_detail,
                     "errors": [{"message": expected_detail, "field": "detail"}],
-                    "instance": "/api/v2/role-bindings/by-subject/",
+                    "instance": "/api/rbac/v2/role-bindings/by-subject/",
                 }
                 self.assertEqual(response.data, expected)
 
@@ -1627,6 +1627,6 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     "title": "The request payload contains invalid syntax.",
                     "detail": expected_detail,
                     "errors": [{"message": expected_detail, "field": expected_field}],
-                    "instance": "/api/v2/role-bindings/by-subject/",
+                    "instance": "/api/rbac/v2/role-bindings/by-subject/",
                 }
                 self.assertEqual(response.data, expected)
