@@ -30,7 +30,7 @@ from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from rest_framework import serializers
 from uuid_utils.compat import UUID, uuid7
 
-from api.models import TenantAwareModel
+from api.models import Tenant, TenantAwareModel
 
 
 class RoleV2(TenantAwareModel):
@@ -151,6 +151,44 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 
     _expected_type = RoleV2.Types.CUSTOM
     objects = TypedRoleV2Manager(role_type=_expected_type)
+
+    @classmethod
+    def createCustomRole(
+        cls,
+        name: str,
+        description: str,
+        permissions: list["Permission"],
+        tenant: "Tenant",
+    ) -> "CustomRoleV2":
+        """
+        Create a new custom role with V2 API validation.
+
+        This factory method validates all required fields and creates the role
+        with its permissions in a single operation. Use this for V2 API creation.
+
+        Args:
+            name: Role name (required, non-empty)
+            description: Role description (required, non-empty)
+            permissions: List of Permission objects to assign (required, non-empty)
+            tenant: The tenant this role belongs to
+
+        Returns:
+            The created CustomRoleV2 instance with permissions set
+
+        Raises:
+            RequiredFieldError: If name, description, or permissions is missing/empty
+        """
+        if not name or not name.strip():
+            raise RequiredFieldError("name")
+        if not description or not description.strip():
+            raise RequiredFieldError("description")
+        if not permissions:
+            raise RequiredFieldError("permissions")
+
+        role = cls(name=name, description=description, tenant=tenant)
+        role.save()
+        role.permissions.set(permissions)
+        return role
 
     def as_tuples(self) -> list[RelationTuple]:
         """Return relation tuples for this role's permissions."""

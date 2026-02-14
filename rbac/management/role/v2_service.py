@@ -23,7 +23,6 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import Count, QuerySet
 from management.atomic_transactions import atomic
-from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
@@ -80,16 +79,6 @@ class RoleV2Service:
         tenant: Tenant,
     ) -> CustomRoleV2:
         """Create a new custom role with the given attributes."""
-        # TODO: Move this validation to RoleV2 model once a migration is created
-        # to change description from TextField(null=True, blank=True) to
-        # TextField(null=False, blank=False). Currently enforced here because
-        # the API requires description but the model doesn't yet.
-        if not description or not description.strip():
-            raise RequiredFieldError("description")
-
-        if not permission_data:
-            raise RequiredFieldError("permissions")
-
         try:
             permissions = self.permission_service.resolve(permission_data)
             requested = {PermissionValue.from_v2_dict(p).v1_string() for p in permission_data}
@@ -102,13 +91,12 @@ class RoleV2Service:
             raise PermissionsNotFoundError(list(not_found))
 
         try:
-            role = CustomRoleV2(
+            role = CustomRoleV2.createCustomRole(
                 name=name,
                 description=description,
+                permissions=permissions,
                 tenant=tenant,
             )
-            role.save()
-            role.permissions.set(permissions)
 
             self._replicator.replicate(
                 ReplicationEvent(
