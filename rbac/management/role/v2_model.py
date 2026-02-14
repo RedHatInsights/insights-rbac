@@ -152,14 +152,8 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
     _expected_type = RoleV2.Types.CUSTOM
     objects = TypedRoleV2Manager(role_type=_expected_type)
 
-    def as_tuples(self, permissions: Iterable["Permission"] | None = None) -> list[RelationTuple]:
-        """Return relation tuples for this role's permissions.
-
-        Args:
-            permissions: Optional pre-loaded permissions to avoid extra DB query.
-                         If not provided, will fetch from database.
-        """
-        perms = permissions if permissions is not None else self.permissions.all()
+    def as_tuples(self) -> list[RelationTuple]:
+        """Return relation tuples for this role's permissions."""
         return [
             RelationTuple(
                 resource=ObjectReference(
@@ -174,7 +168,7 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
                     ),
                 ),
             )
-            for p in perms
+            for p in self.permissions.all()
         ]
 
 
