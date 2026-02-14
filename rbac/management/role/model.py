@@ -26,10 +26,10 @@ from django.db import models
 from django.db.models import signals
 from django.utils import timezone
 from internal.integration import sync_handlers
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
+from management.relation_replicator.types import RelationTuple
 from management.role.user_source import SourceKey
 from migration_tool.models import (
     V2boundresource,
@@ -185,7 +185,7 @@ class BindingMapping(models.Model):
             resource_id=resource_id,
         )
 
-    def as_tuples(self) -> list[Relationship]:
+    def as_tuples(self) -> list[RelationTuple]:
         """Create tuples from BindingMapping model."""
         v2_role_binding = self.get_role_binding()
         return v2_role_binding.as_tuples()
@@ -194,7 +194,7 @@ class BindingMapping(models.Model):
         """Return true if mapping is not assigned to any groups or users."""
         return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", {})) == 0
 
-    def unassign_group(self, group_uuid) -> Optional[Relationship]:
+    def unassign_group(self, group_uuid) -> Optional[RelationTuple]:
         """
         Completely unassign this group from the mapping, even if it is assigned more than once.
 
@@ -207,7 +207,7 @@ class BindingMapping(models.Model):
                 break
         return relationship
 
-    def pop_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
+    def pop_group_from_bindings(self, group_uuid: str) -> Optional[RelationTuple]:
         """
         Pop the group from mappings.
 
@@ -224,7 +224,7 @@ class BindingMapping(models.Model):
             return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def assign_group_to_bindings(self, group_uuid: str) -> Optional[Relationship]:
+    def assign_group_to_bindings(self, group_uuid: str) -> Optional[RelationTuple]:
         """
         Assign group to mappings.
 
@@ -236,7 +236,7 @@ class BindingMapping(models.Model):
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
     # TODO: This can be deleted after the migration
-    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
+    def add_group_to_bindings(self, group_uuid: str) -> RelationTuple:
         """
         Add group to mappings.
 
@@ -246,7 +246,7 @@ class BindingMapping(models.Model):
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def unassign_user_from_bindings(self, user_id: str, source: SourceKey) -> Optional[Relationship]:
+    def unassign_user_from_bindings(self, user_id: str, source: SourceKey) -> Optional[RelationTuple]:
         """Unassign user from mappings."""
         self._require_source(source)
         self.mappings["users"].pop(str(source), None)
@@ -259,7 +259,7 @@ class BindingMapping(models.Model):
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def assign_user_to_bindings(self, user_id: str, source: SourceKey) -> Relationship:
+    def assign_user_to_bindings(self, user_id: str, source: SourceKey) -> RelationTuple:
         """Assign user to mappings."""
         self._require_source(source)
         self.mappings["users"][str(source)] = user_id

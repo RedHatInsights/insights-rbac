@@ -21,10 +21,13 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict
+from typing import Dict, TYPE_CHECKING, Union
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
+
+if TYPE_CHECKING:
+    from management.relation_replicator.types import RelationTuple
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +88,15 @@ class ReplicationEvent:
     event_type: ReplicationEventType
     event_info: dict[str, object]
     partition_key: "PartitionKey"
-    add: list[common_pb2.Relationship]
-    remove: list[common_pb2.Relationship]
+    add: list[Union["RelationTuple", common_pb2.Relationship]]
+    remove: list[Union["RelationTuple", common_pb2.Relationship]]
 
     def __init__(
         self,
         event_type: ReplicationEventType,
         partition_key: "PartitionKey",
-        add: list[common_pb2.Relationship] = [],
-        remove: list[common_pb2.Relationship] = [],
+        add: list[Union["RelationTuple", common_pb2.Relationship]] = [],
+        remove: list[Union["RelationTuple", common_pb2.Relationship]] = [],
         info: dict[str, object] = {},
     ):
         """Initialize ReplicationEvent."""

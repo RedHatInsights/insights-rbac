@@ -20,7 +20,6 @@ import logging
 from unittest.mock import ANY
 from uuid import uuid4
 from django.test import TestCase, override_settings
-from google.protobuf import json_format
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from migration_tool.utils import create_relationship
@@ -87,12 +86,12 @@ class OutboxReplicatorTest(TestCase):
             logged_event.payload,
             {
                 "relations_to_add": [
-                    json_format.MessageToDict(principal_to_group_add1),
-                    json_format.MessageToDict(principal_to_group_add2),
+                    principal_to_group_add1.to_dict(),
+                    principal_to_group_add2.to_dict(),
                 ],
                 "relations_to_remove": [
-                    json_format.MessageToDict(principal_to_group_remove1),
-                    json_format.MessageToDict(principal_to_group_remove2),
+                    principal_to_group_remove1.to_dict(),
+                    principal_to_group_remove2.to_dict(),
                 ],
                 "resource_context": {
                     "org_id": "",

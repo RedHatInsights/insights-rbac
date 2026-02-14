@@ -34,6 +34,7 @@ from management.models import (
     SeededRoleV2,
 )
 from management.principal.model import Principal
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role.model import Access
 from management.role.v2_model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
@@ -422,6 +423,190 @@ class RoleV2ModelTests(IdentityRequest):
         self.assertEqual(custom_role.type, RoleV2.Types.CUSTOM)
         self.assertEqual(seeded_role.type, RoleV2.Types.SEEDED)
         self.assertEqual(platform_role.type, RoleV2.Types.PLATFORM)
+
+    def test_custom_role_as_tuples(self):
+        """Test that as_tuples returns correct relation tuples for role permissions."""
+        role = CustomRoleV2.objects.create(name="test_role_tuples", tenant=self.tenant)
+        role.permissions.add(self.permission1, self.permission2)
+
+        tuples = role.as_tuples()
+
+        def make_tuple(permission):
+            return RelationTuple(
+                resource=ObjectReference(
+                    type=ObjectType(namespace="rbac", name="role"),
+                    id=str(role.uuid),
+                ),
+                relation=permission.v2_string(),
+                subject=SubjectReference(
+                    subject=ObjectReference(
+                        type=ObjectType(namespace="rbac", name="principal"),
+                        id="*",
+                    ),
+                ),
+            )
+
+        expected = {make_tuple(self.permission1), make_tuple(self.permission2)}
+        self.assertEqual(set(tuples), expected)
+
+    def test_custom_role_as_tuples_empty_permissions(self):
+        """Test that as_tuples returns empty list when role has no permissions."""
+        role = CustomRoleV2.objects.create(name="test_role_empty", tenant=self.tenant)
+
+        tuples = role.as_tuples()
+
+        self.assertEqual(tuples, [])
+
+
+class CreateCustomRoleTests(IdentityRequest):
+    """Tests for CustomRoleV2.createCustomRole factory method."""
+
+    def setUp(self):
+        """Set up the createCustomRole tests."""
+        super().setUp()
+        self.permission1 = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down createCustomRole tests."""
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+
+    def test_createCustomRole_success(self):
+        """Test successful custom role creation with all required fields."""
+        role = CustomRoleV2.createCustomRole(
+            name="test_role",
+            description="Test description",
+            permissions=[self.permission1, self.permission2],
+            tenant=self.tenant,
+        )
+
+        self.assertEqual(role.name, "test_role")
+        self.assertEqual(role.description, "Test description")
+        self.assertEqual(role.tenant, self.tenant)
+        self.assertEqual(role.type, RoleV2.Types.CUSTOM)
+        self.assertEqual(set(role.permissions.all()), {self.permission1, self.permission2})
+        self.assertIsNotNone(role.uuid)
+        self.assertIsNotNone(role.pk)
+
+    def test_createCustomRole_missing_required_fields(self):
+        """Test that createCustomRole raises RequiredFieldError for missing/empty fields."""
+        from management.exceptions import RequiredFieldError
+
+        test_cases = [
+            {
+                "name": "missing_name",
+                "kwargs": {
+                    "name": "",
+                    "description": "desc",
+                    "permissions": [self.permission1],
+                    "tenant": self.tenant,
+                },
+                "expected_field": "name",
+            },
+            {
+                "name": "whitespace_name",
+                "kwargs": {
+                    "name": "   ",
+                    "description": "desc",
+                    "permissions": [self.permission1],
+                    "tenant": self.tenant,
+                },
+                "expected_field": "name",
+            },
+            {
+                "name": "none_name",
+                "kwargs": {
+                    "name": None,
+                    "description": "desc",
+                    "permissions": [self.permission1],
+                    "tenant": self.tenant,
+                },
+                "expected_field": "name",
+            },
+            {
+                "name": "missing_description",
+                "kwargs": {
+                    "name": "role",
+                    "description": "",
+                    "permissions": [self.permission1],
+                    "tenant": self.tenant,
+                },
+                "expected_field": "description",
+            },
+            {
+                "name": "whitespace_description",
+                "kwargs": {
+                    "name": "role",
+                    "description": "   ",
+                    "permissions": [self.permission1],
+                    "tenant": self.tenant,
+                },
+                "expected_field": "description",
+            },
+            {
+                "name": "none_description",
+                "kwargs": {
+                    "name": "role",
+                    "description": None,
+                    "permissions": [self.permission1],
+                    "tenant": self.tenant,
+                },
+                "expected_field": "description",
+            },
+            {
+                "name": "empty_permissions",
+                "kwargs": {
+                    "name": "role",
+                    "description": "desc",
+                    "permissions": [],
+                    "tenant": self.tenant,
+                },
+                "expected_field": "permissions",
+            },
+            {
+                "name": "none_permissions",
+                "kwargs": {
+                    "name": "role",
+                    "description": "desc",
+                    "permissions": None,
+                    "tenant": self.tenant,
+                },
+                "expected_field": "permissions",
+            },
+        ]
+
+        for test_case in test_cases:
+            with self.subTest(name=test_case["name"]):
+                with self.assertRaises(RequiredFieldError) as cm:
+                    CustomRoleV2.createCustomRole(**test_case["kwargs"])
+                self.assertEqual(cm.exception.field_name, test_case["expected_field"])
+
+    def test_createCustomRole_single_permission(self):
+        """Test custom role creation with a single permission."""
+        role = CustomRoleV2.createCustomRole(
+            name="single_perm_role",
+            description="Role with one permission",
+            permissions=[self.permission1],
+            tenant=self.tenant,
+        )
+
+        self.assertEqual(list(role.permissions.all()), [self.permission1])
+
+    def test_createCustomRole_persists_to_database(self):
+        """Test that createCustomRole persists the role to the database."""
+        role = CustomRoleV2.createCustomRole(
+            name="persisted_role",
+            description="Should be in DB",
+            permissions=[self.permission1],
+            tenant=self.tenant,
+        )
+
+        # Fetch fresh from DB
+        fetched = CustomRoleV2.objects.get(uuid=role.uuid)
+        self.assertEqual(fetched.name, "persisted_role")
+        self.assertEqual(fetched.description, "Should be in DB")
+        self.assertEqual(list(fetched.permissions.all()), [self.permission1])
 
 
 class RoleBindingModelTests(IdentityRequest):
