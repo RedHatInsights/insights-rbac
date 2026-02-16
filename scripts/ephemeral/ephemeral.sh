@@ -27,10 +27,13 @@ if [[ -z "${EPHEMERAL_USER}" ]]; then
   exit 1
 fi
 
+STATE_DIR="${EPHEMERAL_DIR}"/state
+mkdir -p -- "$STATE_DIR"
+
 REPO=$(echo "${EPHEMERAL_DIR}"| rev | cut -d/ -f3- | rev)
 TEMPLATE_FILE="${EPHEMERAL_DIR}"/config_template.yaml
-CONFIG_FILE="${EPHEMERAL_DIR}"/config.yaml
-TAG_FILE="${EPHEMERAL_DIR}"/current-tag
+CONFIG_FILE="${STATE_DIR}"/config.yaml
+TAG_FILE="${STATE_DIR}"/current-tag
 APP_NAME=rbac
 RBAC_FWD_PORT=9080
 
