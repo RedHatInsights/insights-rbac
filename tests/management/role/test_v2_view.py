@@ -589,3 +589,281 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("description", response.data)
         self.assertIn("permissions", response.data)
         self.assertIn("last_modified", response.data)
+
+    def test_create_role_with_fields_parameter(self):
+        """Test that create respects fields query parameter for response."""
+        data = {
+            "name": "Fields Test Role",
+            "description": "Testing fields parameter",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        url = f"{self.url}?fields=id,name,permissions_count"
+        response = self.client.post(url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(set(response.data.keys()), {"id", "name", "permissions_count"})
+        self.assertEqual(response.data["name"], "Fields Test Role")
+        self.assertEqual(response.data["permissions_count"], 1)
+        self.assertNotIn("description", response.data)
+        self.assertNotIn("permissions", response.data)
+
+    def test_create_role_with_invalid_fields_parameter(self):
+        """Test that create returns 400 for invalid fields parameter."""
+        data = {
+            "name": "Invalid Fields Role",
+            "description": "Testing invalid fields",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        url = f"{self.url}?fields=id,nonexistent_field"
+        response = self.client.post(url, data, format="json")
+
+        # Should still succeed but ignore invalid field
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    # ==========================================================================
+    # Tests for PUT /api/v2/roles/{uuid}/ (update)
+    # ==========================================================================
+
+    def test_update_role_success(self):
+        """Test updating a role via API returns 200."""
+        role = CustomRoleV2.objects.create(
+            name="Original Role",
+            description="Original description",
+            tenant=self.tenant,
+        )
+        role.permissions.add(self.permission2)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Updated Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "write"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Updated Role")
+        self.assertEqual(response.data["description"], "Updated description")
+        self.assertEqual(response.data["id"], str(role.uuid))
+
+        # Verify permissions are updated in response
+        self.assertEqual(
+            response.data["permissions"],
+            [{"application": "inventory", "resource_type": "hosts", "operation": "write"}],
+        )
+
+    def test_update_role_changes_permissions(self):
+        """Test that updating a role replaces all permissions."""
+        role = CustomRoleV2.objects.create(
+            name="Test Role",
+            description="Test description",
+            tenant=self.tenant,
+        )
+        role.permissions.add(self.permission2)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Test Role",
+            "description": "Test description",
+            "permissions": [
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+                {"application": "cost", "resource_type": "reports", "operation": "read"},
+            ],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["permissions"]), 2)
+
+        # Verify role in database has updated permissions
+        role.refresh_from_db()
+        self.assertEqual(role.permissions.count(), 2)
+        self.assertIn(self.permission3, role.permissions.all())
+        self.assertIn(self.permission4, role.permissions.all())
+        self.assertNotIn(self.permission2, role.permissions.all())
+
+    def test_update_role_preserves_permission_order(self):
+        """Test that update response permissions are returned in input order."""
+        role = CustomRoleV2.objects.create(
+            name="Order Test Role",
+            description="Testing order",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Order Test Role",
+            "description": "Testing permission order preservation",
+            "permissions": [
+                {"application": "cost", "resource_type": "reports", "operation": "read"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            ],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify permissions are returned in the same order as input
+        self.assertEqual(
+            response.data["permissions"],
+            [
+                {"application": "cost", "resource_type": "reports", "operation": "read"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            ],
+        )
+
+    def test_update_role_nonexistent_returns_404(self):
+        """Test that updating a nonexistent role returns 404."""
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": "550e8400-e29b-41d4-a716-446655440000"})
+        data = {
+            "name": "Updated Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_role_duplicate_name_returns_400(self):
+        """Test that updating a role to duplicate name returns 400."""
+        role1 = CustomRoleV2.objects.create(
+            name="Role One",
+            description="First role",
+            tenant=self.tenant,
+        )
+
+        role2 = CustomRoleV2.objects.create(
+            name="Role Two",
+            description="Second role",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role2.uuid)})
+        data = {
+            "name": "Role One",
+            "description": "Second role",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists", response.data["detail"])
+
+    def test_update_role_empty_permissions_returns_400(self):
+        """Test that updating a role with empty permissions returns 400."""
+        role = CustomRoleV2.objects.create(
+            name="Test Role",
+            description="Test description",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Test Role",
+            "description": "Test description",
+            "permissions": [],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_role_missing_description_returns_400(self):
+        """Test that updating a role without description returns 400."""
+        role = CustomRoleV2.objects.create(
+            name="Test Role",
+            description="Test description",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Test Role",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("errors", response.data)
+        self.assertTrue(any(e.get("field") == "description" for e in response.data["errors"]))
+
+    def test_update_role_returns_response_format(self):
+        """Test that update returns proper response format with all fields."""
+        role = CustomRoleV2.objects.create(
+            name="Response Format Role",
+            description="Original description",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Updated Response Format Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("id", response.data)
+        self.assertIn("name", response.data)
+        self.assertIn("description", response.data)
+        self.assertIn("permissions", response.data)
+        self.assertIn("last_modified", response.data)
+
+    def test_update_role_with_fields_parameter(self):
+        """Test that update respects fields query parameter for response."""
+        role = CustomRoleV2.objects.create(
+            name="Fields Test Role",
+            description="Original description",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        url = f"{update_url}?fields=id,name,permissions_count"
+        data = {
+            "name": "Updated Fields Test Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(set(response.data.keys()), {"id", "name", "permissions_count"})
+        self.assertEqual(response.data["name"], "Updated Fields Test Role")
+        self.assertEqual(response.data["permissions_count"], 1)
+        self.assertNotIn("description", response.data)
+        self.assertNotIn("permissions", response.data)
+
+    def test_update_role_default_fields_includes_permissions(self):
+        """Test that update returns permissions by default (per API spec)."""
+        role = CustomRoleV2.objects.create(
+            name="Default Fields Role",
+            description="Test description",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Default Fields Role",
+            "description": "Test description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Default should include permissions per spec
+        self.assertIn("permissions", response.data)
+        self.assertEqual(len(response.data["permissions"]), 1)

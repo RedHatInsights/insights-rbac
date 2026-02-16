@@ -22,6 +22,7 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
+    RoleNotFoundError,
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
@@ -164,6 +165,29 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
                 permission_data=permission_data,
                 tenant=tenant,
             )
+        except RequiredFieldError as e:
+            raise serializers.ValidationError({e.field_name: str(e)})
+        except tuple(ERROR_MAPPING.keys()) as e:
+            field = ERROR_MAPPING[type(e)]
+            raise serializers.ValidationError({field: str(e)})
+
+    def update(self, instance, validated_data):
+        """Update an existing RoleV2 using the service layer."""
+        tenant = self.context["request"].tenant
+        permission_data = validated_data.pop("permissions", [])
+
+        try:
+            return self.service.update(
+                role_uuid=str(instance.uuid),
+                name=validated_data.get("name"),
+                description=validated_data.get("description"),
+                permission_data=permission_data,
+                tenant=tenant,
+            )
+        except RoleNotFoundError as e:
+            from rest_framework.exceptions import NotFound
+
+            raise NotFound(str(e))
         except RequiredFieldError as e:
             raise serializers.ValidationError({e.field_name: str(e)})
         except tuple(ERROR_MAPPING.keys()) as e:

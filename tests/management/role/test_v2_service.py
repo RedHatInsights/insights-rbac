@@ -19,7 +19,7 @@
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
 from management.models import Permission
-from management.role.v2_exceptions import RoleAlreadyExistsError
+from management.role.v2_exceptions import RoleAlreadyExistsError, RoleNotFoundError
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_service import RoleV2Service
 from tests.identity_request import IdentityRequest
@@ -232,6 +232,185 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
+
+    # ==========================================================================
+    # Tests for update()
+    # ==========================================================================
+
+    def test_update_role_changes_name(self):
+        """Test updating a role's name."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        role = self.service.create(
+            name="Original Name",
+            description="A test role",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        updated_role = self.service.update(
+            role_uuid=str(role.uuid),
+            name="Updated Name",
+            description="A test role",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        self.assertEqual(updated_role.uuid, role.uuid)
+        self.assertEqual(updated_role.name, "Updated Name")
+        self.assertEqual(updated_role.description, "A test role")
+
+    def test_update_role_changes_description(self):
+        """Test updating a role's description."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        role = self.service.create(
+            name="Test Role",
+            description="Original description",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        updated_role = self.service.update(
+            role_uuid=str(role.uuid),
+            name="Test Role",
+            description="Updated description",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        self.assertEqual(updated_role.description, "Updated description")
+
+    def test_update_role_changes_permissions(self):
+        """Test updating a role's permissions."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        role = self.service.create(
+            name="Test Role",
+            description="A test role",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        new_permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+            {"application": "cost", "resource_type": "reports", "operation": "read"},
+        ]
+
+        updated_role = self.service.update(
+            role_uuid=str(role.uuid),
+            name="Test Role",
+            description="A test role",
+            permission_data=new_permission_data,
+            tenant=self.tenant,
+        )
+
+        self.assertEqual(updated_role.permissions.count(), 2)
+        self.assertIn(self.permission2, updated_role.permissions.all())
+        self.assertIn(self.permission3, updated_role.permissions.all())
+        self.assertNotIn(self.permission1, updated_role.permissions.all())
+
+    def test_update_role_with_nonexistent_uuid_raises_error(self):
+        """Test that updating a role with nonexistent UUID raises RoleNotFoundError."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        with self.assertRaises(RoleNotFoundError) as context:
+            self.service.update(
+                role_uuid="550e8400-e29b-41d4-a716-446655440000",
+                name="Updated Name",
+                description="Updated description",
+                permission_data=permission_data,
+                tenant=self.tenant,
+            )
+
+        self.assertIn("550e8400-e29b-41d4-a716-446655440000", str(context.exception))
+
+    def test_update_role_with_duplicate_name_raises_error(self):
+        """Test that updating a role to a duplicate name raises RoleAlreadyExistsError."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        role1 = self.service.create(
+            name="Role One",
+            description="First role",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        role2 = self.service.create(
+            name="Role Two",
+            description="Second role",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        with self.assertRaises(RoleAlreadyExistsError) as context:
+            self.service.update(
+                role_uuid=str(role2.uuid),
+                name="Role One",
+                description="Second role",
+                permission_data=permission_data,
+                tenant=self.tenant,
+            )
+
+        self.assertIn("Role One", str(context.exception))
+
+    def test_update_role_with_empty_description_raises_error(self):
+        """Test that updating a role with empty description raises RequiredFieldError."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        role = self.service.create(
+            name="Test Role",
+            description="Original description",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        with self.assertRaises(RequiredFieldError) as context:
+            self.service.update(
+                role_uuid=str(role.uuid),
+                name="Test Role",
+                description="",
+                permission_data=permission_data,
+                tenant=self.tenant,
+            )
+
+        self.assertEqual(context.exception.field_name, "description")
+
+    def test_update_role_with_empty_permissions_raises_error(self):
+        """Test that updating a role with empty permissions raises RequiredFieldError."""
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+        ]
+
+        role = self.service.create(
+            name="Test Role",
+            description="A test role",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        with self.assertRaises(RequiredFieldError) as context:
+            self.service.update(
+                role_uuid=str(role.uuid),
+                name="Test Role",
+                description="A test role",
+                permission_data=[],
+                tenant=self.tenant,
+            )
+
+        self.assertEqual(context.exception.field_name, "permissions")
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
