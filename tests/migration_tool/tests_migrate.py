@@ -457,7 +457,7 @@ class MigrateTestTupleStore(TestCase):
         self.assertCountEqual(
             ["redhat/o1_u1", "redhat/o1_u2"],
             [
-                t.subject_id
+                t.subject.subject.id
                 for t in self.relations.find_tuples(
                     all_of(resource("rbac", "group", self.o1_g1.uuid), relation("member")),
                 )
@@ -592,7 +592,7 @@ class MigrateTestTupleStore(TestCase):
         self.assertCountEqual(
             ["redhat/o2_u1", "redhat/o2_u2"],
             [
-                t.subject_id
+                t.subject.subject.id
                 for t in self.relations.find_tuples(
                     all_of(resource("rbac", "group", self.o2_g1.uuid), relation("member")),
                 )
@@ -657,7 +657,7 @@ class MigrateTestTupleStore(TestCase):
 
         # Verify no tuples were created with empty resource_id
         # Search for any tuple with an empty ID (this should not exist)
-        tuples_with_empty_id = [t for t in self.relations._tuples if t.resource_id == "" or t.subject_id == ""]
+        tuples_with_empty_id = [t for t in self.relations._tuples if t.resource.id == "" or t.subject.subject.id == ""]
         self.assertEqual(0, len(tuples_with_empty_id), "No tuples should have empty resource_id or subject_id")
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
@@ -736,5 +736,5 @@ class MigrateTestTupleStore(TestCase):
         self.assertGreater(len(tuples_ws2), 0, "Tuples should be created for workspace2")
 
         # Verify no tuples with empty resource_id
-        tuples_with_empty_id = [t for t in self.relations._tuples if t.resource_id == "" or t.subject_id == ""]
+        tuples_with_empty_id = [t for t in self.relations._tuples if t.resource.id == "" or t.subject.subject.id == ""]
         self.assertEqual(0, len(tuples_with_empty_id), "No tuples should have empty resource_id or subject_id")
