@@ -30,6 +30,7 @@ fi
 REPO=$(echo "${EPHEMERAL_DIR}"| rev | cut -d/ -f3- | rev)
 TEMPLATE_FILE="${EPHEMERAL_DIR}"/config_template.yaml
 CONFIG_FILE="${EPHEMERAL_DIR}"/config.yaml
+TAG_FILE="${EPHEMERAL_DIR}"/current-tag
 APP_NAME=rbac
 RBAC_FWD_PORT=9080
 
@@ -38,7 +39,7 @@ usage() {
   log-info "Usage: $(basename "$0") <command> [command_arg]"
   log-info ""
   log-info "commands:"
-  log-info "\t build <tag>            build image (default tag: 'latest')"
+  log-info "\t build <tag>            build image (default tag: random UUID)"
   log-info "\t deploy                 deploy app"
   log-info "\t help                   show usage"
   log-info "\t pods                   list all pods in your namespace"
@@ -110,6 +111,7 @@ build() {
   log-debug "docker push ${_repo}"
   docker push "${_repo}"
 
+  echo "$_tag" > "$TAG_FILE"
   update-config-file "${_tag}"
 }
 
@@ -122,6 +124,18 @@ deploy() {
   --local-config-path ${CONFIG_FILE} \
   --no-remove-resources ${APP_NAME} \
   --namespace ${NAMESPACE} | oc apply -f - -n ${NAMESPACE}"
+
+  if [[ -f "$TAG_FILE" ]]; then
+    local _tag
+    _tag="$(cat -- "$TAG_FILE")"
+    update-config-file "${_tag}"
+  fi
+
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Config file does not exist and could not be generated." >&2
+    echo "You should run ephemeral.sh build before running ephemeral.sh deploy." >&2
+    return 1
+  fi
 
   bonfire process rbac \
   --source=appsre \
@@ -149,7 +163,7 @@ port-forward-rbac() {
 #
 CMD=$(echo "${CMD}" | tr '[:upper:]' '[:lower:]')
 case ${CMD} in
- "build") build "${2:-latest}";;
+ "build") build "${2:-"$(uuidgen)"}";;
  "deploy") deploy;;
  "pods") pods;;
  "pf-rbac") port-forward-rbac "${2:-9080}";;
