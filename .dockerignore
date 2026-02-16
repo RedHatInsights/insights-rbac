@@ -14,6 +14,9 @@
 !mypy.ini
 !.coveragerc
 
+# scripts for deploying to ephemeral are only used locally
+scripts/ephemeral/
+
 # keep the test files out of the final image
 #**/*test*
 **/__pycache__
