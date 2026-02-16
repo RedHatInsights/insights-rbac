@@ -1265,7 +1265,21 @@ objects:
               cpu: 50m
               memory: 512Mi
           env: *workspace_job_env_vars
-
+      - name: fix-orphan-relations
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - fix_orphan_relations
+            - "--all"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *workspace_job_env_vars
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -1675,7 +1689,7 @@ parameters:
   value: 'False'
 - name: V1_ROLE_PERMISSION_BLOCK_LIST
   description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
-  value: ''
+  value: 'rbac:workspaces:role_binding_view,rbac:workspaces:role_binding_grant,rbac:workspaces:role_binding_revoke'
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'

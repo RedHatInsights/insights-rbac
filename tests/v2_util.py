@@ -1,8 +1,12 @@
-from typing import Optional
+from typing import Callable, Optional
 from unittest import TestCase
 
+from management.group.platform import GlobalPolicyIdService, DefaultGroupNotAvailableError
 from management.models import BindingMapping, CustomRoleV2, Permission, Role, RoleBinding, RoleV2
+from management.permission.scope_service import Scope
+from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import SeededRoleV2
+from management.tenant_mapping.model import DefaultAccessType
 from migration_tool.in_memory_tuples import (
     resource,
     all_of,
@@ -65,7 +69,7 @@ def _assert_binding_tuples_consistent(test: TestCase, tuples: InMemoryTuples, bi
         )
     )
 
-    test.assertEqual(1, len(role_tuples))
+    test.assertEqual(1, len(role_tuples), f"Missing role relation for binding: {str(binding.uuid)}")
     test.assertEqual(str(binding.role.uuid), role_tuples.only.subject_id)
 
     resource_tuples = tuples.find_tuples(
@@ -155,12 +159,32 @@ def _assert_v2_names(test: TestCase, v1_role: Role):
 
 def _assert_no_phantom_roles(test: TestCase, tuples: InMemoryTuples):
     """Check that there are no roles referenced in tuples that do not exist in the database."""
+    # We are not consistent about actually creating PlatformRoleV2 models, so use the pre-configured values without
+    # consulting the database.
+    policy_service = GlobalPolicyIdService()
+
+    def _uuid_for(access_type: DefaultAccessType, scope: Scope) -> Optional[str]:
+        try:
+            return str(platform_v2_role_uuid_for(access_type, scope, policy_service=policy_service))
+        except DefaultGroupNotAvailableError:
+            return None
+
+    platform_role_uuids = {
+        r
+        for r in (_uuid_for(access_type, scope) for access_type in DefaultAccessType for scope in Scope)
+        if r is not None
+    }
+
     for v2_role_uuid in {
         *(t.resource_id for t in tuples.find_tuples(resource_type("rbac", "role"))),
         *(t.subject_id for t in tuples.find_tuples(subject_type("rbac", "role"))),
     }:
         if Role.objects.filter(system=True, uuid=v2_role_uuid).exists():
             # We are not interested in system roles here.
+            continue
+
+        if v2_role_uuid in platform_role_uuids:
+            # We are not interested in platform roles here.
             continue
 
         v2_role = CustomRoleV2.objects.filter(uuid=v2_role_uuid).first()
@@ -249,3 +273,58 @@ def seed_v2_role_from_v1(role: Role) -> SeededRoleV2:
     v2_role.permissions.set(Permission.objects.filter(accesses__role=role))
 
     return v2_role
+
+
+def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, str, str], list[dict]]:
+    """Get a function with the signature of (read/iterate)_tuples_from_kessel that reads from an InMemoryTuples."""
+
+    def read_tuples_fn(resource_type_name, resource_id, relation_name, subject_type_name, subject_id):
+        """Mock function to read tuples from InMemoryTuples."""
+        # Build a filter based on the provided parameters
+        filters = [resource_type("rbac", resource_type_name)]
+
+        if resource_id:
+            filters.append(resource("rbac", resource_type_name, resource_id))
+
+        if relation_name:
+            filters.append(relation(relation_name))
+
+        found_tuples = tuples.find_tuples(all_of(*filters))
+
+        # Convert to dict format matching Kessel gRPC response
+        # Format: {"tuple": {"resource": {...}, "relation": "...", "subject": {...}}, ...}
+        result = []
+        for t in found_tuples:
+            # Filter by subject type and id if provided
+            if subject_type_name and t.subject_type_name != subject_type_name:
+                continue
+            if subject_id and t.subject_id != subject_id:
+                continue
+
+            result.append(
+                {
+                    "tuple": {
+                        "resource": {
+                            "type": {
+                                "namespace": t.resource_type_namespace,
+                                "name": t.resource_type_name,
+                            },
+                            "id": t.resource_id,
+                        },
+                        "relation": t.relation,
+                        "subject": {
+                            "subject": {
+                                "type": {
+                                    "namespace": t.subject_type_namespace,
+                                    "name": t.subject_type_name,
+                                },
+                                "id": t.subject_id,
+                            },
+                            "relation": t.subject_relation,
+                        },
+                    },
+                }
+            )
+        return result
+
+    return read_tuples_fn

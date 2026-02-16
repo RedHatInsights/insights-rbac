@@ -32,6 +32,7 @@ from management.models import Workspace
 from management.permissions.system_user_utils import SystemUserAccessResult
 from management.workspace.filters import WorkspaceAccessFilterBackend
 from management.workspace.service import WorkspaceService
+from management.workspace.utils.access import filter_top_level_workspaces
 from rbac import urls
 from tests.identity_request import BaseIdentityRequest
 
@@ -87,12 +88,10 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
         # Should filter queryset by accessible IDs
         queryset.filter.assert_called()
 
-    @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_detail_action_uses_workspace_id(self, mock_flags, mock_is_user_allowed_v2):
-        """FilterBackend uses workspace_id for detail actions (CheckForUpdate)."""
+    def test_detail_action_filters_to_workspace_id(self, mock_flags):
+        """FilterBackend filters to the specific workspace for detail actions (access already checked)."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_is_user_allowed_v2.return_value = True
 
         request = Mock(tenant=Mock())
         request.method = "GET"
@@ -101,30 +100,8 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
 
         self.filter_backend.filter_queryset(request, queryset, view)
 
-        # Should call is_user_allowed_v2 with specific workspace_id
-        mock_is_user_allowed_v2.assert_called_once()
-        call_args = mock_is_user_allowed_v2.call_args
-        self.assertEqual(call_args[0][2], "ws-123")  # target_workspace should be ws-123
-
-        # Should filter queryset to just that workspace
-        queryset.filter.assert_called_once()
-
-    @patch("management.workspace.filters.is_user_allowed_v2")
-    @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_detail_action_returns_empty_when_access_denied(self, mock_flags, mock_is_user_allowed_v2):
-        """Detail action returns empty queryset when access is denied."""
-        mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_is_user_allowed_v2.return_value = False
-
-        request = Mock(tenant=Mock())
-        request.method = "GET"
-        queryset = Mock()
-        view = Mock(action="retrieve", kwargs={"pk": "ws-123"})
-
-        self.filter_backend.filter_queryset(request, queryset, view)
-
-        # Should return empty queryset
-        queryset.none.assert_called_once()
+        # Should filter queryset to just that workspace (access check handled by permission class)
+        queryset.filter.assert_called_once_with(id="ws-123")
 
     @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
@@ -206,10 +183,9 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
 
     @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_detail_actions_include_all_detail_types(self, mock_flags, mock_is_user_allowed_v2):
-        """All detail action types use CheckForUpdate via is_user_allowed_v2 with workspace_id."""
+    def test_detail_actions_filter_to_workspace_id(self, mock_flags, mock_is_user_allowed_v2):
+        """All detail action types filter queryset to the specific workspace ID."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_is_user_allowed_v2.return_value = True
 
         detail_actions = ["retrieve", "update", "partial_update", "destroy", "move"]
 
@@ -223,14 +199,14 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
 
             self.filter_backend.filter_queryset(request, queryset, view)
 
-            # Should call is_user_allowed_v2 with workspace_id for all detail actions
-            mock_is_user_allowed_v2.assert_called_once()
-            call_args = mock_is_user_allowed_v2.call_args
-            self.assertEqual(
-                call_args[0][2],
-                "ws-456",
-                f"Action {action} should pass workspace_id to is_user_allowed_v2",
-            )
+            # Should filter queryset to the specific workspace (access check handled by permission class)
+            queryset.filter.assert_called_once_with(
+                id="ws-456",
+            ), f"Action {action} should filter queryset to workspace ws-456"
+            # FilterBackend must NOT call is_user_allowed_v2 for detail actions;
+            # access checks are handled by WorkspaceAccessPermission
+            mock_is_user_allowed_v2.assert_not_called()
+            queryset.reset_mock()
 
 
 class TransactionIdentityRequest(BaseIdentityRequest, TransactionTestCase):
@@ -335,8 +311,8 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_detail_returns_404_for_inaccessible_workspace(self, mock_flag, mock_channel):
-        """Test that detail endpoint returns 404 for inaccessible workspace (no existence leak)."""
+    def test_detail_returns_403_for_inaccessible_workspace(self, mock_flag, mock_channel):
+        """Test that detail endpoint returns 403 for inaccessible workspace."""
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -359,9 +335,9 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            # User cannot distinguish between non-existing and inaccessible workspaces
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 with ambiguous message (permission check before existence check)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
 
             # Verify CheckForUpdate was called (not StreamedListObjects)
             mock_stub.CheckForUpdate.assert_called()
@@ -371,12 +347,12 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_list_returns_403_when_no_access(self, mock_flag, mock_channel):
-        """Test that list returns 403 when user has no real workspace access in V2 mode."""
+    def test_list_returns_fallback_workspaces_when_no_real_access(self, mock_flag, mock_channel):
+        """Test that list returns 200 with fallback workspaces when user has no real workspace access in V2 mode."""
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
-        # User has no accessible workspaces
+        # User has no accessible workspaces - FilterBackend will use fallback workspaces
         mock_stub.StreamedListObjects.return_value = iter([])
 
         with patch(
@@ -390,9 +366,14 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 403 since inventory returns zero objects (no access)
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertEqual(response.data.get("detail"), "You do not have permission to perform this action.")
+            # Should return 200 with fallback workspaces (root, default, ungrouped)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("data", response.data)
+
+            returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+            self.assertIn(str(self.root_workspace.id), returned_ids)
+            self.assertIn(str(self.default_workspace.id), returned_ids)
+            self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
@@ -450,3 +431,139 @@ class WorkspacePermissionAndFilterBackendIntegrationTests(TransactionTestCase):
         # Permission should allow - filtering happens in FilterBackend
         result = permission.has_permission(request, view)
         self.assertTrue(result)
+
+
+class FilterTopLevelWorkspacesTests(TransactionTestCase):
+    """Unit tests for filter_top_level_workspaces optimization."""
+
+    def setUp(self):
+        """Set up test fixtures with a workspace hierarchy."""
+        self.tenant = Tenant.objects.create(
+            tenant_name="test_tenant",
+            org_id="test_org_id",
+            ready=True,
+        )
+
+        # Create hierarchy:
+        #   root
+        #   └── default
+        #       ├── ws_a
+        #       │   └── ws_a1
+        #       │       └── ws_a1a
+        #       └── ws_b
+        self.root = Workspace.objects.create(
+            name="Root",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default = Workspace.objects.create(
+            name="Default",
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root,
+        )
+        self.ws_a = Workspace.objects.create(
+            name="Workspace A",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default,
+        )
+        self.ws_a1 = Workspace.objects.create(
+            name="Workspace A1",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.ws_a,
+        )
+        self.ws_a1a = Workspace.objects.create(
+            name="Workspace A1A",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.ws_a1,
+        )
+        self.ws_b = Workspace.objects.create(
+            name="Workspace B",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default,
+        )
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        Workspace.objects.update(parent=None)
+        Workspace.objects.all().delete()
+        Tenant.objects.all().delete()
+
+    def test_single_workspace_is_top_level(self):
+        """Single workspace with no ancestors in set is top-level."""
+        queryset = Workspace.objects.filter(id=self.ws_a1a.id)
+        result = filter_top_level_workspaces(queryset)
+
+        self.assertEqual(list(result), [self.ws_a1a])
+
+    def test_parent_and_child_only_parent_is_top_level(self):
+        """When parent and child are in set, only parent is top-level."""
+        queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_a1.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a.id})
+
+    def test_grandparent_and_grandchild_only_grandparent_is_top_level(self):
+        """When grandparent and grandchild are in set (parent not), only grandparent is top-level."""
+        # ws_a is grandparent of ws_a1a, ws_a1 (parent) is not in set
+        queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_a1a.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a.id})
+
+    def test_siblings_both_are_top_level(self):
+        """Sibling workspaces (no ancestor relationship) are both top-level."""
+        queryset = Workspace.objects.filter(id__in=[self.ws_a.id, self.ws_b.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a.id, self.ws_b.id})
+
+    def test_full_hierarchy_only_root_is_top_level(self):
+        """When full hierarchy is in set, only root is top-level."""
+        all_ids = [
+            self.root.id,
+            self.default.id,
+            self.ws_a.id,
+            self.ws_a1.id,
+            self.ws_a1a.id,
+            self.ws_b.id,
+        ]
+        queryset = Workspace.objects.filter(id__in=all_ids)
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.root.id})
+
+    def test_empty_queryset_returns_empty(self):
+        """Empty queryset returns empty result."""
+        queryset = Workspace.objects.none()
+        result = filter_top_level_workspaces(queryset)
+
+        self.assertEqual(list(result), [])
+
+    def test_multiple_branches_multiple_top_levels(self):
+        """Workspaces from different branches are all top-level."""
+        # ws_a1 and ws_b are from different branches
+        queryset = Workspace.objects.filter(id__in=[self.ws_a1.id, self.ws_b.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        self.assertEqual(result_ids, {self.ws_a1.id, self.ws_b.id})
+
+    def test_deep_hierarchy_with_gaps(self):
+        """Workspace with ancestor in set is not top-level, even with gaps."""
+        # default -> ws_a -> ws_a1 -> ws_a1a
+        # Include default and ws_a1a (skip ws_a and ws_a1)
+        queryset = Workspace.objects.filter(id__in=[self.default.id, self.ws_a1a.id])
+        result = filter_top_level_workspaces(queryset)
+
+        result_ids = set(result.values_list("id", flat=True))
+        # Only default is top-level because ws_a1a has default as ancestor
+        self.assertEqual(result_ids, {self.default.id})

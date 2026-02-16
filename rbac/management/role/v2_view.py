@@ -1,5 +1,5 @@
 #
-# Copyright 2025 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,18 +14,66 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""View for V2 Role management."""
+"""View for RoleV2 management."""
 
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.role.v2_model import RoleV2
+from management.role.v2_serializer import RoleV2ListSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.role.v2_service import RoleV2Service
+from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import status
+from rest_framework.response import Response
 
-from .v2_model import RoleV2
-from .v2_serializer import RoleSerializer
+from api.common.pagination import V2CursorPagination
 
 
-class RoleV2ViewSet(BaseV2ViewSet):
-    """V2 Role ViewSet."""
+class RoleV2CursorPagination(V2CursorPagination):
+    """Cursor pagination for roles."""
 
-    queryset = RoleV2.objects.prefetch_related("permissions")
-    serializer_class = RoleSerializer
+    ordering = "name"
+    FIELD_MAPPING = {"name": "name", "last_modified": "modified"}
+
+
+class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
+    """RoleV2 ViewSet."""
+
     permission_classes = (RoleAccessPermission,)
+    queryset = RoleV2.objects.exclude(type=RoleV2.Types.PLATFORM)
+    serializer_class = RoleV2ResponseSerializer
+    pagination_class = RoleV2CursorPagination
+    lookup_field = "uuid"
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        if self.action == "create":
+            return RoleV2RequestSerializer
+        return RoleV2ResponseSerializer
+
+    def list(self, request, *args, **kwargs):
+        """Get a list of roles."""
+        input_serializer = RoleV2ListSerializer(data=request.query_params, context={"request": request})
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
+
+        service = RoleV2Service(tenant=request.tenant)
+        queryset = service.list(validated_params)
+
+        context = {
+            "request": request,
+            "fields": validated_params.get("fields"),
+        }
+
+        page = self.paginate_queryset(queryset)
+        serializer = RoleV2ResponseSerializer(page, many=True, context=context)
+        return self.get_paginated_response(serializer.data)
+
+    def create(self, request, *args, **kwargs):
+        """Create a role and return the full response representation."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = serializer.save()
+        input_permissions = request.data.get("permissions", [])
+        response_serializer = RoleV2ResponseSerializer(role, context={"input_permissions": input_permissions})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
