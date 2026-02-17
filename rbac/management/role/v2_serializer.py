@@ -53,7 +53,6 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     description = serializers.CharField(read_only=True)
     permissions_count = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
-    permissions_count = serializers.SerializerMethodField()
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
 
     class Meta:

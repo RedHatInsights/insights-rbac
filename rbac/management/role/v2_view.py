@@ -50,30 +50,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     lookup_field = "uuid"
     http_method_names = ["get", "post", "head", "options"]
 
-    def get_queryset(self):
-        """Get the queryset for roles filtered by tenant."""
-        base_qs = (
-            RoleV2.objects.filter(tenant=self.request.tenant)
-            .prefetch_related("permissions")
-            .order_by("name", "-modified")
-        )
-
-        if self.action in ("list", "retrieve"):
-            return base_qs
-        else:
-            return base_qs.filter(type=RoleV2.Types.CUSTOM)
-
-    def get_object(self):
-        """
-        Get a single role using the service layer.
-
-        Overrides DRF's get_object() to use service layer for business logic.
-        RoleNotFoundError is automatically converted to Http404 by the exception handler.
-        """
-        uuid_str = self.kwargs.get(self.lookup_field)
-        service = RoleV2Service(tenant=self.request.tenant)
-        return service.get_role(uuid_str)
-
     def retrieve(self, request, *args, **kwargs):
         """Retrieve a single role by UUID."""
         input_serializer = RoleV2RetrieveSerializer(
@@ -82,9 +58,10 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        instance = self.get_object()
+        uuid_str = self.kwargs.get(self.lookup_field)
+        service = RoleV2Service(tenant=request.tenant)
+        instance = service.get_role(uuid_str)
 
-        # Serializer returns DEFAULT_RETRIEVE_FIELDS when no fields param provided
         context = {
             "request": request,
             "fields": validated_params.get("fields"),
