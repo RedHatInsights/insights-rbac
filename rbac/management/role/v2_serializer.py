@@ -91,7 +91,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         count = getattr(obj, "permissions_count_annotation", None)
         if count is not None:
             return count
-        return obj.permissions.count()
+        return len(obj.permissions.all())
 
 
 class RoleFieldSelection(FieldSelection):
