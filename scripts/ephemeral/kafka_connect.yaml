@@ -43,7 +43,7 @@ objects:
             - name: rh-registry-pull
             - name: quay.io
       version: ${KAFKA_CONNECT_VERSION}
-      replicas: ${KAFKA_CONNECT_REPLICAS}
+      replicas: ${{KAFKA_CONNECT_REPLICAS}}
       resources:
         limits:
           cpu: ${KAFKA_CONNECT_CPU_LIMIT}

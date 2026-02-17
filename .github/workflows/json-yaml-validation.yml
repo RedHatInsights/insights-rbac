@@ -21,3 +21,4 @@ jobs:
         uses: GrantBirki/json-yaml-validate@v3.2.1 # https://github.com/GrantBirki/json-yaml-validate/
         with:
           comment: "true" # enable comment mode
+          yaml_exclude_regex: "^.*_template\.ya?ml$"
