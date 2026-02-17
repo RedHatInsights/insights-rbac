@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -eu -o pipefail
 
 EPHEMERAL_DIR=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 CMD=${1:-help}
@@ -37,6 +38,7 @@ TAG_FILE="${STATE_DIR}"/current-tag
 APP_NAME=rbac
 RBAC_FWD_PORT=9080
 
+RBAC_CONFIG_REPO="RedHatInsights/rbac-config"
 
 usage() {
   log-info "Usage: $(basename "$0") <command> [command_arg]"
@@ -118,6 +120,87 @@ build() {
   update-config-file "${_tag}"
 }
 
+_fetch_rbac_config() {
+  local commit="$1"
+  local file="$2"
+
+  curl -L --fail-with-body "https://raw.githubusercontent.com/$RBAC_CONFIG_REPO/$commit/$file"
+}
+
+# Given the JSON representation of a Kubernetes item, naively unwraps a provided parameterless Template into its
+# component objects. This will fail if the template has parameters (since we cannot in general know how to handle
+# those).
+#
+# The output format is a stream (not an array) of JSON objects (suitable for ingestion with jq).
+_unwrapped_items_for() {
+  local item="$1"
+
+  if [[ "$(printf '%s' "$item" | jq -r .kind)" != "Template" ]]; then
+    printf '%s\n' "$item"
+    return
+  fi
+
+  if [[ "$(printf '%s' "$item" | jq '.parameters == null or .parameters == []')" != "true" ]]; then
+    echo "Expected Template to have no parameters. (It cannot be generically unwrapped otherwise.)" >&2
+    exit 1
+  fi
+
+  printf '%s' "$item" | jq '.objects[]'
+}
+
+# Outputs a stream of JSON objects to be used for updating the Kubernetes config that will be deployed.
+_make_override_items() {
+  if ! command -v yq > /dev/null; then
+    echo "yq is required for this script." >&2
+    echo "Consider installing it with \`uv tool install yq\`." >&2
+    return 1
+  fi
+
+  local config_commit
+  config_commit="$(git ls-remote -- "https://github.com/$RBAC_CONFIG_REPO" refs/heads/master | cut -f 1)"
+
+  local raw_items=()
+
+  # Here, we ensure that RBAC and Kessel are using the same version of rbac-config. I am not entirely sure why this is
+  # necessary, since Kessel's ephemeral config does appear to use rbac-config master, but, before doing this, I was
+  # getting issues with RBAC trying to add relations that Kessel didn't recognize.
+
+  raw_items+=(
+    "$(_fetch_rbac_config "$config_commit" "_private/configmaps/stage/rbac-config.yml" | yq)"
+  )
+
+  raw_items+=(
+    "$(_fetch_rbac_config "$config_commit" "_private/configmaps/stage/model-access-permissions.configmap.yml" | yq)"
+  )
+
+  # This is based off of
+  # https://gitlab.cee.redhat.com/service/app-interface/-/blob/34a588e5528c9c8710bb3159d27f915af323efcd/resources/insights-ephemeral/kessel/kessel-spicedb-schema-configmap.yml
+  raw_items+=(
+    "$(
+      _fetch_rbac_config "$config_commit" "configs/stage/schemas/schema.zed" \
+      | jq -Rs '{
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        data: {
+          "schema.zed": .
+        },
+        metadata: {
+          name: "spicedb-schema",
+          annotations: {
+            "qontract.recycle": "true"
+          }
+        }
+      }'
+    )"
+  )
+
+  for raw_map in "${raw_items[@]}"; do
+    # The ConfigMaps in rbac-config are represented as parameterless templates, so we need to unwrap them.
+    # This will write the output to our own stdout (since we just need to output the stream of all items to add).
+    _unwrapped_items_for "$raw_map"
+  done
+}
+
 deploy() {
   get-namespace
 
@@ -136,15 +219,49 @@ deploy() {
 
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "Config file does not exist and could not be generated." >&2
-    echo "You should run ephemeral.sh build before running ephemeral.sh deploy." >&2
+    echo "You should run \`ephemeral.sh build\` before running \`ephemeral.sh deploy\`." >&2
     return 1
   fi
 
-  bonfire process rbac \
-  --source=appsre \
-  --local-config-path "${CONFIG_FILE}" \
-  --no-remove-resources "${APP_NAME}" \
-  --namespace "${NAMESPACE}" | oc apply -f - -n "${NAMESPACE}"
+  local override_items_file
+  override_items_file="$(mktemp)"
+
+  _make_override_items > "$override_items_file"
+
+  local override_item_kinds
+  override_item_kinds="$(cat -- "$override_items_file" | jq -r '.kind' | sort | uniq)"
+
+  if [[ "$override_item_kinds" != "ConfigMap" ]]; then
+    echo "Expected only ConfigMaps, but found the following item kinds:" >&2
+    printf '%s\n' "$override_item_kinds" >&2
+    exit 1
+  fi
+
+  local override_item_names
+  mapfile -t override_item_names < <(cat -- "$override_items_file" | jq -r '.metadata.name')
+
+  bonfire process \
+    rbac kessel \
+    --source=appsre \
+    --local-config-path "${CONFIG_FILE}" \
+    --no-remove-resources "${APP_NAME}" \
+    --namespace "${NAMESPACE}" \
+  | jq \
+      '. * {
+        items: [
+          .items[] | select(
+            (
+              (.kind == "ConfigMap") and
+              (.metadata.name as $name | (($ARGS.named.overridden_names | index([$name])) != null))
+            ) | not
+          )
+        ]
+      }' \
+      --argjson overridden_names "$(jq -n '$ARGS.positional' --args "${override_item_names[@]}")" \
+  | jq \
+      '. * {items: [.items[], $ARGS.named.new_items[]]}' \
+      --slurpfile new_items "$override_items_file" \
+  | oc apply -f - -n "${NAMESPACE}"
 }
 
 port-forward() {
