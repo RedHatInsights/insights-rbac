@@ -20,7 +20,6 @@ from typing import Optional
 
 from management.models import Group
 from management.role.v2_model import RoleV2
-from management.utils import FieldSelection, FieldSelectionValidationError
 from management.role_binding.exceptions import DuplicateBindingError, RolesNotFoundError, SubjectsNotFoundError
 from management.role_binding.service import CreateBindingRequest, RoleBindingService
 from management.utils import FieldSelection, FieldSelectionValidationError
@@ -30,7 +29,7 @@ from rest_framework import serializers
 class RoleBindingFieldSelection(FieldSelection):
     """Field selection for role-bindings endpoint."""
 
-    VALID_ROOT_FIELDS = {"last_modified"}
+    VALID_ROOT_FIELDS = set()
     VALID_NESTED_FIELDS = {
         "subject": {"id", "type", "group.name", "group.description", "group.user_count"},
         "role": {"id", "name"},
@@ -56,16 +55,6 @@ def validate_required_string(value: str, field_name: str) -> str:
 def validate_optional_string(value: str) -> str | None:
     """Return None for empty string values."""
     return value or None
-
-
-def validate_fields_param(value: str) -> FieldSelection | None:
-    """Parse and validate fields parameter into FieldSelection object."""
-    if not value:
-        return None
-    try:
-        return FieldSelection.parse(value)
-    except FieldSelectionValidationError as e:
-        raise serializers.ValidationError(e.message)
 
 
 # --- Serializers using shared validation functions ---
@@ -138,10 +127,8 @@ class RoleBindingOutputSerializer(serializers.Serializer):
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name, description) - accesses role.name, role.description
     - resource(name, type) - accesses resource name and type from context
-    - last_modified - include root-level field
     """
 
-    last_modified = serializers.SerializerMethodField()
     subject = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
@@ -159,8 +146,6 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         """
         ret = super().to_representation(instance)
 
-        field_selection = self._get_field_selection()
-
         # Base response always includes core objects
         filtered = {
             "subject": ret.get("subject"),
@@ -168,17 +153,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             "resource": ret.get("resource"),
         }
 
-        # Include last_modified only if explicitly requested
-        if field_selection and "last_modified" in field_selection.root_fields:
-            filtered["last_modified"] = ret.get("last_modified")
-
         return filtered
-
-    def get_last_modified(self, obj):
-        """Extract last modified timestamp."""
-        if isinstance(obj, dict):
-            return obj.get("modified") or obj.get("latest_modified")
-        return getattr(obj, "latest_modified", None)
 
     def get_subject(self, obj):
         """Extract subject information from the Group.
@@ -203,20 +178,14 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         subject = {"type": "group"}
 
         # Check if id is explicitly requested
-        subject_fields = field_selection.get_nested("subject")
-        if "id" in subject_fields:
+        if "id" in field_selection.get_nested("subject"):
             subject["id"] = obj.uuid
 
-        # Extract field names from "group.X" paths
-        fields_to_include = set()
-        for field_path in subject_fields:
-            if field_path.startswith("group."):
-                fields_to_include.add(field_path[6:])  # Remove "group." prefix
-
-        # Dynamically extract requested fields from the object
-        if fields_to_include:
+        # Extract group sub-object fields
+        group_fields = field_selection.get_sub_object_fields("subject", "group")
+        if group_fields:
             group_details = {}
-            for field_name in fields_to_include:
+            for field_name in group_fields:
                 # Handle special case for user_count -> principalCount
                 if field_name == "user_count":
                     group_details[field_name] = getattr(obj, "principalCount", 0)
@@ -369,6 +338,7 @@ class RoleIdSerializer(serializers.Serializer):
 
     id = serializers.UUIDField(required=True, help_text="Role identifier")
 
+
 class CreateRoleBindingItemSerializer(serializers.Serializer):
     """Validates a single role binding request item."""
 
@@ -383,11 +353,21 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
     service_class = RoleBindingService
 
     requests = CreateRoleBindingItemSerializer(many=True, min_length=1, max_length=100)
+    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Response field mask")
 
     @property
     def service(self):
         """Return the service instance."""
         return self.context.get("role_binding_service") or self.service_class(tenant=self.context["request"].tenant)
+
+    def validate_fields(self, value):
+        """Parse and validate the fields query parameter for response field masking."""
+        if not value:
+            return None
+        try:
+            return RoleBindingFieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
 
     def create(self, validated_data):
         """Create role bindings using the service layer."""
@@ -411,25 +391,81 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
 class BatchCreateRoleBindingResponseItemSerializer(serializers.Serializer):
     """Serializes a single created role binding for the batch create response."""
 
+    DEFAULT_FIELDS = {
+        "role": {"id"},
+        "subject": {"id", "type"},
+        "resource": {"id"},
+    }
+
     role = serializers.SerializerMethodField()
     subject = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
 
+    def __init__(self, *args, **kwargs):
+        """Initialize with dynamic field selection from context."""
+        super().__init__(*args, **kwargs)
+
+        allowed = self.context.get("field_selection")
+        if allowed is not None:
+            requested = set(allowed.nested_fields.keys())
+            for field_name in set(self.fields) - requested:
+                self.fields.pop(field_name)
+
+    def _get_nested_fields(self, name: str) -> set:
+        """Return the set of sub-fields for a nested object."""
+        allowed = self.context.get("field_selection")
+        if allowed is not None:
+            return allowed.get_nested(name)
+        return self.DEFAULT_FIELDS.get(name, set())
+
     def get_role(self, obj):
         """Serialize role data."""
         role = obj["role"]
-        return {"id": str(role.uuid)}
+        fields = self._get_nested_fields("role")
+        result = {}
+        if "id" in fields:
+            result["id"] = str(role.uuid)
+        if "name" in fields:
+            result["name"] = role.name
+        return result
 
     def get_subject(self, obj):
         """Serialize subject data."""
-        return {
-            "id": str(obj["subject"].uuid),
-            "type": obj["subject_type"],
-        }
+        fields = self._get_nested_fields("subject")
+        subject = obj["subject"]
+        result = {}
+        if "id" in fields:
+            result["id"] = str(subject.uuid)
+        if "type" in fields:
+            result["type"] = obj["subject_type"]
+
+        field_selection = self.context.get("field_selection")
+        if field_selection and obj["subject_type"] == "group":
+            group_fields = field_selection.get_sub_object_fields("subject", "group")
+            if group_fields:
+                group_details = {}
+                for field_name in group_fields:
+                    if field_name == "user_count":
+                        group_details[field_name] = getattr(subject, "principalCount", 0)
+                    else:
+                        value = getattr(subject, field_name, None)
+                        if value is not None:
+                            group_details[field_name] = value
+                if group_details:
+                    result["group"] = group_details
+
+        return result
 
     def get_resource(self, obj):
         """Serialize resource data."""
-        return {
-            "id": obj["resource_id"],
-            "type": obj["resource_type"],
-        }
+        fields = self._get_nested_fields("resource")
+        result = {}
+        if "id" in fields:
+            result["id"] = obj["resource_id"]
+        if "type" in fields:
+            result["type"] = obj["resource_type"]
+        if "name" in fields:
+            name = obj.get("resource_name")
+            if name is not None:
+                result["name"] = name
+        return result

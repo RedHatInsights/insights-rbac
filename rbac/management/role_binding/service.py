@@ -152,17 +152,23 @@ class RoleBindingService:
         roles_by_uuid = {str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids)}
         missing_roles = role_uuids - set(roles_by_uuid.keys())
         if missing_roles:
-            raise RolesNotFoundError(missing_roles)
+            raise RolesNotFoundError(list(missing_roles))
 
         groups_by_uuid = self.subject_service.resolve_groups(group_uuids)
         missing_groups = group_uuids - set(groups_by_uuid.keys())
         if missing_groups:
-            raise SubjectsNotFoundError("group", missing_groups)
+            raise SubjectsNotFoundError("group", list(missing_groups))
 
         principals_by_uuid = self.subject_service.resolve_users(user_uuids)
         missing_users = user_uuids - set(principals_by_uuid.keys())
         if missing_users:
-            raise SubjectsNotFoundError("user", missing_users)
+            raise SubjectsNotFoundError("user", list(missing_users))
+
+        resource_names: dict[tuple[str, str], str | None] = {}
+        for req in requests:
+            key = (req.resource_type, req.resource_id)
+            if key not in resource_names:
+                resource_names[key] = self.get_resource_name(req.resource_id, req.resource_type)
 
         created = []
         for req in requests:
@@ -196,6 +202,7 @@ class RoleBindingService:
                     "subject": subject,
                     "resource_type": req.resource_type,
                     "resource_id": req.resource_id,
+                    "resource_name": resource_names.get((req.resource_type, req.resource_id)),
                 }
             )
 

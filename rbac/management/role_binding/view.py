@@ -19,7 +19,7 @@
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
-from management.group.model import Group
+from management.models import Group
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
@@ -113,9 +113,14 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def perform_batch_create(self, request, *args, **kwargs):
         """Core batch create logic, called within an atomic transaction by the mixin."""
-        serializer = BatchCreateRoleBindingRequestSerializer(data=request.data, context={"request": request})
+        serializer = BatchCreateRoleBindingRequestSerializer(
+            data={**request.data, "fields": request.query_params.get("fields", "")}, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         created_bindings = serializer.save()
 
-        response_serializer = BatchCreateRoleBindingResponseItemSerializer(created_bindings, many=True)
+        field_selection = serializer.validated_data.get("fields")
+        response_serializer = BatchCreateRoleBindingResponseItemSerializer(
+            created_bindings, many=True, context={"field_selection": field_selection}
+        )
         return Response({"role_bindings": response_serializer.data}, status=status.HTTP_201_CREATED)

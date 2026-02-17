@@ -24,7 +24,7 @@ from management.exceptions import RequiredFieldError
 from management.models import Permission, Role
 from management.rbac_fields import AutoDateTimeField
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
+from migration_tool.models import V2role
 from rest_framework import serializers
 from uuid_utils.compat import uuid7
 

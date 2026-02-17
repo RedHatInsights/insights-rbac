@@ -28,7 +28,6 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
     """Test the RoleBindingByGroupSerializer.
 
     Tests verify the serializer produces output matching the API spec:
-    - last_modified: datetime timestamp
     - subject: {id: UUID, type: "group", group: {name, description, user_count}}
     - roles: [{id: UUID, name: string}]
     - resource: {id, name, type}
@@ -86,63 +85,6 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
-
-    # get_last_modified tests
-
-    def test_last_modified_returns_modified_from_dict(self):
-        """Test get_last_modified with dict containing 'modified' key."""
-        modified_time = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        obj = {"modified": modified_time}
-
-        serializer = RoleBindingByGroupSerializer()
-        result = serializer.get_last_modified(obj)
-
-        self.assertEqual(result, modified_time)
-
-    def test_last_modified_returns_latest_modified_from_dict(self):
-        """Test get_last_modified with dict containing 'latest_modified' key."""
-        latest_modified_time = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
-        obj = {"latest_modified": latest_modified_time}
-
-        serializer = RoleBindingByGroupSerializer()
-        result = serializer.get_last_modified(obj)
-
-        self.assertEqual(result, latest_modified_time)
-
-    def test_last_modified_prefers_modified_over_latest_modified_in_dict(self):
-        """Test get_last_modified prefers 'modified' over 'latest_modified' in dict."""
-        modified_time = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        latest_modified_time = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
-        obj = {"modified": modified_time, "latest_modified": latest_modified_time}
-
-        serializer = RoleBindingByGroupSerializer()
-        result = serializer.get_last_modified(obj)
-
-        self.assertEqual(result, modified_time)
-
-    def test_last_modified_returns_none_for_empty_dict(self):
-        """Test get_last_modified with empty dict returns None."""
-        serializer = RoleBindingByGroupSerializer()
-        result = serializer.get_last_modified({})
-
-        self.assertIsNone(result)
-
-    def test_last_modified_returns_latest_modified_attribute_from_group(self):
-        """Test get_last_modified with Group object uses latest_modified attribute."""
-        mock_group = Mock(spec=Group)
-        mock_group.latest_modified = datetime(2025, 1, 25, 12, 0, 0, tzinfo=timezone.utc)
-
-        serializer = RoleBindingByGroupSerializer()
-        result = serializer.get_last_modified(mock_group)
-
-        self.assertEqual(result, mock_group.latest_modified)
-
-    def test_last_modified_returns_none_when_group_has_no_latest_modified(self):
-        """Test get_last_modified with Group object without latest_modified returns None."""
-        serializer = RoleBindingByGroupSerializer()
-        result = serializer.get_last_modified(self.group)
-
-        self.assertIsNone(result)
 
     # get_subject tests
 
@@ -451,13 +393,8 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
     # Full serialization tests
 
     def test_full_serialization_with_dict_input(self):
-        """Test full serialization with dict input.
-
-        Default behavior returns only basic fields (no last_modified).
-        """
-        modified_time = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        """Test full serialization with dict input."""
         obj = {
-            "modified": modified_time,
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440002", "name": "Workspace Admin"}],
             "resource": {
                 "id": "550e8400-e29b-41d4-a716-446655440001",
@@ -469,8 +406,6 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(obj)
         data = serializer.data
 
-        # Default behavior: last_modified not included
-        self.assertNotIn("last_modified", data)
         self.assertIsNone(data["subject"])
         self.assertEqual(len(data["roles"]), 1)
         # Roles from dict pass through as-is
@@ -485,10 +420,8 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         - subject: id, type (no group details)
         - roles: id only (no name)
         - resource: id only (no name, type)
-        - no last_modified
         """
         self.group.principalCount = 1
-        self.group.latest_modified = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
 
         mock_binding = Mock()
         mock_binding.role = self.role
@@ -509,7 +442,6 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         data = serializer.data
 
         # Default behavior: only basic fields
-        self.assertNotIn("last_modified", data)
         self.assertEqual(data["subject"]["id"], self.group.uuid)
         self.assertEqual(data["subject"]["type"], "group")
         self.assertNotIn("group", data["subject"])
@@ -559,10 +491,8 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         - subject: id, type (no group details)
         - roles: id only
         - resource: id only
-        - no last_modified
         """
         self.group.principalCount = 5
-        self.group.latest_modified = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
 
         mock_binding = Mock()
         mock_binding.role = self.role
@@ -582,8 +512,6 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         serializer = RoleBindingByGroupSerializer(self.group, context=context)
         data = serializer.data
 
-        # Verify top-level fields (no last_modified by default)
-        self.assertNotIn("last_modified", data)
         self.assertIn("subject", data)
         self.assertIn("roles", data)
         self.assertIn("resource", data)
