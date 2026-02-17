@@ -17,16 +17,20 @@
 """Contains utilities for handling relations between V2 roles."""
 
 import logging
+from typing import Union
 from uuid import UUID
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
+from management.relation_replicator.types import RelationTuple
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)
 
 
-def deduplicate_role_permission_relationships(relationships: list[Relationship]) -> list[Relationship]:
+def deduplicate_role_permission_relationships(
+    relationships: list[Union[RelationTuple, Relationship]],
+) -> list[Union[RelationTuple, Relationship]]:
     """
     Deduplicate role-to-principal permission relationships.
 
@@ -35,10 +39,10 @@ def deduplicate_role_permission_relationships(relationships: list[Relationship])
     This function deduplicates these expected duplicates while preserving all other relationships.
 
     Args:
-        relationships: List of Relationship objects
+        relationships: List of RelationTuple or Relationship objects
 
     Returns:
-        Deduplicated list of Relationship objects
+        Deduplicated list of relationship objects
     """
     seen = set()
     deduplicated = []
@@ -74,7 +78,7 @@ def deduplicate_role_permission_relationships(relationships: list[Relationship])
     return deduplicated
 
 
-def role_child_relationship(parent_uuid: UUID | str, child_uuid: UUID | str) -> Relationship:
+def role_child_relationship(parent_uuid: UUID | str, child_uuid: UUID | str) -> RelationTuple:
     """Get the relationship to for a parent-child relationship between the provided roles."""
     return create_relationship(
         resource_name=("rbac", "role"),

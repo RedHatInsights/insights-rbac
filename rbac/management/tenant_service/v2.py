@@ -5,7 +5,6 @@ from typing import Callable, Iterable, List, Optional
 
 from django.conf import settings
 from django.db.models import Prefetch, Q, QuerySet
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import TenantScopeResources
@@ -16,6 +15,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.relation_replicator.types import RelationTuple
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping, logger
 from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.tenant_service import BootstrappedTenant
@@ -684,13 +684,13 @@ class V2TenantBootstrapService:
 
     def _bootstrap_tenants_no_replicate(
         self, tenants: list[Tenant]
-    ) -> tuple[list[BootstrappedTenant], list[Relationship]]:
+    ) -> tuple[list[BootstrappedTenant], list[RelationTuple]]:
         # Set up workspace hierarchy for Tenant.
         if any(t.tenant_name == "public" for t in tenants):
             raise ValueError("Cannot bootstrap public tenant.")
 
         tenants = self._fresh_tenants_with_default_groups(tenants)
-        relationships: list[Relationship] = []
+        relationships: list[RelationTuple] = []
         mappings_to_create: list[TenantMapping] = []
 
         default_workspaces: list[Workspace] = []
@@ -743,7 +743,7 @@ class V2TenantBootstrapService:
 
         return bootstrapped_tenants, relationships
 
-    def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[Relationship], list[Relationship]]:
+    def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[RelationTuple], list[RelationTuple]]:
         """Get the tuples to add and remove for a user."""
         tuples_to_add = []
         tuples_to_remove = []
@@ -765,7 +765,7 @@ class V2TenantBootstrapService:
 
         return tuples_to_add, tuples_to_remove
 
-    def _built_in_hierarchy_tuples(self, default_workspace_id, root_workspace_id, org_id) -> List[Relationship]:
+    def _built_in_hierarchy_tuples(self, default_workspace_id, root_workspace_id, org_id) -> List[RelationTuple]:
         """Create the tuples used to bootstrap the hierarchy of default->root->tenant->platform."""
         tenant_id = f"{self._user_domain}/{org_id}"
 
@@ -789,13 +789,13 @@ class V2TenantBootstrapService:
         tenant: Tenant,
         mapping: TenantMapping,
         scope_resources: TenantScopeResources,
-    ) -> List[Relationship]:
+    ) -> List[RelationTuple]:
         """
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         """
-        tuples_to_add: List[Relationship] = []
+        tuples_to_add: List[RelationTuple] = []
 
         # Add default role binding IFF there is no custom default access for the tenant
 
@@ -839,7 +839,7 @@ class V2TenantBootstrapService:
 
         return tuples_to_add
 
-    def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
+    def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[RelationTuple]]:
         relationships = []
 
         root = Workspace(tenant=tenant, type=Workspace.Types.ROOT, name=Workspace.SpecialNames.ROOT)
