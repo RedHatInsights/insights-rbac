@@ -198,13 +198,14 @@ def iterate_tuples_from_kessel(
             relation=relation,
             subject_type=subject_type,
             subject_id=subject_id,
+            pagination_limit=100,
             continuation_token=continuation_token,
         )
 
         if len(batch) == 0:
             return
 
-        continuation_token = batch[-1]["pagination"]["continuation_token"]
+        continuation_token = batch[-1]["pagination"]["continuationToken"]
         first = False
 
         yield from batch
