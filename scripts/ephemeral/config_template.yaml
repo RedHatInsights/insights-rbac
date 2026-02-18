@@ -19,6 +19,9 @@ apps:
       BYPASS_BOP_VERIFICATION: "True"
       RBAC_KAFKA_CONSUMER_REPLICAS: 1
       RBAC_KAFKA_CONSUMER_TOPIC: "outbox.event.relations-replication-event"
+      MIN_WORKER_REPLICAS: "1"
+      CELERY_WORKER_MEMORY_LIMIT: "2Gi"
+      CELERY_WORKER_MEMORY_REQUEST: "1Gi"
   - name: debezium-connector
     host: local
     repo: %REPO%
