@@ -18,9 +18,14 @@
 #
 import datetime
 import logging
+from collections.abc import Iterable
 
 from django.core.management import BaseCommand, CommandError
+from django.db.models import Q, QuerySet
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
+from management.group.model import Group
+from management.role.model import Role
+from management.workspace.model import Workspace
 
 from api.models import Tenant
 
@@ -47,6 +52,34 @@ class Command(BaseCommand):
             help="remove orphan relations for all tenants",
         )
 
+    def _base_query(self) -> QuerySet:
+        return Tenant.objects.exclude(tenant_name="public").filter(org_id__isnull=False)
+
+    def _prioritized_tenants(self) -> Iterable[Tenant]:
+        # We unfortunately must look through every tenant, since any tenant could have previously had an entity in
+        # it, replicated it incorrectly, and later had the entity deleted. Since this is rather unlikely (a tenant that
+        # has had something deleted has at some point been used, and thus has probably not been entirely cleared),
+        # we prioritize any tenants that still have at least one thing in them over any tenants that don't.
+        base = self._base_query()
+
+        interesting_tenants = base.filter(
+            Q(id__in=(Group.objects.all().values_list("tenant_id", flat=True)))
+            | Q(id__in=(Role.objects.all().values_list("tenant_id", flat=True)))
+            | Q(id__in=(Workspace.objects.filter(type=Workspace.Types.STANDARD).values_list("tenant_id", flat=True)))
+        ).distinct()
+
+        logger.info(f"About to load ~{interesting_tenants.count()} with an extant role, group, or workspace.")
+
+        seen = set()
+
+        for tenant in interesting_tenants.iterator():
+            seen.add(tenant.pk)
+            yield tenant
+
+        logger.info(f"Yielded a total of {len(seen)} tenants with an extant role, group, or workspace.")
+
+        yield from base.exclude(pk__in=seen).distinct().iterator()
+
     def handle(self, *args, **options):
         """Execute the command."""
         if not options["all"]:
@@ -56,17 +89,14 @@ class Command(BaseCommand):
                 returncode=2,
             )
 
-        tenants_query = Tenant.objects.exclude(tenant_name="public").filter(org_id__isnull=False)
-
         success_count = 0
         modified_count = 0
         failed_orgs = []
 
-        tenant_count = tenants_query.count()
-
+        tenant_count = self._base_query().count()
         logger.info(f"About to remove orphan relations for ~{tenant_count} tenants.")
 
-        for index, tenant in enumerate(tenants_query.iterator()):
+        for index, tenant in enumerate(self._prioritized_tenants()):
             start_time = datetime.datetime.now(datetime.timezone.utc)
             modified = False
             failed = False
@@ -105,7 +135,7 @@ class Command(BaseCommand):
             else:
                 logger.info(
                     f"Done with migration of tenant with org_id={tenant.org_id!r} at {end_time}; "
-                    f"modified={"true" if modified else "false"}; took {end_time - start_time}."
+                    f"modified={'true' if modified else 'false'}; took {end_time - start_time}."
                 )
 
                 success_count += 1
