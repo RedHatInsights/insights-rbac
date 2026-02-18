@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleV2Service domain service."""
+"""Test the RoleV2Service."""
 
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
@@ -42,7 +42,7 @@ class RoleV2ServiceTests(IdentityRequest):
     def setUp(self):
         """Set up the RoleV2Service tests."""
         super().setUp()
-        self.service = RoleV2Service()
+        self.service = RoleV2Service(tenant=self.tenant)
 
         # Create test permissions
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
