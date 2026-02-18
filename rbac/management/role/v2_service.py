@@ -31,6 +31,7 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
+    RoleNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
 
@@ -54,15 +55,13 @@ class RoleV2Service:
         self.tenant = tenant
         self.permission_service = PermissionService()
 
-    @atomic
-    def create(
-        self,
-        name: str,
-        description: str,
-        permission_data: list[dict],
-        tenant: Tenant,
-    ) -> CustomRoleV2:
-        """Create a new custom role with the given attributes."""
+    def _validate_and_resolve_permissions(self, description: str, permission_data: list[dict]) -> list:
+        """
+        Validate description and permissions, resolve permission objects.
+
+        Returns list of Permission objects.
+        Raises domain exceptions for validation failures.
+        """
         # TODO: Move this validation to RoleV2 model once a migration is created
         # to change description from TextField(null=True, blank=True) to
         # TextField(null=False, blank=False). Currently enforced here because
@@ -83,6 +82,19 @@ class RoleV2Service:
         not_found = requested - found
         if not_found:
             raise PermissionsNotFoundError(list(not_found))
+
+        return permissions
+
+    @atomic
+    def create(
+        self,
+        name: str,
+        description: str,
+        permission_data: list[dict],
+        tenant: Tenant,
+    ) -> CustomRoleV2:
+        """Create a new custom role with the given attributes."""
+        permissions = self._validate_and_resolve_permissions(description, permission_data)
 
         try:
             role = CustomRoleV2(
@@ -113,6 +125,58 @@ class RoleV2Service:
             if "unique role v2 name per tenant" in error_msg.lower() or "unique" in error_msg.lower():
                 raise RoleAlreadyExistsError(name)
             logger.exception("Database error creating role '%s'", name)
+            raise RoleDatabaseError()
+
+    @atomic
+    def update(
+        self,
+        role_uuid: str,
+        name: str,
+        description: str,
+        permission_data: list[dict],
+        tenant: Tenant,
+    ) -> CustomRoleV2:
+        """Update an existing custom role with the given attributes."""
+        permissions = self._validate_and_resolve_permissions(description, permission_data)
+
+        try:
+            # Look up the role by UUID and tenant
+            role = CustomRoleV2.objects.filter(uuid=role_uuid, tenant=tenant).first()
+            if not role:
+                raise RoleNotFoundError(role_uuid)
+
+            # Update role fields
+            role.name = name
+            role.description = description
+            role.save()
+            role.permissions.set(permissions)
+
+            logger.info(
+                "Updated custom role '%s' (uuid=%s) with %d permissions for tenant %s",
+                role.name,
+                role.uuid,
+                len(permissions),
+                tenant.org_id,
+            )
+
+            # TODO: Add outbox replication for role updates
+            # Similar to workspace updates, this should write to the outbox table
+            # for Debezium to pick up and replicate to Kessel Relations
+
+            return role
+
+        except RoleNotFoundError:
+            raise
+        except ValidationError as e:
+            error_msg = str(e)
+            if "name" in error_msg.lower() and "already exists" in error_msg.lower():
+                raise RoleAlreadyExistsError(name)
+            raise
+        except IntegrityError as e:
+            error_msg = str(e)
+            if "unique role v2 name per tenant" in error_msg.lower() or "unique" in error_msg.lower():
+                raise RoleAlreadyExistsError(name)
+            logger.exception("Database error updating role '%s'", name)
             raise RoleDatabaseError()
 
     def list(self, params: dict) -> QuerySet:

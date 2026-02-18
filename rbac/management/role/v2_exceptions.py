@@ -55,3 +55,12 @@ class InvalidRolePermissionsError(RoleV2Error):
     def __init__(self, message: str):
         """Initialize with the validation error message."""
         super().__init__(message)
+
+
+class RoleNotFoundError(RoleV2Error):
+    """Raised when attempting to access a role that does not exist."""
+
+    def __init__(self, role_id: str):
+        """Initialize with the role ID that was not found."""
+        self.role_id = role_id
+        super().__init__(f"Role with id '{role_id}' does not exist.")
