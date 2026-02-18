@@ -51,8 +51,13 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
-        """Add prefetch_related for permissions to avoid N+1 queries."""
-        return super().get_queryset().prefetch_related("permissions")
+        """Get queryset with optimizations, excluding platform roles only for non-read actions."""
+        base_qs = RoleV2.objects.filter(tenant=self.request.tenant).prefetch_related("permissions")
+
+        if self.action in ("list", "retrieve"):
+            return base_qs
+        else:
+            return base_qs.filter(type=RoleV2.Types.CUSTOM)
 
     def get_serializer_context(self):
         """Add validated fields parameter to serializer context."""
