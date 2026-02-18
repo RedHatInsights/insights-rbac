@@ -16,12 +16,17 @@
 #
 """Test the RoleV2Service domain service."""
 
+import uuid
+
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
 from management.models import Permission
-from management.role.v2_exceptions import RoleAlreadyExistsError
-from management.role.v2_model import CustomRoleV2, RoleV2
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.role.definer import seed_roles
+from management.role.v2_exceptions import RoleAlreadyExistsError, RoleNotFoundError, CustomRoleRequiredError
+from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2, PlatformRoleV2
 from management.role.v2_service import RoleV2Service
+from management.tenant_service import V2TenantBootstrapService
 from tests.identity_request import IdentityRequest
 
 from api.models import Tenant
@@ -40,6 +45,8 @@ class RoleV2ServiceTests(IdentityRequest):
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
         self.permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
         self.permission3 = Permission.objects.create(permission="cost:reports:read", tenant=self.tenant)
+
+        self.permission1_data = {"application": "inventory", "resource_type": "hosts", "operation": "read"}
 
     def tearDown(self):
         """Tear down RoleV2Service tests."""
@@ -232,6 +239,86 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
+
+    def test_delete_roles_across_tenants(self):
+        """Test that custom roles can be deleted."""
+        tenant2 = V2TenantBootstrapService(OutboxReplicator()).new_bootstrapped_tenant("t2").tenant
+
+        r1 = self.service.create("r1", "r1", [self.permission1_data], self.tenant)
+        r2 = self.service.create("r2", "r2", [self.permission1_data], tenant2)
+
+        self.service.bulk_delete([str(r1.uuid), str(r2.uuid)])
+
+        self.assertFalse(RoleV2.objects.filter(pk=r1.pk).exists())
+        self.assertFalse(RoleV2.objects.filter(pk=r2.pk).exists())
+
+    def test_delete_roles_within_tenant(self):
+        """Test that multiple custom roles within a tenant can be deleted."""
+        r1 = self.service.create("r1", "r1", [self.permission1_data], self.tenant)
+        r2 = self.service.create("r2", "r2", [self.permission1_data], self.tenant)
+
+        self.service.bulk_delete([str(r1.uuid), str(r2.uuid)], from_tenant=self.tenant)
+
+        self.assertFalse(RoleV2.objects.filter(pk=r1.pk).exists())
+        self.assertFalse(RoleV2.objects.filter(pk=r2.pk).exists())
+
+    def test_delete_role_without_tenant(self):
+        """Test that custom roles cannot be deleted outside the provided tenant."""
+        tenant2 = V2TenantBootstrapService(OutboxReplicator()).new_bootstrapped_tenant("t2").tenant
+
+        r1 = self.service.create("r1", "r1", [self.permission1_data], self.tenant)
+        r2 = self.service.create("r2", "r2", [self.permission1_data], tenant2)
+
+        with self.assertRaises(RoleNotFoundError) as context:
+            self.service.bulk_delete([str(r1.uuid), str(r2.uuid)], from_tenant=self.tenant)
+
+        self.assertIn(str(r2.uuid), str(context.exception))
+
+    def test_delete_nonexistent(self):
+        """Test that a nonexistent role cannot be deleted."""
+        fake_id = str(uuid.uuid4())
+
+        with self.assertRaises(RoleNotFoundError) as context:
+            self.service.bulk_delete([fake_id])
+
+        self.assertIn(str(fake_id), str(context.exception))
+
+    def test_delete_seeded_role(self):
+        """Test that a seeded role cannot be deleted."""
+        # Create some seeded roles.
+        seed_roles()
+
+        system_role = SeededRoleV2.objects.first()
+        custom_role = self.service.create("custom", "custom", [self.permission1_data], self.tenant)
+
+        self.assertIsNotNone(system_role)
+
+        with self.assertRaises(CustomRoleRequiredError) as context:
+            self.service.bulk_delete([str(system_role.uuid), str(custom_role.uuid)])
+
+        self.assertIn(str(system_role.uuid), str(context.exception))
+
+    def test_delete_platform_role(self):
+        """Test that a platform role cannot be deleted."""
+        # Create platform roles.
+        seed_roles()
+
+        platform_role = PlatformRoleV2.objects.first()
+        custom_role = self.service.create("custom", "custom", [self.permission1_data], self.tenant)
+
+        self.assertIsNotNone(platform_role)
+
+        with self.assertRaises(CustomRoleRequiredError) as context:
+            self.service.bulk_delete([str(platform_role.uuid), str(custom_role.uuid)])
+
+        self.assertIn(str(platform_role.uuid), str(context.exception))
+
+    def test_delete_duplicate_ids(self):
+        """Test that a role is deleted if its ID is provided multiple times."""
+        role = self.service.create("role", "role", [self.permission1_data], self.tenant)
+        self.service.bulk_delete([role.uuid, str(role.uuid), str(role.uuid)])
+
+        self.assertFalse(RoleV2.objects.filter(pk=role.pk).exists())
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
