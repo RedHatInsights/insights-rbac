@@ -23,7 +23,7 @@ from management.role.v2_serializer import (
     RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
-    RoleV2RetrieveSerializer,
+    _validate_fields_parameter,
 )
 from management.role.v2_service import RoleV2Service
 from management.v2_mixins import AtomicOperationsMixin
@@ -50,24 +50,17 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     lookup_field = "uuid"
     http_method_names = ["get", "post", "head", "options"]
 
-    def retrieve(self, request, *args, **kwargs):
-        """Retrieve a single role by UUID."""
-        input_serializer = RoleV2RetrieveSerializer(
-            data={"fields": request.query_params.get("fields", "")}, context={"request": request}
-        )
-        input_serializer.is_valid(raise_exception=True)
-        validated_params = input_serializer.validated_data
+    def get_queryset(self):
+        """Add prefetch_related for permissions to avoid N+1 queries."""
+        return super().get_queryset().prefetch_related("permissions")
 
-        uuid_str = self.kwargs.get(self.lookup_field)
-        service = RoleV2Service(tenant=request.tenant)
-        instance = service.get_role(uuid_str)
-
-        context = {
-            "request": request,
-            "fields": validated_params.get("fields"),
-        }
-        serializer = RoleV2ResponseSerializer(instance, context=context)
-        return Response(serializer.data)
+    def get_serializer_context(self):
+        """Add validated fields parameter to serializer context."""
+        context = super().get_serializer_context()
+        if self.action == "retrieve":
+            fields_param = self.request.query_params.get("fields", "").replace("\x00", "")
+            context["fields"] = _validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+        return context
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
