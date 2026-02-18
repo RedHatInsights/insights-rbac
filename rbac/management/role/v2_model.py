@@ -23,6 +23,7 @@ from django.utils import timezone
 from management.exceptions import RequiredFieldError
 from management.models import Permission, Role
 from management.rbac_fields import AutoDateTimeField
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from migration_tool.models import V2role
 from rest_framework import serializers
 from uuid_utils.compat import uuid7
@@ -148,6 +149,25 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 
     _expected_type = RoleV2.Types.CUSTOM
     objects = TypedRoleV2Manager(role_type=_expected_type)
+
+    def as_tuples(self) -> list[RelationTuple]:
+        """Return relation tuples for this role's permissions."""
+        return [
+            RelationTuple(
+                resource=ObjectReference(
+                    type=ObjectType(namespace="rbac", name="role"),
+                    id=str(self.uuid),
+                ),
+                relation=p.v2_string(),
+                subject=SubjectReference(
+                    subject=ObjectReference(
+                        type=ObjectType(namespace="rbac", name="principal"),
+                        id="*",
+                    ),
+                ),
+            )
+            for p in self.permissions.all()
+        ]
 
 
 class SeededRoleV2(TypeValidatedRoleV2Mixin, RoleV2):

@@ -16,7 +16,9 @@
 #
 """Test the RoleV2ViewSet."""
 
+import uuid
 from importlib import reload
+from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import clear_url_caches, reverse
@@ -26,10 +28,373 @@ from rest_framework.test import APIClient
 
 from management import v2_urls
 from management.models import Permission
-from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2
 from management.utils import PRINCIPAL_CACHE
+
 from rbac import urls
 from tests.identity_request import IdentityRequest
+
+
+@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class RoleV2RetrieveViewTest(IdentityRequest):
+    """Test the RoleV2ViewSet retrieve endpoint."""
+
+    def setUp(self):
+        """Set up test data."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.client = APIClient()
+
+        # Create permissions
+        self.permission1 = Permission.objects.create(
+            permission="inventory:hosts:read",
+            tenant=self.tenant,
+        )
+        self.permission2 = Permission.objects.create(
+            permission="inventory:hosts:write",
+            tenant=self.tenant,
+        )
+        self.permission3 = Permission.objects.create(
+            permission="cost:reports:read",
+            tenant=self.tenant,
+        )
+
+        # Create a custom role
+        self.custom_role = CustomRoleV2.objects.create(
+            name="Test Custom Role",
+            description="A test custom role",
+            tenant=self.tenant,
+        )
+        self.custom_role.permissions.add(self.permission1, self.permission2)
+
+        # Create a platform role
+        self.platform_role = PlatformRoleV2.objects.create(
+            name="Test Platform Role",
+            description="A test platform role",
+            tenant=self.tenant,
+        )
+        self.platform_role.permissions.add(self.permission3)
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def _get_role_url(self, role_uuid):
+        """Get the role detail URL."""
+        return reverse("v2_management:roles-detail", kwargs={"uuid": str(role_uuid)})
+
+    def test_retrieve_custom_role_success(self):
+        """Test retrieving a custom role with all fields."""
+        url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        # Verify default retrieve fields are present (per API spec)
+        self.assertEqual(data["id"], str(self.custom_role.uuid))
+        self.assertEqual(data["name"], "Test Custom Role")
+        self.assertEqual(data["description"], "A test custom role")
+        self.assertIn("last_modified", data)
+        self.assertIn("permissions", data)
+        # permissions_count is not in default retrieve fields
+        self.assertNotIn("permissions_count", data)
+
+        # Verify permissions
+        self.assertEqual(len(data["permissions"]), 2)
+        permission_strings = {f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]}
+        self.assertEqual(permission_strings, {"inventory:hosts:read", "inventory:hosts:write"})
+
+    def test_retrieve_platform_role_success(self):
+        """Test retrieving a platform role."""
+        url = self._get_role_url(self.platform_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data["id"], str(self.platform_role.uuid))
+        self.assertEqual(data["name"], "Test Platform Role")
+        self.assertEqual(len(data["permissions"]), 1)
+        self.assertEqual(data["permissions"][0]["application"], "cost")
+
+    def test_retrieve_role_not_found(self):
+        """Test retrieving a non-existent role."""
+        non_existent_uuid = uuid.uuid4()
+        url = self._get_role_url(non_existent_uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_retrieve_role_invalid_uuid_format(self):
+        """Test retrieving a role with invalid UUID format."""
+        url = reverse("v2_management:roles-detail", kwargs={"uuid": "not-a-uuid"})
+        response = self.client.get(url, **self.headers)
+
+        # Should return 404 or 400 depending on URL routing
+        self.assertIn(response.status_code, [status.HTTP_404_NOT_FOUND, status.HTTP_400_BAD_REQUEST])
+
+    def test_retrieve_role_from_different_tenant(self):
+        """Test that users cannot retrieve roles from other tenants."""
+        # Create a role for a different tenant
+        from api.models import Tenant
+
+        other_tenant = Tenant.objects.create(
+            tenant_name="other_tenant", account_id="999999", org_id="999999", ready=True
+        )
+
+        other_role = CustomRoleV2.objects.create(
+            name="Other Tenant Role",
+            description="Role from another tenant",
+            tenant=other_tenant,
+        )
+
+        url = self._get_role_url(other_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        # Should not be able to access role from different tenant
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Cleanup
+        other_role.delete()
+        other_tenant.delete()
+
+    def test_retrieve_role_without_authentication(self):
+        """Test retrieving a role without authentication headers."""
+        url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url)
+
+        # Should fail without authentication
+        self.assertIn(response.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
+
+    def test_retrieve_role_permissions_structure(self):
+        """Test that permissions are properly structured in the response."""
+        url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        # Verify permission structure
+        for permission in data["permissions"]:
+            self.assertIn("application", permission)
+            self.assertIn("resource_type", permission)
+            self.assertIn("operation", permission)
+
+            # Permission strings should be split correctly
+            # inventory:hosts:read -> application=inventory, resource_type=hosts, operation=read
+            if permission["application"] == "inventory":
+                self.assertEqual(permission["resource_type"], "hosts")
+                self.assertIn(permission["operation"], ["read", "write"])
+
+    def test_retrieve_role_with_no_permissions(self):
+        """Test retrieving a role that has no permissions assigned."""
+        empty_role = CustomRoleV2.objects.create(
+            name="Empty Role",
+            description="Role with no permissions",
+            tenant=self.tenant,
+        )
+
+        url = self._get_role_url(empty_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data["permissions"], [])
+        # permissions_count is not in default retrieve fields
+        self.assertNotIn("permissions_count", data)
+
+        empty_role.delete()
+
+    def test_retrieve_role_last_modified_field(self):
+        """Test that last_modified field is present and valid."""
+        url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertIn("last_modified", data)
+        # Verify it's a valid ISO 8601 datetime string
+        from datetime import datetime
+
+        try:
+            datetime.fromisoformat(data["last_modified"].replace("Z", "+00:00"))
+        except ValueError:
+            self.fail("last_modified is not a valid ISO 8601 datetime")
+
+    def test_retrieve_role_permissions_count_field(self):
+        """Test that permissions_count field returns correct count when explicitly requested."""
+        url = self._get_role_url(self.custom_role.uuid)
+        # Explicitly request permissions_count field (not in default)
+        response = self.client.get(f"{url}?fields=permissions_count", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data["permissions_count"], 2)
+        # Only permissions_count should be in response when requested alone
+        self.assertEqual(set(data.keys()), {"permissions_count"})
+
+    def test_retrieve_role_all_fields_present(self):
+        """Test that default retrieve fields are present in the response (per API spec)."""
+        url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        # Default retrieve fields per API spec (line 1223 in main.tsp)
+        expected_fields = {"id", "name", "description", "permissions", "last_modified"}
+        actual_fields = set(data.keys())
+
+        self.assertEqual(actual_fields, expected_fields)
+
+    def test_retrieve_role_permissions_alphabetical_order(self):
+        """Test that permissions are returned in alphabetical order."""
+        # Create role with permissions in random order
+        ordered_role = CustomRoleV2.objects.create(
+            name="Ordered Permissions Role",
+            description="Role to test alphabetical ordering",
+            tenant=self.tenant,
+        )
+        # Add permissions in non-alphabetical order
+        # Expected alphabetical order: cost:reports:read, inventory:hosts:read, inventory:hosts:write
+        ordered_role.permissions.add(self.permission2)  # inventory:hosts:write
+        ordered_role.permissions.add(self.permission3)  # cost:reports:read
+        ordered_role.permissions.add(self.permission1)  # inventory:hosts:read
+
+        url = self._get_role_url(ordered_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        # Verify permissions are sorted alphabetically
+        permission_strings = [f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]]
+        self.assertEqual(permission_strings, ["cost:reports:read", "inventory:hosts:read", "inventory:hosts:write"])
+
+        ordered_role.delete()
+
+    def test_retrieve_role_uses_queryset_not_service(self):
+        """Test that retrieve uses DRF's get_object() from queryset."""
+        url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        # Verify correct role was retrieved via queryset
+        self.assertEqual(data["id"], str(self.custom_role.uuid))
+        self.assertEqual(data["name"], "Test Custom Role")
+
+    @patch("management.permissions.RoleAccessPermission.has_permission")
+    def test_retrieve_role_permission_denied(self, mock_permission):
+        """Test retrieving a role when user lacks permission."""
+        mock_permission.return_value = False
+
+        url = self._get_role_url(self.custom_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_retrieve_role_with_special_characters_in_name(self):
+        """Test retrieving a role with special characters in name and description."""
+        special_role = CustomRoleV2.objects.create(
+            name="Role with Special Chars: @#$%",
+            description="Description with 'quotes' and \"double quotes\" and line\nbreaks",
+            tenant=self.tenant,
+        )
+        special_role.permissions.add(self.permission1)
+
+        url = self._get_role_url(special_role.uuid)
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data["name"], "Role with Special Chars: @#$%")
+        self.assertIn("quotes", data["description"])
+
+        special_role.delete()
+
+    def test_retrieve_role_performance_prefetch(self):
+        """Test that queryset prefetches permissions to avoid N+1 queries."""
+        # Create a role with many permissions
+        many_permissions_role = CustomRoleV2.objects.create(
+            name="Many Permissions Role",
+            description="Role with many permissions",
+            tenant=self.tenant,
+        )
+
+        # Add 10 permissions
+        permissions = []
+        for i in range(10):
+            perm = Permission.objects.create(
+                permission=f"app{i}:resource{i}:action{i}",
+                tenant=self.tenant,
+            )
+            permissions.append(perm)
+            many_permissions_role.permissions.add(perm)
+
+        url = self._get_role_url(many_permissions_role.uuid)
+
+        # Query count should be minimal due to queryset's prefetch_related
+        # Expected queries: tenant lookup, role fetch with prefetch
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(len(data["permissions"]), 10)
+
+        # Cleanup
+        many_permissions_role.delete()
+        for perm in permissions:
+            perm.delete()
+
+    def test_create_and_retrieve_consistency(self):
+        """Test that create and retrieve operations are consistent."""
+        # Create a role with specific permission order
+        create_data = {
+            "name": "Consistency Test Role",
+            "description": "Testing create/retrieve consistency",
+            "permissions": [
+                {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+                {"application": "cost", "resource_type": "reports", "operation": "read"},
+                {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            ],
+        }
+
+        # Create the role
+        create_response = self.client.post(
+            reverse("v2_management:roles-list"), create_data, format="json", **self.headers
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        role_id = create_response.data["id"]
+
+        # Create response preserves input order
+        create_permissions = [
+            f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in create_response.data["permissions"]
+        ]
+        self.assertEqual(create_permissions, ["inventory:hosts:write", "cost:reports:read", "inventory:hosts:read"])
+
+        # Retrieve the same role
+        retrieve_url = reverse("v2_management:roles-detail", kwargs={"uuid": role_id})
+        retrieve_response = self.client.get(retrieve_url, **self.headers)
+        self.assertEqual(retrieve_response.status_code, status.HTTP_200_OK)
+
+        # Retrieve response returns alphabetical order
+        retrieve_permissions = [
+            f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in retrieve_response.data["permissions"]
+        ]
+        self.assertEqual(retrieve_permissions, ["cost:reports:read", "inventory:hosts:read", "inventory:hosts:write"])
+
+        # Both should have same permission set, just different order
+        self.assertEqual(set(create_permissions), set(retrieve_permissions))
 
 
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)

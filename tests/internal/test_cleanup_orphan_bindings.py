@@ -509,7 +509,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         ws2_binding_before = self.tuples.find_tuples(ws2_binding_predicate)
         self.assertEqual(len(ws2_binding_before), 1, "ws2 should have binding tuple")
 
-        orphan_binding_id = ws2_binding_before.only.subject_id
+        orphan_binding_id = ws2_binding_before.only.subject.subject.id
 
         # Run cleanup.
         self._enable_replicate_mock(mock_replicate)
@@ -914,9 +914,9 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
             result = []
             for t in tuples:
                 # Filter by subject type and id if provided
-                if subject_type_name and t.subject_type_name != subject_type_name:
+                if subject_type_name and t.subject.subject.type.name != subject_type_name:
                     continue
-                if subject_id and t.subject_id != subject_id:
+                if subject_id and t.subject.subject.id != subject_id:
                     continue
 
                 result.append(
@@ -924,21 +924,21 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
                         "tuple": {
                             "resource": {
                                 "type": {
-                                    "namespace": t.resource_type_namespace,
-                                    "name": t.resource_type_name,
+                                    "namespace": t.resource.type.namespace,
+                                    "name": t.resource.type.name,
                                 },
-                                "id": t.resource_id,
+                                "id": t.resource.id,
                             },
                             "relation": t.relation,
                             "subject": {
                                 "subject": {
                                     "type": {
-                                        "namespace": t.subject_type_namespace,
-                                        "name": t.subject_type_name,
+                                        "namespace": t.subject.subject.type.namespace,
+                                        "name": t.subject.subject.type.name,
                                     },
-                                    "id": t.subject_id,
+                                    "id": t.subject.subject.id,
                                 },
-                                "relation": t.subject_relation,
+                                "relation": t.subject.relation,
                             },
                         },
                     }

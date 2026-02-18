@@ -728,7 +728,7 @@ class SystemRoleBindingMigrationTest(TestCase):
         self.assertEqual(len(all_group_tuples), 2, "Should have 2 group assignment tuples (groupA + groupB)")
 
         # Verify the exact group UUIDs match
-        group_uuids_in_tuples = {t.subject_id for t in all_group_tuples}
+        group_uuids_in_tuples = {t.subject.subject.id for t in all_group_tuples}
         self.assertIn(str(groupA.uuid), group_uuids_in_tuples, "GroupA UUID should be in tuples")
         self.assertIn(str(groupB.uuid), group_uuids_in_tuples, "GroupB UUID should be in tuples")
 
