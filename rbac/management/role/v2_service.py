@@ -41,13 +41,16 @@ logger = logging.getLogger(__name__)
 
 class RoleV2Service:
     """
-    Application service for RoleV2 operations.
+    Domain service for RoleV2 operations.
+
+    This service encapsulates business logic for role management.
 
     Raises domain-specific exceptions that should be caught and converted
-    to HTTP-level errors by the serializer layer.
+    to HTTP-level errors by the view layer.
     """
 
     DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
+    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
 
     def __init__(self, tenant: Tenant | None = None):
         """Initialize the service."""
