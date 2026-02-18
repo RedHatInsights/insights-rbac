@@ -59,15 +59,20 @@ class Command(BaseCommand):
         tenants_query = Tenant.objects.exclude(tenant_name="public").filter(org_id__isnull=False)
 
         success_count = 0
+        modified_count = 0
         failed_orgs = []
 
         tenant_count = tenants_query.count()
 
+        logger.info(f"About to remove orphan relations for ~{tenant_count} tenants.")
+
         for index, tenant in enumerate(tenants_query.iterator()):
             start_time = datetime.datetime.now(datetime.timezone.utc)
+            modified = False
+            failed = False
 
-            print(
-                f"Beginning migration of tenant {index + 1}/{tenant_count} with org_id={tenant.org_id!r} "
+            logger.info(
+                f"Beginning migration of tenant {index + 1}/~{tenant_count} with org_id={tenant.org_id!r} "
                 f"at {start_time}"
             )
 
@@ -82,21 +87,38 @@ class Command(BaseCommand):
                     failed_orgs.append(tenant.org_id)
                     continue
 
-                success_count += 1
+                if result["cleanup"]["relations_removed_count"] > 0:
+                    modified = True
             except Exception as e:
                 logger.error(f"Failed to remove orphan relations for tenant with org_id={tenant.org_id!r}", exc_info=e)
-                failed_orgs.append(tenant.org_id)
+                failed = True
 
             end_time = datetime.datetime.now(datetime.timezone.utc)
 
-            print(
-                f"Done with migration of tenant with org_id={tenant.org_id!r} at {end_time}; "
-                f"took {end_time - start_time}."
-            )
+            if failed:
+                failed_orgs.append(tenant.org_id)
+
+                logger.info(
+                    f"Failed migration of tenant with org_id={tenant.org_id!r} at {end_time}; "
+                    f"took {end_time - start_time}."
+                )
+            else:
+                logger.info(
+                    f"Done with migration of tenant with org_id={tenant.org_id!r} at {end_time}; "
+                    f"modified={"true" if modified else "false"}; took {end_time - start_time}."
+                )
+
+                success_count += 1
+
+                if modified:
+                    modified_count += 1
+
+        logger.info(
+            f"Successfully removed orphan relations for {success_count} tenants, "
+            f"of which {modified_count} were modified."
+        )
 
         if len(failed_orgs) > 0:
             raise CommandError(
                 f"Failed to remove orphan relations tenants with the following org_ids: {failed_orgs}", returncode=1
             )
-
-        logger.info(f"Removed orphan relations for {success_count} tenants.")
