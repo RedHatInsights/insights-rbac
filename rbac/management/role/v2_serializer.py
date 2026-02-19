@@ -40,9 +40,9 @@ ERROR_MAPPING = {
 class PermissionSerializer(serializers.Serializer):
     """Serializer for permission data."""
 
-    application = serializers.CharField(help_text="Application name")
-    resource_type = serializers.CharField(help_text="Resource type")
-    operation = serializers.CharField(source="verb", help_text="Operation/verb")
+    application = serializers.CharField(required=True, help_text="Application name")
+    resource_type = serializers.CharField(required=True, help_text="Resource type")
+    operation = serializers.CharField(required=True, source="verb", help_text="Operation/verb")
 
 
 class RoleV2ResponseSerializer(serializers.ModelSerializer):
@@ -56,7 +56,6 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
 
     class Meta:
-
         model = RoleV2
         fields = ("id", "name", "description", "permissions_count", "permissions", "last_modified")
 
@@ -70,18 +69,20 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
                 self.fields.pop(field_name)
 
     def get_permissions(self, obj):
-        """Return permissions, ordered by input order if available."""
+        """Return permissions, ordered by input order if available, otherwise alphabetically."""
         permissions = list(obj.permissions.all())
         input_permissions = self.context.get("input_permissions")
 
         if input_permissions:
+            # Sort by input order (for create responses)
             order_map = {}
             for i, p in enumerate(input_permissions):
                 key = f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}"
                 order_map[key] = i
-
-            # Sort permissions by input order
             permissions.sort(key=lambda p: order_map.get(p.permission, float("inf")))
+        else:
+            # Sort alphabetically by permission string (for retrieve/list responses)
+            permissions.sort(key=lambda p: p.permission)
 
         return PermissionSerializer(permissions, many=True).data
 
@@ -90,13 +91,42 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         count = getattr(obj, "permissions_count_annotation", None)
         if count is not None:
             return count
-        return obj.permissions.count()
+        return len(obj.permissions.all())
 
 
 class RoleFieldSelection(FieldSelection):
     """Field selection for roles endpoint."""
 
     VALID_ROOT_FIELDS = set(RoleV2ResponseSerializer.Meta.fields)
+
+
+def _validate_fields_parameter(value: str, default_fields: set) -> set:
+    """
+    Validate and parse the fields parameter for role endpoints.
+
+    Args:
+        value: The raw fields parameter value from request
+        default_fields: The default fields to return when value is empty
+
+    Returns:
+        Set of field names to include in response
+
+    Raises:
+        ValidationError: If fields parameter has invalid syntax
+    """
+    if not value:
+        return default_fields
+
+    try:
+        field_selection = RoleFieldSelection.parse(value)
+    except FieldSelectionValidationError as e:
+        raise serializers.ValidationError(e.message)
+
+    if not field_selection:
+        return default_fields
+
+    resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+    return resolved or default_fields
 
 
 class RoleV2ListSerializer(serializers.Serializer):
@@ -118,18 +148,7 @@ class RoleV2ListSerializer(serializers.Serializer):
 
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
-        if not value:
-            return RoleV2Service.DEFAULT_LIST_FIELDS
-        try:
-            field_selection = RoleFieldSelection.parse(value)
-        except FieldSelectionValidationError as e:
-            raise serializers.ValidationError(e.message)
-
-        if not field_selection:
-            return RoleV2Service.DEFAULT_LIST_FIELDS
-
-        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return resolved or RoleV2Service.DEFAULT_LIST_FIELDS
+        return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
 
 
 class RoleV2RequestSerializer(serializers.ModelSerializer):
@@ -150,7 +169,11 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
     @property
     def service(self):
         """Return the service instance from context or create a new one."""
-        return self.context.get("role_service") or self.service_class()
+        if "role_service" in self.context:
+            return self.context["role_service"]
+        # Create service with tenant from request context
+        tenant = self.context["request"].tenant
+        return self.service_class(tenant=tenant)
 
     def create(self, validated_data):
         """Create a new RoleV2 using the service layer."""

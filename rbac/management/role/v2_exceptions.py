@@ -23,6 +23,15 @@ class RoleV2Error(Exception):
     pass
 
 
+class RoleNotFoundError(RoleV2Error):
+    """Raised when a role cannot be found."""
+
+    def __init__(self, uuid):
+        """Initialize RoleNotFoundError with UUID."""
+        self.uuid = uuid
+        super().__init__(f"Role with UUID '{uuid}' not found.")
+
+
 class RoleAlreadyExistsError(RoleV2Error):
     """Raised when attempting to create a role with a name that already exists for the tenant."""
 
