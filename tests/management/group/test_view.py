@@ -7255,11 +7255,11 @@ class GroupReplicationTests(IdentityRequest):
         sr1_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 # a subject relation
@@ -7275,7 +7275,9 @@ class GroupReplicationTests(IdentityRequest):
 
         self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
 
-        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+        subjects = {
+            t.subject.subject.id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"
+        }
 
         # Assert the bindings are to both subjects
         self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/2222222"])
@@ -7290,11 +7292,11 @@ class GroupReplicationTests(IdentityRequest):
         sr1_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 # a subject relation
@@ -7313,7 +7315,9 @@ class GroupReplicationTests(IdentityRequest):
         self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
-        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+        subjects = {
+            t.subject.subject.id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"
+        }
 
         self.assertCountEqual(subjects, ["redhat/2222222"])
 
@@ -7362,11 +7366,11 @@ class GroupReplicationTests(IdentityRequest):
         sr1_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 # a subject relation
@@ -7382,7 +7386,9 @@ class GroupReplicationTests(IdentityRequest):
 
         self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
 
-        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+        subjects = {
+            t.subject.subject.id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"
+        }
 
         # Assert the bindings are to both subjects
         self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/2222222"])
@@ -7396,11 +7402,11 @@ class GroupReplicationTests(IdentityRequest):
         sr1_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 # a subject relation
@@ -7419,7 +7425,9 @@ class GroupReplicationTests(IdentityRequest):
         self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
-        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+        subjects = {
+            t.subject.subject.id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"
+        }
         self.assertCountEqual(subjects, [str(test_group.uuid)])
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -7484,7 +7492,7 @@ class GroupReplicationTests(IdentityRequest):
         sr1_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is ...
             group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
             # and where one of the tuples from that binding has...
