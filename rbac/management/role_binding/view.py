@@ -23,19 +23,27 @@ from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
+from management.v2_mixins import AtomicOperationsMixin
+from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
+from .serializer import (
+    RoleBindingInputSerializer,
+    RoleBindingOutputSerializer,
+    UpdateRoleBindingRequestSerializer,
+    UpdateRoleBindingResponseSerializer,
+)
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
 
 
-class RoleBindingViewSet(BaseV2ViewSet):
+class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """Role Binding ViewSet.
 
-    Provides read-only access to role bindings currently.
+    Provides access to role bindings with support for listing and updating.
 
     Query Parameters (by-subject endpoint):
         Required:
@@ -56,8 +64,18 @@ class RoleBindingViewSet(BaseV2ViewSet):
     )
     pagination_class = V2CursorPagination
 
-    @action(detail=False, methods=["get"], url_path="by-subject")
+    @action(detail=False, methods=["get", "put"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
+        """Handle role bindings by subject.
+
+        GET: List role bindings grouped by subject.
+        PUT: Update role bindings for a specific subject on a resource.
+        """
+        if request.method == "PUT":
+            return self._update_by_subject(request)
+        return self._list_by_subject(request)
+
+    def _list_by_subject(self, request):
         """List role bindings grouped by subject.
 
         Required query parameters:
@@ -89,3 +107,14 @@ class RoleBindingViewSet(BaseV2ViewSet):
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
+
+    def _update_by_subject(self, request):
+        """Update role bindings for a specific subject on a resource."""
+        data = {**request.query_params.dict(), **request.data}
+
+        serializer = UpdateRoleBindingRequestSerializer(data=data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
+
+        response_serializer = UpdateRoleBindingResponseSerializer(result, context={"request": request})
+        return Response(response_serializer.data, status=status.HTTP_200_OK)

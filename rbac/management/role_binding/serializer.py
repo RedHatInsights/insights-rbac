@@ -18,10 +18,13 @@
 
 from typing import Optional
 
+from management.exceptions import InvalidFieldError, NotFoundError
 from management.models import Group
 from management.role.v2_model import RoleV2
+from management.subject import SubjectType, UnsupportedSubjectTypeError
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound
 
 
 class RoleBindingFieldSelection(FieldSelection):
@@ -33,6 +36,11 @@ class RoleBindingFieldSelection(FieldSelection):
         "role": {"id", "name"},
         "resource": {"id", "name", "type"},
     }
+
+
+def sanitize_nul_bytes(data: dict) -> dict:
+    """Strip NUL bytes from string values in data dict."""
+    return {key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()}
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -53,10 +61,7 @@ class RoleBindingInputSerializer(serializers.Serializer):
 
     def to_internal_value(self, data):
         """Sanitize input data by stripping NUL bytes before field validation."""
-        sanitized = {
-            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
-        }
-        return super().to_internal_value(sanitized)
+        return super().to_internal_value(sanitize_nul_bytes(data))
 
     def validate_resource_id(self, value):
         """Validate resource_id is provided."""
@@ -314,3 +319,143 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
 # Backward compatibility alias
 RoleBindingByGroupSerializer = RoleBindingOutputSerializer
+
+
+class RoleIdSerializer(serializers.Serializer):
+    """Serializer for a role ID reference."""
+
+    id = serializers.UUIDField(required=True, help_text="Role identifier")
+
+
+class UpdateRoleBindingRequestSerializer(serializers.Serializer):
+    """Input serializer for update role binding API."""
+
+    # Query parameters
+    resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
+    resource_type = serializers.CharField(required=True, help_text="Resource type (e.g., 'workspace')")
+    subject_id = serializers.CharField(required=True, help_text="Subject ID (UUID)")
+    subject_type = serializers.CharField(required=True, help_text="Subject type (e.g., 'group')")
+    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+
+    # Request body
+    roles = RoleIdSerializer(many=True, required=True, help_text="Roles to assign")
+
+    def to_internal_value(self, data):
+        """Sanitize input data by stripping NUL bytes before field validation."""
+        return super().to_internal_value(sanitize_nul_bytes(data))
+
+    def validate_resource_id(self, value):
+        """Validate resource_id is provided."""
+        if not value:
+            raise serializers.ValidationError("resource_id is required.")
+        return value
+
+    def validate_resource_type(self, value):
+        """Validate resource_type is provided."""
+        if not value:
+            raise serializers.ValidationError("resource_type is required.")
+        return value
+
+    def validate_subject_id(self, value):
+        """Validate subject_id is provided."""
+        if not value:
+            raise serializers.ValidationError("subject_id is required.")
+        return value
+
+    def validate_subject_type(self, value):
+        """Validate subject_type is a supported enum value (construction check)."""
+        if not value:
+            raise serializers.ValidationError("subject_type is required.")
+        if not SubjectType.is_valid(value):
+            supported = ", ".join(SubjectType.values())
+            raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
+        return value
+
+    def validate_fields(self, value):
+        """Parse and validate fields parameter into RoleBindingFieldSelection object."""
+        if not value:
+            return None
+        try:
+            return RoleBindingFieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+    def validate_roles(self, value):
+        """Validate that at least one role is provided."""
+        if not value:
+            raise serializers.ValidationError("At least one role is required.")
+        return value
+
+    def save(self):
+        """Execute the update via the service layer and return the result.
+
+        Maps domain exceptions to DRF exceptions, following the same pattern
+        as RoleV2RequestSerializer.create().
+        """
+        from .service import RoleBindingService
+
+        validated = self.validated_data
+        tenant = self.context["request"].tenant
+        role_ids = [str(role["id"]) for role in validated["roles"]]
+
+        service = RoleBindingService(tenant=tenant)
+
+        try:
+            return service.update_role_bindings_for_subject(
+                resource_type=validated["resource_type"],
+                resource_id=validated["resource_id"],
+                subject_type=validated["subject_type"],
+                subject_id=validated["subject_id"],
+                role_ids=role_ids,
+            )
+        except NotFoundError as e:
+            raise NotFound(detail=str(e))
+        except (UnsupportedSubjectTypeError, InvalidFieldError) as e:
+            raise serializers.ValidationError({getattr(e, "field", "detail"): str(e)})
+
+
+class UpdateRoleBindingResponseSerializer(serializers.Serializer):
+    """Output serializer for the update role binding API.
+
+    Serializes an UpdateRoleBindingResult into the API response format.
+    Expects 'resource_name' in the serializer context.
+    """
+
+    subject = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+    last_modified = serializers.SerializerMethodField()
+
+    def get_subject(self, result):
+        """Format subject based on type (group vs user)."""
+        if result.subject_type == SubjectType.GROUP:
+            return {"id": result.subject.uuid, "type": SubjectType.GROUP}
+        return {
+            "id": result.subject.uuid,
+            "type": SubjectType.USER,
+            "user": {"username": result.subject.username},
+        }
+
+    def get_roles(self, result):
+        """Format roles as list of id + name."""
+        return [{"id": role.uuid, "name": role.name} for role in result.roles]
+
+    def get_resource(self, result):
+        """Format resource with id, type, and name from context."""
+        from .service import RoleBindingService
+
+        tenant = self.context["request"].tenant
+        service = RoleBindingService(tenant=tenant)
+        resource_name = service.get_resource_name(result.resource_id, result.resource_type)
+
+        return {
+            "id": result.resource_id,
+            "type": result.resource_type,
+            "name": resource_name,
+        }
+
+    def get_last_modified(self, result):
+        """Compute last_modified from the most recently modified role."""
+        if not result.roles:
+            return None
+        return max(role.modified for role in result.roles)
