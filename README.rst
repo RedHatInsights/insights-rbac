@@ -45,6 +45,10 @@ Preferred Environment
 
 Please refer to `Working with Openshift`_.
 
+Ephemeral Environment
+---------------------
+For Red Hatters looking to run RBAC in the ephemeral environment, see `insights-service-deployer`_.
+
 Alternative Environment
 -----------------------
 If deploying with Openshift seems overly complex you can try an alternate local environment where you will need to install and setup some of the dependencies and configuration.
@@ -401,6 +405,7 @@ For additional information please refer to Contributing_.
 .. _tutorial: https://www.postgresql.org/docs/10/static/tutorial-start.html
 .. _`Working with Openshift`: https://insights-rbac.readthedocs.io/en/latest/openshift.html
 .. _Contributing: https://insights-rbac.readthedocs.io/en/latest/CONTRIBUTING.html
+.. _insights-service-deployer: https://github.com/project-kessel/insights-service-deployer
 
 .. |license| image:: https://img.shields.io/github/license/RedHatInsights/insights-rbac.svg
    :target: https://github.com/RedHatInsights/insights-rbac/blob/master/LICENSE
