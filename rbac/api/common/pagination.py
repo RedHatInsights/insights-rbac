@@ -215,7 +215,10 @@ class V2CursorPagination(CursorPagination):
         model = queryset.model
         if model == RoleBinding:
             return self.ROLE_BINDING_FIELD_MAPPING
-        return self.SUBJECT_FIELD_MAPPING
+        if model == Group:
+            return self.SUBJECT_FIELD_MAPPING
+        # Fall back to instance FIELD_MAPPING for other models (e.g., in tests)
+        return self.FIELD_MAPPING
 
     def _convert_order_field(self, field: str, field_mapping: dict) -> str | None:
         """Convert dot notation field to Django ORM field.
