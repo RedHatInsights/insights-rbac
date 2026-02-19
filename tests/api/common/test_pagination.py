@@ -502,21 +502,21 @@ class V2CursorPaginationTest(TestCase):
     def test_convert_order_field_accepts_direct_field_in_mapping(self):
         """Test _convert_order_field accepts direct field names present in FIELD_MAPPING."""
         paginator = self._paginator_with_direct_fields()
-        self.assertEqual(paginator._convert_order_field("name"), "name")
-        self.assertEqual(paginator._convert_order_field("last_modified"), "modified")
+        self.assertEqual(paginator._convert_order_field("name", paginator.FIELD_MAPPING), "name")
+        self.assertEqual(paginator._convert_order_field("last_modified", paginator.FIELD_MAPPING), "modified")
 
     def test_convert_order_field_accepts_descending_direct_field(self):
         """Test _convert_order_field accepts descending direct field names in FIELD_MAPPING."""
         paginator = self._paginator_with_direct_fields()
-        self.assertEqual(paginator._convert_order_field("-name"), "-name")
-        self.assertEqual(paginator._convert_order_field("-last_modified"), "-modified")
+        self.assertEqual(paginator._convert_order_field("-name", paginator.FIELD_MAPPING), "-name")
+        self.assertEqual(paginator._convert_order_field("-last_modified", paginator.FIELD_MAPPING), "-modified")
 
     def test_convert_order_field_rejects_unknown_direct_field(self):
         """Test _convert_order_field rejects direct field names not in FIELD_MAPPING."""
         paginator = self._paginator_with_direct_fields()
-        self.assertIsNone(paginator._convert_order_field("uuid"))
-        self.assertIsNone(paginator._convert_order_field("-description"))
-        self.assertIsNone(paginator._convert_order_field("group.name"))
+        self.assertIsNone(paginator._convert_order_field("uuid", paginator.FIELD_MAPPING))
+        self.assertIsNone(paginator._convert_order_field("-description", paginator.FIELD_MAPPING))
+        self.assertIsNone(paginator._convert_order_field("group.name", paginator.FIELD_MAPPING))
 
     def test_get_ordering_with_direct_field_name(self):
         """Test get_ordering accepts direct field names when in FIELD_MAPPING."""
