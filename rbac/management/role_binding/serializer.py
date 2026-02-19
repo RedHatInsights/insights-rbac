@@ -18,10 +18,13 @@
 
 from typing import Optional
 
+from management.exceptions import InvalidFieldError, NotFoundError
 from management.models import Group
 from management.role.v2_model import RoleV2
+from management.subject import SubjectType, UnsupportedSubjectTypeError
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound
 
 
 class RoleBindingFieldSelection(FieldSelection):
@@ -324,7 +327,7 @@ class RoleIdSerializer(serializers.Serializer):
     id = serializers.UUIDField(required=True, help_text="Role identifier")
 
 
-class UpdateRoleBindingSerializer(serializers.Serializer):
+class UpdateRoleBindingRequestSerializer(serializers.Serializer):
     """Input serializer for update role binding API."""
 
     # Query parameters
@@ -360,9 +363,12 @@ class UpdateRoleBindingSerializer(serializers.Serializer):
         return value
 
     def validate_subject_type(self, value):
-        """Validate subject_type is provided."""
+        """Validate subject_type is a supported enum value (construction check)."""
         if not value:
             raise serializers.ValidationError("subject_type is required.")
+        if not SubjectType.is_valid(value):
+            supported = ", ".join(SubjectType.values())
+            raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
         return value
 
     def validate_fields(self, value):
@@ -379,3 +385,77 @@ class UpdateRoleBindingSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("At least one role is required.")
         return value
+
+    def save(self):
+        """Execute the update via the service layer and return the result.
+
+        Maps domain exceptions to DRF exceptions, following the same pattern
+        as RoleV2RequestSerializer.create().
+        """
+        from .service import RoleBindingService
+
+        validated = self.validated_data
+        tenant = self.context["request"].tenant
+        role_ids = [str(role["id"]) for role in validated["roles"]]
+
+        service = RoleBindingService(tenant=tenant)
+
+        try:
+            return service.update_role_bindings_for_subject(
+                resource_type=validated["resource_type"],
+                resource_id=validated["resource_id"],
+                subject_type=validated["subject_type"],
+                subject_id=validated["subject_id"],
+                role_ids=role_ids,
+            )
+        except NotFoundError as e:
+            raise NotFound(detail=str(e))
+        except (UnsupportedSubjectTypeError, InvalidFieldError) as e:
+            raise serializers.ValidationError({getattr(e, "field", "detail"): str(e)})
+
+
+class UpdateRoleBindingResponseSerializer(serializers.Serializer):
+    """Output serializer for the update role binding API.
+
+    Serializes an UpdateRoleBindingResult into the API response format.
+    Expects 'resource_name' in the serializer context.
+    """
+
+    subject = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+    last_modified = serializers.SerializerMethodField()
+
+    def get_subject(self, result):
+        """Format subject based on type (group vs user)."""
+        if result.subject_type == SubjectType.GROUP:
+            return {"id": result.subject.uuid, "type": SubjectType.GROUP}
+        return {
+            "id": result.subject.uuid,
+            "type": SubjectType.USER,
+            "user": {"username": result.subject.username},
+        }
+
+    def get_roles(self, result):
+        """Format roles as list of id + name."""
+        return [{"id": role.uuid, "name": role.name} for role in result.roles]
+
+    def get_resource(self, result):
+        """Format resource with id, type, and name from context."""
+        from .service import RoleBindingService
+
+        tenant = self.context["request"].tenant
+        service = RoleBindingService(tenant=tenant)
+        resource_name = service.get_resource_name(result.resource_id, result.resource_type)
+
+        return {
+            "id": result.resource_id,
+            "type": result.resource_type,
+            "name": resource_name,
+        }
+
+    def get_last_modified(self, result):
+        """Compute last_modified from the most recently modified role."""
+        if not result.roles:
+            return None
+        return max(role.modified for role in result.roles)

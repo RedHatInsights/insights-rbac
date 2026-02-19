@@ -30,6 +30,7 @@ from management.models import (
 )
 from management.principal.model import Principal
 from management.role_binding.model import RoleBindingPrincipal
+from management.role_binding.service import RoleBindingService
 from tests.identity_request import IdentityRequest
 
 
@@ -518,7 +519,7 @@ class RoleBindingModelTests(IdentityRequest):
 
 
 class SetRolesForSubjectTests(IdentityRequest):
-    """Tests for RoleBinding.set_roles_for_subject method."""
+    """Tests for RoleBindingService._set_roles_for_subject persistence logic."""
 
     def setUp(self):
         """Set up test data."""
@@ -537,6 +538,8 @@ class SetRolesForSubjectTests(IdentityRequest):
         self.principal1 = Principal.objects.create(tenant=self.tenant, username="user1", user_id="user1")
         self.principal2 = Principal.objects.create(tenant=self.tenant, username="user2", user_id="user2")
 
+        self.service = RoleBindingService(tenant=self.tenant)
+
     def tearDown(self):
         """Clean up test data."""
         RoleBinding.objects.all().delete()
@@ -547,8 +550,7 @@ class SetRolesForSubjectTests(IdentityRequest):
 
     def test_set_roles_for_group(self):
         """Test setting roles for a group."""
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
@@ -573,8 +575,7 @@ class SetRolesForSubjectTests(IdentityRequest):
 
     def test_set_roles_for_principal(self):
         """Test setting roles for a principal."""
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.principal1,
@@ -602,10 +603,9 @@ class SetRolesForSubjectTests(IdentityRequest):
         self.assertEqual(sources, {"v2_api"})
 
     def test_set_roles_replaces_existing(self):
-        """Test that set_roles_for_subject replaces existing bindings."""
+        """Test that _set_roles_for_subject replaces existing bindings."""
         # First call - set roles 1 and 2
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
@@ -617,8 +617,7 @@ class SetRolesForSubjectTests(IdentityRequest):
         self.assertEqual(group_bindings.count(), 2)
 
         # Second call - set roles 2 and 3 (role1 should be removed)
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
@@ -635,8 +634,7 @@ class SetRolesForSubjectTests(IdentityRequest):
     def test_set_roles_cleans_orphaned_bindings(self):
         """Test that orphaned bindings are cleaned up."""
         # Set roles for group1
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
@@ -647,8 +645,7 @@ class SetRolesForSubjectTests(IdentityRequest):
         self.assertEqual(RoleBinding.objects.filter(role=self.role1, resource_id="ws-123").count(), 1)
 
         # Replace with different role
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
@@ -662,15 +659,13 @@ class SetRolesForSubjectTests(IdentityRequest):
     def test_set_roles_shared_binding_not_orphaned(self):
         """Test that shared bindings are not deleted when one subject is removed."""
         # Set role1 for both groups
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
             roles=[self.role1],
         )
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group2,
@@ -682,8 +677,7 @@ class SetRolesForSubjectTests(IdentityRequest):
         self.assertEqual(binding.group_entries.count(), 2)
 
         # Change group1's roles
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
@@ -696,59 +690,15 @@ class SetRolesForSubjectTests(IdentityRequest):
         self.assertEqual(binding.group_entries.count(), 1)
         self.assertEqual(binding.group_entries.first().group, self.group2)
 
-    def test_set_roles_validation_empty_resource_type(self):
-        """Test that empty resource_type raises RequiredFieldError."""
-        from management.exceptions import RequiredFieldError
-
-        with self.assertRaises(RequiredFieldError) as context:
-            RoleBinding.set_roles_for_subject(
-                tenant=self.tenant,
-                resource_type="",
-                resource_id="ws-123",
-                subject=self.group1,
-                roles=[self.role1],
-            )
-        self.assertIn("resource_type", str(context.exception))
-
-    def test_set_roles_validation_empty_resource_id(self):
-        """Test that empty resource_id raises RequiredFieldError."""
-        from management.exceptions import RequiredFieldError
-
-        with self.assertRaises(RequiredFieldError) as context:
-            RoleBinding.set_roles_for_subject(
-                tenant=self.tenant,
-                resource_type="workspace",
-                resource_id="",
-                subject=self.group1,
-                roles=[self.role1],
-            )
-        self.assertIn("resource_id", str(context.exception))
-
-    def test_set_roles_validation_empty_roles(self):
-        """Test that empty roles list raises RequiredFieldError."""
-        from management.exceptions import RequiredFieldError
-
-        with self.assertRaises(RequiredFieldError) as context:
-            RoleBinding.set_roles_for_subject(
-                tenant=self.tenant,
-                resource_type="workspace",
-                resource_id="ws-123",
-                subject=self.group1,
-                roles=[],
-            )
-        self.assertIn("roles", str(context.exception))
-
     def test_set_roles_different_resources_same_subject(self):
         """Test setting roles for same subject on different resources."""
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
             roles=[self.role1],
         )
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-456",
             subject=self.group1,
@@ -773,8 +723,7 @@ class SetRolesForSubjectTests(IdentityRequest):
     def test_set_roles_reuses_existing_binding(self):
         """Test that existing bindings are reused via get_or_create."""
         # Create initial binding for group1
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group1,
@@ -784,8 +733,7 @@ class SetRolesForSubjectTests(IdentityRequest):
         binding_id = RoleBinding.objects.get(role=self.role1, resource_id="ws-123").id
 
         # Set same role for group2
-        RoleBinding.set_roles_for_subject(
-            tenant=self.tenant,
+        self.service._set_roles_for_subject(
             resource_type="workspace",
             resource_id="ws-123",
             subject=self.group2,

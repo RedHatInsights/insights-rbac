@@ -17,7 +17,6 @@
 """Service for RoleV2 management."""
 
 import logging
-from typing import List
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -161,17 +160,3 @@ class RoleV2Service:
                 queryset = queryset.prefetch_related("permissions")
 
         return queryset
-
-    def get_assignable_roles(self, role_ids: List[str]) -> List[RoleV2]:
-        """Get roles by UUIDs that can be assigned to bindings.
-
-        Only custom and seeded roles can be directly assigned.
-        Platform roles are internal aggregations and cannot be assigned directly.
-
-        Args:
-            role_ids: List of role UUIDs to retrieve
-
-        Returns:
-            List of RoleV2 objects that exist and are assignable
-        """
-        return [r for r in RoleV2.objects.filter(uuid__in=role_ids).exclude(type=RoleV2.Types.PLATFORM)]

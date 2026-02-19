@@ -1608,7 +1608,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     f"&subject_id={self.group.uuid}&subject_type=invalid_type",
                     {"roles": [{"id": str(self.role1.uuid)}]},
                     "Unsupported subject type: 'invalid_type'. Supported types: group, user",
-                    "detail",
+                    "subject_type",
                 ),
             ]
 

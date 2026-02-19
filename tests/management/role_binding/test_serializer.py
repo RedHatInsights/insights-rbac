@@ -608,8 +608,8 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.assertNotIn("type", resource)
 
 
-class UpdateRoleBindingSerializerTests(IdentityRequest):
-    """Tests for UpdateRoleBindingSerializer."""
+class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
+    """Tests for UpdateRoleBindingRequestSerializer."""
 
     def setUp(self):
         """Set up test data."""
@@ -617,7 +617,7 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
 
     def test_valid_input(self):
         """Test valid input passes validation."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -626,12 +626,12 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_type": "group",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_missing_resource_id(self):
         """Test that missing resource_id fails validation."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_type": "workspace",
@@ -639,13 +639,13 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_type": "group",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("resource_id", serializer.errors)
 
     def test_missing_resource_type(self):
         """Test that missing resource_type fails validation."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -653,13 +653,13 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_type": "group",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("resource_type", serializer.errors)
 
     def test_missing_subject_id(self):
         """Test that missing subject_id fails validation."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -667,13 +667,13 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_type": "group",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("subject_id", serializer.errors)
 
     def test_missing_subject_type(self):
         """Test that missing subject_type fails validation."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -681,13 +681,13 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_id": "550e8400-e29b-41d4-a716-446655440000",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("subject_type", serializer.errors)
 
     def test_missing_roles(self):
         """Test that missing roles fails validation."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -695,13 +695,13 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_id": "550e8400-e29b-41d4-a716-446655440000",
             "subject_type": "group",
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("roles", serializer.errors)
 
     def test_empty_roles(self):
         """Test that empty roles list fails validation."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -710,13 +710,13 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_type": "group",
             "roles": [],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("roles", serializer.errors)
 
     def test_nul_byte_in_resource_id_sanitized(self):
         """Test that NUL bytes in resource_id are sanitized (stripped)."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123\x00",
@@ -725,14 +725,14 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_type": "group",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
         # NUL byte should be stripped
         self.assertEqual(serializer.validated_data["resource_id"], "ws-123")
 
     def test_optional_fields_param_parsed(self):
         """Test that fields param is parsed into FieldSelection object."""
-        from management.role_binding.serializer import FieldSelection, UpdateRoleBindingSerializer
+        from management.role_binding.serializer import FieldSelection, UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -742,7 +742,7 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "fields": "subject(group.name)",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
         # fields should be parsed into FieldSelection object
         self.assertIsInstance(serializer.validated_data["fields"], FieldSelection)
@@ -750,7 +750,7 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
 
     def test_user_subject_type_valid(self):
         """Test that 'user' is a valid subject_type."""
-        from management.role_binding.serializer import UpdateRoleBindingSerializer
+        from management.role_binding.serializer import UpdateRoleBindingRequestSerializer
 
         data = {
             "resource_id": "ws-123",
@@ -759,5 +759,5 @@ class UpdateRoleBindingSerializerTests(IdentityRequest):
             "subject_type": "user",
             "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
         }
-        serializer = UpdateRoleBindingSerializer(data=data)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)

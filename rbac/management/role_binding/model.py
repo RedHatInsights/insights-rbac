@@ -17,18 +17,16 @@
 
 """Models for role binding management."""
 
-from typing import Iterable, Optional, Sequence
+from typing import Iterable, Optional
 
 from django.db import models, transaction
-from django.db.models import Count, Q, QuerySet
-from management.exceptions import RequiredFieldError
+from django.db.models import Q, QuerySet
 from management.group.model import Group
 from management.principal.model import Principal
-from management.role.v2_model import RoleV2
 from migration_tool.models import V2boundresource, V2rolebinding
 from uuid_utils.compat import UUID, uuid7
 
-from api.models import Tenant, TenantAwareModel
+from api.models import TenantAwareModel
 
 
 class RoleBinding(TenantAwareModel):
@@ -145,111 +143,6 @@ class RoleBinding(TenantAwareModel):
             groups=force_group_uuids,
             users={},
         )
-
-    @classmethod
-    def set_roles_for_subject(
-        cls,
-        tenant: Tenant,
-        resource_type: str,
-        resource_id: str,
-        subject: Group | Principal,
-        roles: Sequence[RoleV2],
-    ) -> None:
-        """Set the roles for a subject on a resource.
-
-        Replaces all existing role bindings for the subject on the resource
-        with the provided roles. This is an atomic operation.
-
-        Args:
-            tenant: The tenant context
-            resource_type: The type of resource (e.g., 'workspace')
-            resource_id: The resource identifier
-            subject: The subject (Group or Principal) to update bindings for
-            roles: The roles to assign to the subject
-
-        Raises:
-            RequiredFieldError: If required parameters are missing
-        """
-        if not resource_type:
-            raise RequiredFieldError("resource_type")
-        if not resource_id:
-            raise RequiredFieldError("resource_id")
-        if not roles:
-            raise RequiredFieldError("roles")
-
-        if isinstance(subject, Group):
-            cls._set_roles_impl(
-                tenant,
-                resource_type,
-                resource_id,
-                roles,
-                through_model=RoleBindingGroup,
-                subject_field="group",
-                subject=subject,
-            )
-        else:
-            cls._set_roles_impl(
-                tenant,
-                resource_type,
-                resource_id,
-                roles,
-                through_model=RoleBindingPrincipal,
-                subject_field="principal",
-                subject=subject,
-                extra_defaults={"source": "v2_api"},
-            )
-
-    @classmethod
-    def _set_roles_impl(
-        cls,
-        tenant: Tenant,
-        resource_type: str,
-        resource_id: str,
-        roles: Sequence[RoleV2],
-        through_model: "type[RoleBindingGroup] | type[RoleBindingPrincipal]",
-        subject_field: str,
-        subject: Group | Principal,
-        extra_defaults: Optional[dict] = None,
-    ) -> None:
-        """Shared implementation for setting roles on a subject."""
-        # Find existing bindings for this subject on this resource
-        filter_kwargs = {
-            subject_field: subject,
-            "binding__resource_type": resource_type,
-            "binding__resource_id": resource_id,
-            "binding__tenant": tenant,
-        }
-        existing_binding_ids = list(through_model.objects.filter(**filter_kwargs).values_list("binding_id", flat=True))
-
-        # Remove subject from these bindings
-        through_model.objects.filter(**{subject_field: subject}, binding_id__in=existing_binding_ids).delete()
-
-        # Clean up orphaned bindings
-        cls._cleanup_orphaned_bindings(existing_binding_ids)
-
-        # Create new bindings for each role
-        for role in roles:
-            binding, _ = cls.objects.get_or_create(
-                role=role,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                tenant=tenant,
-            )
-            create_kwargs = {subject_field: subject, "binding": binding}
-            if extra_defaults:
-                create_kwargs.update(extra_defaults)
-            through_model.objects.get_or_create(**create_kwargs)
-
-    @classmethod
-    def _cleanup_orphaned_bindings(cls, binding_ids: Sequence[int]) -> None:
-        """Remove bindings that have no groups or principals attached."""
-        if not binding_ids:
-            return
-
-        cls.objects.filter(id__in=binding_ids).annotate(
-            group_count=Count("group_entries"),
-            principal_count=Count("principal_entries"),
-        ).filter(group_count=0, principal_count=0).delete()
 
     class Meta:
         constraints = [
