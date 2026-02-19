@@ -51,7 +51,8 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v2_model import RoleV2, CustomRoleV2, RoleBinding, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService

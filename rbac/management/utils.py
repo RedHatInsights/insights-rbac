@@ -698,6 +698,11 @@ class FieldSelection:
         """Return the parsed nested fields for name."""
         return self.nested_fields.get(name, set())
 
+    def get_sub_object_fields(self, nested_name: str, sub_object: str) -> set:
+        """Return sub-fields for a dotted sub-object within a nested field."""
+        prefix = f"{sub_object}."
+        return {f.removeprefix(prefix) for f in self.get_nested(nested_name) if f.startswith(prefix)}
+
     @classmethod
     def parse(cls, fields_param: Optional[str]) -> Optional["FieldSelection"]:
         """Parse a fields parameter string into a FieldSelection instance."""

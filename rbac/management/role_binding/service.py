@@ -17,10 +17,11 @@
 """Service layer for role binding management."""
 
 import logging
+from dataclasses import dataclass
 from typing import Iterable, Optional, Sequence
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
 from google.protobuf import json_format
@@ -32,7 +33,10 @@ from management.group.platform import DefaultGroupNotAvailableError, GlobalPolic
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup
+from management.role.v2_model import PlatformRoleV2, RoleV2
+from management.role_binding.exceptions import DuplicateBindingError, RolesNotFoundError, SubjectsNotFoundError
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
+from management.subject import SubjectService, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
@@ -40,6 +44,18 @@ from management.workspace.model import Workspace
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CreateBindingRequest:
+    """Typed input for a single role binding creation."""
+
+    role_id: str
+    resource_type: str
+    resource_id: str
+    subject_type: str
+    subject_id: str
+
 
 # Lazily instantiate the JWT helpers once so all requests reuse the same objects.
 _jwt_cache = JWTCache()
@@ -53,6 +69,7 @@ class RoleBindingService:
     def __init__(self, tenant: Tenant):
         """Initialize the service with a tenant."""
         self.tenant = tenant
+        self.subject_service = SubjectService(tenant)
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject (group) from a dictionary of parameters.
@@ -125,6 +142,76 @@ class RoleBindingService:
             "resource_name": self.get_resource_name(resource_id, resource_type),
             "field_selection": params.get("fields"),
         }
+
+    def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
+        """Create multiple role bindings."""
+        role_uuids = {req.role_id for req in requests}
+        group_uuids = {req.subject_id for req in requests if req.subject_type == "group"}
+        user_uuids = {req.subject_id for req in requests if req.subject_type == "user"}
+
+        roles_by_uuid = {str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids)}
+        missing_roles = role_uuids - set(roles_by_uuid.keys())
+        if missing_roles:
+            raise RolesNotFoundError(list(missing_roles))
+
+        groups_by_uuid = self.subject_service.resolve_groups(group_uuids)
+        missing_groups = group_uuids - set(groups_by_uuid.keys())
+        if missing_groups:
+            raise SubjectsNotFoundError("group", list(missing_groups))
+
+        principals_by_uuid = self.subject_service.resolve_users(user_uuids)
+        missing_users = user_uuids - set(principals_by_uuid.keys())
+        if missing_users:
+            raise SubjectsNotFoundError("user", list(missing_users))
+
+        resource_names: dict[tuple[str, str], str | None] = {}
+        for req in requests:
+            key = (req.resource_type, req.resource_id)
+            if key not in resource_names:
+                resource_names[key] = self.get_resource_name(req.resource_id, req.resource_type)
+
+        created = []
+        for req in requests:
+            role = roles_by_uuid[req.role_id]
+
+            try:
+                binding = RoleBinding.objects.create(
+                    role=role,
+                    resource_type=req.resource_type,
+                    resource_id=req.resource_id,
+                    tenant=self.tenant,
+                )
+            except IntegrityError:
+                raise DuplicateBindingError(
+                    role_id=str(role.uuid),
+                    resource_type=req.resource_type,
+                    resource_id=req.resource_id,
+                )
+
+            if req.subject_type == "group":
+                subject = groups_by_uuid[req.subject_id]
+                RoleBindingGroup.objects.create(binding=binding, group=subject)
+            else:
+                subject = principals_by_uuid[req.subject_id]
+                RoleBindingPrincipal.objects.create(binding=binding, principal=subject, source="api")
+
+            created.append(
+                {
+                    "role": role,
+                    "subject_type": req.subject_type,
+                    "subject": subject,
+                    "resource_type": req.resource_type,
+                    "resource_id": req.resource_id,
+                    "resource_name": resource_names.get((req.resource_type, req.resource_id)),
+                }
+            )
+
+        logger.info(
+            "Created %d role binding(s) for tenant %s",
+            len(created),
+            self.tenant.org_id,
+        )
+        return created
 
     def _build_base_queryset(
         self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None
@@ -214,8 +301,8 @@ class RoleBindingService:
             Filtered queryset
         """
         if subject_type:
-            # Currently only 'group' subject type is supported
-            if subject_type != "group":
+            # Currently only GROUP subject type is implemented
+            if subject_type != SubjectType.GROUP:
                 # Filter out all results for unsupported subject types
                 return queryset.none()
 

@@ -31,7 +31,8 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, RoleBinding, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, SeededRoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
