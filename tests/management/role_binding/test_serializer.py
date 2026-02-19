@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from unittest.mock import Mock
 
 from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import FieldSelection, RoleBindingBySubjectOutputSerializer
+from management.role_binding.serializer import RoleBindingBySubjectOutputSerializer, RoleBindingFieldSelection
 from tests.identity_request import IdentityRequest
 
 
@@ -198,7 +198,7 @@ class RoleBindingBySubjectOutputSerializerTest(IdentityRequest):
         self.group.principals.add(principal2)
         self.group.principalCount = 2
 
-        field_selection = FieldSelection(subject_fields={"group.user_count"})
+        field_selection = RoleBindingFieldSelection.parse("subject(group.user_count)")
         serializer = RoleBindingBySubjectOutputSerializer(context={"field_selection": field_selection})
         result = serializer.get_subject(self.group)
 

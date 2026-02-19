@@ -471,8 +471,8 @@ class V2CursorPaginationTest(TestCase):
         ordering = self.paginator.get_ordering(request, self.queryset, None)
         self.assertEqual(ordering, ("name", "-modified"))
 
-    def test_get_ordering_rejects_direct_field_names(self):
-        """Test get_ordering raises ValidationError for direct field names."""
+    def test_get_ordering_rejects_field_not_in_mapping(self):
+        """Test get_ordering raises ValidationError for fields not in FIELD_MAPPING."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=name"))
         with self.assertRaises(ValidationError) as context:
             self.paginator.get_ordering(request, self.queryset, None)
@@ -491,3 +491,65 @@ class V2CursorPaginationTest(TestCase):
         with self.assertRaises(ValidationError) as context:
             self.paginator.get_ordering(request, self.queryset, None)
         self.assertIn("order_by", context.exception.detail)
+
+    def _paginator_with_direct_fields(self):
+        """Return a V2CursorPagination with direct field names in FIELD_MAPPING."""
+        paginator = V2CursorPagination()
+        paginator.ordering = "name"
+        paginator.FIELD_MAPPING = {"name": "name", "last_modified": "modified"}
+        return paginator
+
+    def test_convert_order_field_accepts_direct_field_in_mapping(self):
+        """Test _convert_order_field accepts direct field names present in FIELD_MAPPING."""
+        paginator = self._paginator_with_direct_fields()
+        self.assertEqual(paginator._convert_order_field("name"), "name")
+        self.assertEqual(paginator._convert_order_field("last_modified"), "modified")
+
+    def test_convert_order_field_accepts_descending_direct_field(self):
+        """Test _convert_order_field accepts descending direct field names in FIELD_MAPPING."""
+        paginator = self._paginator_with_direct_fields()
+        self.assertEqual(paginator._convert_order_field("-name"), "-name")
+        self.assertEqual(paginator._convert_order_field("-last_modified"), "-modified")
+
+    def test_convert_order_field_rejects_unknown_direct_field(self):
+        """Test _convert_order_field rejects direct field names not in FIELD_MAPPING."""
+        paginator = self._paginator_with_direct_fields()
+        self.assertIsNone(paginator._convert_order_field("uuid"))
+        self.assertIsNone(paginator._convert_order_field("-description"))
+        self.assertIsNone(paginator._convert_order_field("group.name"))
+
+    def test_get_ordering_with_direct_field_name(self):
+        """Test get_ordering accepts direct field names when in FIELD_MAPPING."""
+        paginator = self._paginator_with_direct_fields()
+        request = Request(self.factory.get("/api/rbac/v2/roles/?order_by=name"))
+        ordering = paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("name",))
+
+    def test_get_ordering_with_descending_direct_field(self):
+        """Test get_ordering accepts descending direct field names."""
+        paginator = self._paginator_with_direct_fields()
+        request = Request(self.factory.get("/api/rbac/v2/roles/?order_by=-last_modified"))
+        ordering = paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("-modified",))
+
+    def test_get_ordering_with_comma_separated_direct_fields(self):
+        """Test get_ordering accepts comma-separated direct field names."""
+        paginator = self._paginator_with_direct_fields()
+        request = Request(self.factory.get("/api/rbac/v2/roles/?order_by=name,-last_modified"))
+        ordering = paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("name", "-modified"))
+
+    def test_get_ordering_rejects_unknown_direct_field(self):
+        """Test get_ordering raises ValidationError for direct fields not in FIELD_MAPPING."""
+        paginator = self._paginator_with_direct_fields()
+        request = Request(self.factory.get("/api/rbac/v2/roles/?order_by=unknown"))
+        with self.assertRaises(ValidationError) as context:
+            paginator.get_ordering(request, self.queryset, None)
+        self.assertIn("order_by", context.exception.detail)
+
+    def test_get_ordering_default_when_no_order_by_with_direct_fields(self):
+        """Test get_ordering returns default ordering when order_by is omitted."""
+        paginator = self._paginator_with_direct_fields()
+        request = Request(self.factory.get("/api/rbac/v2/roles/"))
+        ordering = paginator.get_ordering(request, self.queryset, None)
+        self.assertEqual(ordering, ("name",))

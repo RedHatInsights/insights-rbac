@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleV2Service domain service."""
+"""Test the RoleV2Service."""
 
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
@@ -22,7 +22,17 @@ from management.models import Permission
 from management.role.v2_exceptions import RoleAlreadyExistsError
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_service import RoleV2Service
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 from tests.identity_request import IdentityRequest
+
+from api.models import Tenant
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -32,7 +42,7 @@ class RoleV2ServiceTests(IdentityRequest):
     def setUp(self):
         """Set up the RoleV2Service tests."""
         super().setUp()
-        self.service = RoleV2Service()
+        self.service = RoleV2Service(tenant=self.tenant)
 
         # Create test permissions
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
@@ -230,3 +240,130 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
+
+    # ==========================================================================
+    # Tests for replication
+    # ==========================================================================
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_create_role_replicates_permission_tuples(self):
+        """Test that creating a role replicates permission tuples to SpiceDB."""
+        # Set up in-memory replicator (stub, not mock!)
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        service = RoleV2Service(tenant=self.tenant, replicator=replicator)
+
+        permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+        ]
+
+        # When: Create a role
+        role = service.create(
+            name="Replication Test Role",
+            description="A test role for replication",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
+
+        # Then: Permission tuples are replicated
+        role_uuid = str(role.uuid)
+
+        # Should have 2 permission tuples (one per permission)
+        self.assertEqual(len(tuples), 2)
+
+        # Verify the read permission tuple exists
+        read_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_read"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(read_tuples), 1, "Expected 1 read permission tuple")
+
+        # Verify the write permission tuple exists
+        write_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_write"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class RoleV2ServiceListTests(IdentityRequest):
+    """Test the RoleV2Service.list() method."""
+
+    def setUp(self):
+        """Set up the RoleV2Service list tests."""
+        super().setUp()
+        self.service = RoleV2Service(tenant=self.tenant)
+
+        # Create test permissions
+        self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
+
+        # Create test roles
+        self.role1 = RoleV2.objects.create(name="role_one", description="First role", tenant=self.tenant)
+        self.role1.permissions.add(self.permission1)
+
+        self.role2 = RoleV2.objects.create(name="role_two", description="Second role", tenant=self.tenant)
+        self.role2.permissions.add(self.permission1, self.permission2)
+
+    def tearDown(self):
+        """Tear down RoleV2Service list tests."""
+        from management.utils import PRINCIPAL_CACHE
+
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+        super().tearDown()
+
+    # ==========================================================================
+    # Tests for list()
+    # ==========================================================================
+
+    def test_list_returns_roles_for_tenant(self):
+        """Test that list() returns all roles belonging to the tenant."""
+        queryset = self.service.list({})
+
+        self.assertEqual(queryset.count(), 2)
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"role_one", "role_two"})
+
+    def test_list_filters_by_exact_name(self):
+        """Test that name param filters using case-sensitive exact match."""
+        queryset = self.service.list({"name": "role_one"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_one")
+
+    def test_list_name_filter_no_match_returns_empty(self):
+        """Test that a name filter matching nothing returns an empty queryset."""
+        queryset = self.service.list({"name": "nonexistent_role"})
+
+        self.assertEqual(queryset.count(), 0)
+
+    def test_list_without_name_returns_all(self):
+        """Test that omitting the name param returns all roles for the tenant."""
+        RoleV2.objects.create(name="role_other", description="Other role", tenant=self.tenant)
+
+        queryset = self.service.list({})
+
+        self.assertEqual(queryset.count(), 3)
+
+    def test_list_annotates_permissions_count(self):
+        """Test that queryset has permissions_count_annotation when fields includes permissions_count."""
+        queryset = self.service.list({"fields": {"permissions_count"}})
+
+        for role in queryset:
+            self.assertTrue(hasattr(role, "permissions_count_annotation"))
+
+        role_one = queryset.get(name="role_one")
+        role_two = queryset.get(name="role_two")
+        self.assertEqual(role_one.permissions_count_annotation, 1)
+        self.assertEqual(role_two.permissions_count_annotation, 2)
