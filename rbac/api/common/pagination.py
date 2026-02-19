@@ -21,6 +21,7 @@ import logging
 import re
 from urllib.parse import urlparse
 
+from management.group.model import Group
 from management.role.v2_model import RoleBinding
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import CursorPagination, LimitOffsetPagination
@@ -197,7 +198,10 @@ class V2CursorPagination(CursorPagination):
         model = queryset.model
         if model == RoleBinding:
             return self.ROLE_BINDING_DEFAULT_ORDERING
-        return self.SUBJECT_DEFAULT_ORDERING
+        if model == Group:
+            return self.SUBJECT_DEFAULT_ORDERING
+        # Fall back to instance ordering for other models (e.g., in tests)
+        return self.ordering
 
     def _get_field_mapping(self, queryset):
         """Get the appropriate field mapping based on queryset model.
