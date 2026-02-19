@@ -614,7 +614,7 @@ class RoleBindingService:
 
         subject = Subject.objects.by_type(type=subject_type, id=subject_id, tenant=self.tenant)
 
-        self._set_roles_for_subject(
+        self._update_subject_access_on_resource(
             resource_type=resource_type,
             resource_id=resource_id,
             subject=subject.entity,
@@ -678,7 +678,7 @@ class RoleBindingService:
 
         return roles
 
-    def _set_roles_for_subject(
+    def _update_subject_access_on_resource(
         self,
         resource_type: str,
         resource_id: str,
@@ -698,7 +698,7 @@ class RoleBindingService:
             roles: The roles to assign to the subject
         """
         if isinstance(subject, Group):
-            self._set_roles_impl(
+            self._update_subject_access_impl(
                 resource_type=resource_type,
                 resource_id=resource_id,
                 roles=roles,
@@ -707,7 +707,7 @@ class RoleBindingService:
                 subject=subject,
             )
         else:
-            self._set_roles_impl(
+            self._update_subject_access_impl(
                 resource_type=resource_type,
                 resource_id=resource_id,
                 roles=roles,
@@ -717,7 +717,7 @@ class RoleBindingService:
                 extra_defaults={"source": "v2_api"},
             )
 
-    def _set_roles_impl(
+    def _update_subject_access_impl(
         self,
         resource_type: str,
         resource_id: str,
@@ -727,34 +727,51 @@ class RoleBindingService:
         subject: Group | Principal,
         extra_defaults: Optional[dict] = None,
     ) -> None:
-        """Shared implementation for setting roles on a subject."""
-        # Find existing bindings for this subject on this resource
+        """Shared implementation for setting roles on a subject.
+
+        Computes the diff between current and desired roles, then only
+        adds/removes what actually changed. No-ops when the state already matches.
+        """
+        # 1. Find existing through entries for this subject on this resource
         filter_kwargs = {
             subject_field: subject,
             "binding__resource_type": resource_type,
             "binding__resource_id": resource_id,
             "binding__tenant": self.tenant,
         }
-        existing_binding_ids = list(through_model.objects.filter(**filter_kwargs).values_list("binding_id", flat=True))
+        existing_entries = through_model.objects.filter(**filter_kwargs).select_related("binding")
 
-        # Remove subject from these bindings
-        through_model.objects.filter(**{subject_field: subject}, binding_id__in=existing_binding_ids).delete()
+        # 2. Compute the diff
+        existing_role_ids = {entry.binding.role_id for entry in existing_entries}
+        desired_role_ids = {role.id for role in roles}
 
-        # Clean up orphaned bindings (no groups or principals left)
-        self._cleanup_orphaned_bindings(existing_binding_ids)
+        role_ids_to_add = desired_role_ids - existing_role_ids
+        role_ids_to_remove = existing_role_ids - desired_role_ids
 
-        # Create new bindings for each role
-        for role in roles:
-            binding, _ = RoleBinding.objects.get_or_create(
-                role=role,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                tenant=self.tenant,
-            )
-            create_kwargs = {subject_field: subject, "binding": binding}
-            if extra_defaults:
-                create_kwargs.update(extra_defaults)
-            through_model.objects.get_or_create(**create_kwargs)
+        # 3. No-op: nothing to add or remove
+        if not role_ids_to_add and not role_ids_to_remove:
+            return
+
+        # 4. Remove: unlink subject from roles no longer desired
+        if role_ids_to_remove:
+            binding_ids_to_check = [e.binding_id for e in existing_entries if e.binding.role_id in role_ids_to_remove]
+            through_model.objects.filter(**{subject_field: subject}, binding_id__in=binding_ids_to_check).delete()
+            self._cleanup_orphaned_bindings(binding_ids_to_check)
+
+        # 5. Add: link subject to newly desired roles
+        if role_ids_to_add:
+            roles_by_id = {role.id: role for role in roles}
+            for role_id in role_ids_to_add:
+                binding, _ = RoleBinding.objects.get_or_create(
+                    role=roles_by_id[role_id],
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    tenant=self.tenant,
+                )
+                create_kwargs = {subject_field: subject, "binding": binding}
+                if extra_defaults:
+                    create_kwargs.update(extra_defaults)
+                through_model.objects.get_or_create(**create_kwargs)
 
     @staticmethod
     def _cleanup_orphaned_bindings(binding_ids: Sequence[int]) -> None:
