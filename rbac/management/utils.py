@@ -83,18 +83,46 @@ def create_client_channel(addr):
         yield secure_channel
 
 
+def _is_secure_inventory_environment():
+    """Determine if the current environment should use secure inventory API connections.
+
+    Secure (TLS) is used when:
+    - Clowder is enabled AND environment is prod or stage
+
+    Insecure is used when:
+    - Development mode
+    - Ephemeral environments (ENV_NAME is not prod or stage)
+    - Non-Clowder environments
+    """
+    if settings.DEVELOPMENT:
+        return False
+
+    clowder_enabled = os.getenv("CLOWDER_ENABLED", "false").lower() == "true"
+    if not clowder_enabled:
+        return False
+
+    # In Clowder, check if we're in prod/stage (secure) or ephemeral (insecure)
+    env_name = os.getenv("ENV_NAME", "stage").lower()
+    return env_name in ("prod", "stage")
+
+
 @contextmanager
 def create_client_channel_inventory(addr):
-    """Create secure channel for grpc requests for inventory api."""
-    if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
-        channel = grpc.insecure_channel(addr)
-        yield channel
-    else:
-        # Combine with TLS for secure channel
+    """Create channel for grpc requests for inventory api.
+
+    Uses secure (TLS) channel when Clowder is enabled in prod/stage environments.
+    Uses insecure channel in development or ephemeral environments.
+    """
+    if _is_secure_inventory_environment():
+        # Combine with TLS for secure channel in prod/stage
         ssl_credentials = grpc.ssl_channel_credentials()
         channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
         secure_channel = grpc.secure_channel(addr, channel_credentials)
         yield secure_channel
+    else:
+        # Insecure channel for development or ephemeral environments
+        channel = grpc.insecure_channel(addr)
+        yield channel
 
 
 @contextmanager
