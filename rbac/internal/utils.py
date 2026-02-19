@@ -205,8 +205,11 @@ def iterate_tuples_from_kessel(
         if len(batch) == 0:
             return
 
-        continuation_token = batch[-1]["pagination"]["continuationToken"]
+        continuation_token = batch[-1].get("pagination", {}).get("continuationToken", None)
         first = False
+
+        if continuation_token is None:
+            logger.warning(f"Unexpectedly missing continuation token from Kessel. Response: {batch}")
 
         yield from batch
 
