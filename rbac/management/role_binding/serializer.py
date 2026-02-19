@@ -181,7 +181,7 @@ class RoleBindingSerializerMixin:
         subject: dict = {"type": "group"}
 
         # Check if id is explicitly requested
-        if "id" in field_selection.subject_fields:
+        if "id" in field_selection.get_nested("subject"):
             subject["id"] = group.uuid
 
         # Extract group.* fields
@@ -278,7 +278,7 @@ class RoleBindingListOutputSerializer(RoleBindingSerializerMixin, serializers.Se
         resource_data = {"id": obj.resource_id}
 
         if field_selection is not None:
-            if "type" in field_selection.resource_fields:
+            if "type" in field_selection.get_nested("resource"):
                 resource_data["type"] = obj.resource_type
 
         return resource_data
