@@ -114,8 +114,7 @@ class Command(BaseCommand):
                     logger.error(
                         f"Failed to remove orphan relations for tenant with org_id={tenant.org_id!r}: {error}"
                     )
-                    failed_orgs.append(tenant.org_id)
-                    continue
+                    failed = True
 
                 if result["cleanup"]["relations_removed_count"] > 0:
                     modified = True
