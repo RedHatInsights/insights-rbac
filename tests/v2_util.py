@@ -70,7 +70,7 @@ def _assert_binding_tuples_consistent(test: TestCase, tuples: InMemoryTuples, bi
     )
 
     test.assertEqual(1, len(role_tuples), f"Missing role relation for binding: {str(binding.uuid)}")
-    test.assertEqual(str(binding.role.uuid), role_tuples.only.subject_id)
+    test.assertEqual(str(binding.role.uuid), role_tuples.only.subject.subject.id)
 
     resource_tuples = tuples.find_tuples(
         all_of(
@@ -84,13 +84,13 @@ def _assert_binding_tuples_consistent(test: TestCase, tuples: InMemoryTuples, bi
     )
 
     test.assertEqual(1, len(resource_tuples))
-    test.assertEqual(binding.resource_type, resource_tuples.only.resource_type_name)
-    test.assertEqual(binding.resource_id, resource_tuples.only.resource_id)
+    test.assertEqual(binding.resource_type, resource_tuples.only.resource.type.name)
+    test.assertEqual(binding.resource_id, resource_tuples.only.resource.id)
 
     db_groups = set(str(g.uuid) for g in binding.bound_groups())
 
     tuple_groups = set(
-        t.subject_id
+        t.subject.subject.id
         for t in tuples.find_tuples(
             all_of(
                 resource_predicate,
@@ -111,7 +111,7 @@ def _assert_binding_tuples_consistent(test: TestCase, tuples: InMemoryTuples, bi
     test.assertNotIn(None, db_principals)
 
     tuple_principals = set(
-        t.subject_id
+        t.subject.subject.id
         for t in tuples.find_tuples(
             all_of(
                 resource_predicate,
@@ -176,8 +176,8 @@ def _assert_no_phantom_roles(test: TestCase, tuples: InMemoryTuples):
     }
 
     for v2_role_uuid in {
-        *(t.resource_id for t in tuples.find_tuples(resource_type("rbac", "role"))),
-        *(t.subject_id for t in tuples.find_tuples(subject_type("rbac", "role"))),
+        *(t.resource.id for t in tuples.find_tuples(resource_type("rbac", "role"))),
+        *(t.subject.subject.id for t in tuples.find_tuples(subject_type("rbac", "role"))),
     }:
         if Role.objects.filter(system=True, uuid=v2_role_uuid).exists():
             # We are not interested in system roles here.
@@ -296,32 +296,35 @@ def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, st
         result = []
         for t in found_tuples:
             # Filter by subject type and id if provided
-            if subject_type_name and t.subject_type_name != subject_type_name:
+            if subject_type_name and t.subject.subject.type.name != subject_type_name:
                 continue
-            if subject_id and t.subject_id != subject_id:
+            if subject_id and t.subject.subject.id != subject_id:
                 continue
+
+            subject_dict = {
+                "subject": {
+                    "type": {
+                        "namespace": t.subject.subject.type.namespace,
+                        "name": t.subject.subject.type.name,
+                    },
+                    "id": t.subject.subject.id,
+                },
+            }
+            if t.subject.relation is not None:
+                subject_dict["relation"] = t.subject.relation
 
             result.append(
                 {
                     "tuple": {
                         "resource": {
                             "type": {
-                                "namespace": t.resource_type_namespace,
-                                "name": t.resource_type_name,
+                                "namespace": t.resource.type.namespace,
+                                "name": t.resource.type.name,
                             },
-                            "id": t.resource_id,
+                            "id": t.resource.id,
                         },
                         "relation": t.relation,
-                        "subject": {
-                            "subject": {
-                                "type": {
-                                    "namespace": t.subject_type_namespace,
-                                    "name": t.subject_type_name,
-                                },
-                                "id": t.subject_id,
-                            },
-                            "relation": t.subject_relation,
-                        },
+                        "subject": subject_dict,
                     },
                 }
             )

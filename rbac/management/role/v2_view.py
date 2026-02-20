@@ -19,7 +19,12 @@
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
-from management.role.v2_serializer import RoleV2ListSerializer, RoleV2RequestSerializer, RoleV2ResponseSerializer
+from management.role.v2_serializer import (
+    RoleV2ListSerializer,
+    RoleV2RequestSerializer,
+    RoleV2ResponseSerializer,
+    _validate_fields_parameter,
+)
 from management.role.v2_service import RoleV2Service
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
@@ -44,6 +49,23 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     pagination_class = RoleV2CursorPagination
     lookup_field = "uuid"
     http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        """Get queryset with optimizations, excluding platform roles only for non-read actions."""
+        base_qs = RoleV2.objects.filter(tenant=self.request.tenant).prefetch_related("permissions")
+
+        if self.action in ("list", "retrieve"):
+            return base_qs
+        else:
+            return base_qs.filter(type=RoleV2.Types.CUSTOM)
+
+    def get_serializer_context(self):
+        """Add validated fields parameter to serializer context."""
+        context = super().get_serializer_context()
+        if self.action == "retrieve":
+            fields_param = self.request.query_params.get("fields", "").replace("\x00", "")
+            context["fields"] = _validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+        return context
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
