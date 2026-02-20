@@ -798,7 +798,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    @patch("management.role_binding.service.settings")
+    @patch("management.role_binding.util.relations_api_client.settings")
     def test_by_subject_parent_role_bindings_true_without_relations_server(self, mock_settings, mock_permission):
         """Test that parent_role_bindings=true without RELATION_API_SERVER falls back to direct only."""
         mock_settings.RELATION_API_SERVER = None

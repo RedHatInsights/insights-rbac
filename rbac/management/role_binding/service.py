@@ -17,34 +17,24 @@
 """Service layer for role binding management."""
 
 import logging
-from typing import Iterable, Optional, Sequence
+from typing import Optional, Sequence
 
-from django.conf import settings
 from django.db import transaction
 from django.db.models import Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
-from google.protobuf import json_format
-from internal.jwt_utils import JWTManager, JWTProvider
-from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
-from management.cache import JWTCache
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup
+from management.role_binding.util import lookup_binding_subjects
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
-from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
 
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
-
-# Lazily instantiate the JWT helpers once so all requests reuse the same objects.
-_jwt_cache = JWTCache()
-_jwt_provider = JWTProvider()
-_jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 
 
 class RoleBindingService:
@@ -224,86 +214,13 @@ class RoleBindingService:
 
         return queryset
 
-    def _parse_resource_type(self, resource_type: str) -> tuple[str, str]:
-        """Parse resource type into namespace and name.
-
-        Args:
-            resource_type: Resource type string, optionally prefixed with namespace
-                          (e.g., "workspace" or "rbac/workspace")
-
-        Returns:
-            Tuple of (namespace, name)
-        """
-        if "/" in resource_type:
-            parts = resource_type.split("/", 1)
-            return (parts[0], parts[1])
-        return ("rbac", resource_type)  # Default namespace
-
     def _lookup_binding_uuids_via_relations(self, resource_type: str, resource_id: str) -> Optional[list[str]]:
-        """Use the Relations API to resolve binding UUIDs that affect the given resource."""
-        if not settings.RELATION_API_SERVER:
-            logger.warning("RELATION_API_SERVER is not configured; skipping inheritance lookup.")
-            return None
+        """Use the Relations API to resolve binding UUIDs that affect the given resource.
 
-        try:
-            logger.info(
-                "Calling _lookup_binding_uuids_via_relations for resource_type=%s, resource_id=%s",
-                resource_type,
-                resource_id,
-            )
-            resource_ns, resource_name = self._parse_resource_type(resource_type)
-            token = _jwt_manager.get_jwt_from_redis()
-            metadata = [("authorization", f"Bearer {token}")] if token else []
-            binding_ids = set()
-
-            with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
-                stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
-
-                # Build request in a way that is compatible with multiple proto versions.
-                request_kwargs = {
-                    # Mirrors: zed permission lookup-subjects rbac/workspace <id> user_grant rbac/role_binding
-                    "resource": common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=resource_ns, name=resource_name),
-                        id=str(resource_id),
-                    ),
-                    "subject_type": common_pb2.ObjectType(namespace="rbac", name="role_binding"),
-                }
-
-                # Newer API versions use a 'permission' field; older ones may use 'relation'.
-                # In the current schema, the permission is `user_grant` on rbac/workspace.
-                request_fields = lookup_pb2.LookupSubjectsRequest.DESCRIPTOR.fields_by_name
-                if "permission" in request_fields:
-                    request_kwargs["permission"] = "role_binding_view"
-                elif "relation" in request_fields:
-                    request_kwargs["relation"] = "t_binding"
-
-                request = lookup_pb2.LookupSubjectsRequest(**request_kwargs)
-                logger.info("LookupSubjects request payload: %s", request)
-
-                responses: Iterable[lookup_pb2.LookupSubjectsResponse] = stub.LookupSubjects(
-                    request, metadata=metadata
-                )
-                for idx, response in enumerate(responses, start=1):
-                    payload = json_format.MessageToDict(response)
-                    logger.info("LookupSubjects response #%s: %s", idx, payload)
-                    subject = payload.get("subject", {})
-                    subject_id = subject.get("id") or subject.get("subject", {}).get("id")
-                    if subject_id:
-                        logger.info("Adding binding subject_id from Relations: %s", subject_id)
-                        binding_ids.add(subject_id)
-
-            result = list(binding_ids)
-            logger.info(
-                "Resolved %d binding UUID(s) via Relations for resource_type=%s, resource_id=%s: %s",
-                len(result),
-                resource_type,
-                resource_id,
-                result,
-            )
-            return result
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to lookup inherited bindings through Relations")
-            return None
+        Uses the recursive 'binding' relation to find role_bindings on this resource
+        and any parent resources in the hierarchy.
+        """
+        return lookup_binding_subjects(resource_type, resource_id)
 
     def _ensure_default_bindings_exist(self) -> None:
         """Lazily create default role bindings if they don't exist.

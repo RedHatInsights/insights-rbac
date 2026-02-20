@@ -23,6 +23,7 @@ from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
 from management.utils import FieldSelectionValidationError
 from management.role_binding.service import RoleBindingService
+from management.role_binding.util import parse_resource_type
 from management.tenant_mapping.model import TenantMapping
 
 from tests.identity_request import IdentityRequest
@@ -345,25 +346,25 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_parse_resource_type_with_namespace(self):
         """Test parsing resource type with namespace prefix."""
-        ns, name = self.service._parse_resource_type("rbac/workspace")
+        ns, name = parse_resource_type("rbac/workspace")
         self.assertEqual(ns, "rbac")
         self.assertEqual(name, "workspace")
 
     def test_parse_resource_type_without_namespace(self):
         """Test parsing resource type without namespace defaults to rbac."""
-        ns, name = self.service._parse_resource_type("workspace")
+        ns, name = parse_resource_type("workspace")
         self.assertEqual(ns, "rbac")
         self.assertEqual(name, "workspace")
 
     def test_parse_resource_type_with_custom_namespace(self):
         """Test parsing resource type with custom namespace."""
-        ns, name = self.service._parse_resource_type("custom/resource")
+        ns, name = parse_resource_type("custom/resource")
         self.assertEqual(ns, "custom")
         self.assertEqual(name, "resource")
 
     def test_parse_resource_type_with_multiple_slashes(self):
         """Test parsing resource type with multiple slashes only splits on first."""
-        ns, name = self.service._parse_resource_type("ns/path/to/resource")
+        ns, name = parse_resource_type("ns/path/to/resource")
         self.assertEqual(ns, "ns")
         self.assertEqual(name, "path/to/resource")
 
@@ -475,25 +476,25 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_parse_resource_type_with_namespace(self):
         """Test parsing resource type with namespace prefix."""
-        ns, name = self.service._parse_resource_type("rbac/workspace")
+        ns, name = parse_resource_type("rbac/workspace")
         self.assertEqual(ns, "rbac")
         self.assertEqual(name, "workspace")
 
     def test_parse_resource_type_without_namespace(self):
         """Test parsing resource type without namespace defaults to rbac."""
-        ns, name = self.service._parse_resource_type("workspace")
+        ns, name = parse_resource_type("workspace")
         self.assertEqual(ns, "rbac")
         self.assertEqual(name, "workspace")
 
     def test_parse_resource_type_with_custom_namespace(self):
         """Test parsing resource type with custom namespace."""
-        ns, name = self.service._parse_resource_type("custom/resource")
+        ns, name = parse_resource_type("custom/resource")
         self.assertEqual(ns, "custom")
         self.assertEqual(name, "resource")
 
     def test_parse_resource_type_with_multiple_slashes(self):
         """Test parsing resource type with multiple slashes only splits on first."""
-        ns, name = self.service._parse_resource_type("ns/path/to/resource")
+        ns, name = parse_resource_type("ns/path/to/resource")
         self.assertEqual(ns, "ns")
         self.assertEqual(name, "path/to/resource")
 
