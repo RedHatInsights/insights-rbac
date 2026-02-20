@@ -20,7 +20,11 @@ from datetime import datetime, timezone
 from unittest.mock import Mock
 
 from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
+from management.role_binding.serializer import (
+    RoleBindingByGroupSerializer,
+    RoleBindingFieldSelection,
+    RoleBindingOutputSerializer,
+)
 from tests.identity_request import IdentityRequest
 
 
@@ -606,3 +610,285 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.assertIn("id", resource)
         self.assertNotIn("name", resource)
         self.assertNotIn("type", resource)
+
+
+class RoleBindingUserSubjectSerializerTest(IdentityRequest):
+    """Test the RoleBindingOutputSerializer with user (Principal) subjects.
+
+    Tests verify the serializer produces output matching the API spec for user subjects:
+    - last_modified: datetime timestamp
+    - subject: {id: UUID, type: "user", user: {username}}
+    - roles: [{id: UUID, name: string}]
+    - resource: {id, name, type}
+    """
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+
+        self.permission = Permission.objects.create(
+            permission="app:resource:read",
+            tenant=self.tenant,
+        )
+
+        self.role = RoleV2.objects.create(
+            name="test_role",
+            tenant=self.tenant,
+        )
+        self.role.permissions.add(self.permission)
+
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group description",
+            tenant=self.tenant,
+        )
+
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        )
+        self.group.principals.add(self.principal)
+
+        self.binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        self.binding_group = RoleBindingGroup.objects.create(
+            group=self.group,
+            binding=self.binding,
+        )
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        self.group.principals.clear()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    # get_subject tests for user (Principal)
+
+    def test_subject_returns_correct_structure_for_user(self):
+        """Test get_subject with Principal object returns correct default structure.
+
+        Default behavior (no field_selection) returns only id and type.
+        """
+        serializer = RoleBindingOutputSerializer()
+        result = serializer.get_subject(self.principal)
+
+        # Default behavior: only id and type
+        expected = {
+            "id": self.principal.uuid,
+            "type": "user",
+        }
+        self.assertEqual(result, expected)
+
+    def test_subject_returns_user_type_for_principal(self):
+        """Test that Principal objects return type='user'."""
+        serializer = RoleBindingOutputSerializer()
+        result = serializer.get_subject(self.principal)
+
+        self.assertEqual(result["type"], "user")
+
+    def test_subject_includes_username_when_requested(self):
+        """Test that user.username is included when field selection requests it."""
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"user.username"}})
+        serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
+        result = serializer.get_subject(self.principal)
+
+        self.assertEqual(result["type"], "user")
+        self.assertIn("user", result)
+        self.assertEqual(result["user"]["username"], "testuser")
+
+    def test_subject_includes_id_when_explicitly_requested(self):
+        """Test that id is included when field selection requests it."""
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"id", "user.username"}})
+        serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
+        result = serializer.get_subject(self.principal)
+
+        self.assertEqual(result["type"], "user")
+        self.assertEqual(result["id"], self.principal.uuid)
+        self.assertIn("user", result)
+        self.assertEqual(result["user"]["username"], "testuser")
+
+    def test_subject_excludes_id_when_not_requested_with_field_selection(self):
+        """Test that id is excluded when field selection doesn't include it."""
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"user.username"}})
+        serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
+        result = serializer.get_subject(self.principal)
+
+        self.assertEqual(result["type"], "user")
+        self.assertNotIn("id", result)
+
+    def test_subject_returns_none_for_invalid_object(self):
+        """Test get_subject with invalid object returns None."""
+        serializer = RoleBindingOutputSerializer()
+        result = serializer.get_subject({"name": "not a principal"})
+
+        self.assertIsNone(result)
+
+    # get_roles tests for user (Principal)
+
+    def test_roles_extracts_roles_from_user_bindings(self):
+        """Test get_roles with Principal having prefetched bindings via RoleBindingPrincipal."""
+        # Set up prefetched data structure
+        mock_binding = Mock()
+        mock_binding.role = self.role
+
+        # Mock RoleBindingPrincipal (directly on Principal)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
+
+        self.principal.filtered_bindings = [mock_binding_principal]
+
+        serializer = RoleBindingOutputSerializer()
+        result = serializer.get_roles(self.principal)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], self.role.uuid)
+
+    def test_roles_includes_name_when_requested(self):
+        """Test that role name is included when field selection requests it."""
+        mock_binding = Mock()
+        mock_binding.role = self.role
+
+        # Mock RoleBindingPrincipal (directly on Principal)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
+
+        self.principal.filtered_bindings = [mock_binding_principal]
+
+        field_selection = RoleBindingFieldSelection(nested_fields={"role": {"name"}})
+        serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
+        result = serializer.get_roles(self.principal)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], self.role.uuid)
+        self.assertEqual(result[0]["name"], "test_role")
+
+    def test_roles_deduplicates_same_role_from_multiple_bindings(self):
+        """Test get_roles deduplicates roles when same role appears in multiple bindings."""
+        mock_binding = Mock()
+        mock_binding.role = self.role
+
+        # Mock two RoleBindingPrincipal entries pointing to the same role
+        mock_binding_principal1 = Mock()
+        mock_binding_principal1.binding = mock_binding
+
+        mock_binding_principal2 = Mock()
+        mock_binding_principal2.binding = mock_binding
+
+        self.principal.filtered_bindings = [mock_binding_principal1, mock_binding_principal2]
+
+        serializer = RoleBindingOutputSerializer()
+        result = serializer.get_roles(self.principal)
+
+        # Should deduplicate and return only one role
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], self.role.uuid)
+
+    def test_roles_returns_empty_list_when_no_filtered_bindings(self):
+        """Test get_roles with Principal without filtered_bindings attribute."""
+        serializer = RoleBindingOutputSerializer()
+        result = serializer.get_roles(self.principal)
+
+        self.assertEqual(result, [])
+
+    # Full serialization tests for user
+
+    def test_full_serialization_with_user_and_context(self):
+        """Test full serialization with Principal object and context.
+
+        Default behavior returns only basic fields:
+        - subject: id, type (no user details)
+        - roles: id only (no name)
+        - resource: id only (no name, type)
+        - no last_modified
+        """
+        self.principal.latest_modified = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
+
+        mock_binding = Mock()
+        mock_binding.role = self.role
+
+        # Mock RoleBindingPrincipal (directly on Principal, not through groups)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
+
+        self.principal.filtered_bindings = [mock_binding_principal]
+
+        context = {
+            "request": Mock(),
+            "resource_id": "ws-12345",
+            "resource_name": "Test Workspace",
+            "resource_type": "workspace",
+        }
+
+        serializer = RoleBindingOutputSerializer(self.principal, context=context)
+        data = serializer.data
+
+        # Default behavior: only basic fields
+        self.assertNotIn("last_modified", data)
+        self.assertEqual(data["subject"]["id"], self.principal.uuid)
+        self.assertEqual(data["subject"]["type"], "user")
+        self.assertNotIn("user", data["subject"])
+        self.assertEqual(len(data["roles"]), 1)
+        self.assertEqual(data["roles"][0]["id"], self.role.uuid)
+        self.assertNotIn("name", data["roles"][0])
+        self.assertEqual(data["resource"], {"id": "ws-12345"})
+
+    def test_full_serialization_with_user_field_selection(self):
+        """Test full serialization with field selection for user details."""
+        self.principal.latest_modified = datetime(2025, 1, 20, 14, 0, 0, tzinfo=timezone.utc)
+
+        mock_binding = Mock()
+        mock_binding.role = self.role
+
+        # Mock RoleBindingPrincipal (directly on Principal, not through groups)
+        mock_binding_principal = Mock()
+        mock_binding_principal.binding = mock_binding
+
+        self.principal.filtered_bindings = [mock_binding_principal]
+
+        field_selection = RoleBindingFieldSelection(
+            root_fields={"last_modified"},
+            nested_fields={
+                "subject": {"id", "user.username"},
+                "role": {"name"},
+                "resource": {"name", "type"},
+            },
+        )
+
+        context = {
+            "request": Mock(),
+            "resource_id": "ws-12345",
+            "resource_name": "Test Workspace",
+            "resource_type": "workspace",
+            "field_selection": field_selection,
+        }
+
+        serializer = RoleBindingOutputSerializer(self.principal, context=context)
+        data = serializer.data
+
+        # Check subject with user details
+        self.assertEqual(data["subject"]["id"], self.principal.uuid)
+        self.assertEqual(data["subject"]["type"], "user")
+        self.assertEqual(data["subject"]["user"]["username"], "testuser")
+
+        # Check roles with name
+        self.assertEqual(data["roles"][0]["id"], self.role.uuid)
+        self.assertEqual(data["roles"][0]["name"], "test_role")
+
+        # Check resource with name and type
+        self.assertEqual(data["resource"]["id"], "ws-12345")
+        self.assertEqual(data["resource"]["name"], "Test Workspace")
+        self.assertEqual(data["resource"]["type"], "workspace")
+
+        # Check last_modified
+        self.assertIn("last_modified", data)
