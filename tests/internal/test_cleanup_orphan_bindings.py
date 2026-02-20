@@ -42,7 +42,7 @@ from internal.migrations.remove_orphan_relations import (
 )
 from internal.utils import rebuild_tenant_workspace_relations
 from tests.management.role.test_dual_write import DualWriteTestCase
-from tests.v2_util import assert_v2_roles_consistent
+from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
 
 
 class CleanupOrphanBindingsTest(DualWriteTestCase):
@@ -64,57 +64,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
 
     def _create_kessel_read_tuples_mock(self):
         """Create a mock function that reads tuples from our InMemoryTuples store."""
-
-        def read_tuples_fn(resource_type_name, resource_id, relation_name, subject_type_name, subject_id):
-            """Mock function to read tuples from InMemoryTuples."""
-            # Build a filter based on the provided parameters
-            filters = [resource_type("rbac", resource_type_name)]
-
-            if resource_id:
-                filters.append(resource("rbac", resource_type_name, resource_id))
-
-            if relation_name:
-                filters.append(relation(relation_name))
-
-            tuples = self.tuples.find_tuples(all_of(*filters))
-
-            # Convert to dict format matching Kessel gRPC response
-            # Format: {"tuple": {"resource": {...}, "relation": "...", "subject": {...}}, ...}
-            result = []
-            for t in tuples:
-                # Filter by subject type and id if provided
-                if subject_type_name and t.subject_type_name != subject_type_name:
-                    continue
-                if subject_id and t.subject_id != subject_id:
-                    continue
-
-                result.append(
-                    {
-                        "tuple": {
-                            "resource": {
-                                "type": {
-                                    "namespace": t.resource_type_namespace,
-                                    "name": t.resource_type_name,
-                                },
-                                "id": t.resource_id,
-                            },
-                            "relation": t.relation,
-                            "subject": {
-                                "subject": {
-                                    "type": {
-                                        "namespace": t.subject_type_namespace,
-                                        "name": t.subject_type_name,
-                                    },
-                                    "id": t.subject_id,
-                                },
-                                "relation": t.subject_relation,
-                            },
-                        },
-                    }
-                )
-            return result
-
-        return read_tuples_fn
+        return make_read_tuples_mock(self.tuples)
 
     def _enable_replicate_mock(self, mock_replicate):
         mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
@@ -558,7 +508,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         ws2_binding_before = self.tuples.find_tuples(ws2_binding_predicate)
         self.assertEqual(len(ws2_binding_before), 1, "ws2 should have binding tuple")
 
-        orphan_binding_id = ws2_binding_before.only.subject_id
+        orphan_binding_id = ws2_binding_before.only.subject.subject.id
 
         # Run cleanup.
         self._enable_replicate_mock(mock_replicate)
@@ -963,9 +913,9 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
             result = []
             for t in tuples:
                 # Filter by subject type and id if provided
-                if subject_type_name and t.subject_type_name != subject_type_name:
+                if subject_type_name and t.subject.subject.type.name != subject_type_name:
                     continue
-                if subject_id and t.subject_id != subject_id:
+                if subject_id and t.subject.subject.id != subject_id:
                     continue
 
                 result.append(
@@ -973,21 +923,21 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
                         "tuple": {
                             "resource": {
                                 "type": {
-                                    "namespace": t.resource_type_namespace,
-                                    "name": t.resource_type_name,
+                                    "namespace": t.resource.type.namespace,
+                                    "name": t.resource.type.name,
                                 },
-                                "id": t.resource_id,
+                                "id": t.resource.id,
                             },
                             "relation": t.relation,
                             "subject": {
                                 "subject": {
                                     "type": {
-                                        "namespace": t.subject_type_namespace,
-                                        "name": t.subject_type_name,
+                                        "namespace": t.subject.subject.type.namespace,
+                                        "name": t.subject.subject.type.name,
                                     },
-                                    "id": t.subject_id,
+                                    "id": t.subject.subject.id,
                                 },
-                                "relation": t.subject_relation,
+                                "relation": t.subject.relation,
                             },
                         },
                     }

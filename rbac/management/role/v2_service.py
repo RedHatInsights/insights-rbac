@@ -18,20 +18,30 @@
 
 import logging
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import Count, QuerySet
 from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.service import PermissionService
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
 )
-from management.role.v2_model import CustomRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2
 
 from api.models import Tenant
 
@@ -40,15 +50,29 @@ logger = logging.getLogger(__name__)
 
 class RoleV2Service:
     """
-    Application service for RoleV2 operations.
+    Domain service for RoleV2 operations.
+
+    This service encapsulates business logic for role management.
 
     Raises domain-specific exceptions that should be caught and converted
-    to HTTP-level errors by the serializer layer.
+    to HTTP-level errors by the view layer.
     """
 
-    def __init__(self):
-        """Initialize the service with its dependencies."""
+    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
+    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
+
+    def __init__(
+        self,
+        tenant: Tenant | None = None,
+        replicator: RelationReplicator | None = None,
+    ):
+        """Initialize the service."""
+        self.tenant = tenant
         self.permission_service = PermissionService()
+        if settings.REPLICATION_TO_RELATION_ENABLED:
+            self._replicator = replicator if replicator is not None else OutboxReplicator()
+        else:
+            self._replicator = NoopReplicator()
 
     @atomic
     def create(
@@ -89,6 +113,15 @@ class RoleV2Service:
             role.save()
             role.permissions.set(permissions)
 
+            self._replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
+                    info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=role.as_tuples(),
+                )
+            )
+
             logger.info(
                 "Created custom role '%s' (uuid=%s) with %d permissions for tenant %s",
                 role.name,
@@ -110,3 +143,20 @@ class RoleV2Service:
                 raise RoleAlreadyExistsError(name)
             logger.exception("Database error creating role '%s'", name)
             raise RoleDatabaseError()
+
+    def list(self, params: dict) -> QuerySet:
+        """Get a list of roles for the tenant."""
+        queryset = RoleV2.objects.filter(tenant=self.tenant).exclude(type=RoleV2.Types.PLATFORM)
+
+        name = params.get("name")
+        if name:
+            queryset = queryset.filter(name__exact=name)
+
+        fields = params.get("fields")
+        if fields:
+            if "permissions_count" in fields:
+                queryset = queryset.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+            if "permissions" in fields:
+                queryset = queryset.prefetch_related("permissions")
+
+        return queryset

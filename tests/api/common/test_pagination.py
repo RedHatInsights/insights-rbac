@@ -477,8 +477,8 @@ class V2CursorPaginationTest(TestCase):
         ordering = self.paginator.get_ordering(request, self.queryset, None)
         self.assertEqual(ordering, ("name", "-modified"))
 
-    def test_get_ordering_rejects_direct_field_names(self):
-        """Test get_ordering raises ValidationError for direct field names."""
+    def test_get_ordering_rejects_field_not_in_mapping(self):
+        """Test get_ordering raises ValidationError for fields not in FIELD_MAPPING."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?order_by=name"))
         with self.assertRaises(ValidationError) as context:
             self.paginator.get_ordering(request, self.queryset, None)

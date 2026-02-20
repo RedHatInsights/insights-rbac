@@ -120,7 +120,7 @@ class V2ResultsSetPagination(StandardResultsSetPagination):
 
 
 class V2CursorPagination(CursorPagination):
-    """Cursor-based pagination for V2 Role binding API.
+    """Cursor-based pagination for V2 APIs.
 
     Uses cursor-based pagination which provides consistent ordering
     and better performance for large datasets.
@@ -211,10 +211,6 @@ class V2CursorPagination(CursorPagination):
         # Handle descending order prefix
         descending = field.startswith("-")
         field_name = field[1:] if descending else field
-
-        # Reject fields without dot notation - dot notation is required
-        if "." not in field_name:
-            return None
 
         # Check if it's a known mapping
         if field_name in field_mapping:

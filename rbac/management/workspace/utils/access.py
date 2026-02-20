@@ -336,10 +336,22 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
         if target_workspace is None:
             # Lookup accessible workspaces using StreamedListObjects
             with record_timing(timings, "inventory_api_lookup"):
+                org_id = getattr(request.tenant, "org_id", None)
+                # Reload tenant from DB to get the latest consistency token,
+                # since the cached tenant (from Redis TenantCache) may have a stale value.
+                # The Kafka consumer updates this field in the DB when relations change.
+                request.tenant.refresh_from_db(fields=["relations_consistency_token"])
+                consistency_token = request.tenant.relations_consistency_token
+                logger.info(
+                    "lookup_accessible_workspaces: org_id=%s, consistency_token=%s",
+                    org_id,
+                    consistency_token,
+                )
                 accessible_workspace_ids = checker.lookup_accessible_workspaces(
                     principal_id=principal_id,
                     relation=relation,
                     request_id=getattr(request, "req_id", None),
+                    consistency_token=consistency_token,
                 )
 
             # Convert to set of UUIDs for proper filtering
