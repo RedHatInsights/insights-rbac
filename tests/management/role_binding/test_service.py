@@ -22,7 +22,7 @@ from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal, RoleV2
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
 from management.role_binding.service import RoleBindingService
-from management.utils import FieldSelection, FieldSelectionValidationError
+from management.utils import FieldSelectionValidationError
 from management.tenant_mapping.model import TenantMapping
 
 from tests.identity_request import IdentityRequest
@@ -129,24 +129,24 @@ class FieldSelectionTests(TestCase):
 
     def test_parse_user_username_field(self):
         """Test parsing user.username field for user subjects."""
-        result = FieldSelection.parse("subject(user.username)")
+        result = RoleBindingFieldSelection.parse("subject(user.username)")
         self.assertIsNotNone(result)
-        self.assertIn("user.username", result.subject_fields)
+        self.assertIn("user.username", result.get_nested("subject"))
 
     def test_parse_user_and_group_fields_together(self):
         """Test parsing both user and group fields (for different subject types)."""
-        result = FieldSelection.parse("subject(user.username,group.name)")
+        result = RoleBindingFieldSelection.parse("subject(user.username,group.name)")
         self.assertIsNotNone(result)
-        self.assertIn("user.username", result.subject_fields)
-        self.assertIn("group.name", result.subject_fields)
+        self.assertIn("user.username", result.get_nested("subject"))
+        self.assertIn("group.name", result.get_nested("subject"))
 
     def test_parse_user_field_with_other_objects(self):
         """Test parsing user field with role and resource fields."""
-        result = FieldSelection.parse("subject(user.username),role(name),resource(type)")
+        result = RoleBindingFieldSelection.parse("subject(user.username),role(name),resource(type)")
         self.assertIsNotNone(result)
-        self.assertIn("user.username", result.subject_fields)
-        self.assertIn("name", result.role_fields)
-        self.assertIn("type", result.resource_fields)
+        self.assertIn("user.username", result.get_nested("subject"))
+        self.assertIn("name", result.get_nested("role"))
+        self.assertIn("type", result.get_nested("resource"))
 
 
 class RoleBindingServiceTests(IdentityRequest):

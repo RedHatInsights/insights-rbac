@@ -25,7 +25,6 @@ from management.role_binding.serializer import (
     RoleBindingFieldSelection,
     RoleBindingOutputSerializer,
 )
-from management.utils import FieldSelection
 from tests.identity_request import IdentityRequest
 
 
@@ -700,7 +699,7 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
 
     def test_subject_includes_username_when_requested(self):
         """Test that user.username is included when field selection requests it."""
-        field_selection = FieldSelection(subject_fields={"user.username"})
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"user.username"}})
         serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
         result = serializer.get_subject(self.principal)
 
@@ -710,7 +709,7 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
 
     def test_subject_includes_id_when_explicitly_requested(self):
         """Test that id is included when field selection requests it."""
-        field_selection = FieldSelection(subject_fields={"id", "user.username"})
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"id", "user.username"}})
         serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
         result = serializer.get_subject(self.principal)
 
@@ -721,7 +720,7 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
 
     def test_subject_excludes_id_when_not_requested_with_field_selection(self):
         """Test that id is excluded when field selection doesn't include it."""
-        field_selection = FieldSelection(subject_fields={"user.username"})
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"user.username"}})
         serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
         result = serializer.get_subject(self.principal)
 
@@ -766,7 +765,7 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
 
         self.principal.filtered_bindings = [mock_binding_principal]
 
-        field_selection = FieldSelection(role_fields={"name"})
+        field_selection = RoleBindingFieldSelection(nested_fields={"role": {"name"}})
         serializer = RoleBindingOutputSerializer(context={"field_selection": field_selection})
         result = serializer.get_roles(self.principal)
 
@@ -857,11 +856,13 @@ class RoleBindingUserSubjectSerializerTest(IdentityRequest):
 
         self.principal.filtered_bindings = [mock_binding_principal]
 
-        field_selection = FieldSelection(
-            subject_fields={"id", "user.username"},
-            role_fields={"name"},
-            resource_fields={"name", "type"},
+        field_selection = RoleBindingFieldSelection(
             root_fields={"last_modified"},
+            nested_fields={
+                "subject": {"id", "user.username"},
+                "role": {"name"},
+                "resource": {"name", "type"},
+            },
         )
 
         context = {
