@@ -184,16 +184,26 @@ class V2CursorPagination(CursorPagination):
     def _get_field_mapping(self, request) -> dict:
         """Get the appropriate field mapping based on subject_type.
 
+        For role-bindings endpoint (with subject_type parameter):
+        - subject_type=user: returns USER_FIELD_MAPPING
+        - subject_type=group: returns GROUP_FIELD_MAPPING
+
+        For other endpoints (no subject_type): returns the class's FIELD_MAPPING,
+        which subclasses can override for their specific needs.
+
         Args:
             request: The HTTP request object
 
         Returns:
-            Field mapping dict appropriate for the subject_type
+            Field mapping dict appropriate for the endpoint/subject_type
         """
         subject_type = request.query_params.get("subject_type")
         if subject_type == "user":
             return self.USER_FIELD_MAPPING
-        return self.GROUP_FIELD_MAPPING
+        elif subject_type == "group":
+            return self.GROUP_FIELD_MAPPING
+        # For endpoints without subject_type, use the class's own FIELD_MAPPING
+        return self.FIELD_MAPPING
 
     def _convert_order_field(self, field: str, field_mapping: dict) -> str | None:
         """Convert dot notation field to Django ORM field.
