@@ -27,7 +27,12 @@ from management.permissions.role_binding_access import (
 from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination
-from .serializer import RoleBindingInputSerializer, RoleBindingOutputSerializer
+from .serializer import (
+    RoleBindingBySubjectInputSerializer,
+    RoleBindingBySubjectOutputSerializer,
+    RoleBindingListInputSerializer,
+    RoleBindingListOutputSerializer,
+)
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
@@ -50,7 +55,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
     """
 
-    serializer_class = RoleBindingOutputSerializer
+    serializer_class = RoleBindingListOutputSerializer
     permission_classes = (
         RoleBindingSystemUserAccessPermission,
         RoleBindingKesselAccessPermission,
@@ -63,6 +68,38 @@ class RoleBindingViewSet(BaseV2ViewSet):
         Returns Group.objects.none() to satisfy DRF expectations while indicating no default queryset is used.
         """
         return Group.objects.none()
+
+    def get_serializer_class(self):
+        """Get serializer class based on action."""
+        if self.action == "by_subject":
+            return RoleBindingBySubjectOutputSerializer
+        return RoleBindingListOutputSerializer
+
+    def list(self, request, *args, **kwargs):
+        """Get a list of role bindings.
+
+        Optional query parameters:
+            - role_id: Filter by role ID (UUID)
+            - fields: Control which fields are included in the response
+            - order_by: Sort by specified field(s), prefix with '-' for descending
+        """
+        # Validate and parse query parameters using input serializer
+        input_serializer = RoleBindingListInputSerializer(data=request.query_params)
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
+
+        service = RoleBindingService(tenant=request.tenant)
+        queryset = service.get_role_bindings(validated_params)
+
+        # Build context for output serializer
+        context = {
+            "request": request,
+            "field_selection": validated_params.get("fields"),
+        }
+
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True, context=context)
+        return self.get_paginated_response(serializer.data)
 
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
@@ -79,7 +116,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
         # Validate and parse query parameters using input serializer
-        input_serializer = RoleBindingInputSerializer(data=request.query_params)
+        input_serializer = RoleBindingBySubjectInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 

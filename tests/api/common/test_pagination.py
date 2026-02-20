@@ -17,6 +17,7 @@
 """Test the API pagination module."""
 
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlparse
 
 from django.test import TestCase
 from django.contrib.auth.models import User
@@ -169,13 +170,15 @@ class V2CursorPaginationTest(TestCase):
     def tearDown(self):
         User.objects.filter(username__startswith="cursor_user_").delete()
 
-    def test_default_page_size(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_default_page_size(self, mock_ordering):
         """Test the default page size."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
         paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
         self.assertEqual(len(paginated_queryset), 10)
 
-    def test_explicit_limit(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_explicit_limit(self, mock_ordering):
         """Test an explicit limit via page_size_query_param."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
         paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
@@ -189,7 +192,8 @@ class V2CursorPaginationTest(TestCase):
         """Test that cursor query param is set correctly."""
         self.assertEqual(self.paginator.cursor_query_param, "cursor")
 
-    def test_get_paginated_response_structure(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_get_paginated_response_structure(self, mock_ordering):
         """Test the paginated response structure."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -203,7 +207,8 @@ class V2CursorPaginationTest(TestCase):
         self.assertIn("next", response.data["links"])
         self.assertIn("previous", response.data["links"])
 
-    def test_get_paginated_response_uses_actual_limit(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_get_paginated_response_uses_actual_limit(self, mock_ordering):
         """Test that paginated response uses the actual limit from request."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=25"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -266,7 +271,8 @@ class V2CursorPaginationTest(TestCase):
         link = self.paginator.get_previous_link()
         self.assertEqual(link, "/api/rbac/v2/role-bindings/by-subject/?cursor=abc")
 
-    def test_empty_queryset(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_empty_queryset(self, mock_ordering):
         """Test pagination with empty queryset."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -280,7 +286,8 @@ class V2CursorPaginationTest(TestCase):
         self.assertIsNone(response.data["links"]["next"])
         self.assertIsNone(response.data["links"]["previous"])
 
-    def test_max_page_size_enforced(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_max_page_size_enforced(self, mock_ordering):
         """Test that requests exceeding max_page_size are capped."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=2000"))
         paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
@@ -288,7 +295,8 @@ class V2CursorPaginationTest(TestCase):
         # Should be capped to max_page_size (1000) or queryset size if smaller
         self.assertLessEqual(len(paginated_queryset), self.paginator.max_page_size)
 
-    def test_first_page_has_no_previous(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_first_page_has_no_previous(self, mock_ordering):
         """Test that first page has no previous link."""
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
         request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
@@ -297,7 +305,8 @@ class V2CursorPaginationTest(TestCase):
 
         self.assertIsNone(response.data["links"]["previous"])
 
-    def test_last_page_has_no_next(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_last_page_has_no_next(self, mock_ordering):
         """Test that last page has no next link."""
         # Request all items in one page
         request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=100"))
@@ -307,7 +316,8 @@ class V2CursorPaginationTest(TestCase):
 
         self.assertIsNone(response.data["links"]["next"])
 
-    def test_middle_page_has_both_links(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_middle_page_has_both_links(self, mock_ordering):
         """Test that middle pages have both next and previous links."""
         # First, get the first page to obtain cursor for next page
         request1 = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
@@ -320,8 +330,6 @@ class V2CursorPaginationTest(TestCase):
         self.assertIsNotNone(next_link)
 
         # Extract cursor from link and make second request
-        from urllib.parse import parse_qs, urlparse
-
         parsed = urlparse(next_link)
         cursor = parse_qs(parsed.query).get("cursor", [None])[0]
         self.assertIsNotNone(cursor)
@@ -338,26 +346,25 @@ class V2CursorPaginationTest(TestCase):
         self.assertIsNotNone(response2.data["links"]["previous"])
         self.assertIsNotNone(response2.data["links"]["next"])
 
-    def test_cursor_navigation_returns_different_results(self):
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_cursor_navigation_returns_different_results(self, mock_ordering):
         """Test that navigating with cursor returns different results."""
         # Get first page
+        paginator1 = V2CursorPagination()
         request1 = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
         request1.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
-        page1 = self.paginator.paginate_queryset(self.queryset, request1)
+        page1 = paginator1.paginate_queryset(self.queryset, request1)
         page1_ids = [u.id for u in page1]
 
         # Get cursor for next page
-        response1 = self.paginator.get_paginated_response([])
+        response1 = paginator1.get_paginated_response([])
         next_link = response1.data["links"]["next"]
-
-        from urllib.parse import parse_qs, urlparse
 
         parsed = urlparse(next_link)
         cursor = parse_qs(parsed.query).get("cursor", [None])[0]
 
         # Get second page
         paginator2 = V2CursorPagination()
-        paginator2.ordering = "-date_joined"
         request2 = Request(self.factory.get(f"/api/rbac/v2/role-bindings/by-subject/?limit=5&cursor={cursor}"))
         request2.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
         page2 = paginator2.paginate_queryset(self.queryset, request2)
@@ -366,44 +373,57 @@ class V2CursorPaginationTest(TestCase):
         # Pages should have different items
         self.assertEqual(len(set(page1_ids) & set(page2_ids)), 0)
 
-    def test_convert_order_field_rejects_field_not_in_mapping(self):
-        """Test _convert_order_field rejects field names not present in FIELD_MAPPING."""
-        self.assertIsNone(self.paginator._convert_order_field("name"))
-        self.assertIsNone(self.paginator._convert_order_field("modified"))
-        self.assertIsNone(self.paginator._convert_order_field("uuid"))
+    def test_convert_order_field_rejects_simple_field(self):
+        """Test _convert_order_field rejects simple field names without dot notation."""
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("name", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("modified", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("uuid", field_mapping))
 
-    def test_convert_order_field_rejects_descending_field_not_in_mapping(self):
-        """Test _convert_order_field rejects descending field names not in FIELD_MAPPING."""
-        self.assertIsNone(self.paginator._convert_order_field("-name"))
-        self.assertIsNone(self.paginator._convert_order_field("-modified"))
+    def test_convert_order_field_rejects_descending_simple_field(self):
+        """Test _convert_order_field rejects descending simple field names."""
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("-name", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("-modified", field_mapping))
 
     def test_convert_order_field_dot_notation_group(self):
         """Test _convert_order_field with group dot notation."""
-        self.assertEqual(self.paginator._convert_order_field("group.name"), "name")
-        self.assertEqual(self.paginator._convert_order_field("group.description"), "description")
-        self.assertEqual(self.paginator._convert_order_field("group.user_count"), "principalCount")
-        self.assertEqual(self.paginator._convert_order_field("group.uuid"), "uuid")
-        self.assertEqual(self.paginator._convert_order_field("group.modified"), "modified")
-        self.assertEqual(self.paginator._convert_order_field("group.created"), "created")
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertEqual(self.paginator._convert_order_field("group.name", field_mapping), "name")
+        self.assertEqual(self.paginator._convert_order_field("group.description", field_mapping), "description")
+        self.assertEqual(self.paginator._convert_order_field("group.user_count", field_mapping), "principalCount")
+        self.assertEqual(self.paginator._convert_order_field("group.uuid", field_mapping), "uuid")
+        self.assertEqual(self.paginator._convert_order_field("group.modified", field_mapping), "modified")
+        self.assertEqual(self.paginator._convert_order_field("group.created", field_mapping), "created")
 
     def test_convert_order_field_dot_notation_group_descending(self):
         """Test _convert_order_field with group dot notation and descending prefix."""
-        self.assertEqual(self.paginator._convert_order_field("-group.name"), "-name")
-        self.assertEqual(self.paginator._convert_order_field("-group.user_count"), "-principalCount")
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertEqual(self.paginator._convert_order_field("-group.name", field_mapping), "-name")
+        self.assertEqual(self.paginator._convert_order_field("-group.user_count", field_mapping), "-principalCount")
 
     def test_convert_order_field_dot_notation_role(self):
         """Test _convert_order_field with role dot notation."""
-        self.assertEqual(self.paginator._convert_order_field("role.name"), "role_binding_entries__binding__role__name")
-        self.assertEqual(self.paginator._convert_order_field("role.uuid"), "role_binding_entries__binding__role__uuid")
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
         self.assertEqual(
-            self.paginator._convert_order_field("-role.modified"), "-role_binding_entries__binding__role__modified"
+            self.paginator._convert_order_field("role.name", field_mapping),
+            "role_binding_entries__binding__role__name",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("role.uuid", field_mapping),
+            "role_binding_entries__binding__role__uuid",
+        )
+        self.assertEqual(
+            self.paginator._convert_order_field("-role.modified", field_mapping),
+            "-role_binding_entries__binding__role__modified",
         )
 
     def test_convert_order_field_rejects_unknown_dot_notation(self):
         """Test _convert_order_field rejects unknown dot notation fields."""
-        self.assertIsNone(self.paginator._convert_order_field("foo.bar"))
-        self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz"))
-        self.assertIsNone(self.paginator._convert_order_field("unknown.field"))
+        field_mapping = V2CursorPagination.SUBJECT_FIELD_MAPPING
+        self.assertIsNone(self.paginator._convert_order_field("foo.bar", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("-foo.bar.baz", field_mapping))
+        self.assertIsNone(self.paginator._convert_order_field("unknown.field", field_mapping))
 
     def test_get_ordering_with_group_name(self):
         """Test get_ordering converts group.name to name."""
@@ -482,21 +502,21 @@ class V2CursorPaginationTest(TestCase):
     def test_convert_order_field_accepts_direct_field_in_mapping(self):
         """Test _convert_order_field accepts direct field names present in FIELD_MAPPING."""
         paginator = self._paginator_with_direct_fields()
-        self.assertEqual(paginator._convert_order_field("name"), "name")
-        self.assertEqual(paginator._convert_order_field("last_modified"), "modified")
+        self.assertEqual(paginator._convert_order_field("name", paginator.FIELD_MAPPING), "name")
+        self.assertEqual(paginator._convert_order_field("last_modified", paginator.FIELD_MAPPING), "modified")
 
     def test_convert_order_field_accepts_descending_direct_field(self):
         """Test _convert_order_field accepts descending direct field names in FIELD_MAPPING."""
         paginator = self._paginator_with_direct_fields()
-        self.assertEqual(paginator._convert_order_field("-name"), "-name")
-        self.assertEqual(paginator._convert_order_field("-last_modified"), "-modified")
+        self.assertEqual(paginator._convert_order_field("-name", paginator.FIELD_MAPPING), "-name")
+        self.assertEqual(paginator._convert_order_field("-last_modified", paginator.FIELD_MAPPING), "-modified")
 
     def test_convert_order_field_rejects_unknown_direct_field(self):
         """Test _convert_order_field rejects direct field names not in FIELD_MAPPING."""
         paginator = self._paginator_with_direct_fields()
-        self.assertIsNone(paginator._convert_order_field("uuid"))
-        self.assertIsNone(paginator._convert_order_field("-description"))
-        self.assertIsNone(paginator._convert_order_field("group.name"))
+        self.assertIsNone(paginator._convert_order_field("uuid", paginator.FIELD_MAPPING))
+        self.assertIsNone(paginator._convert_order_field("-description", paginator.FIELD_MAPPING))
+        self.assertIsNone(paginator._convert_order_field("group.name", paginator.FIELD_MAPPING))
 
     def test_get_ordering_with_direct_field_name(self):
         """Test get_ordering accepts direct field names when in FIELD_MAPPING."""

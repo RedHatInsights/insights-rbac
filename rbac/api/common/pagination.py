@@ -21,6 +21,8 @@ import logging
 import re
 from urllib.parse import urlparse
 
+from management.group.model import Group
+from management.role.v2_model import RoleBinding
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 from rest_framework.response import Response
@@ -134,9 +136,11 @@ class V2CursorPagination(CursorPagination):
     or multiple order_by parameters.
 
     Available ordering fields:
-    - group.name, group.description, group.user_count, group.uuid,
-      group.created, group.modified
-    - role.name, role.uuid, role.created, role.modified
+    - For by-subject endpoint (Group model):
+      group.name, group.description, group.user_count, group.uuid,
+      group.created, group.modified, role.name, role.uuid, role.created, role.modified
+    - For list endpoint (RoleBinding model):
+      role.name, role.uuid, role.created, role.modified
     """
 
     page_size = 10
@@ -147,7 +151,7 @@ class V2CursorPagination(CursorPagination):
 
     # Mapping of dot notation fields to Django ORM fields
     # For role binding by-subject endpoint, the queryset is on Group model
-    FIELD_MAPPING = {
+    SUBJECT_FIELD_MAPPING = {
         # Group fields
         "group.name": "name",
         "group.description": "description",
@@ -155,21 +159,76 @@ class V2CursorPagination(CursorPagination):
         "group.uuid": "uuid",
         "group.created": "created",
         "group.modified": "modified",
-        # Role fields (accessed via related path)
+        # Role fields (accessed via related path from Group)
         "role.name": "role_binding_entries__binding__role__name",
         "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
     }
 
-    def _convert_order_field(self, field: str) -> str | None:
-        """Convert an API order field to a Django ORM field.
+    # For role binding list endpoint, the queryset is on RoleBinding model
+    ROLE_BINDING_FIELD_MAPPING = {
+        # Role fields (direct access from RoleBinding)
+        "role.id": "role__uuid",
+        "role.name": "role__name",
+        "role.uuid": "role__uuid",
+        "role.modified": "role__modified",
+        "role.created": "role_created",  # Annotated for cursor pagination
+        # Resource fields
+        "resource.id": "resource_id",
+        "resource.type": "resource_type",
+    }
 
-        Accepts any field name present in FIELD_MAPPING, including both
+    # Default mapping for backwards compatibility
+    FIELD_MAPPING = SUBJECT_FIELD_MAPPING
+
+    # Default orderings per model
+    SUBJECT_DEFAULT_ORDERING = "-modified"
+    ROLE_BINDING_DEFAULT_ORDERING = "role_created"
+
+    def _get_default_ordering(self, queryset):
+        """Get the appropriate default ordering based on queryset model.
+
+        Args:
+            queryset: The queryset being paginated
+
+        Returns:
+            The appropriate default ordering field
+        """
+        model = queryset.model
+        if model == RoleBinding:
+            return self.ROLE_BINDING_DEFAULT_ORDERING
+        if model == Group:
+            return self.SUBJECT_DEFAULT_ORDERING
+        # Fall back to instance ordering for other models (e.g., in tests)
+        return self.ordering
+
+    def _get_field_mapping(self, queryset):
+        """Get the appropriate field mapping based on queryset model.
+
+        Args:
+            queryset: The queryset being paginated
+
+        Returns:
+            The appropriate field mapping dictionary
+        """
+        model = queryset.model
+        if model == RoleBinding:
+            return self.ROLE_BINDING_FIELD_MAPPING
+        if model == Group:
+            return self.SUBJECT_FIELD_MAPPING
+        # Fall back to instance FIELD_MAPPING for other models (e.g., in tests)
+        return self.FIELD_MAPPING
+
+    def _convert_order_field(self, field: str, field_mapping: dict) -> str | None:
+        """Convert dot notation field to Django ORM field.
+
+        Accepts any field name present in the field_mapping, including both
         dot notation (e.g., group.name) and direct names (e.g., name).
 
         Args:
-            field: The API field name, optionally prefixed with '-' for descending order.
+            field: The field name, must use dot notation (e.g., group.name, -role.modified)
+            field_mapping: The field mapping dictionary to use
 
         Returns:
             The Django ORM field name, or None if the field is invalid
@@ -178,11 +237,13 @@ class V2CursorPagination(CursorPagination):
         descending = field.startswith("-")
         field_name = field[1:] if descending else field
 
-        orm_field = self.FIELD_MAPPING.get(field_name)
-        if orm_field is None:
-            return None
+        # Check if it's a known mapping
+        if field_name in field_mapping:
+            orm_field = field_mapping[field_name]
+            return f"-{orm_field}" if descending else orm_field
 
-        return f"-{orm_field}" if descending else orm_field
+        # Unknown field - reject it
+        return None
 
     def get_ordering(self, request, queryset, view):
         """Get ordering from order_by query parameter or use default.
@@ -194,9 +255,13 @@ class V2CursorPagination(CursorPagination):
         """
         order_by_list = request.query_params.getlist("order_by")
 
+        # Get appropriate field mapping and default ordering based on queryset model
+        field_mapping = self._get_field_mapping(queryset)
+        default_ordering = self._get_default_ordering(queryset)
+
         # No order_by provided, use default
         if not order_by_list:
-            return (self.ordering,)
+            return (default_ordering,)
 
         # Collect all fields from all order_by parameters (supports both comma-separated and multiple params)
         order_fields = []
@@ -204,14 +269,14 @@ class V2CursorPagination(CursorPagination):
             order_fields.extend([f.strip() for f in order_by.split(",") if f.strip()])
 
         if not order_fields:
-            return (self.ordering,)
+            return (default_ordering,)
 
         # Convert dot notation to Django ORM fields
         converted_fields = []
         for field in order_fields:
-            converted_field = self._convert_order_field(field)
+            converted_field = self._convert_order_field(field, field_mapping)
             if converted_field is None:
-                valid_fields = ", ".join(sorted(self.FIELD_MAPPING.keys()))
+                valid_fields = ", ".join(sorted(field_mapping.keys()))
                 raise ValidationError({"order_by": f"Invalid ordering field '{field}'. Valid fields: {valid_fields}"})
             converted_fields.append(converted_field)
 
