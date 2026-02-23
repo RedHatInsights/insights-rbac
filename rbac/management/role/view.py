@@ -36,6 +36,7 @@ from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
+from management.permissions.v2_edit_api_access import V1WriteBlockedWhenWorkspacesEnabled
 from management.querysets import get_role_queryset, user_has_perm
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
 from management.role.relation_api_dual_write_handler import (
@@ -138,7 +139,7 @@ class RoleViewSet(
 
     queryset = Role.objects.annotate(policyCount=Count("policies", distinct=True))
     serializer_class = RoleSerializer
-    permission_classes = (RoleAccessPermission,)
+    permission_classes = (RoleAccessPermission, V1WriteBlockedWhenWorkspacesEnabled)
     lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = RoleFilter
