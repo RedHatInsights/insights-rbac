@@ -53,6 +53,7 @@ class UpdateRoleBindingResult:
     resource_id: str
     resource_type: str
     subject: Group | Principal
+    resource_name: Optional[str] = None
 
 
 logger = logging.getLogger(__name__)
@@ -627,6 +628,7 @@ class RoleBindingService:
             resource_id=resource_id,
             resource_type=resource_type,
             subject=subject.entity,
+            resource_name=self.get_resource_name(resource_id, resource_type),
         )
 
         logger.info(
@@ -648,9 +650,12 @@ class RoleBindingService:
             resource_id: The resource identifier
 
         Raises:
-            RequiredFieldError: If resource_id is empty
+            RequiredFieldError: If resource_type or resource_id is empty
             NotFoundError: If the resource cannot be found
         """
+        if not resource_type:
+            raise RequiredFieldError("resource_type")
+
         if not resource_id:
             raise RequiredFieldError("resource_id")
 
@@ -665,8 +670,12 @@ class RoleBindingService:
         assigned to bindings (custom + seeded, not platform).
 
         Raises:
+            RequiredFieldError: If role_ids is empty
             InvalidFieldError: If any requested role UUIDs don't exist or aren't assignable
         """
+        if not role_ids:
+            raise RequiredFieldError("roles")
+
         roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable())
 
         found_ids = {str(r.uuid) for r in roles}

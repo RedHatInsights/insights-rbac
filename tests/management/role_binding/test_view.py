@@ -1273,36 +1273,20 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Verify last_modified exists
-        self.assertIn("last_modified", response.data)
+        # Default response: no last_modified, roles have id only, resource has id only
+        self.assertNotIn("last_modified", response.data)
 
-        # Convert response to comparable format (UUIDs to strings)
         actual = response.data
-        actual_subject_id = str(actual["subject"]["id"])
-        actual_roles = [{"id": str(r["id"]), "name": r["name"]} for r in actual["roles"]]
-
+        actual["roles"] = sorted(actual["roles"], key=lambda r: str(r["id"]))
+        expected_roles = sorted(
+            [{"id": self.role1.uuid}, {"id": self.role2.uuid}], key=lambda r: str(r["id"])
+        )
         expected = {
-            "subject": {"id": str(self.group.uuid), "type": SubjectType.GROUP},
-            "roles": [
-                {"id": str(self.role1.uuid), "name": self.role1.name},
-                {"id": str(self.role2.uuid), "name": self.role2.name},
-            ],
-            "resource": {
-                "id": str(self.workspace.id),
-                "type": "workspace",
-                "name": self.workspace.name,
-            },
-            "last_modified": actual["last_modified"],  # Dynamic field
+            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "roles": expected_roles,
+            "resource": {"id": str(self.workspace.id)},
         }
-
-        # Compare by converting response UUIDs to strings
-        actual_normalized = {
-            "subject": {"id": actual_subject_id, "type": actual["subject"]["type"]},
-            "roles": actual_roles,
-            "resource": actual["resource"],
-            "last_modified": actual["last_modified"],
-        }
-        self.assertEqual(actual_normalized, expected)
+        self.assertEqual(actual, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -1321,41 +1305,17 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Verify last_modified exists
-        self.assertIn("last_modified", response.data)
-
-        # Convert response to comparable format (UUIDs to strings)
-        actual = response.data
-        actual_subject_id = str(actual["subject"]["id"])
-        actual_roles = [{"id": str(r["id"]), "name": r["name"]} for r in actual["roles"]]
-
+        # Default response shape: no last_modified, roles have id only, resource has id only
         expected = {
             "subject": {
-                "id": str(self.principal.uuid),
+                "id": self.principal.uuid,
                 "type": SubjectType.USER,
                 "user": {"username": self.principal.username},
             },
-            "roles": [{"id": str(self.role1.uuid), "name": self.role1.name}],
-            "resource": {
-                "id": str(self.workspace.id),
-                "type": "workspace",
-                "name": self.workspace.name,
-            },
-            "last_modified": actual["last_modified"],  # Dynamic field
+            "roles": [{"id": self.role1.uuid}],
+            "resource": {"id": str(self.workspace.id)},
         }
-
-        # Compare by converting response UUIDs to strings
-        actual_normalized = {
-            "subject": {
-                "id": actual_subject_id,
-                "type": actual["subject"]["type"],
-                "user": actual["subject"]["user"],
-            },
-            "roles": actual_roles,
-            "resource": actual["resource"],
-            "last_modified": actual["last_modified"],
-        }
-        self.assertEqual(actual_normalized, expected)
+        self.assertEqual(response.data, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -1385,34 +1345,13 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Verify last_modified exists
-        self.assertIn("last_modified", response.data)
-
-        # Convert response to comparable format (UUIDs to strings)
-        actual = response.data
-        actual_subject_id = str(actual["subject"]["id"])
-        actual_roles = [{"id": str(r["id"]), "name": r["name"]} for r in actual["roles"]]
-
         # Should only have role2 (role1 was replaced)
         expected = {
-            "subject": {"id": str(self.group.uuid), "type": SubjectType.GROUP},
-            "roles": [{"id": str(self.role2.uuid), "name": self.role2.name}],
-            "resource": {
-                "id": str(self.workspace.id),
-                "type": "workspace",
-                "name": self.workspace.name,
-            },
-            "last_modified": actual["last_modified"],  # Dynamic field
+            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "roles": [{"id": self.role2.uuid}],
+            "resource": {"id": str(self.workspace.id)},
         }
-
-        # Compare by converting response UUIDs to strings
-        actual_normalized = {
-            "subject": {"id": actual_subject_id, "type": actual["subject"]["type"]},
-            "roles": actual_roles,
-            "resource": actual["resource"],
-            "last_modified": actual["last_modified"],
-        }
-        self.assertEqual(actual_normalized, expected)
+        self.assertEqual(response.data, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -1497,6 +1436,12 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                 None,
                 "roles",
                 "This field is required.",
+            ),
+            # Invalid UUID in role id
+            (
+                {"roles": [{"id": "not-a-uuid"}]},
+                "roles.id",
+                "Must be a valid UUID.",
             ),
         ]
 
@@ -1610,6 +1555,21 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     "Unsupported subject type: 'invalid_type'. Supported types: group, user",
                     "subject_type",
                 ),
+                # Invalid fields query parameter
+                (
+                    "invalid_fields_param",
+                    f"resource_id={self.workspace.id}&resource_type=workspace"
+                    f"&subject_id={self.group.uuid}&subject_type=group"
+                    f"&fields=bogus_field",
+                    {"roles": [{"id": str(self.role1.uuid)}]},
+                    "Invalid field(s): Unknown field: 'bogus_field'."
+                    " Valid resource fields: ['id', 'name', 'type']."
+                    " Valid role fields: ['id', 'name']."
+                    " Valid subject fields: ['group.description', 'group.name',"
+                    " 'group.user_count', 'id', 'type']."
+                    " Valid root fields: ['last_modified'].",
+                    "fields",
+                ),
             ]
 
         for description, query_params, body, expected_detail, expected_field in make_cases():
@@ -1630,3 +1590,23 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     "instance": "/api/rbac/v2/role-bindings/by-subject/",
                 }
                 self.assertEqual(response.data, expected)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_nul_bytes_in_query_params_sanitized(self, mock_permission):
+        """Test that NUL bytes in query parameters are stripped and the request succeeds."""
+        url = self._get_by_subject_url()
+        query_string = (
+            f"resource_id={self.workspace.id}\x00&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group"
+        )
+        response = self.client.put(
+            f"{url}?{query_string}",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)

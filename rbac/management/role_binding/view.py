@@ -116,5 +116,9 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
 
-        response_serializer = UpdateRoleBindingResponseSerializer(result, context={"request": request})
+        response_context = {
+            "request": request,
+            "field_selection": serializer.validated_data.get("fields"),
+        }
+        response_serializer = UpdateRoleBindingResponseSerializer(result, context=response_context)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
