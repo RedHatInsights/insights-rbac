@@ -42,6 +42,7 @@ from api.models import Tenant
 # Module-level constants for performance optimization
 logger = logging.getLogger(__name__)
 READ_YOUR_WRITES_CHANNEL = settings.READ_YOUR_WRITES_CHANNEL
+ROOT_PARENT_ERROR = "Sub-workspaces may only be created under the default workspace."
 
 
 def _generate_ryw_histogram_buckets(timeout_seconds: int) -> tuple:
@@ -359,21 +360,22 @@ class WorkspaceService:
             message = f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep."
             error = {"workspace": [message]}
             raise serializers.ValidationError(error)
-        if self._violates_peer_restrictions(target_parent_id, tenant):
-            message = "Sub-workspaces may only be created under the default workspace."
-            error = {"workspace": [message]}
+        if self._is_root_parent(target_parent_id, tenant):
+            error = {"workspace": [ROOT_PARENT_ERROR]}
             raise serializers.ValidationError(error)
 
     def _parent_id_attr_update(self, attr: str, value: str, instance: Workspace) -> bool:
         """Determine if the attribute being updated is parent_id."""
         return attr == "parent_id" and instance.parent_id != value
 
-    def _violates_peer_restrictions(self, target_parent_id: uuid.UUID, tenant: Tenant) -> bool:
-        """Determine if peer restrictions are violated."""
+    def _is_root_parent(self, target_parent_id: uuid.UUID, tenant: Tenant) -> bool:
+        """Check if the target parent is the root workspace.
+
+        The root workspace cannot be used as a parent for any workspace.
+        Sub-workspaces must be created under the default workspace or another standard workspace.
+        """
         target_root_workspace = Workspace.objects.root(tenant=tenant)
-        if settings.WORKSPACE_RESTRICT_DEFAULT_PEERS and str(target_root_workspace.id) == str(target_parent_id):
-            return True
-        return False
+        return str(target_root_workspace.id) == str(target_parent_id)
 
     def _exceeds_depth_limit(self, target_parent_id: uuid.UUID, tenant: Tenant) -> bool:
         """Determine if depth limit is exceeded."""
