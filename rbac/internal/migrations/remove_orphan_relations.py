@@ -769,19 +769,18 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
 
         migration_result = None
 
-        # If we removed any role binding relations, we need to re-replicate all role bindings for this tenant, since we
-        # don't know the change that was dropped to cause the error.
-        # (We conservatively check whether any relations were removed at all.)
-        if cleanup_result["relations_removed_count"] > 0:
-            if not dry_run:
-                logger.info(f"Running replicate_missing_binding_tuples for tenant with org_id={org_id!r}.")
+        # Conservatively, always re-replicate all role bindings.
+        # (There have been errors with re-replicating in the past, so we always need to re-replicate all bindings in
+        # case we don't remove anything but have incorrectly failed to re-replicate in the past.)
+        if not dry_run:
+            logger.info(f"Running replicate_missing_binding_tuples for tenant with org_id={org_id!r}.")
 
-                rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
+            rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
 
-                migration_result = {
-                    "items_checked": rereplicate_result["bindings_checked"],
-                    "items_migrated": rereplicate_result["bindings_fixed"],
-                }
+            migration_result = {
+                "items_checked": rereplicate_result["bindings_checked"],
+                "items_migrated": rereplicate_result["bindings_fixed"],
+            }
 
         result = {
             "cleanup": cleanup_result,
