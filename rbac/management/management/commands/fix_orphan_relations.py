@@ -1,5 +1,7 @@
 """Command to fix orphan relations in all tenants."""
 
+import dataclasses
+
 #
 # Copyright 2026 Red Hat, Inc.
 #
@@ -17,6 +19,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import datetime
+import enum
 import logging
 from collections.abc import Iterable
 
@@ -30,6 +33,21 @@ from management.workspace.model import Workspace
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
+
+_abort_threshold = 10
+
+
+class _StopReason(enum.Enum):
+    SUCCESS = "success"
+    ABORTED = "aborted"
+
+
+@dataclasses.dataclass
+class _MigrateResult:
+    stop_reason: _StopReason
+    success_count: int
+    modified_count: int
+    failed_orgs: frozenset[str]
 
 
 class Command(BaseCommand):
@@ -80,29 +98,21 @@ class Command(BaseCommand):
 
         yield from base.exclude(pk__in=seen).distinct().iterator()
 
-    def handle(self, *args, **options):
-        """Execute the command."""
-        if not options["all"]:
-            raise CommandError(
-                "Must pass --all in order to remove orphan relations for all tenants. "
-                "(This is for forwards compatibility purposes.)",
-                returncode=2,
-            )
+    @staticmethod
+    def _try_migrate(tenants: Iterable[Tenant], estimated_count: int) -> _MigrateResult:
+        stop_reason = _StopReason.SUCCESS
 
         success_count = 0
         modified_count = 0
         failed_orgs = []
 
-        tenant_count = self._base_query().count()
-        logger.info(f"About to remove orphan relations for ~{tenant_count} tenants.")
-
-        for index, tenant in enumerate(self._prioritized_tenants()):
+        for index, tenant in enumerate(tenants):
             start_time = datetime.datetime.now(datetime.timezone.utc)
             modified = False
             failed = False
 
             logger.info(
-                f"Beginning migration of tenant {index + 1}/~{tenant_count} with org_id={tenant.org_id!r} "
+                f"Beginning migration of tenant {index + 1}/~{estimated_count} with org_id={tenant.org_id!r} "
                 f"at {start_time}"
             )
 
@@ -142,12 +152,42 @@ class Command(BaseCommand):
                 if modified:
                     modified_count += 1
 
-        logger.info(
-            f"Successfully removed orphan relations for {success_count} tenants, "
-            f"of which {modified_count} were modified."
+            if len(failed_orgs) >= _abort_threshold:
+                stop_reason = _StopReason.ABORTED
+                logger.error(f"Aborting after {_abort_threshold} tenants failed.")
+                break
+
+        return _MigrateResult(
+            stop_reason=stop_reason,
+            success_count=success_count,
+            modified_count=modified_count,
+            failed_orgs=frozenset(failed_orgs),
         )
 
-        if len(failed_orgs) > 0:
+    def handle(self, *args, **options):
+        """Execute the command."""
+        if not options["all"]:
             raise CommandError(
-                f"Failed to remove orphan relations tenants with the following org_ids: {failed_orgs}", returncode=1
+                "Must pass --all in order to remove orphan relations for all tenants. "
+                "(This is for forwards compatibility purposes.)",
+                returncode=2,
             )
+
+        tenant_count = self._base_query().count()
+        logger.info(f"About to remove orphan relations for ~{tenant_count} tenants.")
+
+        result = self._try_migrate(tenants=self._prioritized_tenants(), estimated_count=tenant_count)
+
+        logger.info(
+            f"Successfully removed orphan relations for {result.success_count} tenants, "
+            f"of which {result.modified_count} were modified."
+        )
+
+        if len(result.failed_orgs) > 0:
+            raise CommandError(
+                f"Failed to remove orphan relations tenants with the following org_ids: {result.failed_orgs}",
+                returncode=1,
+            )
+
+        if result.stop_reason != _StopReason.SUCCESS:
+            raise CommandError(f"Stopped for a reason other than success: {result.stop_reason.name}", returncode=1)
