@@ -38,7 +38,7 @@ from management.workspace.utils import (
     permission_from_request,
     workspace_from_request,
 )
-from rest_framework import permissions
+from rest_framework import permissions, serializers
 
 # Custom message for target workspace access denial
 # This message is relation-agnostic: V1 uses 'write' operation, V2 uses 'create' permission
@@ -160,9 +160,10 @@ class WorkspaceAccessPermission(permissions.BasePermission):
                 return False
             return True
 
-        # For move operations, check target workspace access
+        # For move operations, pre-validate source workspace type first, then check target
         # Source workspace access is handled by FilterBackend
         if view.action == "move":
+            self._pre_validate_move_source_workspace(view, request)
             return self._check_move_target_access_v2(request)
 
         # For list/detail operations, allow request to proceed
@@ -240,6 +241,25 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             return str(target_workspace_id)
         except (ValueError, AttributeError):
             return None
+
+    @staticmethod
+    def _pre_validate_move_source_workspace(view, request) -> None:
+        """Pre-validate that the source workspace can be moved.
+
+        Raises ValidationError (400) for non-standard workspace types before
+        permission checks, ensuring business rules take priority over access control.
+        Non-standard workspaces (root, default, ungrouped-hosts) can never be moved
+        regardless of user permissions.
+        """
+        from management.workspace.model import Workspace
+
+        pk = view.kwargs.get("pk")
+        if pk is None:
+            return
+
+        workspace = Workspace.objects.filter(id=pk, tenant=request.tenant).first()
+        if workspace is not None and workspace.type != Workspace.Types.STANDARD:
+            raise serializers.ValidationError({"workspace": "Cannot move non-standard workspace."})
 
     def _check_move_target_access_v2(self, request) -> bool:
         """
