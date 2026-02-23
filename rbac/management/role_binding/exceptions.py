@@ -16,11 +16,14 @@
 #
 """Domain exceptions for RoleBinding operations."""
 
+from management.subject import UnsupportedSubjectTypeError
+
 __all__ = [
+    "DuplicateBindingError",
     "RoleBindingError",
     "RolesNotFoundError",
     "SubjectsNotFoundError",
-    "DuplicateBindingError",
+    "UnsupportedSubjectTypeError",
 ]
 
 

@@ -30,11 +30,7 @@ from management.tenant_mapping.model import Tenant
 
 
 class SubjectType(StrEnum):
-    """Valid subject types for role bindings.
-
-    This is a domain enum representing the types of subjects that can be
-    assigned roles via role bindings.
-    """
+    """Valid subject types for role bindings."""
 
     GROUP = "group"
     USER = "user"
@@ -53,40 +49,21 @@ class SubjectType(StrEnum):
 class SubjectService:
     """Service for subject-related operations.
 
-    This service provides methods for retrieving and validating subjects
-    (groups and users/principals) in the RBAC system.
+    Provides bulk resolution of groups and users/principals.
     """
 
     def __init__(self, tenant: Tenant):
-        """Initialize the service with a tenant context.
-
-        Args:
-            tenant: The tenant context for subject lookups
-        """
+        """Initialize the service with a tenant context."""
         self.tenant = tenant
 
     def resolve_groups(self, group_uuids: set[str]) -> dict[str, Group]:
-        """Resolve group UUIDs to Group objects in bulk.
-
-        Args:
-            group_uuids: Set of group UUID strings to look up.
-
-        Returns:
-            Dict mapping UUID string to Group object for each found group.
-        """
+        """Resolve group UUIDs to Group objects in bulk."""
         if not group_uuids:
             return {}
         return {str(g.uuid): g for g in Group.objects.filter(uuid__in=group_uuids)}
 
     def resolve_users(self, user_uuids: set[str]) -> dict[str, Principal]:
-        """Resolve user UUIDs to Principal objects in bulk.
-
-        Args:
-            user_uuids: Set of user UUID strings to look up.
-
-        Returns:
-            Dict mapping UUID string to Principal object for each found principal.
-        """
+        """Resolve user UUIDs to Principal objects in bulk."""
         if not user_uuids:
             return {}
         return {str(p.uuid): p for p in Principal.objects.filter(uuid__in=user_uuids)}

@@ -146,10 +146,12 @@ class RoleBindingService:
     def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
         """Create multiple role bindings."""
         role_uuids = {req.role_id for req in requests}
-        group_uuids = {req.subject_id for req in requests if req.subject_type == "group"}
-        user_uuids = {req.subject_id for req in requests if req.subject_type == "user"}
+        group_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.GROUP}
+        user_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.USER}
 
-        roles_by_uuid = {str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids)}
+        roles_by_uuid = {
+            str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids).exclude(type=RoleV2.Types.PLATFORM)
+        }
         missing_roles = role_uuids - set(roles_by_uuid.keys())
         if missing_roles:
             raise RolesNotFoundError(list(missing_roles))
@@ -157,12 +159,12 @@ class RoleBindingService:
         groups_by_uuid = self.subject_service.resolve_groups(group_uuids)
         missing_groups = group_uuids - set(groups_by_uuid.keys())
         if missing_groups:
-            raise SubjectsNotFoundError("group", list(missing_groups))
+            raise SubjectsNotFoundError(SubjectType.GROUP, list(missing_groups))
 
         principals_by_uuid = self.subject_service.resolve_users(user_uuids)
         missing_users = user_uuids - set(principals_by_uuid.keys())
         if missing_users:
-            raise SubjectsNotFoundError("user", list(missing_users))
+            raise SubjectsNotFoundError(SubjectType.USER, list(missing_users))
 
         resource_names: dict[tuple[str, str], str | None] = {}
         for req in requests:
@@ -188,7 +190,7 @@ class RoleBindingService:
                     resource_id=req.resource_id,
                 )
 
-            if req.subject_type == "group":
+            if req.subject_type == SubjectType.GROUP:
                 subject = groups_by_uuid[req.subject_id]
                 RoleBindingGroup.objects.create(binding=binding, group=subject)
             else:
