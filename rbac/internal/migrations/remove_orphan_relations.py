@@ -29,6 +29,7 @@ from management.relation_replicator.logging_replicator import stringify_spicedb_
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
 from management.role.v2_model import RoleV2, SeededRoleV2
+from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple
@@ -304,20 +305,26 @@ def _remove_orphaned_role_bindings(
 
                 # Handle built-in bindings specially.
                 if binding_id in builtin_binding_ids:
-                    # If there is a custom default group: remove only the resource->binding relation.
-                    # If there is not a custom default group, leave the binding untouched.
+                    # If there is a custom default group: remove the resource->binding relation for user bindings.
+                    # If there is not a custom default group, leave all bindings untouched.
                     if bootstrap_lock.custom_default_group is not None:
-                        to_remove.append(
-                            create_relationship(
-                                ("rbac", resource_type),
-                                resource_id,
-                                ("rbac", "role_binding"),
-                                binding_id,
-                                "binding",
-                            )
-                        )
+                        binding_source = bootstrap_lock.tenant_mapping.source_for_role_binding_id(binding_id)
 
-                        builtin_scope_cleaned_count += 1
+                        if binding_source is None:
+                            raise AssertionError("Binding source should be non-None for built-in binding.")
+
+                        if binding_source[0] == DefaultAccessType.USER:
+                            to_remove.append(
+                                create_relationship(
+                                    ("rbac", resource_type),
+                                    resource_id,
+                                    ("rbac", "role_binding"),
+                                    binding_id,
+                                    "binding",
+                                )
+                            )
+
+                            builtin_scope_cleaned_count += 1
                 else:
                     logger.debug(f"Processing binding {binding_id} on {resource_type}:{resource_id}")
 
