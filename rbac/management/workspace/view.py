@@ -31,6 +31,7 @@ from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.request import Request
@@ -102,6 +103,55 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             validate_uuid(pk, "workspace uuid validation")
         return super().get_object()
 
+    def check_permissions(self, request):
+        """Pre-validate business rules before permission checks.
+
+        Ensures business rule errors (400/404) take priority over permission
+        errors (403) for all users. This is critical in V2 mode where the
+        permission class checks create/move access via Inventory API.
+        """
+        if self.action == "create":
+            self._pre_validate_create(request)
+        elif self.action == "move":
+            self._pre_validate_move_business_rules(request)
+        super().check_permissions(request)
+
+    def _pre_validate_create(self, request: Request) -> None:
+        """Pre-validate create parameters before permission checks.
+
+        Extracts request data and delegates business rule validation to the
+        service layer. Covers CSV tests: 3.03, 3.11/3.12, 3.16.
+        """
+        parent_id = request.data.get("parent_id")
+        if parent_id:
+            validate_uuid(parent_id, "parent_id uuid validation")
+        self._service.pre_validate_create(parent_id, request.data.get("name"), request.tenant)
+
+    def _pre_validate_move_business_rules(self, request: Request) -> None:
+        """Pre-validate move business rules before permission checks.
+
+        Extracts request data, validates UUID formats, and delegates business
+        rule validation to the service layer.
+        Covers CSV tests: 7.02, 7.04, 7.06, 7.07, 7.11, 7.12, 7.13-7.15.
+        """
+        target_id_str = request.data.get("parent_id")
+        if not target_id_str:
+            raise serializers.ValidationError({"parent_id": "The 'parent_id' field is required."})
+        validate_uuid(target_id_str)
+        target_workspace_id = uuid.UUID(target_id_str)
+
+        pk = self.kwargs.get("pk")
+        if pk is None:
+            return
+        validate_uuid(pk, "workspace uuid validation")
+
+        workspace = Workspace.objects.filter(id=pk, tenant=request.tenant).first()
+        if workspace is None:
+            return  # Let normal flow handle nonexistent source (7.10 → 404)
+
+        self._service.pre_validate_move(workspace)
+        self._service.pre_validate_move_target(workspace, target_workspace_id, request.tenant)
+
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
     def _create_atomic(self, request, *args, **kwargs):
         """
@@ -163,7 +213,21 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             raise
 
     def retrieve(self, request, *args, **kwargs):
-        """Get a workspace."""
+        """Get a workspace.
+
+        Pre-validates query parameters and tenant ownership before permission/access
+        checks to ensure business rules (400/403) take priority over access control (404).
+        """
+        # Validate include_ancestry before permission checks so ALL users get 400 for invalid values
+        validate_and_get_key(request.query_params, INCLUDE_ANCESTRY_KEY, VALID_BOOLEAN_VALUES, "false")
+
+        # Cross-tenant check: return 403 if workspace belongs to a different organization
+        pk = self.kwargs.get("pk")
+        if pk is not None:
+            validate_uuid(pk, "workspace uuid validation")
+            if Workspace.objects.filter(id=pk).exclude(tenant=request.tenant).exists():
+                raise PermissionDenied("Workspace is outside of the organization.")
+
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -225,8 +289,18 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         """
         Destroy the instance.
 
-        Overridden only to add transaction.
+        Pre-validates business rules before access control to ensure that
+        undeletable workspaces (non-standard types, workspaces with children)
+        always return 400 regardless of user permissions. Without this,
+        the FilterBackend would deny access first (404) for users without
+        delete permission, hiding the real reason the workspace can't be deleted.
         """
+        pk = self.kwargs.get("pk")
+        if pk is not None:
+            validate_uuid(pk, "workspace uuid validation")
+            workspace = Workspace.objects.filter(id=pk, tenant=request.tenant).first()
+            if workspace is not None:
+                self._service.pre_validate_destroy(workspace)
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
@@ -235,7 +309,20 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
 
     @transaction.atomic()
     def update(self, request, *args, **kwargs):
-        """Update a workspace."""
+        """Update a workspace.
+
+        Pre-validates business rules before access control to ensure that
+        non-updatable workspaces (non-standard types) and duplicate names
+        always return 400 regardless of user permissions. Without this, the
+        FilterBackend would deny access first (404) for users without edit
+        permission, hiding the real reason the workspace can't be updated.
+        """
+        pk = self.kwargs.get("pk")
+        if pk is not None:
+            validate_uuid(pk, "workspace uuid validation")
+            workspace = Workspace.objects.filter(id=pk, tenant=request.tenant).first()
+            if workspace is not None:
+                self._service.pre_validate_update(workspace, new_name=request.data.get("name"))
         return super().update(request, *args, **kwargs)
 
     @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
@@ -250,10 +337,24 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         3 times when SerializationFailure or DeadlockDetected errors occur. This is expected
         behavior and retrying usually succeeds as concurrent transactions complete.
 
+        Pre-validates that the source workspace is a standard type before access control checks.
+        Non-standard workspaces (root, default, ungrouped-hosts) can never be moved regardless
+        of user permissions. Without this, the FilterBackend would deny access first (404) for
+        users without edit permission, hiding the real reason the workspace can't be moved.
+
         Note: Access checks for both source and target workspaces are handled by
         WorkspaceAccessPermission.has_permission() before this method is called.
         """
         target_workspace_id = self._parent_id_query_param_validation(request)
+
+        # Pre-validate non-standard workspace type before FilterBackend access check
+        pk = self.kwargs.get("pk")
+        if pk is not None:
+            validate_uuid(pk, "workspace uuid validation")
+            workspace = Workspace.objects.filter(id=pk, tenant=request.tenant).first()
+            if workspace is not None:
+                self._service.pre_validate_move(workspace)
+
         workspace = self.get_object()
         serializer = self.get_serializer(workspace)
         return serializer.move(workspace, target_workspace_id)
@@ -285,7 +386,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             logger.exception("Target Workspace not found during operation, ws id: %s", kwargs.get("pk"))
             return Response(
                 {"detail": "Workspace not found."},
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_404_NOT_FOUND,
             )
         except ValidationError as e:
             message = ""
