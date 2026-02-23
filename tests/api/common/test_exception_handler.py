@@ -525,10 +525,7 @@ class V2ExceptionHandlerTests(TestCase):
 
         response = custom_exception_handler_v2(exc, context)
 
-        detail = (
-            "A Bearer token in an authorization header is required"
-            " when performing service account operations."
-        )
+        detail = "A Bearer token in an authorization header is required" " when performing service account operations."
         self.assertEqual(response.status_code, 401)
         self.assertEqual(
             response.data,

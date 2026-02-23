@@ -1278,9 +1278,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         actual = response.data
         actual["roles"] = sorted(actual["roles"], key=lambda r: str(r["id"]))
-        expected_roles = sorted(
-            [{"id": self.role1.uuid}, {"id": self.role2.uuid}], key=lambda r: str(r["id"])
-        )
+        expected_roles = sorted([{"id": self.role1.uuid}, {"id": self.role2.uuid}], key=lambda r: str(r["id"]))
         expected = {
             "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
             "roles": expected_roles,
