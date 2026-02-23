@@ -26,6 +26,15 @@ class RequiredFieldError(Exception):
         self.field_name = field_name
 
 
+class InvalidFieldError(Exception):
+    """Raised when a field value fails validation."""
+
+    def __init__(self, field: str, message: str):
+        """Initialize with the field name and validation message."""
+        super().__init__(f"Invalid field '{field}': {message}")
+        self.field = field
+
+
 class NotFoundError(Exception):
     """Raised when a resource cannot be found."""
 

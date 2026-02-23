@@ -16,15 +16,19 @@
 #
 """Test the API exception handler module."""
 
+from django.db import IntegrityError
 from django.test import TestCase
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
+from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
+from management.role.v2_exceptions import RoleNotFoundError
 from rest_framework import status
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.views import Response
 from unittest.mock import Mock
 
-from api.common.exception_handler import custom_exception_handler
+from api.common.exception_handler import custom_exception_handler, custom_exception_handler_v2
 from api.common.exception_handler import _generate_errors_from_dict, _generate_error_data_payload_response
 from management.utils import v2response_error_from_errors, PROBLEM_TITLES
 
@@ -404,3 +408,253 @@ class V2ProblemDetailsTest(TestCase):
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertNotIn("instance", result)
+
+
+class V2ExceptionHandlerTests(TestCase):
+    """Tests for every branch in custom_exception_handler_v2.
+
+    Each test asserts the full response shape (status_code, content_type, data)
+    rather than individual attributes.
+    """
+
+    PATH = "/api/v2/role-bindings/"
+
+    def _mock_v2_context(self, method="PUT"):
+        """Create a mock context with a v2 request."""
+        mock_request = Mock()
+        mock_request.method = method
+        mock_request.path = self.PATH
+        return {"request": mock_request}
+
+    # ── Branch: DRF exception (dict data, response is not None) ──────
+
+    def test_drf_validation_error_dict_returns_problem_details(self):
+        """Test that a DRF ValidationError with dict payload is wrapped in Problem Details."""
+        exc = DRFValidationError({"name": ["This field is required."]})
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(
+            response.data,
+            {
+                "status": 400,
+                "title": PROBLEM_TITLES[400],
+                "detail": "This field is required.",
+                "errors": [{"message": "This field is required.", "field": "name"}],
+                "instance": self.PATH,
+            },
+        )
+
+    # ── Branch: DRF exception (list data, response is not None) ──────
+
+    def test_drf_validation_error_list_returns_problem_details(self):
+        """Test that a DRF ValidationError with list payload is wrapped in Problem Details."""
+        exc = DRFValidationError(["Error one.", "Error two."])
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(
+            response.data,
+            {
+                "status": 400,
+                "title": PROBLEM_TITLES[400],
+                "detail": "Error one.",
+                "errors": [{"message": "Error one."}, {"message": "Error two."}],
+                "instance": self.PATH,
+            },
+        )
+
+    # ── Branch: IntegrityError ────────────────────────────────────────
+
+    def test_integrity_error_returns_400(self):
+        """Test that an IntegrityError produces a 400 Problem Details response."""
+        exc = IntegrityError("duplicate key value violates unique constraint")
+        mock_view = Mock()
+        mock_view.basename = "role-bindings"
+        context = self._mock_v2_context()
+        context["view"] = mock_view
+
+        response = custom_exception_handler_v2(exc, context)
+
+        detail = "duplicate key value violates unique constraint"
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(
+            response.data,
+            {
+                "status": 400,
+                "title": PROBLEM_TITLES[400],
+                "detail": detail,
+                "errors": [{"message": detail, "field": "role-bindings"}],
+                "instance": self.PATH,
+            },
+        )
+
+    # ── Branch: InvalidTokenError ─────────────────────────────────────
+
+    def test_invalid_token_error_returns_401(self):
+        """Test that InvalidTokenError produces a 401 Problem Details response."""
+        exc = InvalidTokenError()
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.data,
+            {
+                "status": 401,
+                "title": PROBLEM_TITLES[401],
+                "detail": "Invalid token provided.",
+                "errors": [{"message": "Invalid token provided."}],
+            },
+        )
+
+    # ── Branch: MissingAuthorizationError ─────────────────────────────
+
+    def test_missing_authorization_error_returns_401(self):
+        """Test that MissingAuthorizationError produces a 401 Problem Details response."""
+        exc = MissingAuthorizationError()
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        detail = "A Bearer token in an authorization header is required" " when performing service account operations."
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.data,
+            {
+                "status": 401,
+                "title": PROBLEM_TITLES[401],
+                "detail": detail,
+                "errors": [{"message": detail}],
+            },
+        )
+
+    # ── Branch: UnableMeetPrerequisitesError ──────────────────────────
+
+    def test_unable_meet_prerequisites_error_returns_500(self):
+        """Test that UnableMeetPrerequisitesError produces a 500 Problem Details response."""
+        exc = UnableMeetPrerequisitesError()
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.data,
+            {
+                "status": 500,
+                "title": PROBLEM_TITLES[500],
+                "detail": "Unable to validate the provided token.",
+                "errors": [{"message": "Unable to validate the provided token."}],
+            },
+        )
+
+    # ── Branch: RoleNotFoundError ─────────────────────────────────────
+
+    def test_role_not_found_error_returns_404_problem_details(self):
+        """Test that RoleNotFoundError produces a 404 Problem Details response."""
+        exc = RoleNotFoundError(uuid="aaa-bbb-ccc")
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        detail = "Role with UUID 'aaa-bbb-ccc' not found."
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(
+            response.data,
+            {
+                "status": 404,
+                "title": PROBLEM_TITLES[404],
+                "detail": detail,
+                "errors": [{"message": detail, "field": "detail"}],
+                "instance": self.PATH,
+            },
+        )
+
+    # ── Branch: NotFoundError ─────────────────────────────────────────
+
+    def test_not_found_error_returns_404_problem_details(self):
+        """Test that NotFoundError produces a 404 Problem Details response."""
+        exc = NotFoundError(resource_type="workspace", resource_id="abc-123")
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        detail = "workspace with id 'abc-123' not found"
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(
+            response.data,
+            {
+                "status": 404,
+                "title": PROBLEM_TITLES[404],
+                "detail": detail,
+                "errors": [{"message": detail, "field": "detail"}],
+                "instance": self.PATH,
+            },
+        )
+
+    # ── Branch: InvalidFieldError ─────────────────────────────────────
+
+    def test_invalid_field_error_returns_400_problem_details(self):
+        """Test that InvalidFieldError produces a 400 Problem Details response with field source."""
+        exc = InvalidFieldError(field="roles", message="roles do not exist: role-1")
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        detail = "Invalid field 'roles': roles do not exist: role-1"
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(
+            response.data,
+            {
+                "status": 400,
+                "title": PROBLEM_TITLES[400],
+                "detail": detail,
+                "errors": [{"message": detail, "field": "roles"}],
+                "instance": self.PATH,
+            },
+        )
+
+    # ── Branch: RequiredFieldError ────────────────────────────────────
+
+    def test_required_field_error_returns_400_problem_details(self):
+        """Test that RequiredFieldError produces a 400 Problem Details response with field source."""
+        exc = RequiredFieldError("resource_type")
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(
+            response.data,
+            {
+                "status": 400,
+                "title": PROBLEM_TITLES[400],
+                "detail": "resource_type is required",
+                "errors": [{"message": "resource_type is required", "field": "resource_type"}],
+                "instance": self.PATH,
+            },
+        )
+
+    # ── Branch: unhandled exception ───────────────────────────────────
+
+    def test_unhandled_exception_returns_none(self):
+        """Test that an unrecognized exception returns None (Django handles it)."""
+        exc = RuntimeError("something unexpected")
+        context = self._mock_v2_context()
+
+        response = custom_exception_handler_v2(exc, context)
+
+        self.assertIsNone(response)
