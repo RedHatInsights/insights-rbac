@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional, Sequence
 
 from django.conf import settings
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import Max, Prefetch, Q, QuerySet
 from django.db.models.aggregates import Count
 from google.protobuf import json_format
@@ -34,7 +34,7 @@ from management.permission.scope_service import Scope
 from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
-from management.role_binding.exceptions import DuplicateBindingError, RolesNotFoundError, SubjectsNotFoundError
+from management.role_binding.exceptions import RolesNotFoundError, SubjectsNotFoundError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.subject import SubjectService, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
@@ -140,7 +140,7 @@ class RoleBindingService:
             "resource_id": resource_id,
             "resource_type": resource_type,
             "resource_name": self.get_resource_name(resource_id, resource_type),
-            "field_selection": params.get("fields"),
+            "fields": params.get("fields"),
         }
 
     def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
@@ -176,26 +176,21 @@ class RoleBindingService:
         for req in requests:
             role = roles_by_uuid[req.role_id]
 
-            try:
-                binding = RoleBinding.objects.create(
-                    role=role,
-                    resource_type=req.resource_type,
-                    resource_id=req.resource_id,
-                    tenant=self.tenant,
-                )
-            except IntegrityError:
-                raise DuplicateBindingError(
-                    role_id=str(role.uuid),
-                    resource_type=req.resource_type,
-                    resource_id=req.resource_id,
-                )
+            binding, _ = RoleBinding.objects.get_or_create(
+                role=role,
+                resource_type=req.resource_type,
+                resource_id=req.resource_id,
+                tenant=self.tenant,
+            )
 
             if req.subject_type == SubjectType.GROUP:
                 subject = groups_by_uuid[req.subject_id]
-                RoleBindingGroup.objects.create(binding=binding, group=subject)
+                RoleBindingGroup.objects.get_or_create(binding=binding, group=subject)
             else:
                 subject = principals_by_uuid[req.subject_id]
-                RoleBindingPrincipal.objects.create(binding=binding, principal=subject, source="api")
+                RoleBindingPrincipal.objects.get_or_create(
+                    binding=binding, principal=subject, defaults={"source": "api"}
+                )
 
             created.append(
                 {

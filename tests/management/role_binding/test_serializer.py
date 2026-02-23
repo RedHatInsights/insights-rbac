@@ -141,7 +141,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.group.principalCount = 2
 
         field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"group.user_count"}})
-        serializer = RoleBindingByGroupSerializer(context={"field_selection": field_selection})
+        serializer = RoleBindingByGroupSerializer(context={"fields": field_selection})
         result = serializer.get_subject(self.group)
 
         self.assertEqual(result["type"], "group")

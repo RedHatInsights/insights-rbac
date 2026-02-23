@@ -20,7 +20,7 @@ from typing import Optional
 
 from management.models import Group
 from management.role.v2_model import RoleV2
-from management.role_binding.exceptions import DuplicateBindingError, RolesNotFoundError, SubjectsNotFoundError
+from management.role_binding.exceptions import RolesNotFoundError, SubjectsNotFoundError
 from management.role_binding.service import CreateBindingRequest, RoleBindingService
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
@@ -120,7 +120,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
     This serializer formats Group objects that have been annotated with
     role binding information via the service layer.
 
-    Supports dynamic field selection through the 'field_selection' context parameter.
+    Supports dynamic field selection through the 'fields' context parameter.
     Fields are accessed directly on the model using dot notation from the query parameter.
 
     Field selection syntax:
@@ -135,7 +135,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
     def _get_field_selection(self):
         """Get field selection from context."""
-        return self.context.get("field_selection")
+        return self.context.get("fields")
 
     def to_representation(self, instance):
         """Override to support field selection.
@@ -237,7 +237,6 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 
         field_selection = self._get_field_selection()
 
-        # Normalize roles: collect all roles to process (children for platform, role itself for non-platform)
         roles_to_process = []
         seen_role_ids = set()
 
@@ -315,7 +314,6 @@ RoleBindingByGroupSerializer = RoleBindingOutputSerializer
 BATCH_CREATE_ERROR_MAPPING = {
     RolesNotFoundError: "role",
     SubjectsNotFoundError: "subject",
-    DuplicateBindingError: "detail",
 }
 
 
@@ -405,7 +403,7 @@ class BatchCreateRoleBindingResponseItemSerializer(serializers.Serializer):
         """Initialize with dynamic field selection from context."""
         super().__init__(*args, **kwargs)
 
-        allowed = self.context.get("field_selection")
+        allowed = self.context.get("fields")
         if allowed is not None:
             requested = set(allowed.nested_fields.keys())
             for field_name in set(self.fields) - requested:
@@ -413,7 +411,7 @@ class BatchCreateRoleBindingResponseItemSerializer(serializers.Serializer):
 
     def _get_nested_fields(self, name: str) -> set:
         """Return the set of sub-fields for a nested object."""
-        allowed = self.context.get("field_selection")
+        allowed = self.context.get("fields")
         if allowed is not None:
             return allowed.get_nested(name)
         return self.DEFAULT_FIELDS.get(name, set())
@@ -439,9 +437,9 @@ class BatchCreateRoleBindingResponseItemSerializer(serializers.Serializer):
         if "type" in fields:
             result["type"] = obj["subject_type"]
 
-        field_selection = self.context.get("field_selection")
-        if field_selection and obj["subject_type"] == "group":
-            group_fields = field_selection.get_sub_object_fields("subject", "group")
+        fields = self.context.get("fields")
+        if fields and obj["subject_type"] == "group":
+            group_fields = fields.get_sub_object_fields("subject", "group")
             if group_fields:
                 group_details = {}
                 for field_name in group_fields:
