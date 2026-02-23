@@ -29,6 +29,7 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from feature_flags import FEATURE_FLAGS
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
@@ -1293,6 +1294,18 @@ class GroupViewSet(
         roles = []
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
+        if request.method in ("POST", "DELETE") and FEATURE_FLAGS.is_v2_edit_api_enabled(request.user.org_id):
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={
+                    "errors": [
+                        {
+                            "detail": "V1 role-to-group assignment operations are not allowed "
+                            "for orgs using workspaces. Use v2 role bindings instead."
+                        }
+                    ]
+                },
+            )
         if request.method == "POST":
             self.protect_default_admin_group_roles(group)
 

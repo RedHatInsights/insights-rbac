@@ -24,6 +24,7 @@ from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
+from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
 from management.role_binding.model import RoleBinding
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
@@ -64,7 +65,11 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """
 
     serializer_class = RoleBindingListOutputSerializer
-    permission_classes = (RoleBindingSystemUserAccessPermission, RoleBindingKesselAccessPermission)
+    permission_classes = (
+        RoleBindingSystemUserAccessPermission,
+        RoleBindingKesselAccessPermission,
+        V2WriteRequiresWorkspacesEnabled,
+    )
     pagination_class = V2CursorPagination
 
     def get_queryset(self):
