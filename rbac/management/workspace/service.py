@@ -36,6 +36,7 @@ from management.workspace.relation_api_dual_write_workspace_handler import Relat
 from prometheus_client import Counter, Histogram
 from psycopg2 import sql
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound
 
 from api.models import Tenant
 
@@ -287,7 +288,7 @@ class WorkspaceService:
 
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
         """Update workspace."""
-        if instance.type in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
+        if instance.type in (Workspace.Types.ROOT, Workspace.Types.DEFAULT, Workspace.Types.UNGROUPED_HOSTS):
             raise serializers.ValidationError(f"The {instance.type} workspace cannot be updated.")
         parent_id = None
         for attr, value in validated_data.items():
@@ -318,12 +319,145 @@ class WorkspaceService:
             raise serializers.ValidationError(message)
         return instance
 
+    def pre_validate_destroy(self, workspace: Workspace) -> None:
+        """Validate that a workspace can be destroyed.
+
+        This runs BEFORE access control checks to ensure business rules
+        (400 errors) take priority over permission checks (403/404).
+        Non-standard workspaces and workspaces with children can never
+        be deleted regardless of user permissions.
+        """
+        if workspace.type != Workspace.Types.STANDARD:
+            raise serializers.ValidationError(f"Unable to delete {workspace.type} workspace")
+        if Workspace.objects.filter(parent=workspace, tenant=workspace.tenant).exists():
+            raise serializers.ValidationError("Unable to delete due to workspace dependencies")
+
+    def pre_validate_create(self, parent_id: str | None, name: str | None, tenant: Tenant) -> None:
+        """Validate create parameters as business rules.
+
+        Checks parent existence, root parent restriction, and duplicate name.
+        This runs BEFORE access control checks to ensure business rules (400/404)
+        take priority over permission errors (403) for all users.
+        """
+        effective_parent_id = parent_id
+
+        if parent_id:
+            parent = Workspace.objects.filter(id=parent_id, tenant=tenant).first()
+            if parent is None:
+                raise NotFound(f"Parent workspace '{parent_id}' not found.")
+
+            if self._violates_peer_restrictions(parent.id, tenant):
+                raise serializers.ValidationError(
+                    {"workspace": ["Sub-workspaces may only be created under the default workspace."]}
+                )
+        else:
+            default_ws = Workspace.objects.default(tenant=tenant)
+            if default_ws:
+                effective_parent_id = default_ws.id
+
+        if name and effective_parent_id:
+            if Workspace.objects.filter(
+                name__iexact=name,
+                parent_id=effective_parent_id,
+                tenant=tenant,
+            ).exists():
+                raise serializers.ValidationError("A workspace with the same name already exists under the parent.")
+
+    def pre_validate_update(self, workspace: Workspace, new_name: str | None = None) -> None:
+        """Validate that a workspace can be updated.
+
+        Checks workspace type and duplicate name.
+        This runs BEFORE access control checks to ensure business rules
+        (400 errors) take priority over permission checks (403/404).
+        Non-standard workspaces (root, default, ungrouped-hosts) can never
+        be updated regardless of user permissions.
+        """
+        if workspace.type in (Workspace.Types.ROOT, Workspace.Types.DEFAULT, Workspace.Types.UNGROUPED_HOSTS):
+            raise serializers.ValidationError(f"The {workspace.type} workspace cannot be updated.")
+        if new_name and workspace.parent_id:
+            if (
+                Workspace.objects.filter(
+                    name__iexact=new_name,
+                    parent_id=workspace.parent_id,
+                    tenant_id=workspace.tenant_id,
+                )
+                .exclude(id=workspace.id)
+                .exists()
+            ):
+                raise serializers.ValidationError(
+                    f"A workspace with the name '{new_name}' already exists under same parent."
+                )
+
+    def pre_validate_move(self, workspace: Workspace) -> None:
+        """Validate that a workspace can be moved.
+
+        This runs BEFORE access control checks to ensure business rules
+        (400 errors) take priority over permission checks (403/404).
+        Non-standard workspaces (root, default, ungrouped-hosts) can never
+        be moved regardless of user permissions.
+        """
+        if workspace.type != Workspace.Types.STANDARD:
+            raise serializers.ValidationError({"workspace": "Cannot move non-standard workspace."})
+
+    def pre_validate_move_target(
+        self,
+        workspace: Workspace,
+        target_workspace_id: uuid.UUID,
+        tenant: Tenant,
+    ) -> None:
+        """Validate move target as business rules.
+
+        Checks target existence, same parent, descendant, root restriction,
+        depth limit, and duplicate name at target.
+        This runs BEFORE access control checks to ensure business rules (400/404)
+        take priority over permission errors (403) for all users.
+        """
+        target = Workspace.objects.filter(id=target_workspace_id, tenant=tenant).first()
+        if target is None:
+            raise NotFound("Target workspace not found.")
+
+        if workspace.parent_id is not None and workspace.parent_id == target.id:
+            raise serializers.ValidationError({"parent_id": "Workspace is already under this parent."})
+
+        if workspace.descendants().filter(id=target_workspace_id).exists():
+            raise NotFound("Cannot move workspace under one of its own descendants.")
+
+        if self._violates_peer_restrictions(target_workspace_id, tenant):
+            raise serializers.ValidationError(
+                {"workspace": ["Sub-workspaces may only be created under the default workspace."]}
+            )
+
+        target_depth = len(target.ancestors()) + 1
+        if target_depth > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT:
+            raise serializers.ValidationError(
+                {"workspace": [f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep."]}
+            )
+        workspace_tree_depth = workspace.get_max_descendant_depth()
+        total_depth = target_depth + workspace_tree_depth
+        if total_depth > settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT:
+            raise serializers.ValidationError(
+                {
+                    "workspace": [
+                        f"Cannot move workspace: resulting hierarchy depth ({total_depth}) "
+                        f"exceeds limit ({settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT})."
+                    ]
+                }
+            )
+
+        if (
+            Workspace.objects.filter(
+                name__iexact=workspace.name,
+                parent_id=target.id,
+                tenant=tenant,
+            )
+            .exclude(id=workspace.id)
+            .exists()
+        ):
+            raise serializers.ValidationError("A workspace with the same name already exists under the target parent.")
+
     def destroy(self, instance: Workspace) -> None:
         """Destroy workspace."""
-        if instance.type != Workspace.Types.STANDARD:
-            raise serializers.ValidationError(f"Unable to delete {instance.type} workspace")
-        if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
-            raise serializers.ValidationError("Unable to delete due to workspace dependencies")
+        self.pre_validate_destroy(instance)
 
         with transaction.atomic():
             # Lock the workspace to prevent concurrent modifications or referencing
