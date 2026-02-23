@@ -263,22 +263,16 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(workspace_event.workspace, data)
 
     def test_create_workspace_against_root(self):
-        """Test for creating a workspace against the root."""
+        """Test that creating a workspace under root is rejected."""
         workspace = {"name": "Root Peer", "description": "Workspace", "parent_id": self.root_workspace.id}
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        data = response.data
-        self.assertEqual(data.get("name"), "Root Peer")
-        self.assertNotEqual(data.get("id"), "")
-        self.assertIsNotNone(data.get("id"))
-        self.assertNotEqual(data.get("created"), "")
-        self.assertNotEqual(data.get("modified"), "")
-        self.assertEqual(data.get("description"), "Workspace")
-        self.assertEqual(data.get("type"), "standard")
-        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("detail"), "Sub-workspaces may only be created under the default workspace."
+        )
 
     def test_create_workspace_assign_parent_id(self):
         """Test for creating a workspace without parent id."""
@@ -514,12 +508,12 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.standard_workspace.id,
+            "parent_id": self.default_workspace.id,
         }
 
         Workspace.objects.create(**workspace_data)
 
-        test_data = {"name": "New Workspace", "parent_id": self.standard_workspace.id}
+        test_data = {"name": "New Workspace", "parent_id": self.default_workspace.id}
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
@@ -527,6 +521,49 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_body = json.loads(response.content.decode())
         self.assertEqual(resp_body.get("detail"), "Can't create workspace with same name within same parent workspace")
+
+    def test_duplicate_create_workspace_case_insensitive(self):
+        """Test that creating a workspace with case-insensitive duplicate name under same parent is not allowed."""
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+            "parent_id": self.default_workspace.id,
+        }
+
+        Workspace.objects.create(**workspace_data)
+
+        test_data = {"name": "new workspace", "parent_id": self.default_workspace.id}
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_body = json.loads(response.content.decode())
+        self.assertEqual(resp_body.get("detail"), "Can't create workspace with same name within same parent workspace")
+
+    def test_create_workspace_case_insensitive_under_different_parent(self):
+        """Test that case-insensitive duplicate names are allowed when the parent workspace differs."""
+        Workspace.objects.create(
+            name="New Workspace",
+            description="New Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+        )
+
+        other_parent = Workspace.objects.create(
+            name="Another Parent",
+            description="Another Parent - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+        )
+
+        test_data = {"name": "new workspace", "parent_id": other_parent.id}
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=4)
     def test_create_workspaces_exceed_limit(self):
@@ -625,56 +662,23 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         resp_body = json.loads(response.content.decode())
         self.assertEqual(resp_body.get("detail"), "Workspaces may only nest 3 levels deep.")
 
-    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=5, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
     def test_create_deep_workspace_chain_under_root(self):
-        """
-        Test creating a deep chain of standard workspaces under root workspace.
-        Expected hierarchy:
-        root (0) -> standard1 (1) -> standard2 (2) -> standard3 (3) -> standard4 (4) -> standard5 (5)
-        """
+        """Test that creating a workspace chain starting from root is rejected."""
         client = APIClient()
         url = reverse("v2_management:workspace-list")
 
-        # Create the chain of workspaces
-        current_parent_id = self.root_workspace.id
-        workspace_ids = []
+        workspace_data = {
+            "name": "Standard Workspace Level 1",
+            "description": "Standard workspace at depth level 1",
+            "parent_id": self.root_workspace.id,
+        }
 
-        for i in range(1, 6):  # Create 5 standard workspaces (depth 1-5)
-            workspace_data = {
-                "name": f"Standard Workspace Level {i}",
-                "description": f"Standard workspace at depth level {i}",
-                "parent_id": current_parent_id,
-            }
-
-            response = client.post(url, workspace_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-            data = response.data
-            self.assertEqual(data.get("name"), f"Standard Workspace Level {i}")
-            self.assertEqual(data.get("type"), "standard")
-            self.assertEqual(data.get("parent_id"), str(current_parent_id))
-            self.assertIsNotNone(data.get("id"))
-
-            # Store workspace ID and set it as parent for next iteration
-            workspace_id = data.get("id")
-            workspace_ids.append(workspace_id)
-            current_parent_id = workspace_id
-
-        # Verify all 5 workspaces were created successfully
-        self.assertEqual(len(workspace_ids), 5)
-
-        # Verify the hierarchy structure by checking each workspace's parent
-        for i, workspace_id in enumerate(workspace_ids):
-            workspace = Workspace.objects.get(id=workspace_id)
-            self.assertEqual(workspace.type, Workspace.Types.STANDARD)
-            self.assertEqual(workspace.name, f"Standard Workspace Level {i + 1}")
-
-            if i == 0:
-                # First workspace should have root as parent
-                self.assertEqual(workspace.parent_id, self.root_workspace.id)
-            else:
-                # Each subsequent workspace should have the previous one as parent
-                self.assertEqual(str(workspace.parent_id), workspace_ids[i - 1])
+        response = client.post(url, workspace_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("detail"), "Sub-workspaces may only be created under the default workspace."
+        )
 
     @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=5, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
     def test_create_standard_chain_under_default_workspace(self):
@@ -1174,6 +1178,26 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         )
         self.assertEqual(response_message.get("instance"), f"/api/rbac/v2/workspaces/{wsA.id}/")
 
+    def test_update_workspace_existing_name_case_insensitive_fail(self):
+        """Test the workspace name update (PUT) fail for case-insensitive duplicate name under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
+        workspace_request_data = {"name": "workspace b"}
+
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_message = response.json()
+        self.assertEqual(response_message.get("status"), status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists under same parent", response_message.get("detail"))
+
     def test_partial_update_workspace_existing_name_fail(self):
         """Test the workspace name update (PATCH) fail for already existing "name" under same parent."""
         wsA = Workspace.objects.create(
@@ -1197,6 +1221,26 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
             response_message.get("detail"), f"A workspace with the name '{wsB.name}' already exists under same parent."
         )
         self.assertEqual(response_message.get("instance"), f"/api/rbac/v2/workspaces/{wsA.id}/")
+
+    def test_partial_update_workspace_existing_name_case_insensitive_fail(self):
+        """Test the workspace name update (PATCH) fail for case-insensitive duplicate name under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace A", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        Workspace.objects.create(
+            name="Workspace B", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
+        workspace_request_data = {"name": "workspace b"}
+
+        response = client.patch(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_message = response.json()
+        self.assertEqual(response_message.get("status"), status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists under same parent", response_message.get("detail"))
 
     def test_update_workspace_existing_name_success(self):
         """
@@ -1318,15 +1362,12 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("not a valid UUID", str(response.data))
 
-    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
     def test_edit_workspace_disregard_type(self):
-        """Test for creating a workspace."""
-        root = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.ROOT)
-
+        """Test that create and update disregard the 'type' field."""
         workspace = {
             "name": "New Workspace",
             "description": "Workspace",
-            "parent_id": str(root.id),
+            "parent_id": str(self.default_workspace.id),
             "type": Workspace.Types.UNGROUPED_HOSTS,
         }
 
@@ -1891,9 +1932,8 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         response_body = response.json()
         self.assertEqual(response_body.get("detail"), "The 'parent_id' field is required.")
 
-    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
     def test_move_under_root_workspace_fail(self):
-        """Test you cannot move a workspace under a root workspace with WORKSPACE_RESTRICT_DEFAULT_PEERS=True."""
+        """Test you cannot move a workspace under a root workspace."""
         url = reverse("v2_management:workspace-move", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
         workspace_data_for_move = {"parent_id": self.root_workspace.id}
@@ -1903,18 +1943,6 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(
             response.json().get("detail"), "Sub-workspaces may only be created under the default workspace."
         )
-
-    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
-    def test_move_under_root_workspace_success(self):
-        """Test you can move a workspace under a root workspace with WORKSPACE_RESTRICT_DEFAULT_PEERS=False."""
-        url = reverse("v2_management:workspace-move", kwargs={"pk": self.standard_workspace.id})
-        client = APIClient()
-        workspace_data_for_move = {"parent_id": self.root_workspace.id}
-
-        response = client.post(url, workspace_data_for_move, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("id"), str(self.standard_workspace.id))
-        self.assertEqual(response.data.get("parent_id"), str(self.root_workspace.id))
 
     def test_move_under_default_workspace(self):
         """Test you can move a workspace under a default workspace."""
@@ -2127,20 +2155,22 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         Test that a workspace cannot be moved under a parent
         if another workspace with the same name already exists there.
         """
-        # Create workspace structure
-        # root -> default -> Standard Workspace -> Test Workspace
-        #                 -> Test Workspace
-        name = "Test Workspace"
-        self.standard_sub_workspace.name = name
-        self.standard_sub_workspace.save()
+        # Create workspace structure matching iqe-rbac-plugin test 7.07:
+        # root -> default -> Standard Workspace -> ... -> deep_workspace (name="Dup WS")
+        #                 -> aux_workspace (name="Dup WS")
+        # Move deep_workspace to default -> 400 because aux_workspace has same name
+        name = "Dup WS"
+        deep_workspace = Workspace.objects.create(
+            name=name, type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.standard_workspace
+        )
+        Workspace.objects.create(
+            name=name, type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
 
-        validated_data = {"name": name, "description": f"{name} description"}
-        test_workspace = self.service.create(validated_data, self.tenant)
-
-        # Try to move the 'Test Workspace' under the 'Standard Workspace'
+        # Try to move the workspace under default where same name already exists
         client = APIClient()
-        url = reverse("v2_management:workspace-move", kwargs={"pk": test_workspace.id})
-        workspace_data_for_move = {"parent_id": self.standard_workspace.id}
+        url = reverse("v2_management:workspace-move", kwargs={"pk": deep_workspace.id})
+        workspace_data_for_move = {"parent_id": self.default_workspace.id}
 
         response = client.post(url, workspace_data_for_move, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -2148,6 +2178,62 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(
             response_body.get("detail"), "A workspace with the same name already exists under the target parent."
         )
+
+    def test_move_with_duplicate_name_under_target_parent_case_insensitive(self):
+        """
+        Test that a workspace cannot be moved under a parent
+        if another workspace with a case-insensitive matching name already exists there.
+        """
+        # Create workspace structure matching iqe-rbac-plugin test 7.07 (case-insensitive variant):
+        # root -> default -> Standard Workspace -> deep_workspace (name="Dup WS")
+        #                 -> aux_workspace (name="dup ws")
+        # Move deep_workspace to default -> 400 because aux_workspace has same name (case-insensitive)
+        deep_workspace = Workspace.objects.create(
+            name="Dup WS", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.standard_workspace
+        )
+        Workspace.objects.create(
+            name="dup ws", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        # Try to move workspace under default where case-insensitive duplicate exists
+        client = APIClient()
+        url = reverse("v2_management:workspace-move", kwargs={"pk": deep_workspace.id})
+        workspace_data_for_move = {"parent_id": self.default_workspace.id}
+
+        response = client.post(url, workspace_data_for_move, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_body = response.json()
+        self.assertEqual(
+            response_body.get("detail"), "A workspace with the same name already exists under the target parent."
+        )
+
+    def test_move_with_case_insensitive_name_outside_target_parent_succeeds(self):
+        """
+        Test that moving a workspace succeeds when a case-insensitive name
+        collision exists outside the target parent.
+
+        The uniqueness constraint should only apply to siblings under the target parent.
+        """
+        # root -> default -> Standard Workspace -> ws_to_move (name="Dup WS")
+        #                 -> dup ws (case-insensitive match, but NOT under other_parent)
+        #                 -> other_parent (no children with name "Dup WS")
+        # Move ws_to_move to other_parent -> 200 because "dup ws" is not under other_parent
+        ws_to_move = Workspace.objects.create(
+            name="Dup WS", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.standard_workspace
+        )
+        Workspace.objects.create(
+            name="dup ws", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        other_parent = Workspace.objects.create(
+            name="Other Parent", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        client = APIClient()
+        url = reverse("v2_management:workspace-move", kwargs={"pk": ws_to_move.id})
+        response = client.post(url, {"parent_id": other_parent.id}, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("parent_id"), str(other_parent.id))
 
     def test_move_under_target_parent_with_same_name(self):
         """
