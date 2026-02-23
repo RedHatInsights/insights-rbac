@@ -400,6 +400,967 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
+    # === GET pre-validation tests (2.09, 2.11) ===
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_retrieve_with_invalid_include_ancestry_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 2.09: GET with include_ancestry=invalid returns 400 regardless of permissions.
+
+        Query parameter validation must take priority over access control checks.
+        Without pre-validation in retrieve(), V2 FilterBackend would deny access
+        and return 404 instead of the correct 400.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.get(f"{url}?include_ancestry=invalid", format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_retrieve_cross_tenant_workspace_returns_403(self, mock_flag, mock_channel):
+        """Test 2.11: GET workspace from another tenant returns 403.
+
+        Cross-tenant workspace access must return 403 with an 'outside org'
+        message regardless of user permissions, preventing cross-org data access.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Create a workspace in a different tenant
+        other_tenant = Tenant.objects.create(
+            tenant_name="other_tenant",
+            org_id="other_org_id",
+            ready=True,
+        )
+        other_root = Workspace.objects.create(
+            name="Other Root",
+            tenant=other_tenant,
+            type=Workspace.Types.ROOT,
+        )
+        other_workspace = Workspace.objects.create(
+            name="Other Workspace",
+            tenant=other_tenant,
+            type=Workspace.Types.STANDARD,
+            parent=other_root,
+        )
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": other_workspace.id},
+            )
+            client = APIClient()
+            response = client.get(url, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn("outside of the organization", str(response.data))
+
+        # Cleanup
+        Workspace.objects.filter(tenant=other_tenant).update(parent=None)
+        Workspace.objects.filter(tenant=other_tenant).delete()
+        other_tenant.delete()
+
+    # === DELETE pre-validation tests (4.02, 4.03, 4.04, 4.06) ===
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_delete_root_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 4.02: DELETE root workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks. Without pre-validation, V2 FilterBackend would
+        deny access and return 404 instead of the correct 400.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Kessel denies delete access
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.root_workspace.id},
+            )
+            client = APIClient()
+            response = client.delete(url, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Unable to delete root workspace", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_delete_ungrouped_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 4.04: DELETE ungrouped workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.ungrouped_workspace.id},
+            )
+            client = APIClient()
+            response = client.delete(url, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Unable to delete ungrouped-hosts workspace", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_delete_workspace_with_children_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 4.06: DELETE workspace with children returns 400 regardless of permissions.
+
+        Business rule validation (workspace dependencies) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        # Create a child workspace under standard_workspace
+        Workspace.objects.create(
+            name="Child Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.standard_workspace,
+        )
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.delete(url, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Unable to delete due to workspace dependencies", str(response.data))
+
+    # === PATCH pre-validation tests (5.03, 5.04, 5.05) ===
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_patch_root_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 5.03: PATCH root workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks. Without pre-validation, V2 FilterBackend would
+        deny access and return 404 instead of the correct 400.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.root_workspace.id},
+            )
+            client = APIClient()
+            response = client.patch(url, data={"name": "Updated"}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("root workspace cannot be updated", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_patch_default_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 5.04: PATCH default workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks. Default workspaces cannot be updated.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.default_workspace.id},
+            )
+            client = APIClient()
+            response = client.patch(url, data={"name": "Updated"}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("default workspace cannot be updated", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_patch_ungrouped_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 5.05: PATCH ungrouped workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.ungrouped_workspace.id},
+            )
+            client = APIClient()
+            response = client.patch(url, data={"name": "Updated"}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("ungrouped-hosts workspace cannot be updated", str(response.data))
+
+    # === PUT pre-validation tests (6.03, 6.04, 6.05) ===
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_put_root_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 6.03: PUT root workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.root_workspace.id},
+            )
+            client = APIClient()
+            response = client.put(url, data={"name": "Updated", "description": "Desc"}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("root workspace cannot be updated", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_put_default_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 6.04: PUT default workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks. Default workspaces cannot be updated.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.default_workspace.id},
+            )
+            client = APIClient()
+            response = client.put(url, data={"name": "Updated", "description": "Desc"}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("default workspace cannot be updated", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_put_ungrouped_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 6.05: PUT ungrouped workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": self.ungrouped_workspace.id},
+            )
+            client = APIClient()
+            response = client.put(url, data={"name": "Updated", "description": "Desc"}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("ungrouped-hosts workspace cannot be updated", str(response.data))
+
+    # === MOVE pre-validation tests (7.13, 7.14, 7.15) ===
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_default_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.13: MOVE default workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.default_workspace.id},
+            )
+            client = APIClient()
+            response = client.post(url, data={"parent_id": str(self.root_workspace.id)}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Cannot move non-standard workspace", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_root_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.14: MOVE root workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.root_workspace.id},
+            )
+            client = APIClient()
+            response = client.post(url, data={"parent_id": str(self.default_workspace.id)}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Cannot move non-standard workspace", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_ungrouped_workspace_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.15: MOVE ungrouped workspace returns 400 regardless of permissions.
+
+        Business rule validation (non-standard type) must take priority over
+        access control checks.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.ungrouped_workspace.id},
+            )
+            client = APIClient()
+            response = client.post(url, data={"parent_id": str(self.default_workspace.id)}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Cannot move non-standard workspace", str(response.data))
+
+    # === POST pre-validation tests (3.03, 3.11/3.12, 3.16) ===
+
+    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_create_under_root_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 3.03: POST with root as parent returns 400 regardless of permissions.
+
+        When WORKSPACE_RESTRICT_DEFAULT_PEERS is True, creating under root is
+        forbidden as a business rule (400), not an access issue.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        # Inventory API denies create access
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.post(
+                url,
+                data={"name": "New WS", "parent_id": str(self.root_workspace.id)},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Sub-workspaces may only be created under the default workspace", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_create_duplicate_name_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 3.11/3.12: POST with duplicate name returns 400 regardless of permissions.
+
+        A workspace with the same name under the same parent is a business rule
+        violation (400), not an access issue.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            # Use the same name as the existing standard workspace under the same parent
+            response = client.post(
+                url,
+                data={"name": "Standard Workspace", "parent_id": str(self.default_workspace.id)},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("same name already exists", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_create_nonexistent_parent_returns_404_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 3.16: POST with nonexistent parent returns 404 regardless of permissions.
+
+        A nonexistent parent workspace is a business rule error, not an access issue.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse("v2_management:workspace-list")
+            client = APIClient()
+            response = client.post(
+                url,
+                data={"name": "New WS", "parent_id": str(uuid4())},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertIn("not found", str(response.data))
+
+    # === PATCH/PUT duplicate name pre-validation tests (5.06/5.07, 6.06/6.07) ===
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_patch_duplicate_name_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 5.06/5.07: PATCH with duplicate name returns 400 regardless of permissions.
+
+        Duplicate name under the same parent is a business rule error (400).
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        # Create a sibling workspace to test duplicate name
+        sibling = Workspace.objects.create(
+            name="Sibling WS",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": sibling.id},
+            )
+            client = APIClient()
+            # Try to rename sibling to same name as standard_workspace
+            response = client.patch(url, data={"name": "Standard Workspace"}, format="json", **headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("same name", str(response.data).lower())
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_put_duplicate_name_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 6.06/6.07: PUT with duplicate name returns 400 regardless of permissions.
+
+        Duplicate name under the same parent is a business rule error (400).
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        # Create a sibling workspace to test duplicate name
+        sibling = Workspace.objects.create(
+            name="Sibling WS 2",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-detail",
+                kwargs={"pk": sibling.id},
+            )
+            client = APIClient()
+            response = client.put(
+                url,
+                data={"name": "Standard Workspace", "description": "Desc"},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("same name", str(response.data).lower())
+
+    # === MOVE business rule pre-validation tests (7.02, 7.04, 7.07, 7.11, 7.12) ===
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_same_parent_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.02: MOVE to same parent returns 400 regardless of permissions.
+
+        Moving a workspace to its current parent is a no-op business rule error.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.post(
+                url,
+                data={"parent_id": str(self.default_workspace.id)},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("already under this parent", str(response.data))
+
+    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_to_root_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.04: MOVE to root parent returns 400 regardless of permissions.
+
+        When WORKSPACE_RESTRICT_DEFAULT_PEERS is True, moving under root is a
+        business rule violation (400).
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.post(
+                url,
+                data={"parent_id": str(self.root_workspace.id)},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("Sub-workspaces may only be created under the default workspace", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_duplicate_name_at_target_returns_400_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.07: MOVE with duplicate name at target returns 400 regardless of permissions.
+
+        A workspace with the same name at the target parent is a business rule error.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        # Create a child workspace under standard_workspace
+        child = Workspace.objects.create(
+            name="Child WS",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.standard_workspace,
+        )
+        # Create another workspace under default with the same name
+        duplicate = Workspace.objects.create(
+            name="Child WS",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Try to move child to default_workspace where duplicate name already exists
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": child.id},
+            )
+            client = APIClient()
+            response = client.post(
+                url,
+                data={"parent_id": str(self.default_workspace.id)},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("same name already exists", str(response.data))
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_nonexistent_target_returns_404_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.11: MOVE to nonexistent target returns 404 regardless of permissions.
+
+        A nonexistent target workspace is a business rule error (404).
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.post(
+                url,
+                data={"parent_id": str(uuid4())},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertIn("not found", str(response.data).lower())
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_move_to_own_descendant_returns_404_even_when_access_denied(self, mock_flag, mock_channel):
+        """Test 7.12: MOVE to own descendant returns 404 regardless of permissions.
+
+        Moving a workspace under its own descendant is a business rule error.
+        """
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.allowed = allowed_pb2.Allowed.ALLOWED_FALSE
+        mock_stub.CheckForUpdate.return_value = mock_response
+
+        # Create child workspace
+        child = Workspace.objects.create(
+            name="Child For Descendant Test",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.standard_workspace,
+        )
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+
+            # Try to move standard_workspace under its own child
+            url = reverse(
+                "v2_management:workspace-move",
+                kwargs={"pk": self.standard_workspace.id},
+            )
+            client = APIClient()
+            response = client.post(
+                url,
+                data={"parent_id": str(child.id)},
+                format="json",
+                **headers,
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertIn("descendants", str(response.data).lower())
+
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=False,
