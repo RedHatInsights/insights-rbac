@@ -24,3 +24,13 @@ class RequiredFieldError(Exception):
         """Initialize with the missing field name."""
         super().__init__(f"{field_name} is required")
         self.field_name = field_name
+
+
+class NotFoundError(Exception):
+    """Raised when a resource cannot be found."""
+
+    def __init__(self, resource_type: str, resource_id: str):
+        """Initialize with resource type and identifier."""
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        super().__init__(f"{resource_type} with id '{resource_id}' not found")
