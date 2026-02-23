@@ -196,6 +196,23 @@ class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
             self.service.create(validated_data, self.tenant)
         self.assertIn("Can't create workspace with same name within same parent workspace", str(context.exception))
 
+    def test_create_unique_per_parent_case_insensitive(self):
+        """Test the create method enforces case-insensitive name uniqueness per parent."""
+        validated_data = {"name": "standard", "parent_id": self.default_workspace.id}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.create(validated_data, self.tenant)
+        self.assertIn("Can't create workspace with same name within same parent workspace", str(context.exception))
+
+    def test_create_case_insensitive_duplicate_under_different_parent(self):
+        """Test the create method allows case-insensitive duplicates under different parents."""
+        other_parent = Workspace.objects.create(
+            name="Other Parent", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        validated_data = {"name": "standard", "parent_id": other_parent.id}
+        workspace = self.service.create(validated_data, self.tenant)
+        self.assertEqual(workspace.name, "standard")
+        self.assertEqual(workspace.parent_id, other_parent.id)
+
     def test_create_validation_error(self):
         """Test the create method handles other validation errors"""
         with self.assertRaises(serializers.ValidationError) as context:
@@ -213,6 +230,13 @@ class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
         validated_data = {"name": "Unique Standard Child"}
         workspace = self.service.create(validated_data, self.tenant)
         self.assertEqual(workspace.tenant, self.tenant)
+
+    def test_create_with_root_parent_rejected(self):
+        """Test that creating a workspace under root is rejected."""
+        validated_data = {"name": "Root Child", "parent_id": self.root_workspace.id}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.create(validated_data, self.tenant)
+        self.assertIn("Sub-workspaces may only be created under the default workspace.", str(context.exception))
 
 
 class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
@@ -310,6 +334,38 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         self.assertIn(
             f"A workspace with the name '{wsB.name}' already exists under same parent.", str(context.exception)
         )
+
+    def test_update_name_unique_per_parent_case_insensitive(self):
+        """Test we cannot update the workspace name to a case-insensitive duplicate under same parent."""
+        wsA = Workspace.objects.create(
+            name="Workspace Alpha", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        Workspace.objects.create(
+            name="Workspace Beta", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        validated_data = {"name": "workspace beta"}
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service.update(wsA, validated_data)
+        self.assertIn("already exists under same parent", str(context.exception))
+
+    def test_update_name_case_insensitive_duplicate_under_different_parent(self):
+        """Test that renaming succeeds when the case-insensitive duplicate is under a different parent."""
+        other_parent = Workspace.objects.create(
+            name="Other Parent", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+        wsA = Workspace.objects.create(
+            name="Workspace Alpha", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=other_parent
+        )
+        # "Workspace Beta" exists under default_workspace, not under other_parent
+        Workspace.objects.create(
+            name="Workspace Beta", type=Workspace.Types.STANDARD, tenant=self.tenant, parent=self.default_workspace
+        )
+
+        validated_data = {"name": "workspace beta"}
+        updated = self.service.update(wsA, validated_data)
+        self.assertEqual(updated.name, "workspace beta")
+        self.assertEqual(updated.parent_id, other_parent.id)
 
 
 class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
@@ -452,7 +508,7 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
 class WorkspaceHierarchyTests(WorkspaceServiceTestBase):
     """Tests for hierarchy enforcement"""
 
-    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2)
     def test_enforce_hierarchy_depth_exceeded(self):
         """Test when hierarchy depth is exceeded"""
         with self.assertRaises(serializers.ValidationError) as context:
@@ -461,19 +517,21 @@ class WorkspaceHierarchyTests(WorkspaceServiceTestBase):
             f"Workspaces may only nest {settings.WORKSPACE_HIERARCHY_DEPTH_LIMIT} levels deep.", str(context.exception)
         )
 
-    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2)
     def test_enforce_hierarchy_depth_is_within_range_but_peer_violation(self):
-        """Test when hierarchy depth is within range but there are peer restrictions"""
+        """Test when hierarchy depth is within range but root is used as parent"""
         with self.assertRaises(serializers.ValidationError) as context:
             self.service._enforce_hierarchy_depth(self.root_workspace.id, self.tenant)
         self.assertIn("Sub-workspaces may only be created under the default workspace.", str(context.exception))
 
-    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2)
     def test_enforce_hierarchy_depth_is_within_range_and_no_peer_violation(self):
-        """Test when hierarchy depth is within range and no peer restrictions"""
+        """Test when hierarchy depth is within range and parent is not root"""
         self.assertEqual(self.service._enforce_hierarchy_depth(self.default_workspace.id, self.tenant), None)
 
-    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
-    def test_enforce_hierarchy_depth_is_within_range_and_peer_validation_is_off(self):
-        """Test when hierarchy depth is within range and no peer restrictions"""
-        self.assertEqual(self.service._enforce_hierarchy_depth(self.root_workspace.id, self.tenant), None)
+    @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=100)
+    def test_enforce_hierarchy_depth_root_always_rejected(self):
+        """Test that root workspace is always rejected as parent regardless of settings."""
+        with self.assertRaises(serializers.ValidationError) as context:
+            self.service._enforce_hierarchy_depth(self.root_workspace.id, self.tenant)
+        self.assertIn("Sub-workspaces may only be created under the default workspace.", str(context.exception))
