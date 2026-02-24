@@ -18,7 +18,7 @@ from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
 
 @override_settings(
     V2_BOOTSTRAP_TENANT=True,
-    REPLICATON_TO_RELATION_ENABLED=True,
+    REPLICATION_TO_RELATION_ENABLED=True,
 )
 class TestRemoveOrphanRelations(DualWriteTestCase):
 
@@ -104,18 +104,19 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
                 ),
             )
 
-        # We expect the admin role bindings to still be bound to the appropriate resources.
+        # We expect the default admin access binding to be bound to the default workspace.
         assert_admin_count(1)
 
-        # Since creating the custom default group was a no-op, the default user access binding should still be bound.
+        # Since creating the custom default group was a no-op, the default user access binding should still be bound
+        # to the default workspace.
         assert_user_count(1)
 
         self._do_fix_orphans()
 
-        # Running the migration should not affect the admin access binding.
+        # Running the migration should not affect the default admin access binding.
         assert_admin_count(1)
 
-        # The orphaned user access binding should have been removed.
+        # The default user access binding should no longer be bound to the default workspace.
         assert_user_count(0)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
