@@ -78,13 +78,19 @@ class AuditLogViewTests(IdentityRequest):
         AuditLog.objects.all().delete()
 
     def test_list_audit_logs(self):
-        """Test listing audit logs."""
+        """Test listing audit logs with default ordering (newest first)."""
         url = reverse("v1_management:auditlog-list")
         client = APIClient()
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 4)
+        # Verify default ordering is by created date descending (newest first)
+        self.assertEqual(response.data.get("data")[0]["principal_username"], "admin")
+        self.assertEqual(response.data.get("data")[0]["action"], "add")
+        # Oldest should be last
+        self.assertEqual(response.data.get("data")[3]["principal_username"], "user1")
+        self.assertEqual(response.data.get("data")[3]["action"], "create")
 
     def test_filter_by_principal_username_exact(self):
         """Test filtering audit logs by principal username with exact match."""
