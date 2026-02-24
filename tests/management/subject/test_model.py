@@ -134,7 +134,6 @@ class UserLookupTests(SubjectManagerTests):
         self.assertEqual(str(context.exception), str(expected))
 
 
-
 class ByTypeLookupTests(SubjectManagerTests):
     """Tests for Subject.objects.by_type()."""
 

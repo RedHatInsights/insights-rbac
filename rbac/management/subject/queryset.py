@@ -79,7 +79,11 @@ class SubjectQuerySet:
 
         try:
             entity = Group.objects.annotate(
-                principalCount=Count("principals", filter=Q(principals__type=Principal.Types.USER), distinct=True)
+                principalCount=Count(
+                    "principals",
+                    filter=Q(principals__type=Principal.Types.USER),
+                    distinct=True,
+                )
             ).get(uuid=id)
             return Subject(type=SubjectType.GROUP, entity=entity)
         except Group.DoesNotExist:
