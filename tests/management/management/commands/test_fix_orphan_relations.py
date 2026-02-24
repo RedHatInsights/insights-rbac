@@ -1,7 +1,9 @@
+from typing import Optional
 from unittest.mock import patch
 
 from django.core.management import call_command
 
+from api.models import Tenant
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import V2TenantBootstrapService
@@ -16,13 +18,17 @@ from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
 
 @override_settings(
     V2_BOOTSTRAP_TENANT=True,
-    REPLICATON_TO_RELATION_ENABLED=True,
+    REPLICATION_TO_RELATION_ENABLED=True,
 )
 class TestRemoveOrphanRelations(DualWriteTestCase):
-    @patch("internal.migrations.remove_orphan_relations.iterate_tuples_from_kessel")
-    def _do_fix_orphans(self, iterate_mock):
-        iterate_mock.side_effect = make_read_tuples_mock(self.tuples)
-        call_command("fix_orphan_relations", "--all")
+
+    def _do_fix_orphans(self, args: Optional[list[str]] = None):
+        if args is None:
+            args = ["--all"]
+
+        with patch("internal.migrations.remove_orphan_relations.iterate_tuples_from_kessel") as iterate_mock:
+            iterate_mock.side_effect = make_read_tuples_mock(self.tuples)
+            call_command("fix_orphan_relations", *args)
 
     def _expect_v2_consistent(self):
         assert_v2_roles_consistent(test=self, tuples=self.tuples)
@@ -98,16 +104,67 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
                 ),
             )
 
-        # We expect the admin role bindings to still be bound to the appropriate resources.
+        # We expect the default admin access binding to be bound to the default workspace.
         assert_admin_count(1)
 
-        # Since creating the custom default group was a no-op, the default user access binding should still be bound.
+        # Since creating the custom default group was a no-op, the default user access binding should still be bound
+        # to the default workspace.
         assert_user_count(1)
 
         self._do_fix_orphans()
 
-        # Running the migration should not affect the admin access binding.
+        # Running the migration should not affect the default admin access binding.
         assert_admin_count(1)
 
-        # The orphaned user access binding should have been removed.
+        # The default user access binding should no longer be bound to the default workspace.
         assert_user_count(0)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_limit(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        # Ensure we know exactly what tenants exist.
+        Tenant.objects.exclude(tenant_name="public").exclude(pk=self.tenant.pk).delete()
+
+        t1 = self.test_tenant
+        t2 = (
+            V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples))
+            .new_bootstrapped_tenant(org_id="t2")
+            .tenant
+        )
+
+        def create_orphan(tenant: Tenant):
+            self.switch_tenant(tenant)
+            self.given_custom_default_group(replicator=NoopReplicator())
+
+        def has_default_binding(tenant: Tenant):
+            self.switch_tenant(tenant)
+            return (
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", self.default_workspace()),
+                        relation("binding"),
+                        subject("rbac", "role_binding", str(tenant.tenant_mapping.default_role_binding_uuid)),
+                    )
+                )
+                == 1
+            )
+
+        # The tenants should start with the correct default binding relations.
+        self.assertTrue(has_default_binding(t1))
+        self.assertTrue(has_default_binding(t2))
+
+        # Orphan the default workspace -> default binding relations.
+        create_orphan(t1)
+        create_orphan(t2)
+
+        # The default workspace -> default binding relations should not have been affected (i.e. they should now be
+        # orphans).
+        self.assertTrue(has_default_binding(t1))
+        self.assertTrue(has_default_binding(t2))
+
+        self._do_fix_orphans(["--tenant-limit=1"])
+
+        # After running with --tenant-limit=1, exactly one tenant should have been fixed (but we don't necessarily know
+        # which one).
+        self.assertEqual(has_default_binding(t1) + has_default_binding(t2), 1)
