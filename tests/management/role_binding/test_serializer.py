@@ -14,13 +14,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleBindingByGroupSerializer."""
+"""Test the RoleBindingByGroupSerializer and batch create serializers."""
 
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
+from django.test import override_settings
+
 from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
+from management.role.v2_service import RoleV2Service
+from management.role_binding.serializer import (
+    BatchCreateRoleBindingRequestSerializer,
+    BatchCreateRoleBindingResponseItemSerializer,
+    RoleBindingByGroupSerializer,
+    RoleBindingFieldSelection,
+)
 from tests.identity_request import IdentityRequest
 
 
@@ -534,3 +543,189 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.assertIn("id", resource)
         self.assertNotIn("name", resource)
         self.assertNotIn("type", resource)
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class BatchCreateRequestSerializerTests(IdentityRequest):
+    """Tests for BatchCreateRoleBindingRequestSerializer input validation."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.permission = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.role_service = RoleV2Service()
+        self.role = self.role_service.create(
+            name="test_role",
+            description="Test role",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+        self.group = Group.objects.create(name="test_group", tenant=self.tenant)
+        self.mock_request = Mock()
+        self.mock_request.tenant = self.tenant
+
+        self.valid_payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(uuid.uuid4()), "type": "workspace"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ],
+        }
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBinding.objects.all().delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def _make_serializer(self, data):
+        return BatchCreateRoleBindingRequestSerializer(data=data, context={"request": self.mock_request})
+
+    def test_valid_request_passes_validation(self):
+        """Minimal valid payload passes is_valid()."""
+        serializer = self._make_serializer(self.valid_payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_rejects_empty_requests_list(self):
+        """Empty requests list fails min_length=1."""
+        serializer = self._make_serializer({"requests": []})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("requests", serializer.errors)
+
+    def test_rejects_missing_requests(self):
+        """Missing requests key fails."""
+        serializer = self._make_serializer({})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("requests", serializer.errors)
+
+    def test_rejects_invalid_subject_type(self):
+        """Subject type not in ['user', 'group'] fails."""
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(uuid.uuid4()), "type": "workspace"},
+                    "subject": {"id": str(uuid.uuid4()), "type": "foo_type"},
+                    "role": {"id": str(uuid.uuid4())},
+                }
+            ],
+        }
+        serializer = self._make_serializer(payload)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("requests", serializer.errors)
+
+    def test_rejects_missing_role_id(self):
+        """Request item with missing role.id fails."""
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(uuid.uuid4()), "type": "workspace"},
+                    "subject": {"id": str(uuid.uuid4()), "type": "group"},
+                    "role": {},
+                }
+            ],
+        }
+        serializer = self._make_serializer(payload)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("requests", serializer.errors)
+
+    def test_rejects_invalid_uuid(self):
+        """Non-UUID role.id fails."""
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(uuid.uuid4()), "type": "workspace"},
+                    "subject": {"id": str(uuid.uuid4()), "type": "group"},
+                    "role": {"id": "not-a-uuid"},
+                }
+            ],
+        }
+        serializer = self._make_serializer(payload)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("requests", serializer.errors)
+
+    def test_rejects_invalid_fields_param(self):
+        """Invalid field mask fails validation."""
+        payload = {**self.valid_payload, "fields": "unknown(foo)"}
+        serializer = self._make_serializer(payload)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("fields", serializer.errors)
+
+    def test_valid_fields_param_parsed(self):
+        """Valid field mask is parsed into RoleBindingFieldSelection."""
+        payload = {**self.valid_payload, "fields": "role(name)"}
+        serializer = self._make_serializer(payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIsNotNone(serializer.validated_data["fields"])
+        self.assertIn("name", serializer.validated_data["fields"].get_nested("role"))
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class BatchCreateResponseSerializerTests(IdentityRequest):
+    """Tests for BatchCreateRoleBindingResponseItemSerializer output formatting."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.role = RoleV2.objects.create(name="test_role", tenant=self.tenant)
+        self.group = Group.objects.create(name="test_group", description="Test group", tenant=self.tenant)
+        self.principal = Principal.objects.create(
+            username="testuser", tenant=self.tenant, user_id="testuser", type=Principal.Types.USER
+        )
+
+        self.group_result = {
+            "role": self.role,
+            "subject_type": "group",
+            "subject": self.group,
+            "resource_type": "workspace",
+            "resource_id": "ws-123",
+            "resource_name": "Test Workspace",
+        }
+
+    def tearDown(self):
+        """Tear down test data."""
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_default_fields(self):
+        """Default output includes role.id, subject.id, subject.type, resource.id."""
+        serializer = BatchCreateRoleBindingResponseItemSerializer(self.group_result, context={})
+        data = serializer.data
+
+        self.assertEqual(data["role"], {"id": str(self.role.uuid)})
+        self.assertEqual(data["subject"]["id"], str(self.group.uuid))
+        self.assertEqual(data["subject"]["type"], "group")
+        self.assertEqual(data["resource"], {"id": "ws-123"})
+
+    def test_fields_context_filters_response(self):
+        """With fields=role(name,id), response includes only role with those sub-fields."""
+        fields = RoleBindingFieldSelection.parse("role(name,id)")
+        serializer = BatchCreateRoleBindingResponseItemSerializer(self.group_result, context={"fields": fields})
+        data = serializer.data
+
+        self.assertEqual(data["role"]["id"], str(self.role.uuid))
+        self.assertEqual(data["role"]["name"], "test_role")
+
+    def test_fields_context_removes_top_level_keys(self):
+        """With fields=role(id), only role appears in output."""
+        fields = RoleBindingFieldSelection.parse("role(id)")
+        serializer = BatchCreateRoleBindingResponseItemSerializer(self.group_result, context={"fields": fields})
+        data = serializer.data
+
+        self.assertIn("role", data)
+        self.assertNotIn("subject", data)
+        self.assertNotIn("resource", data)
+
+    def test_group_subject_includes_group_details(self):
+        """With fields=subject(group.name), group sub-object is included."""
+        fields = RoleBindingFieldSelection.parse("subject(group.name)")
+        serializer = BatchCreateRoleBindingResponseItemSerializer(self.group_result, context={"fields": fields})
+        data = serializer.data
+
+        self.assertIn("group", data["subject"])
+        self.assertEqual(data["subject"]["group"]["name"], "test_group")
