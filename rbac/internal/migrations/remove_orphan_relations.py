@@ -29,6 +29,7 @@ from management.relation_replicator.logging_replicator import stringify_spicedb_
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
 from management.role.v2_model import RoleV2, SeededRoleV2
+from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple
@@ -304,20 +305,26 @@ def _remove_orphaned_role_bindings(
 
                 # Handle built-in bindings specially.
                 if binding_id in builtin_binding_ids:
-                    # If there is a custom default group: remove only the resource->binding relation.
-                    # If there is not a custom default group, leave the binding untouched.
+                    # If there is a custom default group: remove the resource->binding relation for user bindings.
+                    # If there is not a custom default group, leave all bindings untouched.
                     if bootstrap_lock.custom_default_group is not None:
-                        to_remove.append(
-                            create_relationship(
-                                ("rbac", resource_type),
-                                resource_id,
-                                ("rbac", "role_binding"),
-                                binding_id,
-                                "binding",
-                            )
-                        )
+                        binding_source = bootstrap_lock.tenant_mapping.source_for_role_binding_id(binding_id)
 
-                        builtin_scope_cleaned_count += 1
+                        if binding_source is None:
+                            raise AssertionError("Binding source should be non-None for built-in binding.")
+
+                        if binding_source[0] == DefaultAccessType.USER:
+                            to_remove.append(
+                                create_relationship(
+                                    ("rbac", resource_type),
+                                    resource_id,
+                                    ("rbac", "role_binding"),
+                                    binding_id,
+                                    "binding",
+                                )
+                            )
+
+                            builtin_scope_cleaned_count += 1
                 else:
                     logger.debug(f"Processing binding {binding_id} on {resource_type}:{resource_id}")
 
@@ -762,19 +769,18 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
 
         migration_result = None
 
-        # If we removed any role binding relations, we need to re-replicate all role bindings for this tenant, since we
-        # don't know the change that was dropped to cause the error.
-        # (We conservatively check whether any relations were removed at all.)
-        if cleanup_result["relations_removed_count"] > 0:
-            if not dry_run:
-                logger.info(f"Running replicate_missing_binding_tuples for tenant with org_id={org_id!r}.")
+        # Conservatively, always re-replicate all role bindings.
+        # (There have been errors with re-replicating in the past, so we always need to re-replicate all bindings in
+        # case we don't remove anything but have incorrectly failed to re-replicate in the past.)
+        if not dry_run:
+            logger.info(f"Running replicate_missing_binding_tuples for tenant with org_id={org_id!r}.")
 
-                rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
+            rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
 
-                migration_result = {
-                    "items_checked": rereplicate_result["bindings_checked"],
-                    "items_migrated": rereplicate_result["bindings_fixed"],
-                }
+            migration_result = {
+                "items_checked": rereplicate_result["bindings_checked"],
+                "items_migrated": rereplicate_result["bindings_fixed"],
+            }
 
         result = {
             "cleanup": cleanup_result,
