@@ -91,11 +91,13 @@ class RoleBinding(TenantAwareModel):
         """
         Update the principals bound to this RoleBinding by user_id.
 
-        principals_by_source is an iterable of pairs of the source string and the user_id of the principal added from
-        that source.
+        Args:
+            user_ids_by_source: An iterable of (source, user_id) pairs identifying
+                each principal and the source it was added from.
 
-        A ValueError is raised if one of the user IDs cannot be found or if multiple principals are associated with
-        one of the provided user IDs.
+        Raises:
+            TypeError: If any user_id is None.
+            ValueError: If any user_id cannot be found.
         """
         user_ids_by_source = set(user_ids_by_source)
         user_ids = set(entry[1] for entry in user_ids_by_source)
@@ -121,10 +123,13 @@ class RoleBinding(TenantAwareModel):
         self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
-        """
-        Return the V2rolebinding equivalent of this role binding.
+        """Return the V2rolebinding equivalent of this role binding.
 
-        group_uuids is provided in the case where
+        Args:
+            force_group_uuids: If provided, use these group UUIDs instead of
+                querying ``bound_groups()`` from the database. This is useful
+                when the caller already knows the group membership (e.g. during
+                migration) and wants to avoid an extra query.
         """
         if force_group_uuids is None:
             force_group_uuids = [str(u) for u in self.bound_groups().values_list("uuid", flat=True)]
