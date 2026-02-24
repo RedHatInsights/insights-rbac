@@ -67,7 +67,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # See RHCLOUD-44659.
         migrate_all_role_bindings(replicator=NoopReplicator(), tenant=self.tenant)
 
-        # Relations show now be inconsistent.
+        # Relations should now be inconsistent.
         with self.assertRaises(AssertionError):
             self._expect_v2_consistent()
 

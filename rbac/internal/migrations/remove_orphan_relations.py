@@ -537,7 +537,7 @@ def _remove_orphaned_workspace_parent_relations(
 
     logger.info(
         f"Removing {len(incorrect_relations)} orphaned workspace parent relations "
-        f"for tenant with org_id={tenant.org_id!r})."
+        f"for tenant with org_id={tenant.org_id!r}."
     )
 
     commit_removal(incorrect_relations)
@@ -588,7 +588,7 @@ def _remove_incorrect_workspace_parent_relations(
 
     logger.info(
         f"Removed a total of {removed_count} incorrect workspace parent relations "
-        f"for tenant with org_id={tenant.org_id!r})."
+        f"for tenant with org_id={tenant.org_id!r}."
     )
 
     return removed_count
@@ -692,7 +692,7 @@ def cleanup_tenant_orphaned_relationships(
     workspace_ids_in_kessel = set(kessel_workspace_data.workspace_ids())
 
     logger.info(
-        f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r})."
+        f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r}."
     )
 
     do_remove_role_bindings("tenant", tenant_resource_id)
