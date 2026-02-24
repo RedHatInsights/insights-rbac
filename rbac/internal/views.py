@@ -2398,7 +2398,7 @@ def bulk_cleanup_orphan_bindings(request):
     try:
         bulk_cleanup_orphan_bindings_in_worker.delay(tenant_limit=tenant_limit)
         return JsonResponse(
-            {"message": "Cleanup enqueued in background worked.", "tenant_limit": tenant_limit}, status=202
+            {"message": "Cleanup enqueued in background worker.", "tenant_limit": tenant_limit}, status=202
         )
     except Exception as e:
         logger.exception(f"Error fixing orphan relations, {tenant_limit=}", exc_info=True)
