@@ -18,7 +18,6 @@
 
 import logging
 
-from django.db.models import F
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -65,24 +64,11 @@ class RoleBindingViewSet(BaseV2ViewSet):
     pagination_class = V2CursorPagination
 
     def get_queryset(self):
-        """Build base queryset for listing role bindings.
+        """Return an empty queryset to satisfy DRF's contract.
 
-        Filters by tenant and annotates role_created for cursor pagination ordering.
-
-        For by_subject, returns an empty queryset since that action
-        builds its own queryset via the service layer.
+        The list and by_subject actions build their own querysets.
         """
-        if self.action != "list":
-            return Group.objects.none()
-
-        # Explicit tenant filter because BaseV2ViewSet.get_queryset() adds
-        # .order_by("name") which doesn't exist on RoleBinding.
-        return (
-            RoleBinding.objects.filter(tenant=self.request.tenant)
-            .select_related("role")
-            .prefetch_related("group_entries__group")
-            .annotate(role_created=F("role__created"))
-        )
+        return Group.objects.none()
 
     def get_serializer_class(self):
         """Get serializer class based on action."""
@@ -103,12 +89,9 @@ class RoleBindingViewSet(BaseV2ViewSet):
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        queryset = self.get_queryset()
-
-        # Apply role_id filter using validated UUID
-        role_id = validated_params.get("role_id")
-        if role_id:
-            queryset = queryset.filter(role__uuid=role_id)
+        queryset = RoleBinding.objects.for_tenant(
+            tenant=request.tenant, role_id=validated_params.get("role_id")
+        )
 
         # Build context for output serializer
         context = {
