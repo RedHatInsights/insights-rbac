@@ -1074,4 +1074,3 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             )
 
         self.assertIn(str(platform.uuid), ctx.exception.missing_role_ids)
-
