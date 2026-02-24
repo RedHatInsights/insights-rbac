@@ -23,9 +23,9 @@ from typing import Callable, ClassVar, Optional
 
 from django.db import models
 from management.permission.scope_service import Scope
+from management.utils import as_uuid
 
 from api.models import Tenant
-from management.utils import as_uuid
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -103,6 +103,7 @@ class TenantMapping(models.Model):
     def source_for_role_binding_id(
         self, role_binding_id: str | uuid.UUID
     ) -> Optional[tuple[DefaultAccessType, Scope]]:
+        """Return the DefaultAccessType and Scope corresponding to the provided UUID, or None if there is none."""
         role_binding_id = as_uuid(role_binding_id)
 
         if role_binding_id == self.default_role_binding_uuid:
