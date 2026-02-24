@@ -376,7 +376,7 @@ def _remove_orphaned_custom_role_relations(
 
             # Paranoia.
             if RoleV2.objects.filter(uuid__in=batch_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
-                raise AssertionError(f"Unexpected system role ID in {batch_role_ids}")
+                raise AssertionError(f"Unexpected non-custom role ID in {batch_role_ids}")
 
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
@@ -631,6 +631,11 @@ def cleanup_tenant_orphaned_relationships(
     builtin_scope_cleaned_count = 0
     custom_roles_altered_count = 0
 
+    # Get all non-custom role IDs.
+    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True)) | set(
+        str(u) for u in RoleV2.objects.exclude(type=RoleV2.Types.CUSTOM).values_list("uuid", flat=True)
+    )
+
     def commit_removal(relations: Iterable[Relationship | RelationTuple]):
         nonlocal removed_count
 
@@ -673,9 +678,6 @@ def cleanup_tenant_orphaned_relationships(
         ordinary_bindings_altered_count += result.ordinary_bindings_altered_count
         builtin_scope_cleaned_count += result.default_access_bindings_removed_count
         custom_roles_altered_count += result.custom_roles_altered_count
-
-    # Get system role UUIDs (same for V1 and V2)
-    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True))
 
     tenant_resource_id = tenant.tenant_resource_id()
 
