@@ -28,4 +28,7 @@ class RoleV2QuerySet(models.QuerySet):
         Only custom and seeded roles can be directly assigned.
         Platform roles are internal aggregations and cannot be assigned directly.
         """
-        return self.exclude(type="platform")
+        # Import here to avoid circular import (RoleV2 -> queryset -> RoleV2).
+        from management.role.v2_model import RoleV2
+
+        return self.exclude(type=RoleV2.Types.PLATFORM)
