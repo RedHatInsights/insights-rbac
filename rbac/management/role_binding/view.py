@@ -29,8 +29,8 @@ from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination
 from .serializer import (
-    RoleBindingBySubjectInputSerializer,
     RoleBindingBySubjectOutputSerializer,
+    RoleBindingInputSerializer,
     RoleBindingListInputSerializer,
     RoleBindingListOutputSerializer,
 )
@@ -118,7 +118,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
         # Validate and parse query parameters using input serializer
-        input_serializer = RoleBindingBySubjectInputSerializer(data=request.query_params)
+        input_serializer = RoleBindingInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
