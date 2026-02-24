@@ -89,9 +89,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        queryset = RoleBinding.objects.for_tenant(
-            tenant=request.tenant, role_id=validated_params.get("role_id")
-        )
+        queryset = RoleBinding.objects.for_tenant(tenant=request.tenant, role_id=validated_params.get("role_id"))
 
         # Build context for output serializer
         context = {

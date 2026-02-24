@@ -29,6 +29,9 @@ from management.role_binding.model import RoleBinding
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
+_SUBJECT_TYPE_GROUP = "group"
+_GROUP_FIELD_PREFIX = "group."
+
 
 class RoleBindingFieldSelection(FieldSelection):
     """Field selection for role-bindings endpoint."""
@@ -359,7 +362,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 RoleBindingByGroupSerializer = RoleBindingOutputSerializer
 
 
-class RolebindingOutputSerializerMixin:
+class RoleBindingOutputSerializerMixin:
     """Shared serializer methods for role binding output serializers.
 
     Provides common functionality for field selection parsing and data building.
@@ -383,10 +386,11 @@ class RolebindingOutputSerializerMixin:
         """
         subject_fields = field_selection.get_nested("subject")
         # Extract field names from "group.X" paths
-        fields_to_include = set()
-        for field_path in subject_fields:
-            if field_path.startswith("group."):
-                fields_to_include.add(field_path[6:])  # Remove "group." prefix
+        fields_to_include = {
+            field_path.removeprefix(_GROUP_FIELD_PREFIX)
+            for field_path in subject_fields
+            if field_path.startswith(_GROUP_FIELD_PREFIX)
+        }
 
         if not fields_to_include:
             return {}
@@ -417,11 +421,11 @@ class RolebindingOutputSerializerMixin:
         if field_selection is None:
             return {
                 "id": group.uuid,
-                "type": "group",
+                "type": _SUBJECT_TYPE_GROUP,
             }
 
         # With fields param: type is always included
-        subject: dict = {"type": "group"}
+        subject: dict = {"type": _SUBJECT_TYPE_GROUP}
 
         # Check if id is explicitly requested
         if "id" in field_selection.get_nested("subject"):
@@ -430,7 +434,7 @@ class RolebindingOutputSerializerMixin:
         # Extract group.* fields
         group_details = self._extract_group_details(group, field_selection)
         if group_details:
-            subject["group"] = group_details
+            subject[_SUBJECT_TYPE_GROUP] = group_details
 
         return subject
 
@@ -457,7 +461,7 @@ class RolebindingOutputSerializerMixin:
         return role_data
 
 
-class RoleBindingListOutputSerializer(RolebindingOutputSerializerMixin, serializers.Serializer):
+class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializers.Serializer):
     """Output serializer for the role binding list endpoint.
 
     Handles RoleBinding objects and returns {role, subject, resource}.
