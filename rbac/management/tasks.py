@@ -147,6 +147,6 @@ def bulk_cleanup_orphan_bindings_in_worker(tenant_limit: int):
     Celery task to clean up orphaned relationships.
 
     Args:
-        tenant_limit (int): maximum number of tenants to procss
+        tenant_limit (int): maximum number of tenants to process
     """
     return call_command("fix_orphan_relations", f"--tenant-limit={tenant_limit}")
