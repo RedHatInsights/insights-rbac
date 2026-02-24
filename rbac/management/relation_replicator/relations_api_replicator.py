@@ -240,6 +240,7 @@ class RelationsApiReplicator(RelationReplicator):
         subject_relation: Optional[str] = None,
         resource_namespace: str = "rbac",
         subject_namespace: str = "rbac",
+        pagination_limit: Optional[int] = None,
         continuation_token: Optional[str] = None,
     ) -> list[dict]:
         """Read tuples from the Relations API.
@@ -260,6 +261,9 @@ class RelationsApiReplicator(RelationReplicator):
         Raises:
             grpc.RpcError: If the API call fails
         """
+        if (pagination_limit is None) and (continuation_token is not None):
+            raise TypeError("A pagination limit must be provided if a continuation token is.")
+
         # Get JWT token for authentication
         token = jwt_manager.get_jwt_from_redis()
         metadata = [("authorization", f"Bearer {token}")] if token else []
@@ -281,8 +285,8 @@ class RelationsApiReplicator(RelationReplicator):
                     ),
                 ),
                 pagination=(
-                    common_pb2.RequestPagination(continuation_token=continuation_token)
-                    if continuation_token is not None
+                    common_pb2.RequestPagination(limit=pagination_limit, continuation_token=continuation_token)
+                    if ((pagination_limit is not None) or (continuation_token is not None))
                     else None
                 ),
             )

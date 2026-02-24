@@ -21,6 +21,7 @@ from django.test import TestCase, override_settings
 from management.group.model import Group
 from management.models import BindingMapping, Workspace, Access, Permission
 from management.policy.model import Policy
+from management.principal.model import Principal
 from management.role.model import Role, ResourceDefinition
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -72,6 +73,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
 
         # Create a group
         group = Group.objects.create(name="Test Group", tenant=self.tenant)
+        principal = Principal.objects.create(username="some_user", user_id="some_user", tenant=self.tenant)
 
         # Create binding WITHOUT replication (missing base tuples)
         binding = BindingMapping.objects.create(
@@ -79,7 +81,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
             mappings={
                 "id": "test-binding-utils",
                 "groups": [str(group.uuid)],
-                "users": {},
+                "users": {"car/1": principal.user_id, "car/2": principal.user_id},
                 "role": {"id": str(role.uuid), "is_system": True, "permissions": []},
             },
             resource_type_namespace="rbac",
@@ -98,7 +100,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         # Verify results
         self.assertEqual(results["bindings_checked"], 1)
         self.assertEqual(results["bindings_fixed"], 1)
-        self.assertEqual(results["tuples_added"], 3)  # t_role + t_binding + subject
+        self.assertEqual(results["tuples_added"], 4)  # t_role + t_binding + subject + subject
 
         # Verify t_role tuple was created
         t_role_tuples = self.tuples.find_tuples(
@@ -119,15 +121,25 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         )
         self.assertEqual(len(t_binding_tuples), 1, "Should have t_binding tuple")
 
-        # Verify subject tuple was created
-        subject_tuples = self.tuples.find_tuples(
+        # Verify group subject tuple was created
+        group_subject_tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", binding_id),
                 relation("subject"),
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
-        self.assertEqual(len(subject_tuples), 1, "Should have subject tuple")
+        self.assertEqual(len(group_subject_tuples), 1, "Should have subject group tuple")
+
+        # Verify principal subject tuple was created
+        principal_subject_tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_id),
+                relation("subject"),
+                subject("rbac", "principal", principal.principal_resource_id()),
+            )
+        )
+        self.assertEqual(len(principal_subject_tuples), 1, "Should have principal subject tuple")
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
