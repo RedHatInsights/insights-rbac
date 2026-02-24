@@ -51,7 +51,8 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-from management.role.v2_model import RoleV2, CustomRoleV2, RoleBinding, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -214,9 +215,9 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_new_principals(principals)
         return group, principals
 
-    def given_custom_default_group(self) -> Group:
+    def given_custom_default_group(self, replicator: Optional[RelationReplicator] = None) -> Group:
         with patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate") as replicate:
-            replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+            replicate.side_effect = self._get_replicator(replicator).replicate
             return self.fixture.custom_default_group(self.tenant)
 
     def given_car(self, user_id: str, roles: list[Role]):

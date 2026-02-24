@@ -25,7 +25,7 @@ from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
-from management.role.v2_model import RoleBinding
+from management.role_binding.model import RoleBinding
 from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination

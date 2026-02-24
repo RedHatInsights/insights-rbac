@@ -21,7 +21,7 @@ import json
 import uuid
 from importlib import reload
 from unittest import skip
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 from urllib.parse import parse_qs, urlparse
 
 from django.test import TestCase
@@ -37,7 +37,8 @@ from management.models import Group, Permission, Principal, Workspace
 from management.permission.scope_service import Scope
 from management.role.definer import seed_roles
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup, RoleV2
+from management.role.v2_model import PlatformRoleV2, RoleV2
+from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -467,42 +468,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
         created_times = [role_created_map[str(item["role"]["id"])] for item in data]
         self.assertEqual(created_times, sorted(created_times))
 
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_rejects_direct_field_name(self, mock_permission):
-        """Test that ordering by direct field name (without dot notation) is rejected."""
-        url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=name", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Invalid ordering field", str(response.data))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_rejects_unknown_field(self, mock_permission):
-        """Test that ordering by unknown dot notation field is rejected."""
-        url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=foo.bar", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Invalid ordering field", str(response.data))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_rejects_group_fields(self, mock_permission):
-        """Test that ordering by group.* fields is rejected on list endpoint."""
-        url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=group.name", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Invalid ordering field", str(response.data))
-
     # --- Functional: verify actual data content ---
 
     @patch(
@@ -670,23 +635,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
                     f"Field selection check failed for {label}: {item}",
                 )
 
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_invalid_field_selection_returns_400(self, mock_permission):
-        """Test that invalid field selection returns 400 with Problem RFC format."""
-        url = self._get_list_url()
-        invalid_fields = [
-            ("unknown_object", "bogus(nope)"),
-            ("invalid_role_field", "role(nonexistent)"),
-        ]
-        for label, fields_value in invalid_fields:
-            with self.subTest(label=label):
-                response = self.client.get(f"{url}?fields={fields_value}", **self.headers)
-                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                self._assert_problem_response(response)
-
     # --- Problem RFC format on errors ---
 
     @patch(
@@ -694,31 +642,31 @@ class RoleBindingListViewSetTest(IdentityRequest):
         return_value=True,
     )
     def test_list_error_responses_use_problem_format(self, mock_permission):
-        """Test that all error responses use Problem RFC format."""
+        """Test that all 400 error responses use full Problem RFC 9457 shape."""
         url = self._get_list_url()
         error_cases = [
-            ("invalid_role_id", f"{url}?role_id=not-a-uuid"),
-            ("invalid_order_by", f"{url}?order_by=foo.bar"),
-            ("group_order_by", f"{url}?order_by=group.name"),
-            ("direct_order_by", f"{url}?order_by=name"),
-            ("invalid_fields", f"{url}?fields=bogus(nope)"),
+            ("invalid_role_id", f"{url}?role_id=not-a-uuid", "role_id"),
+            ("empty_role_id", f"{url}?role_id=", "role_id"),
+            ("direct_order_by", f"{url}?order_by=name", "order_by"),
+            ("unknown_order_by", f"{url}?order_by=foo.bar", "order_by"),
+            ("group_order_by", f"{url}?order_by=group.name", "order_by"),
+            ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
+            ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
         ]
-        for label, request_url in error_cases:
+        for label, request_url, expected_field in error_cases:
             with self.subTest(label=label):
                 response = self.client.get(request_url, **self.headers)
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                self._assert_problem_response(response)
-
-    def _assert_problem_response(self, response):
-        """Assert that response follows Problem RFC format."""
-        self.assertIn("status", response.data)
-        self.assertIn("title", response.data)
-        self.assertIn("detail", response.data)
-        self.assertEqual(response.data["status"], 400)
-        self.assertEqual(
-            response["Content-Type"],
-            "application/problem+json",
-        )
+                self.assertEqual(response["Content-Type"], "application/problem+json")
+                self.assertEqual(
+                    response.data,
+                    {
+                        "status": 400,
+                        "title": "The request payload contains invalid syntax.",
+                        "detail": ANY,
+                        "errors": [{"message": ANY, "field": expected_field}],
+                    },
+                )
 
     # --- NUL byte sanitization ---
 
@@ -762,19 +710,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreater(len(response.data["data"]), 1)
 
-    # --- Empty role_id ---
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_empty_role_id_returns_400(self, mock_permission):
-        """Test that empty role_id returns 400."""
-        url = self._get_list_url()
-        response = self.client.get(f"{url}?role_id=", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self._assert_problem_response(response)
 
 
 @override_settings(V2_APIS_ENABLED=True)

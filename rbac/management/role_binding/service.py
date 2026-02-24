@@ -32,7 +32,8 @@ from management.group.platform import DefaultGroupNotAvailableError, GlobalPolic
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup
+from management.role.v2_model import PlatformRoleV2
+from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace

@@ -3,8 +3,9 @@ from unittest.mock import patch
 from django.core.management import call_command
 
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import V2TenantBootstrapService
-from migration_tool.in_memory_tuples import InMemoryRelationReplicator
+from migration_tool.in_memory_tuples import InMemoryRelationReplicator, all_of, resource, relation, subject
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from tests.management.role.test_dual_write import DualWriteTestCase
 
@@ -63,3 +64,50 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
 
         # After running the command, relations should now be consistent.
         self._expect_v2_consistent()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_custom_default_group_access(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        self.given_custom_default_group(replicator=NoopReplicator())
+        self._expect_v2_consistent()
+
+        tenant_mapping: TenantMapping = self.tenant.tenant_mapping
+
+        def assert_user_count(count: int):
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", self.default_workspace()),
+                        relation("binding"),
+                        subject("rbac", "role_binding", str(tenant_mapping.default_role_binding_uuid)),
+                    )
+                ),
+            )
+
+        def assert_admin_count(count: int):
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", self.default_workspace()),
+                        relation("binding"),
+                        subject("rbac", "role_binding", str(tenant_mapping.default_admin_role_binding_uuid)),
+                    )
+                ),
+            )
+
+        # We expect the admin role bindings to still be bound to the appropriate resources.
+        assert_admin_count(1)
+
+        # Since creating the custom default group was a no-op, the default user access binding should still be bound.
+        assert_user_count(1)
+
+        self._do_fix_orphans()
+
+        # Running the migration should not affect the admin access binding.
+        assert_admin_count(1)
+
+        # The orphaned user access binding should have been removed.
+        assert_user_count(0)

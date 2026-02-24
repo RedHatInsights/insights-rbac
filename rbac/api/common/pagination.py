@@ -22,7 +22,7 @@ import re
 from urllib.parse import urlparse
 
 from management.group.model import Group
-from management.role.v2_model import RoleBinding
+from management.role_binding.model import RoleBinding
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 from rest_framework.response import Response

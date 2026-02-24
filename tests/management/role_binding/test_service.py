@@ -19,11 +19,15 @@
 from django.test import TestCase
 
 from management.models import Group, Permission, Principal, Workspace
-from management.role.v2_model import RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import RoleBindingBySubjectOutputSerializer, RoleBindingFieldSelection
-from management.utils import FieldSelectionValidationError
+from management.role.v2_model import RoleV2
+from management.role_binding.model import RoleBinding, RoleBindingGroup
+from management.role_binding.serializer import (
+    RoleBindingBySubjectOutputSerializer,
+    RoleBindingFieldSelection,
+)
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import TenantMapping
+from management.utils import FieldSelectionValidationError
 
 from tests.identity_request import IdentityRequest
 
