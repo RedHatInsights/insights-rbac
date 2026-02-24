@@ -20,8 +20,10 @@ import dataclasses
 #
 import datetime
 import enum
+import itertools
 import logging
 from collections.abc import Iterable
+from typing import Optional
 
 from django.core.management import BaseCommand, CommandError
 from django.db.models import Q, QuerySet
@@ -68,6 +70,12 @@ class Command(BaseCommand):
             "--all",
             action="store_true",
             help="remove orphan relations for all tenants",
+        )
+
+        parser.add_argument(
+            "--tenant-limit",
+            type=int,
+            help="maximum number of tenants to process",
         )
 
     def _base_query(self) -> QuerySet:
@@ -164,19 +172,32 @@ class Command(BaseCommand):
             failed_orgs=frozenset(failed_orgs),
         )
 
+    def _limited_tenants(self, limit: Optional[int]) -> tuple[Iterable[Tenant], int]:
+        base_count = self._base_query().count()
+
+        if limit is None:
+            return self._prioritized_tenants(), base_count
+
+        return itertools.islice(self._prioritized_tenants(), limit), min(base_count, limit)
+
     def handle(self, *args, **options):
         """Execute the command."""
-        if not options["all"]:
+        limit: Optional[int] = options["tenant_limit"]
+
+        if (not options["all"]) and (limit is None):
             raise CommandError(
-                "Must pass --all in order to remove orphan relations for all tenants. "
-                "(This is for forwards compatibility purposes.)",
+                "Must pass --all or --limit to specify how many tenants to process.",
                 returncode=2,
             )
 
-        tenant_count = self._base_query().count()
+        if (limit is not None) and (limit <= 0):
+            raise CommandError("Limit must be positive.", returncode=2)
+
+        tenants, tenant_count = self._limited_tenants(limit=limit)
+
         logger.info(f"About to remove orphan relations for ~{tenant_count} tenants.")
 
-        result = self._try_migrate(tenants=self._prioritized_tenants(), estimated_count=tenant_count)
+        result = self._try_migrate(tenants=tenants, estimated_count=tenant_count)
 
         logger.info(
             f"Successfully removed orphan relations for {result.success_count} tenants, "
