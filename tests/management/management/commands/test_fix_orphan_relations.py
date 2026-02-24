@@ -16,7 +16,7 @@ from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
 
 @override_settings(
     V2_BOOTSTRAP_TENANT=True,
-    REPLICATON_TO_RELATION_ENABLED=True,
+    REPLICATION_TO_RELATION_ENABLED=True,
 )
 class TestRemoveOrphanRelations(DualWriteTestCase):
     @patch("internal.migrations.remove_orphan_relations.iterate_tuples_from_kessel")
