@@ -44,8 +44,8 @@ class Subject:
     """Domain type representing a subject (group or user) in role bindings.
 
     This follows the Active Record pattern with a manager for lookups:
-        subject = Subject.objects.group(id=uuid, tenant=tenant)
-        subject = Subject.objects.user(id=uuid, tenant=tenant)
+        subject = Subject.objects.group(id=uuid)
+        subject = Subject.objects.user(id=uuid)
     """
 
     objects = SubjectQuerySet.as_manager()

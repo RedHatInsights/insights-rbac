@@ -23,8 +23,6 @@ from management.exceptions import NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.principal.model import Principal
 
-from api.models import Tenant
-
 if TYPE_CHECKING:
     from management.subject.model import Subject
 
@@ -35,13 +33,12 @@ class SubjectQuerySet:
     Follows Django's QuerySet pattern, used via as_manager().
     """
 
-    def by_type(self, type: str, id: str, tenant: Tenant) -> "Subject":
+    def by_type(self, type: str, id: str) -> "Subject":
         """Get a subject by type (for dynamic dispatch).
 
         Args:
             type: The subject type ('group' or 'user')
             id: The subject UUID
-            tenant: The tenant context
 
         Returns:
             Subject wrapping the Group or Principal
@@ -58,17 +55,19 @@ class SubjectQuerySet:
             raise RequiredFieldError("subject_id")
 
         if type == SubjectType.GROUP:
-            return self.group(id=id, tenant=tenant)
+            return self.group(id=id)
         elif type == SubjectType.USER:
-            return self.user(id=id, tenant=tenant)
+            return self.user(id=id)
         raise UnsupportedSubjectTypeError(type)
 
-    def group(self, id: str, tenant: Tenant) -> "Subject":
+    def group(self, id: str) -> "Subject":
         """Get a group subject by UUID.
+
+        Both Group.uuid and Principal.uuid are globally unique, so tenant
+        filtering is unnecessary for lookups by UUID.
 
         Args:
             id: The group UUID
-            tenant: The tenant context (unused for groups, but kept for consistency)
 
         Returns:
             Subject wrapping the Group
@@ -86,12 +85,11 @@ class SubjectQuerySet:
         except Group.DoesNotExist:
             raise NotFoundError(SubjectType.GROUP, id)
 
-    def user(self, id: str, tenant: Tenant) -> "Subject":
+    def user(self, id: str) -> "Subject":
         """Get a user subject by UUID.
 
         Args:
             id: The user/principal UUID
-            tenant: The tenant context for the lookup
 
         Returns:
             Subject wrapping the Principal
@@ -102,7 +100,7 @@ class SubjectQuerySet:
         from management.subject.model import Subject, SubjectType
 
         try:
-            entity = Principal.objects.get(uuid=id, tenant=tenant)
+            entity = Principal.objects.get(uuid=id)
             return Subject(type=SubjectType.USER, entity=entity)
         except Principal.DoesNotExist:
             raise NotFoundError(SubjectType.USER, id)
