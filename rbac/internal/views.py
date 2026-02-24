@@ -2385,7 +2385,7 @@ def bulk_cleanup_orphan_bindings(request):
     """
     Clean up orphaned role binding relationships.
 
-    POST /_private/api/utils/bulk_cleanup_orphan_relations/
+    POST /_private/api/utils/bulk_cleanup_orphan_bindings/
 
     Query params:
         tenant_limit: maximum number of tenants to process (default 100, for testing)
