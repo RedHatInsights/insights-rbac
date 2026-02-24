@@ -29,10 +29,10 @@ from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination
 from .serializer import (
-    RoleBindingBySubjectOutputSerializer,
     RoleBindingInputSerializer,
     RoleBindingListInputSerializer,
     RoleBindingListOutputSerializer,
+    RoleBindingOutputSerializer,
 )
 from .service import RoleBindingService
 
@@ -73,7 +73,7 @@ class RoleBindingViewSet(BaseV2ViewSet):
     def get_serializer_class(self):
         """Get serializer class based on action."""
         if self.action == "by_subject":
-            return RoleBindingBySubjectOutputSerializer
+            return RoleBindingOutputSerializer
         return RoleBindingListOutputSerializer
 
     def list(self, request, *args, **kwargs):

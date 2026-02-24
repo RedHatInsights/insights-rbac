@@ -22,7 +22,7 @@ from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.serializer import (
-    RoleBindingBySubjectOutputSerializer,
+    RoleBindingByGroupSerializer,
     RoleBindingFieldSelection,
 )
 from management.role_binding.service import RoleBindingService
@@ -479,7 +479,7 @@ class RoleBindingServiceTests(IdentityRequest):
 
 
 class RoleBindingSerializerTests(IdentityRequest):
-    """Tests for RoleBindingBySubjectOutputSerializer."""
+    """Tests for RoleBindingByGroupSerializer."""
 
     def setUp(self):
         """Set up test data."""
@@ -576,7 +576,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         - resource (id only)
         - no last_modified
         """
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=self.context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
         # Check top-level fields - no last_modified by default
@@ -590,7 +590,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         Default behavior returns only id and type (no group details).
         """
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=self.context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
         subject = data["subject"]
@@ -605,7 +605,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         Default behavior returns only role id.
         """
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=self.context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
         roles = data["roles"]
@@ -625,7 +625,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         Default behavior returns only resource id.
         """
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=self.context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
 
         resource = data["resource"]
@@ -642,7 +642,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         field_selection = RoleBindingFieldSelection.parse("subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
 
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
         data = serializer.data
 
         subject = data["subject"]
@@ -664,7 +664,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         field_selection = RoleBindingFieldSelection.parse("role(name)")
         context = {**self.context, "field_selection": field_selection}
 
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
         data = serializer.data
 
         role = data["roles"][0]
@@ -680,7 +680,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         field_selection = RoleBindingFieldSelection.parse("resource(type)")
         context = {**self.context, "field_selection": field_selection}
 
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
         data = serializer.data
 
         resource = data["resource"]
@@ -694,7 +694,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         field_selection = RoleBindingFieldSelection.parse("subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
 
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
         data = serializer.data
 
         self.assertNotIn("last_modified", data)
@@ -704,7 +704,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         field_selection = RoleBindingFieldSelection.parse("last_modified,subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
 
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
         data = serializer.data
 
         self.assertIn("last_modified", data)
@@ -716,7 +716,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         )
         context = {**self.context, "field_selection": field_selection}
 
-        serializer = RoleBindingBySubjectOutputSerializer(self.annotated_group, context=context)
+        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
         data = serializer.data
 
         # Check subject
