@@ -375,115 +375,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
             other_role.delete()
             other_tenant.delete()
 
-    # Ordering tests for list endpoint
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_role_name_ascending(self, mock_permission):
-        """Test ordering by role.name ascending."""
-        url = self._get_list_url()
-        response = self.client.get(
-            f"{url}?order_by=role.name&limit=100", **self.headers
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data["data"]
-        self.assertGreater(len(data), 1)
-
-        # Extract role UUIDs and look up names from database to verify ascending order
-        role_uuids = [item["role"]["id"] for item in data]
-        roles = RoleV2.objects.filter(uuid__in=role_uuids)
-        role_name_map = {str(r.uuid): r.name for r in roles}
-        role_names = [role_name_map[str(item["role"]["id"])] for item in data]
-        self.assertEqual(role_names, sorted(role_names))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_role_name_descending(self, mock_permission):
-        """Test ordering by role.name descending."""
-        url = self._get_list_url()
-        response = self.client.get(
-            f"{url}?order_by=-role.name&limit=100", **self.headers
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data["data"]
-        self.assertGreater(len(data), 1)
-
-        # Extract role UUIDs and look up names from database to verify descending order
-        role_uuids = [item["role"]["id"] for item in data]
-        roles = RoleV2.objects.filter(uuid__in=role_uuids)
-        role_name_map = {str(r.uuid): r.name for r in roles}
-        role_names = [role_name_map[str(item["role"]["id"])] for item in data]
-        self.assertEqual(role_names, sorted(role_names, reverse=True))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_role_uuid(self, mock_permission):
-        """Test ordering by role.uuid ascending."""
-        url = self._get_list_url()
-        response = self.client.get(
-            f"{url}?order_by=role.uuid&limit=100", **self.headers
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data["data"]
-        self.assertGreater(len(data), 1)
-
-        # Verify uuid ordering
-        uuids = [str(item["role"]["id"]) for item in data]
-        self.assertEqual(uuids, sorted(uuids))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_role_modified(self, mock_permission):
-        """Test ordering by role.modified descending."""
-        url = self._get_list_url()
-        response = self.client.get(
-            f"{url}?order_by=-role.modified&limit=100", **self.headers
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data["data"]
-        self.assertGreater(len(data), 1)
-
-        # Extract role UUIDs and verify modified times are in descending order
-        role_uuids = [item["role"]["id"] for item in data]
-        roles = RoleV2.objects.filter(uuid__in=role_uuids)
-        role_modified_map = {str(r.uuid): r.modified for r in roles}
-        modified_times = [role_modified_map[str(item["role"]["id"])] for item in data]
-        self.assertEqual(modified_times, sorted(modified_times, reverse=True))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_role_created(self, mock_permission):
-        """Test ordering by role.created ascending."""
-        url = self._get_list_url()
-        response = self.client.get(
-            f"{url}?order_by=role.created&limit=100", **self.headers
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.data["data"]
-        self.assertGreater(len(data), 1)
-
-        # Extract role UUIDs and verify created times are in ascending order
-        role_uuids = [item["role"]["id"] for item in data]
-        roles = RoleV2.objects.filter(uuid__in=role_uuids)
-        role_created_map = {str(r.uuid): r.created for r in roles}
-        created_times = [role_created_map[str(item["role"]["id"])] for item in data]
-        self.assertEqual(created_times, sorted(created_times))
-
     # --- Functional: verify actual data content ---
 
     @patch(
@@ -725,22 +616,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         item = response.data["data"][0]
         self.assertIn("name", item["role"])
-
-    # --- Ordering with multiple fields ---
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_list_order_by_comma_separated(self, mock_permission):
-        """Test ordering by multiple comma-separated fields."""
-        url = self._get_list_url()
-        response = self.client.get(
-            f"{url}?order_by=role.name,-role.uuid&limit=100", **self.headers
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreater(len(response.data["data"]), 1)
 
 
 @override_settings(V2_APIS_ENABLED=True)

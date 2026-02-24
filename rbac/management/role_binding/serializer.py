@@ -73,6 +73,8 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
 
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
+    # Validated but not acted on yet; default ordering is by role creation time (UUIDv7).
+    # Custom ordering support will be added in a follow-on PR.
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
 
 

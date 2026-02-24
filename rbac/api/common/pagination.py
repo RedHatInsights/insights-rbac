@@ -140,7 +140,7 @@ class V2CursorPagination(CursorPagination):
       group.name, group.description, group.user_count, group.uuid,
       group.created, group.modified, role.name, role.uuid, role.created, role.modified
     - For list endpoint (RoleBinding model):
-      role.name, role.uuid, role.created, role.modified
+      Custom ordering not yet supported; default is by role creation time (UUIDv7).
     """
 
     page_size = 10
@@ -166,7 +166,10 @@ class V2CursorPagination(CursorPagination):
         "role.created": "role_binding_entries__binding__role__created",
     }
 
-    # For role binding list endpoint, the queryset is on RoleBinding model
+    # For role binding list endpoint, the queryset is on RoleBinding model.
+    # TODO: Custom ordering is not yet supported for the list endpoint.
+    # The default ordering is by role creation time (UUIDv7).
+    # This mapping will be redesigned when custom ordering support is added.
     ROLE_BINDING_FIELD_MAPPING = {
         # Role fields (direct access from RoleBinding)
         "role.id": "role__uuid",
