@@ -126,8 +126,12 @@ class RoleBindingListViewSetTest(IdentityRequest):
         Group.objects.filter(tenant=self.tenant).delete()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(
+            tenant=self.tenant, type=Workspace.Types.STANDARD
+        ).delete()
+        Workspace.objects.filter(
+            tenant=self.tenant, type=Workspace.Types.DEFAULT
+        ).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         super().tearDown()
 
@@ -362,7 +366,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
             self.assertEqual(len(response.data["data"]), 15)
 
             # Verify none of the returned bindings belong to the other tenant
-            returned_role_ids = [str(item["role"]["id"]) for item in response.data["data"]]
+            returned_role_ids = [
+                str(item["role"]["id"]) for item in response.data["data"]
+            ]
             self.assertNotIn(str(other_role.uuid), returned_role_ids)
         finally:
             other_binding.delete()
@@ -378,7 +384,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
     def test_list_order_by_role_name_ascending(self, mock_permission):
         """Test ordering by role.name ascending."""
         url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=role.name&limit=100", **self.headers)
+        response = self.client.get(
+            f"{url}?order_by=role.name&limit=100", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
@@ -398,7 +406,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
     def test_list_order_by_role_name_descending(self, mock_permission):
         """Test ordering by role.name descending."""
         url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=-role.name&limit=100", **self.headers)
+        response = self.client.get(
+            f"{url}?order_by=-role.name&limit=100", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
@@ -418,7 +428,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
     def test_list_order_by_role_uuid(self, mock_permission):
         """Test ordering by role.uuid ascending."""
         url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=role.uuid&limit=100", **self.headers)
+        response = self.client.get(
+            f"{url}?order_by=role.uuid&limit=100", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
@@ -435,7 +447,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
     def test_list_order_by_role_modified(self, mock_permission):
         """Test ordering by role.modified descending."""
         url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=-role.modified&limit=100", **self.headers)
+        response = self.client.get(
+            f"{url}?order_by=-role.modified&limit=100", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
@@ -455,7 +469,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
     def test_list_order_by_role_created(self, mock_permission):
         """Test ordering by role.created ascending."""
         url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=role.created&limit=100", **self.headers)
+        response = self.client.get(
+            f"{url}?order_by=role.created&limit=100", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
@@ -528,7 +544,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
 
         try:
             url = self._get_list_url()
-            response = self.client.get(f"{url}?role_id={self.roles[0].uuid}&limit=100", **self.headers)
+            response = self.client.get(
+                f"{url}?role_id={self.roles[0].uuid}&limit=100", **self.headers
+            )
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             # Original binding + new binding
@@ -542,7 +560,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_list_binding_without_group_returns_type_only_subject(self, mock_permission):
+    def test_list_binding_without_group_returns_type_only_subject(
+        self, mock_permission
+    ):
         """Test that a binding with no group entry returns subject with type only."""
         orphan_role = RoleV2.objects.create(name="orphan_role", tenant=self.tenant)
         orphan_binding = RoleBinding.objects.create(
@@ -554,7 +574,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
 
         try:
             url = self._get_list_url()
-            response = self.client.get(f"{url}?role_id={orphan_role.uuid}", **self.headers)
+            response = self.client.get(
+                f"{url}?role_id={orphan_role.uuid}", **self.headers
+            )
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(len(response.data["data"]), 1)
@@ -617,7 +639,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
             (
                 "subject_group_name",
                 "subject(group.name)",
-                lambda item: ("group" in item["subject"] and "name" in item["subject"]["group"]),
+                lambda item: (
+                    "group" in item["subject"] and "name" in item["subject"]["group"]
+                ),
             ),
             (
                 "combined",
@@ -627,7 +651,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
         ]
         for label, fields_value, check_fn in test_cases:
             with self.subTest(label=label):
-                response = self.client.get(f"{url}?fields={fields_value}&limit=1", **self.headers)
+                response = self.client.get(
+                    f"{url}?fields={fields_value}&limit=1", **self.headers
+                )
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 item = response.data["data"][0]
                 self.assertTrue(
@@ -678,7 +704,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
         """Test that NUL bytes are stripped from role_id before validation."""
         target_role = self.roles[0]
         url = self._get_list_url()
-        response = self.client.get(f"{url}?role_id=\x00{target_role.uuid}\x00", **self.headers)
+        response = self.client.get(
+            f"{url}?role_id=\x00{target_role.uuid}\x00", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
@@ -690,7 +718,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
     def test_list_strips_nul_bytes_from_fields(self, mock_permission):
         """Test that NUL bytes are stripped from fields parameter."""
         url = self._get_list_url()
-        response = self.client.get(f"{url}?fields=\x00role(name)\x00&limit=1", **self.headers)
+        response = self.client.get(
+            f"{url}?fields=\x00role(name)\x00&limit=1", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         item = response.data["data"][0]
@@ -705,11 +735,12 @@ class RoleBindingListViewSetTest(IdentityRequest):
     def test_list_order_by_comma_separated(self, mock_permission):
         """Test ordering by multiple comma-separated fields."""
         url = self._get_list_url()
-        response = self.client.get(f"{url}?order_by=role.name,-role.uuid&limit=100", **self.headers)
+        response = self.client.get(
+            f"{url}?order_by=role.name,-role.uuid&limit=100", **self.headers
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreater(len(response.data["data"]), 1)
-
 
 
 @override_settings(V2_APIS_ENABLED=True)
@@ -807,8 +838,12 @@ class RoleBindingViewSetTest(IdentityRequest):
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         # Delete workspaces in correct order (children first)
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(
+            tenant=self.tenant, type=Workspace.Types.STANDARD
+        ).delete()
+        Workspace.objects.filter(
+            tenant=self.tenant, type=Workspace.Types.DEFAULT
+        ).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         super().tearDown()
 
@@ -1157,7 +1192,9 @@ class RoleBindingViewSetTest(IdentityRequest):
         role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
         roles = RoleV2.objects.filter(uuid__in=role_uuids)
         role_name_map = {str(r.uuid): r.name for r in roles}
-        role_names = [role_name_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        role_names = [
+            role_name_map[str(item["roles"][0]["id"])] for item in data if item["roles"]
+        ]
         self.assertEqual(role_names, sorted(role_names))
 
     @patch(
@@ -1180,7 +1217,9 @@ class RoleBindingViewSetTest(IdentityRequest):
         role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
         roles = RoleV2.objects.filter(uuid__in=role_uuids)
         role_name_map = {str(r.uuid): r.name for r in roles}
-        role_names = [role_name_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        role_names = [
+            role_name_map[str(item["roles"][0]["id"])] for item in data if item["roles"]
+        ]
         self.assertEqual(role_names, sorted(role_names, reverse=True))
 
     @patch(
@@ -1203,7 +1242,9 @@ class RoleBindingViewSetTest(IdentityRequest):
         group_uuids = [item["subject"]["id"] for item in data]
         groups = Group.objects.filter(uuid__in=group_uuids)
         group_modified_map = {str(g.uuid): g.modified for g in groups}
-        modified_times = [group_modified_map[str(item["subject"]["id"])] for item in data]
+        modified_times = [
+            group_modified_map[str(item["subject"]["id"])] for item in data
+        ]
         self.assertEqual(modified_times, sorted(modified_times, reverse=True))
 
     @patch(
@@ -1400,7 +1441,11 @@ class RoleBindingViewSetTest(IdentityRequest):
         role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
         roles = RoleV2.objects.filter(uuid__in=role_uuids)
         role_modified_map = {str(r.uuid): r.modified for r in roles}
-        modified_times = [role_modified_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        modified_times = [
+            role_modified_map[str(item["roles"][0]["id"])]
+            for item in data
+            if item["roles"]
+        ]
         self.assertEqual(modified_times, sorted(modified_times, reverse=True))
 
     @patch(
@@ -1423,7 +1468,11 @@ class RoleBindingViewSetTest(IdentityRequest):
         role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
         roles = RoleV2.objects.filter(uuid__in=role_uuids)
         role_created_map = {str(r.uuid): r.created for r in roles}
-        created_times = [role_created_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+        created_times = [
+            role_created_map[str(item["roles"][0]["id"])]
+            for item in data
+            if item["roles"]
+        ]
         self.assertEqual(created_times, sorted(created_times))
 
     # Parent role bindings tests
@@ -1432,7 +1481,9 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_by_subject_parent_role_bindings_false_returns_direct_only(self, mock_permission):
+    def test_by_subject_parent_role_bindings_false_returns_direct_only(
+        self, mock_permission
+    ):
         """Test that parent_role_bindings=false returns only direct bindings."""
         url = self._get_by_subject_url()
         response = self.client.get(
@@ -1448,7 +1499,9 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_by_subject_without_parent_role_bindings_returns_direct_only(self, mock_permission):
+    def test_by_subject_without_parent_role_bindings_returns_direct_only(
+        self, mock_permission
+    ):
         """Test that omitting parent_role_bindings returns only direct bindings (default)."""
         url = self._get_by_subject_url()
         response = self.client.get(
@@ -1465,7 +1518,9 @@ class RoleBindingViewSetTest(IdentityRequest):
         return_value=True,
     )
     @patch("management.role_binding.service.settings")
-    def test_by_subject_parent_role_bindings_true_without_relations_server(self, mock_settings, mock_permission):
+    def test_by_subject_parent_role_bindings_true_without_relations_server(
+        self, mock_settings, mock_permission
+    ):
         """Test that parent_role_bindings=true without RELATION_API_SERVER falls back to direct only."""
         mock_settings.RELATION_API_SERVER = None
 
@@ -1483,8 +1538,12 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
-    def test_by_subject_parent_role_bindings_true_includes_inherited(self, mock_lookup, mock_permission):
+    @patch(
+        "management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations"
+    )
+    def test_by_subject_parent_role_bindings_true_includes_inherited(
+        self, mock_lookup, mock_permission
+    ):
         """Test that parent_role_bindings=true includes inherited bindings from Relations API."""
         # Create a binding on parent workspace
         parent_role = RoleV2.objects.create(
@@ -1533,8 +1592,12 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
-    def test_by_subject_parent_role_bindings_true_with_empty_inherited(self, mock_lookup, mock_permission):
+    @patch(
+        "management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations"
+    )
+    def test_by_subject_parent_role_bindings_true_with_empty_inherited(
+        self, mock_lookup, mock_permission
+    ):
         """Test that parent_role_bindings=true with no inherited bindings returns direct only."""
         # Mock Relations API to return empty list
         mock_lookup.return_value = []
@@ -1553,8 +1616,12 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
-    def test_by_subject_parent_role_bindings_true_with_relations_error(self, mock_lookup, mock_permission):
+    @patch(
+        "management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations"
+    )
+    def test_by_subject_parent_role_bindings_true_with_relations_error(
+        self, mock_lookup, mock_permission
+    ):
         """Test that parent_role_bindings=true gracefully handles Relations API errors."""
         # Mock Relations API to return None (error case)
         mock_lookup.return_value = None
@@ -1573,7 +1640,9 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_by_subject_parent_role_bindings_accepts_boolean_string(self, mock_permission):
+    def test_by_subject_parent_role_bindings_accepts_boolean_string(
+        self, mock_permission
+    ):
         """Test that parent_role_bindings accepts 'true' and 'false' strings."""
         url = self._get_by_subject_url()
 
@@ -1656,8 +1725,12 @@ class DefaultBindingsAPITests(TestCase):
         RoleBinding.objects.filter(tenant=self.tenant).delete()
         Group.objects.filter(tenant=self.tenant).delete()
         # Delete workspaces in order: standard, default, root (child to parent)
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
-        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(
+            tenant=self.tenant, type=Workspace.Types.STANDARD
+        ).delete()
+        Workspace.objects.filter(
+            tenant=self.tenant, type=Workspace.Types.DEFAULT
+        ).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         TenantMapping.objects.filter(tenant=self.tenant).delete()
         self.tenant.delete()
@@ -1668,10 +1741,14 @@ class DefaultBindingsAPITests(TestCase):
 
     def _count_default_bindings(self, access_type: DefaultAccessType) -> int:
         """Count existing default bindings for the given access type."""
-        binding_uuids = [self.mapping.default_role_binding_uuid_for(access_type, s) for s in Scope]
+        binding_uuids = [
+            self.mapping.default_role_binding_uuid_for(access_type, s) for s in Scope
+        ]
         return RoleBinding.objects.filter(uuid__in=binding_uuids).count()
 
-    @skip("Flaky: fails intermittently in CI when tests run in parallel due to test isolation issues")
+    @skip(
+        "Flaky: fails intermittently in CI when tests run in parallel due to test isolation issues"
+    )
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
@@ -1704,8 +1781,12 @@ class DefaultBindingsAPITests(TestCase):
         public_tenant = Tenant.objects.get(tenant_name="public")
 
         # Get platform default groups (used for default bindings)
-        platform_default_group = Group.objects.get(platform_default=True, tenant=public_tenant)
-        admin_default_group = Group.objects.get(admin_default=True, tenant=public_tenant)
+        platform_default_group = Group.objects.get(
+            platform_default=True, tenant=public_tenant
+        )
+        admin_default_group = Group.objects.get(
+            admin_default=True, tenant=public_tenant
+        )
 
         # Find these groups in the response
         platform_group_data = None
@@ -1731,29 +1812,43 @@ class DefaultBindingsAPITests(TestCase):
 
         # Verify platform default group returns children
         role_ids = [str(role["id"]) for role in platform_group_data["roles"]]
-        platform_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, Scope.DEFAULT, policy_service)
+        platform_role_uuid = platform_v2_role_uuid_for(
+            DefaultAccessType.USER, Scope.DEFAULT, policy_service
+        )
         platform_role = PlatformRoleV2.objects.get(uuid=platform_role_uuid)
 
         # Platform role should NOT be in response
-        self.assertNotIn(str(platform_role.uuid), role_ids, "Platform role should not be returned")
+        self.assertNotIn(
+            str(platform_role.uuid), role_ids, "Platform role should not be returned"
+        )
 
         # Children should be in response
         child_uuids = [str(child.uuid) for child in platform_role.children.all()]
         for child_uuid in child_uuids:
-            self.assertIn(child_uuid, role_ids, f"Child role {child_uuid} should be returned")
+            self.assertIn(
+                child_uuid, role_ids, f"Child role {child_uuid} should be returned"
+            )
 
         # Verify admin default group returns children
         role_ids = [str(role["id"]) for role in admin_group_data["roles"]]
-        admin_role_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, Scope.DEFAULT, policy_service)
+        admin_role_uuid = platform_v2_role_uuid_for(
+            DefaultAccessType.ADMIN, Scope.DEFAULT, policy_service
+        )
         admin_role = PlatformRoleV2.objects.get(uuid=admin_role_uuid)
 
         # Platform role should NOT be in response
-        self.assertNotIn(str(admin_role.uuid), role_ids, "Admin platform role should not be returned")
+        self.assertNotIn(
+            str(admin_role.uuid), role_ids, "Admin platform role should not be returned"
+        )
 
         # Children should be in response
         child_uuids = [str(child.uuid) for child in admin_role.children.all()]
         for child_uuid in child_uuids:
-            self.assertIn(child_uuid, role_ids, f"Admin child role {child_uuid} should be returned")
+            self.assertIn(
+                child_uuid,
+                role_ids,
+                f"Admin child role {child_uuid} should be returned",
+            )
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
