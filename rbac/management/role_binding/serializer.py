@@ -70,13 +70,9 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     GET /role-bindings/
     """
 
-    role_id = serializers.UUIDField(required=False, allow_null=True, help_text="Filter by role ID")
-    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
-    order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
-
-    def validate_role_id(self, value):
-        """Return None for empty values."""
-        return value or None
+    role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
+    fields = serializers.CharField(required=False, help_text="Control which fields are included")
+    order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
 
 
 class RoleBindingBySubjectInputSerializer(RoleBindingInputSerializerMixin, serializers.Serializer):

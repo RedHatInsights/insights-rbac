@@ -18,12 +18,14 @@
 
 import logging
 
+from django.db.models import F
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
+from management.role.v2_model import RoleBinding
 from rest_framework.decorators import action
 
 from api.common.pagination import V2CursorPagination
@@ -63,11 +65,24 @@ class RoleBindingViewSet(BaseV2ViewSet):
     pagination_class = V2CursorPagination
 
     def get_queryset(self):
-        """Return empty queryset - this ViewSet only exposes custom actions.
+        """Build base queryset for listing role bindings.
 
-        Returns Group.objects.none() to satisfy DRF expectations while indicating no default queryset is used.
+        Filters by tenant and annotates role_created for cursor pagination ordering.
+
+        For by_subject, returns an empty queryset since that action
+        builds its own queryset via the service layer.
         """
-        return Group.objects.none()
+        if self.action != "list":
+            return Group.objects.none()
+
+        # Explicit tenant filter because BaseV2ViewSet.get_queryset() adds
+        # .order_by("name") which doesn't exist on RoleBinding.
+        return (
+            RoleBinding.objects.filter(tenant=self.request.tenant)
+            .select_related("role")
+            .prefetch_related("group_entries__group")
+            .annotate(role_created=F("role__created"))
+        )
 
     def get_serializer_class(self):
         """Get serializer class based on action."""
@@ -88,8 +103,12 @@ class RoleBindingViewSet(BaseV2ViewSet):
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        service = RoleBindingService(tenant=request.tenant)
-        queryset = service.get_role_bindings(validated_params)
+        queryset = self.get_queryset()
+
+        # Apply role_id filter using validated UUID
+        role_id = validated_params.get("role_id")
+        if role_id:
+            queryset = queryset.filter(role__uuid=role_id)
 
         # Build context for output serializer
         context = {

@@ -503,6 +503,279 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Invalid ordering field", str(response.data))
 
+    # --- Functional: verify actual data content ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_returns_correct_role_subject_resource_data(self, mock_permission):
+        """Test that response contains correct actual values for a known binding."""
+        target_role = self.roles[0]
+        target_group = self.groups[0]
+        target_binding = self.bindings[0]
+
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id={target_role.uuid}", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        item = response.data["data"][0]
+        self.assertEqual(str(item["role"]["id"]), str(target_role.uuid))
+        self.assertEqual(str(item["subject"]["id"]), str(target_group.uuid))
+        self.assertEqual(item["subject"]["type"], "group")
+        self.assertEqual(item["resource"]["id"], str(self.workspace.id))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_default_excludes_optional_fields(self, mock_permission):
+        """Test that default response excludes role.name and resource.type."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?limit=1", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        item = response.data["data"][0]
+
+        self.assertNotIn("name", item["role"])
+        self.assertNotIn("type", item["resource"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_multiple_bindings_for_same_role(self, mock_permission):
+        """Test that multiple bindings for the same role are all returned."""
+        # Create a second binding for the same role
+        second_group = Group.objects.create(
+            name="second_group",
+            tenant=self.tenant,
+        )
+        second_binding = RoleBinding.objects.create(
+            role=self.roles[0],
+            resource_type="workspace",
+            resource_id="other-resource",
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=second_group, binding=second_binding)
+
+        try:
+            url = self._get_list_url()
+            response = self.client.get(f"{url}?role_id={self.roles[0].uuid}&limit=100", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            # Original binding + new binding
+            self.assertEqual(len(response.data["data"]), 2)
+        finally:
+            RoleBindingGroup.objects.filter(binding=second_binding).delete()
+            second_binding.delete()
+            second_group.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_binding_without_group_returns_type_only_subject(self, mock_permission):
+        """Test that a binding with no group entry returns subject with type only."""
+        orphan_role = RoleV2.objects.create(name="orphan_role", tenant=self.tenant)
+        orphan_binding = RoleBinding.objects.create(
+            role=orphan_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+
+        try:
+            url = self._get_list_url()
+            response = self.client.get(f"{url}?role_id={orphan_role.uuid}", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data["data"]), 1)
+            self.assertEqual(response.data["data"][0]["subject"], {"type": "group"})
+        finally:
+            orphan_binding.delete()
+            orphan_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_pagination_returns_all_bindings(self, mock_permission):
+        """Test that paginating through all pages returns all bindings."""
+        url = self._get_list_url()
+        all_role_ids = set()
+        next_url = f"{url}?limit=4"
+
+        while next_url:
+            response = self.client.get(next_url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            for item in response.data["data"]:
+                all_role_ids.add(str(item["role"]["id"]))
+
+            next_link = response.data["links"]["next"]
+            if next_link:
+                # Extract path + query from full URL
+                from urllib.parse import urlparse
+
+                parsed = urlparse(next_link)
+                next_url = f"{parsed.path}?{parsed.query}"
+            else:
+                next_url = None
+
+        # Should have collected all 15 bindings
+        expected_ids = {str(r.uuid) for r in self.roles}
+        self.assertEqual(all_role_ids, expected_ids)
+
+    # --- Field selection (end-to-end) ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_field_selection(self, mock_permission):
+        """Test that field selection controls which fields are returned."""
+        url = self._get_list_url()
+        test_cases = [
+            (
+                "role_name",
+                "role(name)",
+                lambda item: "name" in item["role"],
+            ),
+            (
+                "resource_type",
+                "resource(type)",
+                lambda item: "type" in item["resource"],
+            ),
+            (
+                "subject_group_name",
+                "subject(group.name)",
+                lambda item: ("group" in item["subject"] and "name" in item["subject"]["group"]),
+            ),
+            (
+                "combined",
+                "role(name),resource(type)",
+                lambda item: ("name" in item["role"] and "type" in item["resource"]),
+            ),
+        ]
+        for label, fields_value, check_fn in test_cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?fields={fields_value}&limit=1", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                item = response.data["data"][0]
+                self.assertTrue(
+                    check_fn(item),
+                    f"Field selection check failed for {label}: {item}",
+                )
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_invalid_field_selection_returns_400(self, mock_permission):
+        """Test that invalid field selection returns 400 with Problem RFC format."""
+        url = self._get_list_url()
+        invalid_fields = [
+            ("unknown_object", "bogus(nope)"),
+            ("invalid_role_field", "role(nonexistent)"),
+        ]
+        for label, fields_value in invalid_fields:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?fields={fields_value}", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self._assert_problem_response(response)
+
+    # --- Problem RFC format on errors ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_error_responses_use_problem_format(self, mock_permission):
+        """Test that all error responses use Problem RFC format."""
+        url = self._get_list_url()
+        error_cases = [
+            ("invalid_role_id", f"{url}?role_id=not-a-uuid"),
+            ("invalid_order_by", f"{url}?order_by=foo.bar"),
+            ("group_order_by", f"{url}?order_by=group.name"),
+            ("direct_order_by", f"{url}?order_by=name"),
+            ("invalid_fields", f"{url}?fields=bogus(nope)"),
+        ]
+        for label, request_url in error_cases:
+            with self.subTest(label=label):
+                response = self.client.get(request_url, **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self._assert_problem_response(response)
+
+    def _assert_problem_response(self, response):
+        """Assert that response follows Problem RFC format."""
+        self.assertIn("status", response.data)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/problem+json",
+        )
+
+    # --- NUL byte sanitization ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_strips_nul_bytes_from_role_id(self, mock_permission):
+        """Test that NUL bytes are stripped from role_id before validation."""
+        target_role = self.roles[0]
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id=\x00{target_role.uuid}\x00", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_strips_nul_bytes_from_fields(self, mock_permission):
+        """Test that NUL bytes are stripped from fields parameter."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?fields=\x00role(name)\x00&limit=1", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        item = response.data["data"][0]
+        self.assertIn("name", item["role"])
+
+    # --- Ordering with multiple fields ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_comma_separated(self, mock_permission):
+        """Test ordering by multiple comma-separated fields."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?order_by=role.name,-role.uuid&limit=100", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreater(len(response.data["data"]), 1)
+
+    # --- Empty role_id ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_empty_role_id_returns_400(self, mock_permission):
+        """Test that empty role_id returns 400."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id=", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self._assert_problem_response(response)
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class RoleBindingViewSetTest(IdentityRequest):
