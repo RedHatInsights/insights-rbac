@@ -359,7 +359,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 RoleBindingByGroupSerializer = RoleBindingOutputSerializer
 
 
-class RoleBindingSerializerMixin:
+class RolebindingOutputSerializerMixin:
     """Shared serializer methods for role binding output serializers.
 
     Provides common functionality for field selection parsing and data building.
@@ -457,7 +457,7 @@ class RoleBindingSerializerMixin:
         return role_data
 
 
-class RoleBindingListOutputSerializer(RoleBindingSerializerMixin, serializers.Serializer):
+class RoleBindingListOutputSerializer(RolebindingOutputSerializerMixin, serializers.Serializer):
     """Output serializer for the role binding list endpoint.
 
     Handles RoleBinding objects and returns {role, subject, resource}.
