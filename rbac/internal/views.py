@@ -86,6 +86,7 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    bulk_cleanup_orphan_bindings_in_worker,
     clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
@@ -2377,6 +2378,31 @@ def cleanup_tenant_orphan_bindings(request, org_id):
         },
         status=202,
     )
+
+
+@require_http_methods(["POST"])
+def bulk_cleanup_orphan_bindings(request):
+    """
+    Clean up orphaned role binding relationships.
+
+    POST /_private/api/utils/bulk_cleanup_orphan_relations/
+
+    Query params:
+        tenant_limit: maximum number of tenants to process (default 100, for testing)
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    tenant_limit = int(request.GET.get("tenant_limit", 100))
+
+    try:
+        bulk_cleanup_orphan_bindings_in_worker.delay(tenant_limit=tenant_limit)
+        return JsonResponse(
+            {"message": "Cleanup enqueued in background worked.", "tenant_limit": tenant_limit}, status=202
+        )
+    except Exception as e:
+        logger.exception(f"Error fixing orphan relations, {tenant_limit=}", exc_info=True)
+        return JsonResponse({"detail": f"Error fixing orphan relations: {str(e)}"}, status=500)
 
 
 @require_http_methods(["POST"])
