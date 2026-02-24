@@ -185,7 +185,7 @@ class Command(BaseCommand):
 
         if (not options["all"]) and (limit is None):
             raise CommandError(
-                "Must pass --all or --limit to specify how many tenants to process.",
+                "Must pass --all or --tenant-limit to specify how many tenants to process.",
                 returncode=2,
             )
 
