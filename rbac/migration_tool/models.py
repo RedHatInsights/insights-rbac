@@ -184,11 +184,14 @@ class V2rolebinding:
         for perm in self.role.permissions:
             tuples.append(role_permission_tuple(role_id=self.role.id, permission=perm))
 
+        # We cannot duplicate relationships within a single batch, so we ensure that each subject relationship is
+        # added only once.
+
         for group in set(self.groups):
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(role_binding_group_subject_tuple(self.id, group))
 
-        for user in self.users.values():
+        for user in set(self.users.values()):
             tuples.append(role_binding_user_subject_tuple(self.id, user))
 
         tuples.append(
