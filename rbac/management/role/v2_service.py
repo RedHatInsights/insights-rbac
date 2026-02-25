@@ -169,16 +169,42 @@ class RoleV2Service:
         permissions = self._validate_and_resolve_permissions(description, permission_data)
 
         try:
-            # Look up the role by UUID and tenant
-            role = CustomRoleV2.objects.filter(uuid=role_uuid, tenant=tenant).first()
+            # Lock the role for update to prevent concurrent modifications
+            # Prefetch permissions to ensure they're loaded for the old state snapshot
+            role = (
+                CustomRoleV2.objects.filter(uuid=role_uuid, tenant=tenant)
+                .select_for_update()
+                .prefetch_related("permissions")
+                .first()
+            )
             if not role:
                 raise RoleNotFoundError(role_uuid)
+
+            # Capture current state before update for outbox replication
+            # The permissions are already loaded from prefetch_related above
+            old_tuples = role.as_tuples()
 
             # Update role fields
             role.name = name
             role.description = description
             role.save()
             role.permissions.set(permissions)
+
+            # Capture new state after update for outbox replication
+            # Django's .set() clears the cached queryset, so .as_tuples() will
+            # query fresh permissions from the database
+            new_tuples = role.as_tuples()
+
+            # Replicate the update to Kessel Relations via outbox
+            self._replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+                    info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
+                    partition_key=PartitionKey.byEnvironment(),
+                    remove=old_tuples,
+                    add=new_tuples,
+                )
+            )
 
             logger.info(
                 "Updated custom role '%s' (uuid=%s) with %d permissions for tenant %s",
@@ -187,10 +213,6 @@ class RoleV2Service:
                 len(permissions),
                 tenant.org_id,
             )
-
-            # TODO: Add outbox replication for role updates
-            # Similar to workspace updates, this should write to the outbox table
-            # for Debezium to pick up and replicate to Kessel Relations
 
             return role
 

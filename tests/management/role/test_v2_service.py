@@ -266,16 +266,31 @@ class RoleV2ServiceTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        with self.assertRaises(RoleAlreadyExistsError) as context:
-            self.service.update(
-                role_uuid=str(role2.uuid),
-                name="Role One",
-                description="Second role",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
+        # Then: Permission tuples are replicated
+        role_uuid = str(role.uuid)
 
-        self.assertIn("Role One", str(context.exception))
+        # Should have 2 permission tuples (one per permission)
+        self.assertEqual(len(tuples), 2)
+
+        # Verify the read permission tuple exists
+        read_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_read"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(read_tuples), 1, "Expected 1 read permission tuple")
+
+        # Verify the write permission tuple exists
+        write_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_write"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
 
     def test_update_role_with_empty_description_raises_error(self):
         """Test that updating a role with empty description raises RequiredFieldError."""
@@ -324,13 +339,56 @@ class RoleV2ServiceTests(IdentityRequest):
             )
 
         self.assertEqual(context.exception.field_name, "permissions")
-        # Then: Permission tuples are replicated
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_update_role_replicates_permission_tuples(self):
+        """Test that updating a role replicates old and new permission tuples to SpiceDB."""
+        # Set up in-memory replicator
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        service = RoleV2Service(tenant=self.tenant, replicator=replicator)
+
+        # Create initial role with read and write permissions
+        initial_permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            {"application": "inventory", "resource_type": "hosts", "operation": "write"},
+        ]
+
+        role = service.create(
+            name="Update Replication Test Role",
+            description="Initial description",
+            permission_data=initial_permission_data,
+            tenant=self.tenant,
+        )
+
+        # Clear the tuples from the create operation
+        tuples.clear()
         role_uuid = str(role.uuid)
 
-        # Should have 2 permission tuples (one per permission)
+        # Update the role to have different permissions (read and cost:reports:read)
+        updated_permission_data = [
+            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+            {"application": "cost", "resource_type": "reports", "operation": "read"},
+        ]
+
+        updated_role = service.update(
+            role_uuid=role_uuid,
+            name="Updated Replication Test Role",
+            description="Updated description",
+            permission_data=updated_permission_data,
+            tenant=self.tenant,
+        )
+
+        # Then: Verify the update produced the correct replication events
+        # The replicator should have:
+        # - Removed old tuples (read, write)
+        # - Added new tuples (read, cost:reports:read)
+
+        # The InMemoryTuples tracks the final state after all operations
+        # After update, we should have exactly 2 tuples (the new permissions)
         self.assertEqual(len(tuples), 2)
 
-        # Verify the read permission tuple exists
+        # Verify the read permission tuple still exists (it was in both old and new)
         read_tuples = tuples.find_tuples(
             all_of(
                 resource("rbac", "role", role_uuid),
@@ -340,7 +398,7 @@ class RoleV2ServiceTests(IdentityRequest):
         )
         self.assertEqual(len(read_tuples), 1, "Expected 1 read permission tuple")
 
-        # Verify the write permission tuple exists
+        # Verify the write permission tuple was removed (not in new permissions)
         write_tuples = tuples.find_tuples(
             all_of(
                 resource("rbac", "role", role_uuid),
@@ -348,7 +406,17 @@ class RoleV2ServiceTests(IdentityRequest):
                 subject("rbac", "principal", "*"),
             )
         )
-        self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
+        self.assertEqual(len(write_tuples), 0, "Write permission should be removed")
+
+        # Verify the cost:reports:read permission tuple was added
+        cost_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("cost_reports_read"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(cost_tuples), 1, "Expected 1 cost:reports:read permission tuple")
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

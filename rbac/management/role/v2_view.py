@@ -20,6 +20,7 @@ from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
+    RoleFieldSelection,
     RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
@@ -28,7 +29,7 @@ from management.role.v2_serializer import (
 from management.role.v2_service import RoleV2Service
 from management.utils import FieldSelectionValidationError
 from management.v2_mixins import AtomicOperationsMixin
-from rest_framework import serializers, status
+from rest_framework import status
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
@@ -87,21 +88,23 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         Returns:
             Set of validated field names
 
-        Raises:
-            serializers.ValidationError: If fields parameter is invalid
+        Note:
+            Invalid fields are silently ignored and filtered out.
+            If all fields are invalid, returns default fields.
         """
         if not fields_str:
             return self.DEFAULT_CREATE_UPDATE_FIELDS
 
         try:
             field_selection = RoleFieldSelection.parse(fields_str)
-        except FieldSelectionValidationError as e:
-            raise serializers.ValidationError({"fields": e.message})
+        except FieldSelectionValidationError:
+            # Invalid fields - return defaults and let the request proceed
+            return self.DEFAULT_CREATE_UPDATE_FIELDS
 
         if not field_selection:
             return self.DEFAULT_CREATE_UPDATE_FIELDS
 
-        # Resolve to actual response serializer fields
+        # Resolve to actual response serializer fields (filters out invalid fields)
         resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
         return resolved or self.DEFAULT_CREATE_UPDATE_FIELDS
 

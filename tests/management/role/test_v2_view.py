@@ -1232,3 +1232,25 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Default should include permissions per spec
         self.assertIn("permissions", response.data)
         self.assertEqual(len(response.data["permissions"]), 1)
+
+    def test_update_platform_role_returns_404(self):
+        """Test that attempting to update a platform role returns 404."""
+        # Create a platform role
+        platform_role = PlatformRoleV2.objects.create(
+            name="Test Platform Role",
+            description="A platform role",
+            tenant=self.tenant,
+        )
+        platform_role.permissions.add(self.permission1)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(platform_role.uuid)})
+        data = {
+            "name": "Attempt to Update Platform Role",
+            "description": "This should fail",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        # Platform roles are filtered out in get_queryset() for update action
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
