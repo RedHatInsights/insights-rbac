@@ -1074,3 +1074,86 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             )
 
         self.assertIn(str(platform.uuid), ctx.exception.missing_role_ids)
+
+    def test_batch_create_fails_fast_when_one_role_missing(self):
+        """Batch with valid role1 and non-existent role2 fails before any DB writes."""
+        fake_role_id = str(uuid.uuid4())
+        with self.assertRaises(RolesNotFoundError) as ctx:
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "group", self.group.uuid),
+                    CreateBindingRequest(
+                        role_id=fake_role_id,
+                        resource_type="workspace",
+                        resource_id=str(self.workspace.id),
+                        subject_type="group",
+                        subject_id=str(self.group.uuid),
+                    ),
+                ]
+            )
+
+        self.assertIn(fake_role_id, ctx.exception.missing_role_ids)
+        self.assertFalse(
+            RoleBinding.objects.filter(
+                role=self.role1, resource_id=str(self.workspace.id), resource_type="workspace"
+            ).exists()
+        )
+
+    def test_batch_create_fails_fast_when_one_subject_missing(self):
+        """Batch with valid group and non-existent group fails before any DB writes."""
+        fake_group_id = str(uuid.uuid4())
+        with self.assertRaises(SubjectsNotFoundError) as ctx:
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "group", self.group.uuid),
+                    self._make_request(self.role2, "group", fake_group_id),
+                ]
+            )
+
+        self.assertIn(fake_group_id, ctx.exception.missing_uuids)
+        self.assertFalse(
+            RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace").exists()
+        )
+
+    def test_batch_create_shared_binding_two_groups(self):
+        """Same role+resource with two different groups shares one RoleBinding."""
+        group2 = Group.objects.create(name="group2", tenant=self.tenant)
+
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role1, "group", group2.uuid),
+            ]
+        )
+
+        bindings = RoleBinding.objects.filter(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(bindings.count(), 1)
+
+        binding = bindings.first()
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=group2).exists())
+
+    def test_batch_create_cross_resource_isolation(self):
+        """Bindings on different resources are independent."""
+        ws2 = Workspace.objects.create(
+            name="Other Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(self.workspace.id)),
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(ws2.id)),
+            ]
+        )
+
+        ws1_bindings = RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace")
+        ws2_bindings = RoleBinding.objects.filter(resource_id=str(ws2.id), resource_type="workspace")
+
+        self.assertEqual(ws1_bindings.count(), 1)
+        self.assertEqual(ws2_bindings.count(), 1)
+        self.assertNotEqual(ws1_bindings.first().id, ws2_bindings.first().id)
