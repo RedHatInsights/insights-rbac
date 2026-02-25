@@ -1268,6 +1268,7 @@ objects:
       - name: fix-orphan-relations
         podSpec:
           image: quay.io/cloudservices/rbac:latest
+          imagePullPolicy: Always
           command:
             - /opt/rbac/rbac/manage.py
             - fix_orphan_relations
