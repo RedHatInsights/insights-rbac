@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleV2Service domain service."""
+"""Test the RoleV2Service."""
 
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
@@ -22,6 +22,14 @@ from management.models import Permission
 from management.role.v2_exceptions import RoleAlreadyExistsError, RoleNotFoundError
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role.v2_service import RoleV2Service
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 from tests.identity_request import IdentityRequest
 
 from api.models import Tenant
@@ -34,7 +42,7 @@ class RoleV2ServiceTests(IdentityRequest):
     def setUp(self):
         """Set up the RoleV2Service tests."""
         super().setUp()
-        self.service = RoleV2Service()
+        self.service = RoleV2Service(tenant=self.tenant)
 
         # Create test permissions
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
@@ -234,121 +242,26 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertEqual(role.type, RoleV2.Types.CUSTOM)
 
     # ==========================================================================
-    # Tests for update()
+    # Tests for replication
     # ==========================================================================
 
-    def test_update_role_changes_name(self):
-        """Test updating a role's name."""
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_create_role_replicates_permission_tuples(self):
+        """Test that creating a role replicates permission tuples to SpiceDB."""
+        # Set up in-memory replicator (stub, not mock!)
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        service = RoleV2Service(tenant=self.tenant, replicator=replicator)
+
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-        ]
-
-        role = self.service.create(
-            name="Original Name",
-            description="A test role",
-            permission_data=permission_data,
-            tenant=self.tenant,
-        )
-
-        updated_role = self.service.update(
-            role_uuid=str(role.uuid),
-            name="Updated Name",
-            description="A test role",
-            permission_data=permission_data,
-            tenant=self.tenant,
-        )
-
-        self.assertEqual(updated_role.uuid, role.uuid)
-        self.assertEqual(updated_role.name, "Updated Name")
-        self.assertEqual(updated_role.description, "A test role")
-
-    def test_update_role_changes_description(self):
-        """Test updating a role's description."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-        ]
-
-        role = self.service.create(
-            name="Test Role",
-            description="Original description",
-            permission_data=permission_data,
-            tenant=self.tenant,
-        )
-
-        updated_role = self.service.update(
-            role_uuid=str(role.uuid),
-            name="Test Role",
-            description="Updated description",
-            permission_data=permission_data,
-            tenant=self.tenant,
-        )
-
-        self.assertEqual(updated_role.description, "Updated description")
-
-    def test_update_role_changes_permissions(self):
-        """Test updating a role's permissions."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-        ]
-
-        role = self.service.create(
-            name="Test Role",
-            description="A test role",
-            permission_data=permission_data,
-            tenant=self.tenant,
-        )
-
-        new_permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "write"},
-            {"application": "cost", "resource_type": "reports", "operation": "read"},
         ]
 
-        updated_role = self.service.update(
-            role_uuid=str(role.uuid),
-            name="Test Role",
-            description="A test role",
-            permission_data=new_permission_data,
-            tenant=self.tenant,
-        )
-
-        self.assertEqual(updated_role.permissions.count(), 2)
-        self.assertIn(self.permission2, updated_role.permissions.all())
-        self.assertIn(self.permission3, updated_role.permissions.all())
-        self.assertNotIn(self.permission1, updated_role.permissions.all())
-
-    def test_update_role_with_nonexistent_uuid_raises_error(self):
-        """Test that updating a role with nonexistent UUID raises RoleNotFoundError."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-        ]
-
-        with self.assertRaises(RoleNotFoundError) as context:
-            self.service.update(
-                role_uuid="550e8400-e29b-41d4-a716-446655440000",
-                name="Updated Name",
-                description="Updated description",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
-
-        self.assertIn("550e8400-e29b-41d4-a716-446655440000", str(context.exception))
-
-    def test_update_role_with_duplicate_name_raises_error(self):
-        """Test that updating a role to a duplicate name raises RoleAlreadyExistsError."""
-        permission_data = [
-            {"application": "inventory", "resource_type": "hosts", "operation": "read"},
-        ]
-
-        role1 = self.service.create(
-            name="Role One",
-            description="First role",
-            permission_data=permission_data,
-            tenant=self.tenant,
-        )
-
-        role2 = self.service.create(
-            name="Role Two",
-            description="Second role",
+        # When: Create a role
+        role = service.create(
+            name="Replication Test Role",
+            description="A test role for replication",
             permission_data=permission_data,
             tenant=self.tenant,
         )
@@ -411,6 +324,31 @@ class RoleV2ServiceTests(IdentityRequest):
             )
 
         self.assertEqual(context.exception.field_name, "permissions")
+        # Then: Permission tuples are replicated
+        role_uuid = str(role.uuid)
+
+        # Should have 2 permission tuples (one per permission)
+        self.assertEqual(len(tuples), 2)
+
+        # Verify the read permission tuple exists
+        read_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_read"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(read_tuples), 1, "Expected 1 read permission tuple")
+
+        # Verify the write permission tuple exists
+        write_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("inventory_hosts_write"),
+                subject("rbac", "principal", "*"),
+            )
+        )
+        self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

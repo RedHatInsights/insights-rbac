@@ -446,10 +446,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_access_denied(self, mock_flag, mock_channel):
         """Test workspace access is denied when Inventory API returns not allowed.
 
-        Returns 403 with an intentionally ambiguous message so the user cannot
-        determine whether the resource exists or not.
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -474,9 +474,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 403 with ambiguous message
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
+            # Should return 404 (not 403) to prevent existence leakage
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -864,10 +863,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_update_access_denied(self, mock_flag, mock_channel):
         """Test workspace update is denied when Inventory API returns not allowed.
 
-        Returns 403 with an intentionally ambiguous message so the user cannot
-        determine whether the resource exists or not.
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -897,9 +896,9 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.put(url, updated_data, format="json", **headers)
 
-            # Should return 403 with ambiguous message
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
+            # Should return 404 (not 403) to prevent existence leakage
+            # User cannot tell if workspace doesn't exist or they lack access
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1009,10 +1008,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_patch_access_denied(self, mock_flag, mock_channel):
         """Test workspace partial update (PATCH) is denied when user lacks permissions.
 
-        Returns 403 with an intentionally ambiguous message so the user cannot
-        determine whether the resource exists or not.
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -1039,9 +1038,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.patch(url, updated_data, format="json", **headers)
 
-            # Should return 403 with ambiguous message
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
+            # Should return 404 (not 403) to prevent existence leakage
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1106,10 +1104,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_delete_access_denied(self, mock_flag, mock_channel):
         """Test workspace deletion is denied when user lacks permissions.
 
-        Returns 403 with ambiguous message - permission check happens before
-        existence check to prevent timing-based existence leakage.
+        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
+        between a non-existing workspace and one they don't have access to.
         """
-        # Mock Inventory API - Permission class uses CheckForUpdate for detail actions
+        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -1134,9 +1132,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.delete(url, format="json", **headers)
 
-            # Should return 403 - permission check happens before existence check
-            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-            self.assertIn("Permission denied on resource (or it might not exist)", str(response.data))
+            # Should return 404 (not 403) to prevent existence leakage
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()

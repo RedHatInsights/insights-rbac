@@ -26,7 +26,8 @@ from feature_flags import FEATURE_FLAGS
 from management.models import BindingMapping, Workspace
 from management.permission.model import Permission
 from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, RoleBinding, RoleBindingGroup, RoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role_binding.model import RoleBinding, RoleBindingGroup
 from migration_tool.ingest import add_element
 from migration_tool.models import (
     V2boundresource,

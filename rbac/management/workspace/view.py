@@ -26,7 +26,7 @@ from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import validate_and_get_key
-from management.workspace.filters import WorkspaceAccessFilterBackend
+from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
@@ -54,14 +54,15 @@ class WorkspacePagination(V2ResultsSetPagination):
     max_limit = 3000
 
 
-class WorkspaceViewSet(BaseV2ViewSet):
+class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
     """Workspace View.
 
     A viewset that provides default `create()`, `destroy` and `retrieve()`.
 
     Access control is handled by:
-    - WorkspaceAccessPermission: Access checks (403 for denied access on detail/create/move)
-    - WorkspaceAccessFilterBackend: Queryset filtering for list operations via Kessel Inventory API
+    - WorkspaceAccessPermission: Coarse-grained endpoint access
+    - WorkspaceAccessFilterBackend: Queryset filtering via Kessel Inventory API
+    - WorkspaceObjectAccessMixin: 404 for inaccessible workspaces (no existence leak)
     """
 
     permission_classes = (WorkspaceAccessPermission,)
