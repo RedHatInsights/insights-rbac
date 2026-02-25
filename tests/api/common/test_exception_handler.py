@@ -21,7 +21,6 @@ from django.test import TestCase
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
-from django.db import IntegrityError
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.role.v2_exceptions import RoleNotFoundError
 from rest_framework import status

@@ -20,6 +20,7 @@ from typing import Optional
 
 from management.models import Group
 from management.role.v2_model import RoleV2
+from management.role.v2_serializer import RoleIdSerializer
 from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
@@ -449,12 +450,6 @@ class RoleBindingFieldMaskingMixin:
                     if value is not None:
                         details[attr_name] = value
         return details
-
-
-class RoleIdSerializer(serializers.Serializer):
-    """Serializer for a role ID reference."""
-
-    id = serializers.UUIDField(required=True, help_text="Role identifier")
 
 
 class UpdateRoleBindingRequestSerializer(serializers.Serializer):
