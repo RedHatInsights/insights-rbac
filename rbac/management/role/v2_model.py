@@ -24,6 +24,7 @@ from management.exceptions import RequiredFieldError
 from management.models import Permission, Role
 from management.rbac_fields import AutoDateTimeField
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+from management.role.queryset import RoleV2QuerySet
 from migration_tool.models import V2role
 from rest_framework import serializers
 from uuid_utils.compat import uuid7
@@ -33,6 +34,8 @@ from api.models import TenantAwareModel
 
 class RoleV2(TenantAwareModel):
     """V2 Role model."""
+
+    objects = RoleV2QuerySet.as_manager()
 
     class Types(models.TextChoices):
         CUSTOM = "custom"

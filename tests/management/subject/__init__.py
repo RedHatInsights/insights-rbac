@@ -14,23 +14,4 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Domain types and services for subjects in the RBAC system.
-
-A "subject" is an entity that can be granted permissions via role bindings.
-Currently supported subjects are:
-- Groups (collections of users)
-- Users (individual principals)
-"""
-
-from management.subject.exceptions import SubjectError, UnsupportedSubjectTypeError
-from management.subject.model import Subject, SubjectService, SubjectType
-from management.subject.queryset import SubjectQuerySet
-
-__all__ = [
-    "Subject",
-    "SubjectQuerySet",
-    "SubjectError",
-    "SubjectService",
-    "SubjectType",
-    "UnsupportedSubjectTypeError",
-]
+"""Tests for the subject module."""

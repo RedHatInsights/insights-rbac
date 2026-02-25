@@ -26,6 +26,7 @@ from enum import StrEnum
 
 from management.group.model import Group
 from management.principal.model import Principal
+from management.subject.queryset import SubjectQuerySet
 from management.tenant_mapping.model import Tenant
 
 
@@ -67,3 +68,49 @@ class SubjectService:
         if not user_uuids:
             return {}
         return {str(p.uuid): p for p in Principal.objects.filter(uuid__in=user_uuids)}
+
+
+class Subject:
+    """Domain type representing a subject (group or user) in role bindings.
+
+    This follows the Active Record pattern with a manager for lookups:
+        subject = Subject.objects.group(id=uuid)
+        subject = Subject.objects.user(id=uuid)
+    """
+
+    objects = SubjectQuerySet.as_manager()
+
+    def __init__(self, type: SubjectType, entity: Group | Principal):
+        """Initialize a Subject.
+
+        Args:
+            type: The subject type (GROUP or USER)
+            entity: The underlying Group or Principal model instance
+        """
+        self.type = type
+        self.entity = entity
+
+    @property
+    def uuid(self):
+        """Return the UUID of the underlying entity."""
+        return self.entity.uuid
+
+    @property
+    def is_group(self) -> bool:
+        """Check if this subject is a group."""
+        return self.type == SubjectType.GROUP
+
+    @property
+    def is_user(self) -> bool:
+        """Check if this subject is a user."""
+        return self.type == SubjectType.USER
+
+    def __eq__(self, other: object) -> bool:
+        """Check equality based on type and entity."""
+        if not isinstance(other, Subject):
+            return NotImplemented
+        return self.type == other.type and self.entity == other.entity
+
+    def __repr__(self) -> str:
+        """Return a string representation."""
+        return f"Subject(type={self.type!r}, entity={self.entity!r})"

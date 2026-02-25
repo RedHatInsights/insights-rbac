@@ -14,23 +14,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Domain types and services for subjects in the RBAC system.
+"""QuerySet for RoleV2 lookups."""
 
-A "subject" is an entity that can be granted permissions via role bindings.
-Currently supported subjects are:
-- Groups (collections of users)
-- Users (individual principals)
-"""
+from django.db import models
 
-from management.subject.exceptions import SubjectError, UnsupportedSubjectTypeError
-from management.subject.model import Subject, SubjectService, SubjectType
-from management.subject.queryset import SubjectQuerySet
 
-__all__ = [
-    "Subject",
-    "SubjectQuerySet",
-    "SubjectError",
-    "SubjectService",
-    "SubjectType",
-    "UnsupportedSubjectTypeError",
-]
+class RoleV2QuerySet(models.QuerySet):
+    """Custom QuerySet for RoleV2 with domain-aware query methods."""
+
+    def assignable(self):
+        """Filter to roles that can be assigned to bindings.
+
+        Only custom and seeded roles can be directly assigned.
+        Platform roles are internal aggregations and cannot be assigned directly.
+        """
+        # Import here to avoid circular import (RoleV2 -> queryset -> RoleV2).
+        from management.role.v2_model import RoleV2
+
+        return self.exclude(type=RoleV2.Types.PLATFORM)

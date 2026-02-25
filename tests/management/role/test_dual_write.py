@@ -215,9 +215,9 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_new_principals(principals)
         return group, principals
 
-    def given_custom_default_group(self) -> Group:
+    def given_custom_default_group(self, replicator: Optional[RelationReplicator] = None) -> Group:
         with patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate") as replicate:
-            replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+            replicate.side_effect = self._get_replicator(replicator).replicate
             return self.fixture.custom_default_group(self.tenant)
 
     def given_car(self, user_id: str, roles: list[Role]):

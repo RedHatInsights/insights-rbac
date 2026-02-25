@@ -514,6 +514,18 @@ def validate_uuid(uuid, key="UUID Validation"):
         raise serializers.ValidationError({key: _(message)})
 
 
+def as_uuid(value: str | UUID) -> UUID:
+    """
+    Convert a string (or UUID) to a UUID.
+
+    A provided UUID is returned unchanged.
+    """
+    if isinstance(value, UUID):
+        return value
+
+    return UUID(value)
+
+
 def validate_group_name(name):
     """Verify name provided is valid."""
     if name and name.lower() in ["custom default access", "default access"]:

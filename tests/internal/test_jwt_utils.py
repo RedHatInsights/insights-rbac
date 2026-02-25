@@ -261,3 +261,29 @@ class JWTProviderTest(TestCase):
             provider.get_jwt_token("test-client-id", None)
 
         self.assertIn("Missing client_id or client_secret", str(context.exception))
+
+    @patch("internal.jwt_utils.http.client.HTTPSConnection")
+    @patch("internal.jwt_utils.settings")
+    def test_get_jwt_token_raises_on_missing_access_token(self, mock_settings, mock_https):
+        """Test that exception is raised on missing access token."""
+        # Configure mock settings
+        mock_settings.REDHAT_SSO = "sso.example.com"
+        mock_settings.TOKEN_GRANT_TYPE = "client_credentials"
+        mock_settings.RELATIONS_API_CLIENT_ID = "test-client-id"
+        mock_settings.RELATIONS_API_CLIENT_SECRET = "test-secret"
+        mock_settings.SCOPE = "test-scope"
+        mock_settings.OPENID_URL = "/auth/token"
+
+        # Configure mock HTTPS connection
+        mock_conn = MagicMock()
+        mock_https.return_value = mock_conn
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({"error": "an unexpected error"}).encode()
+        mock_conn.getresponse.return_value = mock_response
+
+        provider = JWTProvider()
+
+        with self.assertRaises(Exception) as context:
+            provider.get_jwt_token("test-client-id", "test-secret")
+
+        self.assertIn("an unexpected error", str(context.exception))
