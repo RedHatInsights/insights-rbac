@@ -763,18 +763,43 @@ class RoleBindingService:
         roles_by_id: dict,
         role_ids: set,
     ) -> None:
-        """Create or find bindings for roles and link the subject."""
-        for role_id in role_ids:
-            binding, _ = RoleBinding.objects.get_or_create(
-                role=roles_by_id[role_id],
-                resource_type=resource_type,
-                resource_id=resource_id,
-                tenant=self.tenant,
+        """Create or find bindings for roles and link the subject.
+
+        Uses bulk operations to minimise DB round-trips:
+        1 query  — find existing bindings for these roles on this resource
+        1 insert — bulk-create any missing bindings
+        1 insert — bulk-create through-model links (ignore_conflicts for safety)
+        """
+        # 1. Find existing bindings for these roles on this resource
+        existing = list(
+            RoleBinding.objects.for_resource(resource_type, resource_id, self.tenant).filter(role_id__in=role_ids)
+        )
+        existing_role_ids = {b.role_id for b in existing}
+
+        # 2. Bulk-create bindings for roles that don't have one yet
+        new_role_ids = role_ids - existing_role_ids
+        if new_role_ids:
+            new_bindings = RoleBinding.objects.bulk_create(
+                [
+                    RoleBinding(
+                        role=roles_by_id[rid],
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        tenant=self.tenant,
+                    )
+                    for rid in new_role_ids
+                ],
             )
-            # Link the subject to the binding (through-model CRUD)
-            if isinstance(subject, Group):
-                RoleBindingGroup.objects.get_or_create(binding=binding, group=subject)
-            else:
-                RoleBindingPrincipal.objects.get_or_create(
-                    binding=binding, principal=subject, defaults={"source": "v2_api"}
-                )
+            existing.extend(new_bindings)
+
+        # 3. Link subject to all bindings in one bulk insert
+        if isinstance(subject, Group):
+            RoleBindingGroup.objects.bulk_create(
+                [RoleBindingGroup(binding=b, group=subject) for b in existing],
+                ignore_conflicts=True,
+            )
+        else:
+            RoleBindingPrincipal.objects.bulk_create(
+                [RoleBindingPrincipal(binding=b, principal=subject, source="v2_api") for b in existing],
+                ignore_conflicts=True,
+            )
