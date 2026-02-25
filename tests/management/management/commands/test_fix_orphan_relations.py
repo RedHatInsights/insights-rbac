@@ -1,14 +1,20 @@
+import uuid
 from typing import Optional
 from unittest.mock import patch
 
 from django.core.management import call_command
 
 from api.models import Tenant
+from management.group.platform import GlobalPolicyIdService
+from management.permission.scope_service import Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.tenant_mapping.model import TenantMapping
+from management.role.definer import seed_roles
+from management.role.platform import platform_v2_role_uuid_for
+from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, all_of, resource, relation, subject
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
+from migration_tool.models import V2role, V2rolebinding
 from tests.management.role.test_dual_write import DualWriteTestCase
 
 from django.test.utils import override_settings
@@ -61,7 +67,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # See RHCLOUD-44659.
         migrate_all_role_bindings(replicator=NoopReplicator(), tenant=self.tenant)
 
-        # Relations show now be inconsistent.
+        # Relations should now be inconsistent.
         with self.assertRaises(AssertionError):
             self._expect_v2_consistent()
 
@@ -168,3 +174,35 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # After running with --tenant-limit=1, exactly one tenant should have been fixed (but we don't necessarily know
         # which one).
         self.assertEqual(has_default_binding(t1) + has_default_binding(t2), 1)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_reused_platform_default_role(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        seed_roles()
+        g, _ = self.given_group("test group", ["p1"])
+
+        initial_tuples = set(self.tuples)
+
+        orphaned_binding = V2rolebinding(
+            id=str(uuid.uuid4()),
+            resource=self.default_workspace_resource(),
+            role=V2role.for_system_role(
+                id=str(
+                    platform_v2_role_uuid_for(
+                        DefaultAccessType.USER, Scope.DEFAULT, policy_service=GlobalPolicyIdService()
+                    )
+                )
+            ),
+            groups=[str(g.uuid)],
+        )
+
+        self.tuples.write(add=orphaned_binding.as_tuples(), remove=[])
+        self.assertGreater(len(self.tuples), len(initial_tuples))
+
+        # Test removing an orphaned role binding that references a V2 platform role. (This caused an error in a prior
+        # version.)
+        self._do_fix_orphans()
+
+        # We should successfully be back where we started (with the orphan binding removed).
+        self.assertEqual(set(self.tuples), initial_tuples)

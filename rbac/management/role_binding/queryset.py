@@ -1,5 +1,5 @@
 #
-# Copyright 2026 Red Hat, Inc.
+# Copyright 2025 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,12 +16,28 @@
 #
 """QuerySet for RoleBinding lookups."""
 
-from django.db import models
-from django.db.models import Count
+from django.db.models import Count, F, QuerySet
 
 
-class RoleBindingQuerySet(models.QuerySet):
+class RoleBindingQuerySet(QuerySet):
     """Custom QuerySet for RoleBinding with domain-aware query methods."""
+
+    def for_tenant(self, tenant, role_id=None):
+        """Return role bindings for a tenant with related data eagerly loaded.
+
+        Args:
+            tenant: The tenant to filter by.
+            role_id: Optional role UUID to filter by.
+        """
+        qs = (
+            self.filter(tenant=tenant)
+            .select_related("role")
+            .prefetch_related("group_entries__group")
+            .annotate(role_created=F("role__created"))
+        )
+        if role_id:
+            qs = qs.filter(role__uuid=role_id)
+        return qs
 
     def for_resource(self, resource_type, resource_id, tenant):
         """Filter to bindings on a specific resource for a tenant."""

@@ -14,16 +14,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Serializers for role binding management."""
+"""Serializers for role binding management.
+
+This module contains:
+- Input serializers: For validating query parameters
+- Output serializers: For serializing response data
+"""
 
 from typing import Optional
 
 from management.models import Group
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
+from management.role_binding.model import RoleBinding
 from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
+
+_SUBJECT_TYPE_GROUP = "group"
+_GROUP_FIELD_PREFIX = "group."
 
 
 class RoleBindingFieldSelection(FieldSelection):
@@ -35,6 +44,43 @@ class RoleBindingFieldSelection(FieldSelection):
         "role": {"id", "name"},
         "resource": {"id", "name", "type"},
     }
+
+
+class RoleBindingInputSerializerMixin:
+    """Shared validation methods for role binding input serializers."""
+
+    def to_internal_value(self, data):
+        """Sanitize input data by stripping NUL bytes before field validation."""
+        sanitized = {
+            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
+        }
+        return super().to_internal_value(sanitized)
+
+    def validate_fields(self, value):
+        """Parse and validate fields parameter into RoleBindingFieldSelection object."""
+        if not value:
+            return None
+        try:
+            return RoleBindingFieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+    def validate_order_by(self, value):
+        """Return None for empty values."""
+        return value or None
+
+
+class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializers.Serializer):
+    """Input serializer for role binding list endpoint query parameters.
+
+    GET /role-bindings/
+    """
+
+    role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
+    fields = serializers.CharField(required=False, help_text="Control which fields are included")
+    # Validated but not acted on yet; default ordering is by role creation time (UUIDv7).
+    # Custom ordering support will be added in a follow-on PR.
+    order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -318,6 +364,175 @@ class RoleBindingOutputSerializer(serializers.Serializer):
 RoleBindingByGroupSerializer = RoleBindingOutputSerializer
 
 
+class RoleBindingOutputSerializerMixin:
+    """Shared serializer methods for role binding output serializers.
+
+    Provides common functionality for field selection parsing and data building.
+    """
+
+    context: dict
+
+    def _get_field_selection(self) -> Optional[FieldSelection]:
+        """Get field selection from context."""
+        return self.context.get("field_selection")
+
+    def _extract_group_details(self, group: Group, field_selection: FieldSelection) -> dict:
+        """Extract group.* fields from a Group object based on field selection.
+
+        Args:
+            group: The Group object to extract fields from
+            field_selection: The field selection specifying which fields to include
+
+        Returns:
+            Dictionary with extracted group details, or empty dict if none requested
+        """
+        subject_fields = field_selection.get_nested("subject")
+        # Extract field names from "group.X" paths
+        fields_to_include = {
+            field_path.removeprefix(_GROUP_FIELD_PREFIX)
+            for field_path in subject_fields
+            if field_path.startswith(_GROUP_FIELD_PREFIX)
+        }
+
+        if not fields_to_include:
+            return {}
+
+        group_details = {}
+        for field_name in fields_to_include:
+            # Handle special case for user_count -> principalCount
+            if field_name == "user_count":
+                group_details[field_name] = getattr(group, "principalCount", 0)
+            else:
+                value = getattr(group, field_name, None)
+                if value is not None:
+                    group_details[field_name] = value
+
+        return group_details
+
+    def _build_subject_data(self, group: Group, field_selection: Optional[FieldSelection]) -> dict:
+        """Build subject data dictionary from a Group object.
+
+        Args:
+            group: The Group object to build subject data from
+            field_selection: Optional field selection to determine which fields to include
+
+        Returns:
+            Dictionary with subject data (always includes 'type')
+        """
+        # Default behavior: only basic fields
+        if field_selection is None:
+            return {
+                "id": group.uuid,
+                "type": _SUBJECT_TYPE_GROUP,
+            }
+
+        # With fields param: type is always included
+        subject: dict = {"type": _SUBJECT_TYPE_GROUP}
+
+        # Check if id is explicitly requested
+        if "id" in field_selection.get_nested("subject"):
+            subject["id"] = group.uuid
+
+        # Extract group.* fields
+        group_details = self._extract_group_details(group, field_selection)
+        if group_details:
+            subject[_SUBJECT_TYPE_GROUP] = group_details
+
+        return subject
+
+    def _build_role_data(self, role: RoleV2, field_selection: Optional[FieldSelection]) -> dict:
+        """Build role data dictionary from a role object.
+
+        Args:
+            role: The role to build data for
+            field_selection: Optional field selection to determine which fields to include
+
+        Returns:
+            Dictionary with role data (always includes 'id')
+        """
+        role_data = {"id": role.uuid}
+
+        if field_selection is not None:
+            # Add explicitly requested fields
+            for field_name in field_selection.get_nested("role"):
+                if field_name != "id":
+                    value = getattr(role, field_name, None)
+                    if value is not None:
+                        role_data[field_name] = value
+
+        return role_data
+
+
+class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializers.Serializer):
+    """Output serializer for the role binding list endpoint.
+
+    Handles RoleBinding objects and returns {role, subject, resource}.
+
+    Supports dynamic field selection through the 'field_selection' context parameter.
+    Fields are accessed directly on the model using dot notation from the query parameter.
+
+    Field selection syntax:
+    - subject(group.name, group.description) - accesses obj.name, obj.description
+    - role(name) - accesses role.name
+    - resource(type) - accesses resource type from the binding
+    """
+
+    subject = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+
+    def get_subject(self, obj: RoleBinding):
+        """Extract subject information from the RoleBinding.
+
+        Gets subject from prefetched group_entries (populated by service layer).
+
+        Default (no fields param): Returns only id and type.
+        With fields param: Only type is always included. Other fields
+        (including id) are only included if explicitly requested.
+        """
+        field_selection = self._get_field_selection()
+
+        # Get the first group from prefetched group_entries
+        group_entries = getattr(obj, "group_entries", None)
+        if group_entries is None:
+            return {"type": "group"}
+
+        first_entry = group_entries.all()[:1]
+        if not first_entry:
+            return {"type": "group"}
+
+        group = first_entry[0].group
+        return self._build_subject_data(group, field_selection)
+
+    def get_role(self, obj: RoleBinding):
+        """Extract role information from the RoleBinding.
+
+        Default (no fields param): Returns only role id.
+        With fields param: id is always included, plus explicitly requested fields.
+        """
+        if not obj.role:
+            return None
+
+        field_selection = self._get_field_selection()
+        return self._build_role_data(obj.role, field_selection)
+
+    def get_resource(self, obj: RoleBinding):
+        """Extract resource information from the RoleBinding.
+
+        Default (no fields param): Returns only resource id.
+        With fields param: id is always included, plus explicitly requested fields.
+        """
+        field_selection = self._get_field_selection()
+
+        resource_data = {"id": obj.resource_id}
+
+        if field_selection is not None:
+            if "type" in field_selection.get_nested("resource"):
+                resource_data["type"] = obj.resource_type
+
+        return resource_data
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Update role binding by subject – request / response serializers
 # ──────────────────────────────────────────────────────────────────────
@@ -452,8 +667,12 @@ class RoleBindingFieldMaskingMixin:
         return details
 
 
-class UpdateRoleBindingRequestSerializer(serializers.Serializer):
-    """Input serializer for update role binding API."""
+class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serializers.Serializer):
+    """Input serializer for update role binding API.
+
+    Inherits from ``RoleBindingInputSerializerMixin`` for shared NUL-byte
+    sanitization (``to_internal_value``) and ``validate_fields``.
+    """
 
     # Query parameters
     resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
@@ -464,13 +683,6 @@ class UpdateRoleBindingRequestSerializer(serializers.Serializer):
 
     # Request body
     roles = RoleIdSerializer(many=True, required=True, help_text="Roles to assign")
-
-    def to_internal_value(self, data):
-        """Sanitize input data by stripping NUL bytes before field validation."""
-        sanitized = {
-            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
-        }
-        return super().to_internal_value(sanitized)
 
     def validate_roles(self, value):
         """Validate that at least one role is provided.
@@ -489,15 +701,6 @@ class UpdateRoleBindingRequestSerializer(serializers.Serializer):
             supported = ", ".join(SubjectType.values())
             raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
         return value
-
-    def validate_fields(self, value):
-        """Parse and validate fields parameter into RoleBindingFieldSelection object."""
-        if not value:
-            return None
-        try:
-            return RoleBindingFieldSelection.parse(value)
-        except FieldSelectionValidationError as e:
-            raise serializers.ValidationError(e.message)
 
     def save(self):
         """Execute the update via the service layer and return the result.

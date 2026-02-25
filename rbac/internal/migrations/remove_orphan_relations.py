@@ -376,7 +376,7 @@ def _remove_orphaned_custom_role_relations(
 
             # Paranoia.
             if RoleV2.objects.filter(uuid__in=batch_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
-                raise AssertionError(f"Unexpected system role ID in {batch_role_ids}")
+                raise AssertionError(f"Unexpected non-custom role ID in {batch_role_ids}")
 
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
@@ -537,7 +537,7 @@ def _remove_orphaned_workspace_parent_relations(
 
     logger.info(
         f"Removing {len(incorrect_relations)} orphaned workspace parent relations "
-        f"for tenant with org_id={tenant.org_id!r})."
+        f"for tenant with org_id={tenant.org_id!r}."
     )
 
     commit_removal(incorrect_relations)
@@ -588,7 +588,7 @@ def _remove_incorrect_workspace_parent_relations(
 
     logger.info(
         f"Removed a total of {removed_count} incorrect workspace parent relations "
-        f"for tenant with org_id={tenant.org_id!r})."
+        f"for tenant with org_id={tenant.org_id!r}."
     )
 
     return removed_count
@@ -630,6 +630,11 @@ def cleanup_tenant_orphaned_relationships(
     ordinary_bindings_altered_count = 0
     builtin_scope_cleaned_count = 0
     custom_roles_altered_count = 0
+
+    # Get all non-custom role IDs.
+    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True)) | set(
+        str(u) for u in RoleV2.objects.exclude(type=RoleV2.Types.CUSTOM).values_list("uuid", flat=True)
+    )
 
     def commit_removal(relations: Iterable[Relationship | RelationTuple]):
         nonlocal removed_count
@@ -674,9 +679,6 @@ def cleanup_tenant_orphaned_relationships(
         builtin_scope_cleaned_count += result.default_access_bindings_removed_count
         custom_roles_altered_count += result.custom_roles_altered_count
 
-    # Get system role UUIDs (same for V1 and V2)
-    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True))
-
     tenant_resource_id = tenant.tenant_resource_id()
 
     if tenant_resource_id is None:
@@ -690,7 +692,7 @@ def cleanup_tenant_orphaned_relationships(
     workspace_ids_in_kessel = set(kessel_workspace_data.workspace_ids())
 
     logger.info(
-        f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r})."
+        f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r}."
     )
 
     do_remove_role_bindings("tenant", tenant_resource_id)
