@@ -613,7 +613,7 @@ class RoleBindingService:
 
         roles = self._get_roles(role_ids)
 
-        subject = Subject.objects.by_type(type=subject_type, id=subject_id, tenant=self.tenant)
+        subject = Subject.objects.by_type(type=subject_type, id=subject_id)
 
         self._update_subject_access_on_resource(
             resource_type=resource_type,

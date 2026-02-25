@@ -413,3 +413,51 @@ class RoleV2ModelTests(IdentityRequest):
         self.assertEqual(custom_role.type, RoleV2.Types.CUSTOM)
         self.assertEqual(seeded_role.type, RoleV2.Types.SEEDED)
         self.assertEqual(platform_role.type, RoleV2.Types.PLATFORM)
+
+
+class RoleV2QuerySetTests(IdentityRequest):
+    """Tests for RoleV2QuerySet."""
+
+    def setUp(self):
+        """Set up roles of each type."""
+        super().setUp()
+        self.custom_role = RoleV2.objects.create(name="custom_role", type=RoleV2.Types.CUSTOM, tenant=self.tenant)
+        self.seeded_role = RoleV2.objects.create(name="seeded_role", type=RoleV2.Types.SEEDED, tenant=self.tenant)
+        self.platform_role = RoleV2.objects.create(
+            name="platform_role", type=RoleV2.Types.PLATFORM, tenant=self.tenant
+        )
+
+    def tearDown(self):
+        """Clean up roles."""
+        RoleV2.objects.all().delete()
+
+    def test_assignable_excludes_platform_roles(self):
+        """assignable() should exclude platform roles."""
+        assignable = RoleV2.objects.assignable()
+        self.assertIn(self.custom_role, assignable)
+        self.assertIn(self.seeded_role, assignable)
+        self.assertNotIn(self.platform_role, assignable)
+
+    def test_assignable_returns_only_custom_and_seeded(self):
+        """assignable() should return exactly the custom and seeded roles."""
+        assignable_ids = set(RoleV2.objects.assignable().values_list("uuid", flat=True))
+        expected_ids = {self.custom_role.uuid, self.seeded_role.uuid}
+        self.assertEqual(assignable_ids, expected_ids)
+
+    def test_assignable_is_chainable(self):
+        """assignable() should be chainable with other queryset methods."""
+        result = RoleV2.objects.assignable().filter(name="custom_role")
+        self.assertEqual(result.count(), 1)
+        self.assertEqual(result.first(), self.custom_role)
+
+    def test_assignable_with_no_platform_roles(self):
+        """assignable() returns all roles when no platform roles exist."""
+        self.platform_role.delete()
+        self.assertEqual(RoleV2.objects.assignable().count(), 2)
+        self.assertEqual(RoleV2.objects.count(), 2)
+
+    def test_assignable_with_only_platform_roles(self):
+        """assignable() returns empty queryset when only platform roles exist."""
+        self.custom_role.delete()
+        self.seeded_role.delete()
+        self.assertEqual(RoleV2.objects.assignable().count(), 0)

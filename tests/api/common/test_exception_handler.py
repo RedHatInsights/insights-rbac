@@ -16,6 +16,7 @@
 #
 """Test the API exception handler module."""
 
+from django.db import IntegrityError
 from django.test import TestCase
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError

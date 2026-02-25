@@ -88,7 +88,7 @@ class GroupLookupTests(SubjectManagerTests):
 
     def test_group_returns_subject_wrapping_group(self):
         """Test that group() returns a Subject wrapping the Group."""
-        result = Subject.objects.group(id=str(self.group.uuid), tenant=self.tenant)
+        result = Subject.objects.group(id=str(self.group.uuid))
 
         expected = Subject(type=SubjectType.GROUP, entity=self.group)
         self.assertEqual(result, expected)
@@ -97,7 +97,7 @@ class GroupLookupTests(SubjectManagerTests):
         """Test that group() annotates the group with principal count."""
         self.group.principals.add(self.principal)
 
-        result = Subject.objects.group(id=str(self.group.uuid), tenant=self.tenant)
+        result = Subject.objects.group(id=str(self.group.uuid))
 
         # Verify annotation exists and has correct value
         self.assertEqual(result.entity.principalCount, 1)
@@ -107,7 +107,7 @@ class GroupLookupTests(SubjectManagerTests):
         fake_uuid = str(uuid.uuid4())
 
         with self.assertRaises(NotFoundError) as context:
-            Subject.objects.group(id=fake_uuid, tenant=self.tenant)
+            Subject.objects.group(id=fake_uuid)
 
         expected = NotFoundError("group", fake_uuid)
         self.assertEqual(str(context.exception), str(expected))
@@ -118,7 +118,7 @@ class UserLookupTests(SubjectManagerTests):
 
     def test_user_returns_subject_wrapping_principal(self):
         """Test that user() returns a Subject wrapping the Principal."""
-        result = Subject.objects.user(id=str(self.principal.uuid), tenant=self.tenant)
+        result = Subject.objects.user(id=str(self.principal.uuid))
 
         expected = Subject(type=SubjectType.USER, entity=self.principal)
         self.assertEqual(result, expected)
@@ -128,32 +128,10 @@ class UserLookupTests(SubjectManagerTests):
         fake_uuid = str(uuid.uuid4())
 
         with self.assertRaises(NotFoundError) as context:
-            Subject.objects.user(id=fake_uuid, tenant=self.tenant)
+            Subject.objects.user(id=fake_uuid)
 
         expected = NotFoundError("user", fake_uuid)
         self.assertEqual(str(context.exception), str(expected))
-
-    def test_user_respects_tenant_isolation(self):
-        """Test that user() only finds principals in the same tenant."""
-        from api.models import Tenant
-
-        other_tenant = Tenant.objects.create(
-            tenant_name="other_tenant",
-            org_id="other_org",
-            ready=True,
-        )
-        other_principal = Principal.objects.create(
-            username="otheruser",
-            tenant=other_tenant,
-            type=Principal.Types.USER,
-        )
-
-        try:
-            with self.assertRaises(NotFoundError):
-                Subject.objects.user(id=str(other_principal.uuid), tenant=self.tenant)
-        finally:
-            other_principal.delete()
-            other_tenant.delete()
 
 
 class ByTypeLookupTests(SubjectManagerTests):
@@ -161,14 +139,14 @@ class ByTypeLookupTests(SubjectManagerTests):
 
     def test_by_type_returns_subject_for_group_type(self):
         """Test that by_type returns a Subject for type='group'."""
-        result = Subject.objects.by_type(type="group", id=str(self.group.uuid), tenant=self.tenant)
+        result = Subject.objects.by_type(type="group", id=str(self.group.uuid))
 
         expected = Subject(type=SubjectType.GROUP, entity=self.group)
         self.assertEqual(result, expected)
 
     def test_by_type_returns_subject_for_user_type(self):
         """Test that by_type returns a Subject for type='user'."""
-        result = Subject.objects.by_type(type="user", id=str(self.principal.uuid), tenant=self.tenant)
+        result = Subject.objects.by_type(type="user", id=str(self.principal.uuid))
 
         expected = Subject(type=SubjectType.USER, entity=self.principal)
         self.assertEqual(result, expected)
@@ -180,7 +158,7 @@ class ByTypeLookupTests(SubjectManagerTests):
         for subject_type in test_cases:
             with self.subTest(subject_type=subject_type):
                 with self.assertRaises(UnsupportedSubjectTypeError) as context:
-                    Subject.objects.by_type(type=subject_type, id=str(self.group.uuid), tenant=self.tenant)
+                    Subject.objects.by_type(type=subject_type, id=str(self.group.uuid))
 
                 expected = UnsupportedSubjectTypeError(subject_type)
                 self.assertEqual(str(context.exception), str(expected))
@@ -190,7 +168,7 @@ class ByTypeLookupTests(SubjectManagerTests):
         fake_uuid = str(uuid.uuid4())
 
         with self.assertRaises(NotFoundError) as context:
-            Subject.objects.by_type(type="group", id=fake_uuid, tenant=self.tenant)
+            Subject.objects.by_type(type="group", id=fake_uuid)
 
         expected = NotFoundError("group", fake_uuid)
         self.assertEqual(str(context.exception), str(expected))
@@ -200,7 +178,7 @@ class ByTypeLookupTests(SubjectManagerTests):
         fake_uuid = str(uuid.uuid4())
 
         with self.assertRaises(NotFoundError) as context:
-            Subject.objects.by_type(type="user", id=fake_uuid, tenant=self.tenant)
+            Subject.objects.by_type(type="user", id=fake_uuid)
 
         expected = NotFoundError("user", fake_uuid)
         self.assertEqual(str(context.exception), str(expected))
@@ -211,20 +189,20 @@ class SubjectPropertiesTests(SubjectManagerTests):
 
     def test_uuid_returns_entity_uuid(self):
         """Test that uuid property returns the entity's UUID."""
-        subject = Subject.objects.group(id=str(self.group.uuid), tenant=self.tenant)
+        subject = Subject.objects.group(id=str(self.group.uuid))
 
         self.assertEqual(subject.uuid, self.group.uuid)
 
     def test_is_group_returns_true_for_groups(self):
         """Test that is_group returns True for group subjects."""
-        subject = Subject.objects.group(id=str(self.group.uuid), tenant=self.tenant)
+        subject = Subject.objects.group(id=str(self.group.uuid))
 
         self.assertTrue(subject.is_group)
         self.assertFalse(subject.is_user)
 
     def test_is_user_returns_true_for_users(self):
         """Test that is_user returns True for user subjects."""
-        subject = Subject.objects.user(id=str(self.principal.uuid), tenant=self.tenant)
+        subject = Subject.objects.user(id=str(self.principal.uuid))
 
         self.assertTrue(subject.is_user)
         self.assertFalse(subject.is_group)
