@@ -60,7 +60,7 @@ class InvalidRolePermissionsError(RoleV2Error):
 class RoleNotFoundError(RoleV2Error):
     """Raised when attempting to access a role that does not exist."""
 
-    def __init__(self, role_id: str):
-        """Initialize with the role ID that was not found."""
-        self.role_id = role_id
-        super().__init__(f"Role with id '{role_id}' does not exist.")
+    def __init__(self, uuid: str):
+        """Initialize with the role UUID that was not found."""
+        self.uuid = uuid
+        super().__init__(f"Role with UUID '{uuid}' not found.")
