@@ -19,7 +19,6 @@
 from management.subject import UnsupportedSubjectTypeError
 
 __all__ = [
-    "DuplicateBindingError",
     "RoleBindingError",
     "RolesNotFoundError",
     "SubjectsNotFoundError",
@@ -50,16 +49,3 @@ class SubjectsNotFoundError(RoleBindingError):
         self.subject_type = subject_type
         self.missing_uuids = missing_uuids
         super().__init__(f"The following {subject_type} subjects were not found: {', '.join(missing_uuids)}")
-
-
-class DuplicateBindingError(RoleBindingError):
-    """Raised when a role binding already exists for the given role/resource/tenant."""
-
-    def __init__(self, role_id: str, resource_type: str, resource_id: str):
-        """Initialize with the duplicate binding details."""
-        self.role_id = role_id
-        self.resource_type = resource_type
-        self.resource_id = resource_id
-        super().__init__(
-            f"A role binding already exists for role '{role_id}' " f"on resource {resource_type}/{resource_id}."
-        )

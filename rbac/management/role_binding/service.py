@@ -27,11 +27,20 @@ from django.db.models.aggregates import Count
 from google.protobuf import json_format
 from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
+from management.atomic_transactions import atomic
 from management.cache import JWTCache
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.exceptions import RolesNotFoundError, SubjectsNotFoundError
@@ -66,10 +75,14 @@ _jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 class RoleBindingService:
     """Service for role binding queries and operations."""
 
-    def __init__(self, tenant: Tenant):
+    def __init__(self, tenant: Tenant, replicator: Optional[RelationReplicator] = None):
         """Initialize the service with a tenant."""
         self.tenant = tenant
         self.subject_service = SubjectService(tenant)
+        if settings.REPLICATION_TO_RELATION_ENABLED:
+            self._replicator = replicator if replicator is not None else OutboxReplicator()
+        else:
+            self._replicator = NoopReplicator()
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject (group) from a dictionary of parameters.
@@ -143,6 +156,7 @@ class RoleBindingService:
             "fields": params.get("fields"),
         }
 
+    @atomic
     def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
         """Create multiple role bindings."""
         role_uuids = {req.role_id for req in requests}
@@ -173,6 +187,7 @@ class RoleBindingService:
                 resource_names[key] = self.get_resource_name(req.resource_id, req.resource_type)
 
         created = []
+        affected_bindings = set()
         for req in requests:
             role = roles_by_uuid[req.role_id]
 
@@ -182,6 +197,7 @@ class RoleBindingService:
                 resource_id=req.resource_id,
                 tenant=self.tenant,
             )
+            affected_bindings.add(binding)
 
             if req.subject_type == SubjectType.GROUP:
                 subject = groups_by_uuid[req.subject_id]
@@ -201,6 +217,20 @@ class RoleBindingService:
                     "resource_id": req.resource_id,
                     "resource_name": resource_names.get((req.resource_type, req.resource_id)),
                 }
+            )
+
+        if affected_bindings:
+            relations_to_add = []
+            for binding in affected_bindings:
+                relations_to_add.extend(binding.as_tuples())
+
+            self._replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.BATCH_CREATE_ROLE_BINDING,
+                    info={"org_id": str(self.tenant.org_id)},
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=relations_to_add,
+                )
             )
 
         logger.info(

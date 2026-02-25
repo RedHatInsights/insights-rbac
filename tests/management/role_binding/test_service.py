@@ -16,9 +16,13 @@
 #
 """Tests for the RoleBindingService and Serializer."""
 
+import concurrent.futures
 import uuid
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
@@ -1157,3 +1161,44 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(ws1_bindings.count(), 1)
         self.assertEqual(ws2_bindings.count(), 1)
         self.assertNotEqual(ws1_bindings.first().id, ws2_bindings.first().id)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch.object(OutboxReplicator, "replicate")
+    def test_batch_create_replicates_to_kessel(self, mock_replicate):
+        """Test that batch_create accurately fires a replication event."""
+        self.service = RoleBindingService(tenant=self.tenant)
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        mock_replicate.assert_called_once()
+        event = mock_replicate.call_args[0][0]
+
+        self.assertEqual(event.event_type, ReplicationEventType.BATCH_CREATE_ROLE_BINDING)
+        self.assertEqual(event.event_info["org_id"], str(self.tenant.org_id))
+        self.assertGreaterEqual(len(event.add), 1)
+
+    def test_batch_create_max_items_limit(self):
+        """Test creating 100 bindings at once handles max bounds successfully."""
+        users = [
+            Principal.objects.create(
+                username=f"testuser_{i}",
+                tenant=self.tenant,
+                user_id=f"testuser_{i}",
+                type=Principal.Types.USER,
+            )
+            for i in range(100)
+        ]
+
+        requests = [self._make_request(self.role1, "user", user.uuid) for user in users]
+
+        results = self.service.batch_create(requests)
+        self.assertEqual(len(results), 100)
+
+        bindings = RoleBinding.objects.filter(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(bindings.count(), 1)
+        self.assertEqual(RoleBindingPrincipal.objects.filter(binding=bindings.first()).count(), 100)

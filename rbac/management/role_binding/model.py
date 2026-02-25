@@ -23,7 +23,14 @@ from django.db import models, transaction
 from django.db.models import Q, QuerySet
 from management.group.model import Group
 from management.principal.model import Principal
-from migration_tool.models import V2boundresource, V2rolebinding
+from management.relation_replicator.types import RelationTuple
+from migration_tool.models import (
+    V2boundresource,
+    V2rolebinding,
+    role_binding_group_subject_tuple,
+    role_binding_user_subject_tuple,
+)
+from migration_tool.utils import create_relationship
 from uuid_utils.compat import UUID, uuid7
 
 from api.models import TenantAwareModel
@@ -121,6 +128,30 @@ class RoleBinding(TenantAwareModel):
 
         principals_by_id = {p.user_id: p for p in principals}
         self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
+
+    def as_tuples(self) -> list[RelationTuple]:
+        """Return relation tuples for this binding's relationships only."""
+        tuples: list[RelationTuple] = []
+
+        tuples.append(
+            create_relationship(
+                ("rbac", "role_binding"), str(self.uuid), ("rbac", "role"), str(self.role.uuid), "role"
+            )
+        )
+
+        for group in self.bound_groups():
+            tuples.append(role_binding_group_subject_tuple(str(self.uuid), str(group.uuid)))
+
+        for entry in self.principal_entries.select_related("principal").all():
+            tuples.append(role_binding_user_subject_tuple(str(self.uuid), entry.principal.user_id))
+
+        tuples.append(
+            create_relationship(
+                ("rbac", self.resource_type), self.resource_id, ("rbac", "role_binding"), str(self.uuid), "binding"
+            )
+        )
+
+        return tuples
 
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
         """Return the V2rolebinding equivalent of this role binding.

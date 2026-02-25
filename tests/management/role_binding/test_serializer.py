@@ -662,6 +662,22 @@ class BatchCreateRequestSerializerTests(IdentityRequest):
         self.assertIsNotNone(serializer.validated_data["fields"])
         self.assertIn("name", serializer.validated_data["fields"].get_nested("role"))
 
+    def test_rejects_over_max_items_limit(self):
+        """101 items exceeds max_length=100 and fails validation."""
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(uuid.uuid4()), "type": "workspace"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ]
+            * 101,
+        }
+        serializer = self._make_serializer(payload)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("requests", serializer.errors)
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class BatchCreateResponseSerializerTests(IdentityRequest):
