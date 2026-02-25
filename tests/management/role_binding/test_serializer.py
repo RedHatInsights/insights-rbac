@@ -1161,7 +1161,7 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
 
     Verifies that the response serializer respects field_selection context:
     - Default (no field_selection): subject has id+type, roles have id only,
-      resource has id only, last_modified is excluded.
+      resource has id only.
     - With field_selection: only explicitly requested fields appear.
     """
 
@@ -1217,7 +1217,7 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
     # ── Default behaviour (no field_selection) ───────────────────────
 
     def test_default_group_response(self):
-        """Default response for a group subject includes id+type, role id only, resource id only, no last_modified."""
+        """Default response for a group subject includes id+type, role id only, resource id only."""
         result = self._make_group_result()
         serializer = UpdateRoleBindingResponseSerializer(result)
         data = serializer.data
@@ -1228,8 +1228,8 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
         self.assertEqual(data["roles"], [{"id": self.role1.uuid}])
         # resource: id only
         self.assertEqual(data["resource"], {"id": "ws-123"})
-        # last_modified excluded
-        self.assertNotIn("last_modified", data)
+        # only subject, roles, resource keys
+        self.assertEqual(set(data.keys()), {"subject", "roles", "resource"})
 
     def test_default_user_response(self):
         """Default response for a user subject includes id+type+user details."""
@@ -1243,7 +1243,7 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
         )
         self.assertEqual(data["roles"], [{"id": self.role1.uuid}])
         self.assertEqual(data["resource"], {"id": "ws-123"})
-        self.assertNotIn("last_modified", data)
+        self.assertEqual(set(data.keys()), {"subject", "roles", "resource"})
 
     def test_default_multiple_roles_returns_id_only(self):
         """Default response with multiple roles returns id for each, no name."""
@@ -1257,24 +1257,6 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
             self.assertNotIn("name", role)
 
     # ── With field_selection ─────────────────────────────────────────
-
-    def test_field_selection_includes_last_modified(self):
-        """last_modified is included when explicitly requested."""
-        result = self._make_group_result()
-        field_selection = RoleBindingFieldSelection(root_fields={"last_modified"})
-        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
-        data = serializer.data
-
-        self.assertIn("last_modified", data)
-
-    def test_field_selection_excludes_last_modified_by_default(self):
-        """last_modified is excluded even with a field_selection that doesn't request it."""
-        result = self._make_group_result()
-        field_selection = RoleBindingFieldSelection(nested_fields={"role": {"name"}})
-        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
-        data = serializer.data
-
-        self.assertNotIn("last_modified", data)
 
     def test_field_selection_role_name(self):
         """Requesting role(name) includes name alongside id."""

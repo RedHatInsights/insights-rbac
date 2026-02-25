@@ -1828,9 +1828,6 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Default response: no last_modified, roles have id only, resource has id only
-        self.assertNotIn("last_modified", response.data)
-
         actual = response.data
         actual["roles"] = sorted(actual["roles"], key=lambda r: str(r["id"]))
         expected_roles = sorted([{"id": self.role1.uuid}, {"id": self.role2.uuid}], key=lambda r: str(r["id"]))
@@ -1858,7 +1855,6 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Default response shape: no last_modified, roles have id only, resource has id only
         expected = {
             "subject": {
                 "id": self.principal.uuid,

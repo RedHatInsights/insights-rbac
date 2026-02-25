@@ -542,7 +542,7 @@ class RoleBindingFieldMaskingMixin:
     """Shared field-masking logic for role binding response serializers.
 
     Provides building blocks that apply the ``field_selection`` context to
-    individual response sections (subject, roles, resource, last_modified).
+    individual response sections (subject, roles, resource).
 
     Subclasses declare ``SerializerMethodField`` and implement ``get_*``
     methods that extract data from their specific input type (e.g. Group
@@ -552,8 +552,7 @@ class RoleBindingFieldMaskingMixin:
     Masking rules
     -------------
     * Default (no ``field_selection``): subject returns ``id`` + ``type``;
-      roles returns ``id`` only; resource returns ``id`` only;
-      ``last_modified`` is excluded.
+      roles returns ``id`` only; resource returns ``id`` only.
     * With ``field_selection``: only explicitly requested fields appear.
       ``subject.type``, ``role.id``, and ``resource.id`` are always included.
     """
@@ -561,27 +560,6 @@ class RoleBindingFieldMaskingMixin:
     def _get_field_selection(self):
         """Get field selection from context."""
         return self.context.get("field_selection")
-
-    def to_representation(self, instance):
-        """Filter top-level keys based on field selection.
-
-        ``subject``, ``roles``, and ``resource`` are always present.
-        ``last_modified`` is included only when explicitly requested.
-        """
-        ret = super().to_representation(instance)
-
-        field_selection = self._get_field_selection()
-
-        filtered = {
-            "subject": ret.get("subject"),
-            "roles": ret.get("roles"),
-            "resource": ret.get("resource"),
-        }
-
-        if field_selection and "last_modified" in field_selection.root_fields:
-            filtered["last_modified"] = ret.get("last_modified")
-
-        return filtered
 
     # ── Building-block helpers ───────────────────────────────────────
 
@@ -736,7 +714,6 @@ class UpdateRoleBindingResponseSerializer(RoleBindingFieldMaskingMixin, serializ
     subject = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
-    last_modified = serializers.SerializerMethodField()
 
     def get_subject(self, result):
         """Delegate to ``_build_subject_data`` with result's subject info."""
@@ -749,9 +726,3 @@ class UpdateRoleBindingResponseSerializer(RoleBindingFieldMaskingMixin, serializ
     def get_resource(self, result):
         """Delegate to ``_build_resource_data`` with result's resource info."""
         return self._build_resource_data(result.resource_id, result.resource_name, result.resource_type)
-
-    def get_last_modified(self, result):
-        """Compute last_modified from the most recently modified role."""
-        if not result.roles:
-            return None
-        return max(role.modified for role in result.roles)
