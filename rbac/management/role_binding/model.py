@@ -24,6 +24,7 @@ from django.db.models import Q, QuerySet
 from management.group.model import Group
 from management.principal.model import Principal
 from management.relation_replicator.types import RelationTuple
+from management.role_binding.queryset import RoleBindingQuerySet
 from migration_tool.models import (
     V2boundresource,
     V2rolebinding,
@@ -38,6 +39,8 @@ from api.models import TenantAwareModel
 
 class RoleBinding(TenantAwareModel):
     """A role binding."""
+
+    objects = RoleBindingQuerySet.as_manager()
 
     uuid = models.UUIDField(default=uuid7, editable=False, unique=True, null=False)
     role = models.ForeignKey("management.RoleV2", on_delete=models.CASCADE, related_name="bindings")

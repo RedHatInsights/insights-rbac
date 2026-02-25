@@ -153,7 +153,7 @@ class RoleBindingService:
             "resource_id": resource_id,
             "resource_type": resource_type,
             "resource_name": self.get_resource_name(resource_id, resource_type),
-            "fields": params.get("fields"),
+            "field_selection": params.get("fields"),
         }
 
     @atomic

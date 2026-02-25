@@ -21,7 +21,7 @@ import json
 import uuid
 from importlib import reload
 from unittest import skip
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 from urllib.parse import parse_qs, urlparse
 
 from django.test import TestCase
@@ -49,8 +49,559 @@ from tests.identity_request import IdentityRequest
 
 
 @override_settings(V2_APIS_ENABLED=True)
+class RoleBindingListViewSetTest(IdentityRequest):
+    """Test the RoleBindingViewSet list endpoint."""
+
+    def setUp(self):
+        """Set up test data."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.client = APIClient()
+
+        # Create workspace hierarchy (root -> default -> standard)
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            description="Test workspace description",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        # Create permission and roles
+        self.permission = Permission.objects.create(
+            permission="app:resource:read",
+            tenant=self.tenant,
+        )
+
+        # Create multiple roles and bindings for testing
+        self.roles = []
+        self.bindings = []
+        self.groups = []
+
+        for i in range(15):
+            role = RoleV2.objects.create(
+                name=f"list_test_role_{i:02d}",  # Zero-padded for consistent ordering
+                tenant=self.tenant,
+            )
+            role.permissions.add(self.permission)
+            self.roles.append(role)
+
+            group = Group.objects.create(
+                name=f"list_test_group_{i}",
+                description=f"List test group {i} description",
+                tenant=self.tenant,
+            )
+            self.groups.append(group)
+
+            binding = RoleBinding.objects.create(
+                role=role,
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                tenant=self.tenant,
+            )
+            self.bindings.append(binding)
+
+            RoleBindingGroup.objects.create(
+                group=group,
+                binding=binding,
+            )
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        for group in self.groups:
+            group.principals.clear()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    def _get_list_url(self):
+        """Get the list URL."""
+        return reverse("v2_management:role-bindings-list")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_returns_paginated_response(self, mock_permission):
+        """Test that list returns a paginated response structure."""
+        url = self._get_list_url()
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("meta", response.data)
+        self.assertIn("links", response.data)
+        self.assertIn("data", response.data)
+        self.assertIn("limit", response.data["meta"])
+        self.assertIn("next", response.data["links"])
+        self.assertIn("previous", response.data["links"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_default_limit(self, mock_permission):
+        """Test that default limit is 10."""
+        url = self._get_list_url()
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["meta"]["limit"], 10)
+        self.assertEqual(len(response.data["data"]), 10)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_custom_limit(self, mock_permission):
+        """Test that custom limit is respected."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?limit=5", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["meta"]["limit"], 5)
+        self.assertEqual(len(response.data["data"]), 5)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_cursor_pagination(self, mock_permission):
+        """Test that cursor pagination works correctly."""
+        url = self._get_list_url()
+
+        # Get first page
+        response1 = self.client.get(f"{url}?limit=5", **self.headers)
+        self.assertEqual(response1.status_code, status.HTTP_200_OK)
+        page1_role_ids = [item["role"]["id"] for item in response1.data["data"]]
+
+        # Get next page using cursor
+        next_link = response1.data["links"]["next"]
+        self.assertIsNotNone(next_link)
+
+        parsed = urlparse(next_link)
+        cursor = parse_qs(parsed.query).get("cursor", [None])[0]
+        self.assertIsNotNone(cursor)
+
+        response2 = self.client.get(f"{url}?limit=5&cursor={cursor}", **self.headers)
+        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        page2_role_ids = [item["role"]["id"] for item in response2.data["data"]]
+
+        # Pages should have different role bindings
+        self.assertEqual(len(set(page1_role_ids) & set(page2_role_ids)), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_empty_results(self, mock_permission):
+        """Test that empty results return valid structure."""
+        # Delete all bindings
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
+
+        url = self._get_list_url()
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_first_page_has_no_previous(self, mock_permission):
+        """Test that first page has no previous link."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?limit=5", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["links"]["previous"])
+        self.assertIsNotNone(response.data["links"]["next"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_last_page_has_no_next(self, mock_permission):
+        """Test that last page has no next link."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?limit=100", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["links"]["next"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_data_structure(self, mock_permission):
+        """Test that response data matches expected structure.
+
+        Default behavior returns:
+        - role: id only
+        - subject: id and type
+        - resource: id only
+        """
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?limit=1", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        item = response.data["data"][0]
+
+        # Verify structure has role, subject, resource (no last_modified, no roles)
+        self.assertIn("role", item)
+        self.assertIn("subject", item)
+        self.assertIn("resource", item)
+        self.assertNotIn("last_modified", item)
+        self.assertNotIn("roles", item)
+
+        # Verify role structure - only id by default
+        role = item["role"]
+        self.assertIn("id", role)
+
+        # Verify subject structure - id and type
+        subject = item["subject"]
+        self.assertIn("id", subject)
+        self.assertIn("type", subject)
+        self.assertEqual(subject["type"], "group")
+
+        # Verify resource structure - only id by default
+        resource = item["resource"]
+        self.assertIn("id", resource)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_role_id(self, mock_permission):
+        """Test filtering by role_id."""
+        target_role = self.roles[0]
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id={target_role.uuid}", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        # Verify the returned binding has the correct role
+        item = response.data["data"][0]
+        self.assertEqual(str(item["role"]["id"]), str(target_role.uuid))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_role_id_no_match(self, mock_permission):
+        """Test filtering by non-existent role_id returns empty results."""
+        non_existent_uuid = "00000000-0000-0000-0000-000000000000"
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id={non_existent_uuid}", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_invalid_role_id(self, mock_permission):
+        """Test filtering by invalid role_id returns validation error."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id=not-a-uuid", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_tenant_isolation(self, mock_permission):
+        """Test that list only returns bindings for the current tenant."""
+        # Create another tenant with its own bindings
+        other_tenant = Tenant.objects.create(
+            tenant_name="other_test_tenant",
+            org_id="other_test_org",
+        )
+        other_role = RoleV2.objects.create(
+            name="other_tenant_role",
+            tenant=other_tenant,
+        )
+        other_binding = RoleBinding.objects.create(
+            role=other_role,
+            resource_type="workspace",
+            resource_id="other-resource",
+            tenant=other_tenant,
+        )
+
+        try:
+            url = self._get_list_url()
+            response = self.client.get(f"{url}?limit=100", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            # Should only see our 15 bindings, not the other tenant's
+            self.assertEqual(len(response.data["data"]), 15)
+
+            # Verify none of the returned bindings belong to the other tenant
+            returned_role_ids = [str(item["role"]["id"]) for item in response.data["data"]]
+            self.assertNotIn(str(other_role.uuid), returned_role_ids)
+        finally:
+            other_binding.delete()
+            other_role.delete()
+            other_tenant.delete()
+
+    # --- Functional: verify actual data content ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_returns_correct_role_subject_resource_data(self, mock_permission):
+        """Test that response contains correct actual values for a known binding."""
+        target_role = self.roles[0]
+        target_group = self.groups[0]
+        target_binding = self.bindings[0]
+
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id={target_role.uuid}", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        item = response.data["data"][0]
+        self.assertEqual(str(item["role"]["id"]), str(target_role.uuid))
+        self.assertEqual(str(item["subject"]["id"]), str(target_group.uuid))
+        self.assertEqual(item["subject"]["type"], "group")
+        self.assertEqual(item["resource"]["id"], str(self.workspace.id))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_default_excludes_optional_fields(self, mock_permission):
+        """Test that default response excludes role.name and resource.type."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?limit=1", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        item = response.data["data"][0]
+
+        self.assertNotIn("name", item["role"])
+        self.assertNotIn("type", item["resource"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_multiple_bindings_for_same_role(self, mock_permission):
+        """Test that multiple bindings for the same role are all returned."""
+        # Create a second binding for the same role
+        second_group = Group.objects.create(
+            name="second_group",
+            tenant=self.tenant,
+        )
+        second_binding = RoleBinding.objects.create(
+            role=self.roles[0],
+            resource_type="workspace",
+            resource_id="other-resource",
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=second_group, binding=second_binding)
+
+        try:
+            url = self._get_list_url()
+            response = self.client.get(f"{url}?role_id={self.roles[0].uuid}&limit=100", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            # Original binding + new binding
+            self.assertEqual(len(response.data["data"]), 2)
+        finally:
+            RoleBindingGroup.objects.filter(binding=second_binding).delete()
+            second_binding.delete()
+            second_group.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_binding_without_group_returns_type_only_subject(self, mock_permission):
+        """Test that a binding with no group entry returns subject with type only."""
+        orphan_role = RoleV2.objects.create(name="orphan_role", tenant=self.tenant)
+        orphan_binding = RoleBinding.objects.create(
+            role=orphan_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+
+        try:
+            url = self._get_list_url()
+            response = self.client.get(f"{url}?role_id={orphan_role.uuid}", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data["data"]), 1)
+            self.assertEqual(response.data["data"][0]["subject"], {"type": "group"})
+        finally:
+            orphan_binding.delete()
+            orphan_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_pagination_returns_all_bindings(self, mock_permission):
+        """Test that paginating through all pages returns all bindings."""
+        url = self._get_list_url()
+        all_role_ids = set()
+        next_url = f"{url}?limit=4"
+
+        while next_url:
+            response = self.client.get(next_url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            for item in response.data["data"]:
+                all_role_ids.add(str(item["role"]["id"]))
+
+            next_link = response.data["links"]["next"]
+            if next_link:
+                # Extract path + query from full URL
+                from urllib.parse import urlparse
+
+                parsed = urlparse(next_link)
+                next_url = f"{parsed.path}?{parsed.query}"
+            else:
+                next_url = None
+
+        # Should have collected all 15 bindings
+        expected_ids = {str(r.uuid) for r in self.roles}
+        self.assertEqual(all_role_ids, expected_ids)
+
+    # --- Field selection (end-to-end) ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_field_selection(self, mock_permission):
+        """Test that field selection controls which fields are returned."""
+        url = self._get_list_url()
+        test_cases = [
+            (
+                "role_name",
+                "role(name)",
+                lambda item: "name" in item["role"],
+            ),
+            (
+                "resource_type",
+                "resource(type)",
+                lambda item: "type" in item["resource"],
+            ),
+            (
+                "subject_group_name",
+                "subject(group.name)",
+                lambda item: ("group" in item["subject"] and "name" in item["subject"]["group"]),
+            ),
+            (
+                "combined",
+                "role(name),resource(type)",
+                lambda item: ("name" in item["role"] and "type" in item["resource"]),
+            ),
+        ]
+        for label, fields_value, check_fn in test_cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?fields={fields_value}&limit=1", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                item = response.data["data"][0]
+                self.assertTrue(
+                    check_fn(item),
+                    f"Field selection check failed for {label}: {item}",
+                )
+
+    # --- Problem RFC format on errors ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_error_responses_use_problem_format(self, mock_permission):
+        """Test that all 400 error responses use full Problem RFC 9457 shape."""
+        url = self._get_list_url()
+        error_cases = [
+            ("invalid_role_id", f"{url}?role_id=not-a-uuid", "role_id"),
+            ("empty_role_id", f"{url}?role_id=", "role_id"),
+            ("direct_order_by", f"{url}?order_by=name", "order_by"),
+            ("unknown_order_by", f"{url}?order_by=foo.bar", "order_by"),
+            ("group_order_by", f"{url}?order_by=group.name", "order_by"),
+            ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
+            ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
+        ]
+        for label, request_url, expected_field in error_cases:
+            with self.subTest(label=label):
+                response = self.client.get(request_url, **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response["Content-Type"], "application/problem+json")
+                self.assertEqual(
+                    response.data,
+                    {
+                        "status": 400,
+                        "title": "The request payload contains invalid syntax.",
+                        "detail": ANY,
+                        "errors": [{"message": ANY, "field": expected_field}],
+                    },
+                )
+
+    # --- NUL byte sanitization ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_strips_nul_bytes_from_role_id(self, mock_permission):
+        """Test that NUL bytes are stripped from role_id before validation."""
+        target_role = self.roles[0]
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id=\x00{target_role.uuid}\x00", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_strips_nul_bytes_from_fields(self, mock_permission):
+        """Test that NUL bytes are stripped from fields parameter."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?fields=\x00role(name)\x00&limit=1", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        item = response.data["data"][0]
+        self.assertIn("name", item["role"])
+
+
+@override_settings(V2_APIS_ENABLED=True)
 class RoleBindingViewSetTest(IdentityRequest):
-    """Test the RoleBindingViewSet."""
+    """Test the RoleBindingViewSet by-subject endpoint."""
 
     def setUp(self):
         """Set up test data."""
@@ -1086,7 +1637,11 @@ class DefaultBindingsAPITests(TestCase):
         # Children should be in response
         child_uuids = [str(child.uuid) for child in admin_role.children.all()]
         for child_uuid in child_uuids:
-            self.assertIn(child_uuid, role_ids, f"Admin child role {child_uuid} should be returned")
+            self.assertIn(
+                child_uuid,
+                role_ids,
+                f"Admin child role {child_uuid} should be returned",
+            )
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",

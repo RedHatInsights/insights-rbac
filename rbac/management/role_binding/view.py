@@ -19,11 +19,12 @@
 import logging
 
 from management.base_viewsets import BaseV2ViewSet
-from management.models import Group
+from management.group.model import Group
 from management.permissions.role_binding_access import (
     RoleBindingKesselAccessPermission,
     RoleBindingSystemUserAccessPermission,
 )
+from management.role_binding.model import RoleBinding
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.decorators import action
@@ -34,6 +35,8 @@ from .serializer import (
     BatchCreateRoleBindingRequestSerializer,
     BatchCreateRoleBindingResponseItemSerializer,
     RoleBindingInputSerializer,
+    RoleBindingListInputSerializer,
+    RoleBindingListOutputSerializer,
     RoleBindingOutputSerializer,
 )
 from .service import RoleBindingService
@@ -58,7 +61,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
     """
 
-    serializer_class = RoleBindingOutputSerializer
+    serializer_class = RoleBindingListOutputSerializer
     permission_classes = (
         RoleBindingSystemUserAccessPermission,
         RoleBindingKesselAccessPermission,
@@ -66,11 +69,61 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     pagination_class = V2CursorPagination
 
     def get_queryset(self):
-        """Return empty queryset - this ViewSet only exposes custom actions.
+        """Return an empty queryset to satisfy DRF's contract.
 
-        Returns Group.objects.none() to satisfy DRF expectations while indicating no default queryset is used.
+        The list and by_subject actions build their own querysets.
         """
         return Group.objects.none()
+
+    def get_serializer_class(self):
+        """Get serializer class based on action."""
+        if self.action == "by_subject":
+            return RoleBindingOutputSerializer
+        return RoleBindingListOutputSerializer
+
+    def list(self, request, *args, **kwargs):
+        """Get a list of role bindings.
+
+        Optional query parameters:
+            - role_id: Filter by role ID (UUID)
+            - fields: Control which fields are included in the response
+            - order_by: Sort by specified field(s), prefix with '-' for descending
+        """
+        # Validate and parse query parameters using input serializer
+        input_serializer = RoleBindingListInputSerializer(data=request.query_params)
+        input_serializer.is_valid(raise_exception=True)
+        validated_params = input_serializer.validated_data
+
+        queryset = RoleBinding.objects.for_tenant(tenant=request.tenant, role_id=validated_params.get("role_id"))
+
+        # Build context for output serializer
+        context = {
+            "request": request,
+            "field_selection": validated_params.get("fields"),
+        }
+
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True, context=context)
+        return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path=":batchCreate")
+    def batch_create(self, request, *args, **kwargs):
+        """Grant access to a resource to a set of subjects with a set of roles."""
+        return super().batch_create(request, *args, **kwargs)
+
+    def perform_batch_create(self, request, *args, **kwargs):
+        """Core batch create logic."""
+        serializer = BatchCreateRoleBindingRequestSerializer(
+            data={**request.data, "fields": request.query_params.get("fields", "")}, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        created_bindings = serializer.save()
+
+        fields = serializer.validated_data.get("fields")
+        response_serializer = BatchCreateRoleBindingResponseItemSerializer(
+            created_bindings, many=True, context={"fields": fields}
+        )
+        return Response({"role_bindings": response_serializer.data}, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
@@ -105,22 +158,3 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
-
-    @action(detail=False, methods=["post"], url_path=":batchCreate")
-    def batch_create(self, request, *args, **kwargs):
-        """Grant access to a resource to a set of subjects with a set of roles."""
-        return super().batch_create(request, *args, **kwargs)
-
-    def perform_batch_create(self, request, *args, **kwargs):
-        """Core batch create logic."""
-        serializer = BatchCreateRoleBindingRequestSerializer(
-            data={**request.data, "fields": request.query_params.get("fields", "")}, context={"request": request}
-        )
-        serializer.is_valid(raise_exception=True)
-        created_bindings = serializer.save()
-
-        fields = serializer.validated_data.get("fields")
-        response_serializer = BatchCreateRoleBindingResponseItemSerializer(
-            created_bindings, many=True, context={"fields": fields}
-        )
-        return Response({"role_bindings": response_serializer.data}, status=status.HTTP_201_CREATED)
