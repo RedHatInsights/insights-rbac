@@ -24,9 +24,83 @@ from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
 from management.role_binding.service import RoleBindingService
+from management.relation_replicator.relation_replicator import RelationReplicator
 from management.utils import FieldSelectionValidationError
 from management.tenant_mapping.model import TenantMapping
 from tests.identity_request import IdentityRequest
+
+
+class _ReplicationTracker(RelationReplicator):
+    """Records tuples added and removed by replication events for testing.
+
+    Instead of merging into a single set (like InMemoryTuples), this tracks
+    the raw add/remove lists so tests can assert the full changeset.
+    """
+
+    def __init__(self):
+        """Initialize with empty tracking lists."""
+        self.tuples_added = []
+        self.tuples_removed = []
+
+    def replicate(self, event):
+        """Record the tuples from the event."""
+        self.tuples_added.extend(event.add)
+        self.tuples_removed.extend(event.remove)
+
+    def clear(self):
+        """Reset tracking for the next operation."""
+        self.tuples_added.clear()
+        self.tuples_removed.clear()
+
+
+class _ReplicationAssertionsMixin:
+    """Assertion helpers for testing replication tuple changesets.
+
+    Provides ``assertTuplesAdded`` and ``assertTuplesRemoved`` which
+    compare the *full* set of tuples — no more, no fewer.
+    """
+
+    tracker: _ReplicationTracker
+
+    @staticmethod
+    def _tuple_str(t):
+        """Human-readable string for a RelationTuple (for error messages)."""
+        subj_rel = f"#{t.subject.relation}" if t.subject.relation else ""
+        return (
+            f"{t.resource.type.name}:{t.resource.id}"
+            f"#{t.relation}"
+            f"@{t.subject.subject.type.name}:{t.subject.subject.id}{subj_rel}"
+        )
+
+    def _format_tuples(self, tuples):
+        """Format a set of tuples as an indented, sorted block."""
+        if not tuples:
+            return "  (none)"
+        return "\n".join(f"  {self._tuple_str(t)}" for t in sorted(tuples, key=self._tuple_str))
+
+    def assertTuplesAdded(self, expected):
+        """Assert the exact set of tuples that were added."""
+        actual = set(self.tracker.tuples_added)
+        expected = set(expected)
+        self.assertEqual(
+            actual,
+            expected,
+            f"\nAdded tuples differ."
+            f"\nExpected ({len(expected)}):\n{self._format_tuples(expected)}"
+            f"\nActual ({len(actual)}):\n{self._format_tuples(actual)}",
+        )
+
+    def assertTuplesRemoved(self, expected):
+        """Assert the exact set of tuples that were removed."""
+        actual = set(self.tracker.tuples_removed)
+        expected = set(expected)
+        self.assertEqual(
+            actual,
+            expected,
+            f"\nRemoved tuples differ."
+            f"\nExpected ({len(expected)}):\n{self._format_tuples(expected)}"
+            f"\nActual ({len(actual)}):\n{self._format_tuples(actual)}",
+        )
 
 
 class FieldSelectionTests(TestCase):
@@ -732,7 +806,7 @@ class RoleBindingSerializerTests(IdentityRequest):
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
-class UpdateRoleBindingsForSubjectTests(IdentityRequest):
+class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityRequest):
     """Tests for RoleBindingService.update_role_bindings_for_subject method."""
 
     def setUp(self):
@@ -790,7 +864,8 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
             type=Principal.Types.USER,
         )
 
-        self.service = RoleBindingService(tenant=self.tenant)
+        self.tracker = _ReplicationTracker()
+        self.service = RoleBindingService(tenant=self.tenant, replicator=self.tracker)
 
     def tearDown(self):
         """Tear down test data."""
@@ -804,6 +879,12 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         super().tearDown()
+
+    def _get_binding(self, role):
+        """Get a binding with role eagerly loaded for tuple generation."""
+        return RoleBinding.objects.select_related("role").get(
+            role=role, resource_id=str(self.workspace.id), resource_type="workspace"
+        )
 
     def test_update_role_bindings_for_group(self):
         """Test updating role bindings for a group."""
@@ -893,6 +974,38 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
             "role_uuids": {r.uuid for r in result.roles},
         }
         self.assertEqual(actual, expected)
+
+    def test_update_replicates_tuples_for_group(self):
+        """Test that updating role bindings replicates correct tuples for a group."""
+        self.tracker.clear()
+
+        self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        binding = self._get_binding(self.role1)
+        self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.group)})
+        self.assertTuplesRemoved(set())
+
+    def test_update_replicates_tuples_for_principal(self):
+        """Test that updating role bindings replicates correct tuples for a principal."""
+        self.tracker.clear()
+
+        self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="user",
+            subject_id=str(self.principal.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        binding = self._get_binding(self.role1)
+        self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.principal)})
+        self.assertTuplesRemoved(set())
 
     def test_update_raises_not_found_error(self):
         """Test that update raises NotFoundError for non-existent entities."""
@@ -1063,11 +1176,12 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
-class ReplaceRoleBindingsTests(IdentityRequest):
+class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
     """Tests for RoleBindingService._replace_role_bindings persistence logic.
 
     Each test verifies both the add and remove side of a PUT operation,
     since update-by-subject is a declarative "make it look like this."
+    Replication tuples are asserted in full for every scenario.
     """
 
     def setUp(self):
@@ -1085,7 +1199,8 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         self.user1 = Principal.objects.create(tenant=self.tenant, username="user1", user_id="user1")
         self.user2 = Principal.objects.create(tenant=self.tenant, username="user2", user_id="user2")
 
-        self.service = RoleBindingService(tenant=self.tenant)
+        self.tracker = _ReplicationTracker()
+        self.service = RoleBindingService(tenant=self.tenant, replicator=self.tracker)
         self.ws = "ws-123"
 
     def tearDown(self):
@@ -1098,6 +1213,12 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         Principal.objects.all().delete()
 
     # -- helpers ----------------------------------------------------------
+
+    def _get_binding(self, role, resource_id=None):
+        """Get a binding with role eagerly loaded for tuple generation."""
+        return RoleBinding.objects.select_related("role").get(
+            role=role, resource_id=resource_id or self.ws, resource_type="workspace"
+        )
 
     def _roles_for_principal(self, principal):
         """Return the set of roles a principal is linked to on self.ws."""
@@ -1146,6 +1267,7 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         """User has no bindings on the workspace; PUT adds new ones."""
         # Given: user1 has no bindings on ws
         self.assertEqual(self._roles_for_principal(self.user1), set())
+        self.tracker.clear()
 
         # When: PUT roles=[role3]
         self._update_access(self.user1, [self.role3])
@@ -1157,6 +1279,11 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Then — removed: nothing (no prior bindings)
         self.assertEqual(RoleBinding.objects.filter(resource_id=self.ws).count(), 1)
 
+        # Then — replication: new binding (role + resource) + subject
+        binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved(set())
+
     # -- 2. Complete replacement, old binding orphaned --------------------
 
     def test_complete_replacement_orphaned_binding_deleted(self):
@@ -1164,6 +1291,8 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Given: user1 linked to RoleBinding(ws, role1), only subject
         self._update_access(self.user1, [self.role1])
         self.assertTrue(self._binding_exists(self.role1))
+        old_binding = self._get_binding(self.role1)
+        self.tracker.clear()
 
         # When: PUT roles=[role3]
         self._update_access(self.user1, [self.role3])
@@ -1175,6 +1304,11 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Then — removed: user1 unlinked from role1, binding deleted (orphaned)
         self.assertFalse(self._binding_exists(self.role1))
 
+        # Then — replication: old binding fully removed, new binding fully added
+        new_binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(set(new_binding.binding_tuples()) | {new_binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved(set(old_binding.binding_tuples()) | {old_binding.subject_tuple(self.user1)})
+
     # -- 3. Complete replacement, old binding has other users — kept ------
 
     def test_complete_replacement_shared_binding_kept(self):
@@ -1183,6 +1317,8 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         self._update_access(self.user1, [self.role1])
         self._update_access(self.user2, [self.role1])
         self.assertEqual(self._binding_subject_count(self.role1), 2)
+        role1_binding = self._get_binding(self.role1)
+        self.tracker.clear()
 
         # When: PUT roles=[role3] for user1
         self._update_access(self.user1, [self.role3])
@@ -1196,6 +1332,11 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         self.assertEqual(self._binding_subject_count(self.role1), 1)
         self.assertEqual(self._roles_for_principal(self.user2), {"role1"})
 
+        # Then — replication: new binding added; only subject unlinked from old (binding kept)
+        new_binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(set(new_binding.binding_tuples()) | {new_binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved({role1_binding.subject_tuple(self.user1)})
+
     # -- 4. Partial overlap — keep shared, remove old, add new -----------
 
     def test_partial_overlap(self):
@@ -1203,6 +1344,8 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Given: user1 linked to role1 and role2 (only subject on both)
         self._update_access(self.user1, [self.role1, self.role2])
         self.assertEqual(self._roles_for_principal(self.user1), {"role1", "role2"})
+        old_role1_binding = self._get_binding(self.role1)
+        self.tracker.clear()
 
         # When: PUT roles=[role2, role3]
         self._update_access(self.user1, [self.role2, self.role3])
@@ -1217,6 +1360,13 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Then — removed: user1 unlinked from role1, binding deleted (orphaned)
         self.assertFalse(self._binding_exists(self.role1))
 
+        # Then — replication: role3 binding added; role1 orphaned + removed; role2 untouched
+        new_role3_binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(set(new_role3_binding.binding_tuples()) | {new_role3_binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved(
+            set(old_role1_binding.binding_tuples()) | {old_role1_binding.subject_tuple(self.user1)}
+        )
+
     # -- 5. Idempotent — request matches current state exactly -----------
 
     def test_idempotent_same_roles(self):
@@ -1229,6 +1379,7 @@ class ReplaceRoleBindingsTests(IdentityRequest):
                 "id", flat=True
             )
         )
+        self.tracker.clear()
 
         # When: PUT roles=[role1, role2] (same as current)
         self._update_access(self.user1, [self.role1, self.role2])
@@ -1248,6 +1399,10 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         )
         self.assertEqual(original_through_ids, current_through_ids)
 
+        # Then — replication: no tuples written (true no-op)
+        self.assertTuplesAdded(set())
+        self.assertTuplesRemoved(set())
+
     # -- 6. Reuse existing binding from another user ---------------------
 
     def test_reuse_existing_binding_from_another_user(self):
@@ -1256,6 +1411,9 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         self._update_access(self.user2, [self.role3])
         self._update_access(self.user1, [self.role1])
         role3_binding_id = RoleBinding.objects.get(role=self.role3, resource_id=self.ws).id
+        role3_binding = self._get_binding(self.role3)
+        old_role1_binding = self._get_binding(self.role1)
+        self.tracker.clear()
 
         # When: PUT roles=[role3] for user1
         self._update_access(self.user1, [self.role3])
@@ -1274,6 +1432,13 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Then — user2 still linked to role3
         self.assertEqual(self._roles_for_principal(self.user2), {"role3"})
 
+        # Then — replication: subject linked to existing binding (no binding tuples);
+        #         old binding orphaned + deleted
+        self.assertTuplesAdded({role3_binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved(
+            set(old_role1_binding.binding_tuples()) | {old_role1_binding.subject_tuple(self.user1)}
+        )
+
     # -- 7. Mixed orphan outcomes ----------------------------------------
 
     def test_mixed_orphan_outcomes(self):
@@ -1281,6 +1446,9 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Given: user1 on role1 and role2. user2 also on role1 but NOT role2.
         self._update_access(self.user1, [self.role1, self.role2])
         self._update_access(self.user2, [self.role1])
+        role1_binding = self._get_binding(self.role1)
+        old_role2_binding = self._get_binding(self.role2)
+        self.tracker.clear()
 
         # When: PUT roles=[role3] for user1
         self._update_access(self.user1, [self.role3])
@@ -1297,6 +1465,20 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Then — removed (orphaned): RoleBinding(ws, role2) deleted, no one left
         self.assertFalse(self._binding_exists(self.role2))
 
+        # Then — replication:
+        #   role3: new binding (role + resource + subject)
+        #   role1: subject unlinked only (binding kept for user2)
+        #   role2: subject unlinked + binding deleted (orphaned)
+        new_role3_binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(set(new_role3_binding.binding_tuples()) | {new_role3_binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved(
+            # role1: only subject unlink (binding survives)
+            {role1_binding.subject_tuple(self.user1)}
+            # role2: subject unlink + orphaned binding tuples
+            | {old_role2_binding.subject_tuple(self.user1)}
+            | set(old_role2_binding.binding_tuples())
+        )
+
     # -- 8. Group on same binding — removing user doesn't orphan ---------
 
     def test_group_on_same_binding_prevents_orphan(self):
@@ -1305,6 +1487,8 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         self._update_access(self.group1, [self.role1])
         self._update_access(self.user1, [self.role1])
         self.assertEqual(self._binding_subject_count(self.role1), 2)
+        role1_binding = self._get_binding(self.role1)
+        self.tracker.clear()
 
         # When: PUT roles=[role3] for user1
         self._update_access(self.user1, [self.role3])
@@ -1318,6 +1502,11 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         self.assertEqual(self._binding_subject_count(self.role1), 1)
         self.assertEqual(self._roles_for_group(self.group1), {"role1"})
 
+        # Then — replication: new binding added; only user1's subject removed from old (binding kept by group)
+        new_role3_binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(set(new_role3_binding.binding_tuples()) | {new_role3_binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved({role1_binding.subject_tuple(self.user1)})
+
     # -- 9. Cross-resource isolation -------------------------------------
 
     def test_cross_resource_isolation(self):
@@ -1330,6 +1519,8 @@ class ReplaceRoleBindingsTests(IdentityRequest):
             subject=self.user1,
             roles=[self.role2],
         )
+        old_role1_binding = self._get_binding(self.role1)
+        self.tracker.clear()
 
         # When: PUT roles=[role3] for user1 on ws-123
         self._update_access(self.user1, [self.role3])
@@ -1350,6 +1541,13 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         )
         self.assertEqual(ws456_roles, {"role2"})
 
+        # Then — replication: only ws-123 bindings affected; ws-456 untouched
+        new_role3_binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(set(new_role3_binding.binding_tuples()) | {new_role3_binding.subject_tuple(self.user1)})
+        self.assertTuplesRemoved(
+            set(old_role1_binding.binding_tuples()) | {old_role1_binding.subject_tuple(self.user1)}
+        )
+
     # -- 10. Same flow works for group subject ---------------------------
 
     def test_same_flow_for_group_subject(self):
@@ -1357,6 +1555,8 @@ class ReplaceRoleBindingsTests(IdentityRequest):
         # Given: group1 linked to RoleBinding(ws, role1) (only subject)
         self._update_access(self.group1, [self.role1])
         self.assertTrue(self._binding_exists(self.role1))
+        old_role1_binding = self._get_binding(self.role1)
+        self.tracker.clear()
 
         # When: PUT roles=[role3] for group1
         self._update_access(self.group1, [self.role3])
@@ -1367,3 +1567,12 @@ class ReplaceRoleBindingsTests(IdentityRequest):
 
         # Then — removed: group1 unlinked from role1, binding deleted (orphaned)
         self.assertFalse(self._binding_exists(self.role1))
+
+        # Then — replication: new binding added (group subject uses #member); old orphaned + removed
+        new_role3_binding = self._get_binding(self.role3)
+        self.assertTuplesAdded(
+            set(new_role3_binding.binding_tuples()) | {new_role3_binding.subject_tuple(self.group1)}
+        )
+        self.assertTuplesRemoved(
+            set(old_role1_binding.binding_tuples()) | {old_role1_binding.subject_tuple(self.group1)}
+        )

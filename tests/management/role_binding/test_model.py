@@ -577,3 +577,176 @@ class RoleBindingQuerySetTests(IdentityRequest):
 
         self.assertFalse(RoleBinding.objects.filter(id=orphan.id).exists())
         self.assertTrue(RoleBinding.objects.filter(id=active.id).exists())
+
+
+class RoleBindingReplicationTupleTests(IdentityRequest):
+    """Tests for RoleBinding relation tuple generation methods.
+
+    Verifies that the pure data transformation methods on RoleBinding
+    produce the correct RelationTuple objects for SpiceDB replication.
+    """
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.role = RoleV2.objects.create(name="test_role", tenant=self.tenant)
+        self.group = Group.objects.create(name="group1", tenant=self.tenant)
+        self.principal = Principal.objects.create(tenant=self.tenant, username="p1", user_id="user123")
+
+        self.binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-1",
+            tenant=self.tenant,
+        )
+
+    # ── Individual tuple methods ─────────────────────────────────────
+
+    def test_role_relation_tuple(self):
+        """_role_relation_tuple produces role_binding#role@role."""
+        t = self.binding._role_relation_tuple()
+
+        self.assertEqual(t.resource.type.namespace, "rbac")
+        self.assertEqual(t.resource.type.name, "role_binding")
+        self.assertEqual(t.resource.id, str(self.binding.uuid))
+        self.assertEqual(t.relation, "role")
+        self.assertEqual(t.subject.subject.type.namespace, "rbac")
+        self.assertEqual(t.subject.subject.type.name, "role")
+        self.assertEqual(t.subject.subject.id, str(self.role.uuid))
+        self.assertIsNone(t.subject.relation)
+
+    def test_resource_binding_tuple(self):
+        """_resource_binding_tuple produces resource#binding@role_binding."""
+        t = self.binding._resource_binding_tuple()
+
+        self.assertEqual(t.resource.type.namespace, "rbac")
+        self.assertEqual(t.resource.type.name, "workspace")
+        self.assertEqual(t.resource.id, "ws-1")
+        self.assertEqual(t.relation, "binding")
+        self.assertEqual(t.subject.subject.type.name, "role_binding")
+        self.assertEqual(t.subject.subject.id, str(self.binding.uuid))
+
+    def test_group_subject_tuple(self):
+        """_group_subject_tuple produces role_binding#subject@group[#member]."""
+        t = self.binding._group_subject_tuple(self.group)
+
+        self.assertEqual(t.resource.type.name, "role_binding")
+        self.assertEqual(t.resource.id, str(self.binding.uuid))
+        self.assertEqual(t.relation, "subject")
+        self.assertEqual(t.subject.subject.type.name, "group")
+        self.assertEqual(t.subject.subject.id, str(self.group.uuid))
+        self.assertEqual(t.subject.relation, "member")
+
+    def test_user_subject_tuple(self):
+        """_user_subject_tuple produces role_binding#subject@principal."""
+        t = self.binding._user_subject_tuple(self.principal)
+
+        self.assertEqual(t.resource.type.name, "role_binding")
+        self.assertEqual(t.resource.id, str(self.binding.uuid))
+        self.assertEqual(t.relation, "subject")
+        self.assertEqual(t.subject.subject.type.name, "principal")
+        self.assertIn("user123", t.subject.subject.id)
+        self.assertIsNone(t.subject.relation)
+
+    def test_binding_tuples_returns_role_and_resource(self):
+        """binding_tuples returns exactly the role + resource tuples."""
+        tuples = self.binding.binding_tuples()
+
+        self.assertEqual(len(tuples), 2)
+        relations = {t.relation for t in tuples}
+        self.assertEqual(relations, {"role", "binding"})
+
+    def test_subject_tuple_dispatches_to_group(self):
+        """subject_tuple with a Group calls _group_subject_tuple."""
+        t = self.binding.subject_tuple(self.group)
+
+        self.assertEqual(t.subject.subject.type.name, "group")
+        self.assertEqual(t.subject.relation, "member")
+
+    def test_subject_tuple_dispatches_to_principal(self):
+        """subject_tuple with a Principal calls _user_subject_tuple."""
+        t = self.binding.subject_tuple(self.principal)
+
+        self.assertEqual(t.subject.subject.type.name, "principal")
+        self.assertIsNone(t.subject.relation)
+
+    # ── replication_tuples (changeset → full tuple list) ─────────────
+
+    def test_replication_tuples_empty_changeset(self):
+        """Empty changeset produces empty tuple lists."""
+        to_add, to_remove = RoleBinding.replication_tuples(subject=self.group)
+
+        self.assertEqual(to_add, [])
+        self.assertEqual(to_remove, [])
+
+    def test_replication_tuples_created_bindings(self):
+        """Created bindings produce binding-level add tuples."""
+        to_add, to_remove = RoleBinding.replication_tuples(
+            subject=self.group,
+            bindings_created=[self.binding],
+        )
+
+        # 2 tuples: role + resource
+        self.assertEqual(len(to_add), 2)
+        self.assertEqual(to_remove, [])
+        relations = {t.relation for t in to_add}
+        self.assertEqual(relations, {"role", "binding"})
+
+    def test_replication_tuples_deleted_bindings(self):
+        """Deleted bindings produce binding-level remove tuples."""
+        to_add, to_remove = RoleBinding.replication_tuples(
+            subject=self.group,
+            bindings_deleted=[self.binding],
+        )
+
+        self.assertEqual(to_add, [])
+        self.assertEqual(len(to_remove), 2)
+        relations = {t.relation for t in to_remove}
+        self.assertEqual(relations, {"role", "binding"})
+
+    def test_replication_tuples_subject_linked(self):
+        """Subject linked produces subject add tuples."""
+        to_add, to_remove = RoleBinding.replication_tuples(
+            subject=self.group,
+            subject_linked_to=[self.binding],
+        )
+
+        self.assertEqual(len(to_add), 1)
+        self.assertEqual(to_remove, [])
+        self.assertEqual(to_add[0].relation, "subject")
+        self.assertEqual(to_add[0].subject.subject.type.name, "group")
+
+    def test_replication_tuples_subject_unlinked(self):
+        """Subject unlinked produces subject remove tuples."""
+        to_add, to_remove = RoleBinding.replication_tuples(
+            subject=self.principal,
+            subject_unlinked_from=[self.binding],
+        )
+
+        self.assertEqual(to_add, [])
+        self.assertEqual(len(to_remove), 1)
+        self.assertEqual(to_remove[0].relation, "subject")
+        self.assertEqual(to_remove[0].subject.subject.type.name, "principal")
+
+    def test_replication_tuples_full_changeset(self):
+        """Full changeset with creates, deletes, links, and unlinks."""
+        role2 = RoleV2.objects.create(name="role2", tenant=self.tenant)
+        binding2 = RoleBinding.objects.create(
+            role=role2,
+            resource_type="workspace",
+            resource_id="ws-1",
+            tenant=self.tenant,
+        )
+
+        to_add, to_remove = RoleBinding.replication_tuples(
+            subject=self.group,
+            bindings_created=[self.binding],
+            bindings_deleted=[binding2],
+            subject_linked_to=[self.binding],
+            subject_unlinked_from=[binding2],
+        )
+
+        # Adds: 2 binding tuples (role + resource) + 1 subject tuple = 3
+        self.assertEqual(len(to_add), 3)
+        # Removes: 2 binding tuples (role + resource) + 1 subject tuple = 3
+        self.assertEqual(len(to_remove), 3)

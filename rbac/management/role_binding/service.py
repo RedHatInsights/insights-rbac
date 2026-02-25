@@ -33,6 +33,15 @@ from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.relation_replicator.types import RelationTuple
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
@@ -67,9 +76,13 @@ _jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 class RoleBindingService:
     """Service for role binding queries and operations."""
 
-    def __init__(self, tenant: Tenant):
-        """Initialize the service with a tenant."""
+    def __init__(self, tenant: Tenant, replicator: RelationReplicator | None = None):
+        """Initialize the service with a tenant and optional replicator."""
         self.tenant = tenant
+        if settings.REPLICATION_TO_RELATION_ENABLED:
+            self._replicator = replicator if replicator is not None else OutboxReplicator()
+        else:
+            self._replicator = NoopReplicator()
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject (group) from a dictionary of parameters.
@@ -727,23 +740,50 @@ class RoleBindingService:
         if not access_to_add and not access_to_remove:
             return
 
+        bindings_created: list[RoleBinding] = []
+        bindings_deleted: list[RoleBinding] = []
+        subject_linked_to: list[RoleBinding] = []
+        subject_unlinked_from: list[RoleBinding] = []
+
         # 4. Remove: unlink subject from roles no longer desired,
         #    then delete any bindings left with no subjects attached.
         if access_to_remove:
             bindings_to_remove = [b for b in current_bindings if b.role_id in access_to_remove]
-            self._remove_access(subject, bindings_to_remove)
+            orphaned, unlinked = self._remove_access(subject, bindings_to_remove)
+            bindings_deleted.extend(orphaned)
+            subject_unlinked_from.extend(unlinked)
 
         # 5. Add: create bindings for newly desired roles and link subject
         if access_to_add:
             roles_by_id = {r.id: r for r in roles}
-            self._add_access(subject, resource_type, resource_id, roles_by_id, access_to_add)
+            created, linked = self._add_access(subject, resource_type, resource_id, roles_by_id, access_to_add)
+            bindings_created.extend(created)
+            subject_linked_to.extend(linked)
+
+        # 6. Compute replication tuples from the changeset (pure model logic)
+        tuples_to_add, tuples_to_remove = RoleBinding.replication_tuples(
+            subject=subject,
+            bindings_created=bindings_created,
+            bindings_deleted=bindings_deleted,
+            subject_linked_to=subject_linked_to,
+            subject_unlinked_from=subject_unlinked_from,
+        )
+
+        # 7. Replicate to SpiceDB via the outbox
+        self._replicate_tuples(tuples_to_add, tuples_to_remove)
 
     def _remove_access(
         self,
         subject: Group | Principal,
         bindings: Sequence[RoleBinding],
-    ) -> None:
-        """Remove a subject from bindings, cleaning up orphaned bindings."""
+    ) -> tuple[list[RoleBinding], list[RoleBinding]]:
+        """Remove a subject from bindings, cleaning up orphaned bindings.
+
+        Returns:
+            (orphaned_bindings, unlinked_bindings):
+            - orphaned_bindings: bindings that had no subjects left and were deleted
+            - unlinked_bindings: bindings the subject was unlinked from
+        """
         binding_ids = [b.id for b in bindings]
 
         # 1. Unlink: remove subject from these bindings
@@ -753,7 +793,11 @@ class RoleBindingService:
             RoleBindingPrincipal.objects.filter(principal=subject, binding_id__in=binding_ids).delete()
 
         # 2. Cleanup: delete any bindings that are now orphaned
-        RoleBinding.objects.filter(id__in=binding_ids).orphaned().delete()
+        orphaned = list(RoleBinding.objects.filter(id__in=binding_ids).orphaned())
+        if orphaned:
+            RoleBinding.objects.filter(id__in=[b.id for b in orphaned]).delete()
+
+        return orphaned, list(bindings)
 
     def _add_access(
         self,
@@ -762,13 +806,18 @@ class RoleBindingService:
         resource_id: str,
         roles_by_id: dict,
         role_ids: set,
-    ) -> None:
+    ) -> tuple[list[RoleBinding], list[RoleBinding]]:
         """Create or find bindings for roles and link the subject.
 
         Uses bulk operations to minimise DB round-trips:
         1 query  — find existing bindings for these roles on this resource
         1 insert — bulk-create any missing bindings
         1 insert — bulk-create through-model links (ignore_conflicts for safety)
+
+        Returns:
+            (created_bindings, linked_bindings):
+            - created_bindings: newly created RoleBinding instances
+            - linked_bindings: all bindings the subject was linked to
         """
         # 1. Find existing bindings for these roles on this resource
         existing = list(
@@ -777,6 +826,7 @@ class RoleBindingService:
         existing_role_ids = {b.role_id for b in existing}
 
         # 2. Bulk-create bindings for roles that don't have one yet
+        new_bindings: list[RoleBinding] = []
         new_role_ids = role_ids - existing_role_ids
         if new_role_ids:
             new_bindings = RoleBinding.objects.bulk_create(
@@ -803,3 +853,31 @@ class RoleBindingService:
                 [RoleBindingPrincipal(binding=b, principal=subject, source="v2_api") for b in existing],
                 ignore_conflicts=True,
             )
+
+        return new_bindings, existing
+
+    def _replicate_tuples(
+        self,
+        tuples_to_add: list[RelationTuple],
+        tuples_to_remove: list[RelationTuple],
+    ) -> None:
+        """Replicate relation tuple changes to SpiceDB via the outbox.
+
+        Writes a ``ReplicationEvent`` to the outbox table within the
+        current transaction.  The async Debezium worker picks it up
+        and sends it to SpiceDB.
+
+        No-ops when both lists are empty (avoids an empty outbox row).
+        """
+        if not tuples_to_add and not tuples_to_remove:
+            return
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.UPDATE_ROLE_BINDINGS_FOR_SUBJECT,
+                info={"org_id": str(self.tenant.org_id)},
+                partition_key=PartitionKey.byEnvironment(),
+                add=tuples_to_add,
+                remove=tuples_to_remove,
+            )
+        )
