@@ -515,3 +515,65 @@ class RoleBindingModelTests(IdentityRequest):
                     binding=binding,
                     principal=self.principal1,
                 )
+
+
+class RoleBindingQuerySetTests(IdentityRequest):
+    """Tests for the RoleBindingQuerySet custom methods."""
+
+    def setUp(self):
+        """Set up test data for queryset tests."""
+        super().setUp()
+        self.role = RoleV2.objects.create(name="test_role", tenant=self.tenant)
+        self.group = Group.objects.create(name="group1", tenant=self.tenant)
+        self.principal = Principal.objects.create(tenant=self.tenant, username="p1", user_id="p1")
+
+    def _create_binding(self, resource_id="ws-1"):
+        return RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id=resource_id,
+            tenant=self.tenant,
+        )
+
+    def test_orphaned_returns_binding_with_no_subjects(self):
+        """A binding with no groups or principals is orphaned."""
+        binding = self._create_binding()
+
+        orphaned = RoleBinding.objects.filter(id=binding.id).orphaned()
+        self.assertEqual(list(orphaned), [binding])
+
+    def test_orphaned_excludes_binding_with_group(self):
+        """A binding with a group attached is not orphaned."""
+        binding = self._create_binding()
+        RoleBindingGroup.objects.create(binding=binding, group=self.group)
+
+        orphaned = RoleBinding.objects.filter(id=binding.id).orphaned()
+        self.assertEqual(list(orphaned), [])
+
+    def test_orphaned_excludes_binding_with_principal(self):
+        """A binding with a principal attached is not orphaned."""
+        binding = self._create_binding()
+        RoleBindingPrincipal.objects.create(binding=binding, principal=self.principal, source="v2_api")
+
+        orphaned = RoleBinding.objects.filter(id=binding.id).orphaned()
+        self.assertEqual(list(orphaned), [])
+
+    def test_orphaned_filters_mixed_set(self):
+        """Given a mix of orphaned and non-orphaned bindings, only orphaned are returned."""
+        orphan = self._create_binding(resource_id="ws-orphan")
+        active = self._create_binding(resource_id="ws-active")
+        RoleBindingGroup.objects.create(binding=active, group=self.group)
+
+        orphaned = RoleBinding.objects.filter(id__in=[orphan.id, active.id]).orphaned()
+        self.assertEqual(list(orphaned), [orphan])
+
+    def test_orphaned_delete_removes_only_orphans(self):
+        """Calling .orphaned().delete() removes only the orphaned bindings."""
+        orphan = self._create_binding(resource_id="ws-orphan")
+        active = self._create_binding(resource_id="ws-active")
+        RoleBindingGroup.objects.create(binding=active, group=self.group)
+
+        RoleBinding.objects.filter(id__in=[orphan.id, active.id]).orphaned().delete()
+
+        self.assertFalse(RoleBinding.objects.filter(id=orphan.id).exists())
+        self.assertTrue(RoleBinding.objects.filter(id=active.id).exists())

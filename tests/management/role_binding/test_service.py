@@ -1173,8 +1173,8 @@ class UpdateRoleBindingsForSubjectTests(IdentityRequest):
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
-class UpdateSubjectAccessOnResourceTests(IdentityRequest):
-    """Tests for RoleBindingService._update_subject_access_on_resource persistence logic.
+class ReplaceRoleBindingsTests(IdentityRequest):
+    """Tests for RoleBindingService._replace_role_bindings persistence logic.
 
     Each test verifies both the add and remove side of a PUT operation,
     since update-by-subject is a declarative "make it look like this."
@@ -1243,7 +1243,7 @@ class UpdateSubjectAccessOnResourceTests(IdentityRequest):
 
     def _update_access(self, subject, roles):
         """Shortcut for calling the service method under test."""
-        self.service._update_subject_access_on_resource(
+        self.service._replace_role_bindings(
             resource_type="workspace",
             resource_id=self.ws,
             subject=subject,
@@ -1434,7 +1434,7 @@ class UpdateSubjectAccessOnResourceTests(IdentityRequest):
         """Updating bindings on one workspace does not affect another."""
         # Given: user1 has role1 on ws-123 and role2 on ws-456
         self._update_access(self.user1, [self.role1])
-        self.service._update_subject_access_on_resource(
+        self.service._replace_role_bindings(
             resource_type="workspace",
             resource_id="ws-456",
             subject=self.user1,
