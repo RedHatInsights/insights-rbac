@@ -23,6 +23,7 @@ from django.db import models, transaction
 from django.db.models import Q, QuerySet
 from management.group.model import Group
 from management.principal.model import Principal
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role_binding.queryset import RoleBindingQuerySet
 from migration_tool.models import V2boundresource, V2rolebinding
 from uuid_utils.compat import UUID, uuid7
@@ -40,6 +41,127 @@ class RoleBinding(TenantAwareModel):
 
     resource_type = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
+
+    # ── Relation tuple generation ────────────────────────────────────
+    #
+    # These methods produce ``RelationTuple`` objects that mirror the
+    # SpiceDB relationships for this binding.  They are **pure data
+    # transformations** — no DB writes.  The service layer collects
+    # these tuples and sends them via the ``OutboxReplicator``.
+
+    def _resource_type_pair(self) -> tuple[str, str]:
+        """Return the (namespace, name) pair for this binding's resource type.
+
+        Convention: resource_type stored as ``"workspace"`` maps to
+        ``("rbac", "workspace")`` in the relations graph.
+        """
+        return ("rbac", self.resource_type)
+
+    def _role_relation_tuple(self) -> RelationTuple:
+        """``rbac/role_binding:<uuid>#role@rbac/role:<role_uuid>``."""
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            relation="role",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid)),
+            ),
+        )
+
+    def _resource_binding_tuple(self) -> RelationTuple:
+        """``rbac/<resource_type>:<resource_id>#binding@rbac/role_binding:<uuid>``."""
+        ns, name = self._resource_type_pair()
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace=ns, name=name), id=self.resource_id),
+            relation="binding",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            ),
+        )
+
+    def _group_subject_tuple(self, group: "Group") -> RelationTuple:
+        """``rbac/role_binding:<uuid>#subject@rbac/group:<group_uuid>[#member]``."""
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            relation="subject",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="group"), id=str(group.uuid)),
+                relation="member",
+            ),
+        )
+
+    def _user_subject_tuple(self, principal: "Principal") -> RelationTuple:
+        """``rbac/role_binding:<uuid>#subject@rbac/principal:<principal_resource_id>``."""
+        principal_resource_id = Principal.user_id_to_principal_resource_id(principal.user_id)
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            relation="subject",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id),
+            ),
+        )
+
+    def binding_tuples(self) -> list[RelationTuple]:
+        """Return the two binding-level tuples (role + resource).
+
+        These are the tuples that should be added when a binding is created
+        and removed when a binding is deleted.
+        """
+        return [self._role_relation_tuple(), self._resource_binding_tuple()]
+
+    def subject_tuple(self, subject: "Group | Principal") -> RelationTuple:
+        """Return the subject tuple for this binding and the given subject.
+
+        Dispatches to ``group_subject_tuple`` or ``user_subject_tuple``
+        based on the subject's type.
+        """
+        if isinstance(subject, Group):
+            return self._group_subject_tuple(subject)
+        return self._user_subject_tuple(subject)
+
+    @staticmethod
+    def replication_tuples(
+        subject: "Group | Principal",
+        bindings_created: Iterable["RoleBinding"] = (),
+        bindings_deleted: Iterable["RoleBinding"] = (),
+        subject_linked_to: Iterable["RoleBinding"] = (),
+        subject_unlinked_from: Iterable["RoleBinding"] = (),
+    ) -> tuple[list[RelationTuple], list[RelationTuple]]:
+        """Compute the full set of relation tuples for a role binding changeset.
+
+        Pure data transformation — no DB writes.  The service calls this
+        once after performing the DB mutations and passes the result to the
+        outbox replicator.
+
+        Args:
+            subject: The group or principal being updated.
+            bindings_created: Newly created RoleBinding instances.
+            bindings_deleted: Orphaned RoleBinding instances that were deleted.
+            subject_linked_to: Bindings the subject was linked to (added).
+            subject_unlinked_from: Bindings the subject was unlinked from (removed).
+
+        Returns:
+            ``(tuples_to_add, tuples_to_remove)`` ready for replication.
+        """
+        tuples_to_add: list[RelationTuple] = []
+        tuples_to_remove: list[RelationTuple] = []
+
+        # New bindings: role + resource binding tuples
+        for binding in bindings_created:
+            tuples_to_add.extend(binding.binding_tuples())
+
+        # Deleted (orphaned) bindings: role + resource binding tuples
+        for binding in bindings_deleted:
+            tuples_to_remove.extend(binding.binding_tuples())
+
+        # Subject linked: subject tuple per binding
+        for binding in subject_linked_to:
+            tuples_to_add.append(binding.subject_tuple(subject))
+
+        # Subject unlinked: subject tuple per binding
+        for binding in subject_unlinked_from:
+            tuples_to_remove.append(binding.subject_tuple(subject))
+
+        return tuples_to_add, tuples_to_remove
 
     def bound_groups(self) -> QuerySet:
         """Get a QuerySet for all groups bound to this RoleBinding."""

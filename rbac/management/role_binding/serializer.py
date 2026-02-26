@@ -25,7 +25,10 @@ from typing import Optional
 
 from management.models import Group
 from management.role.v2_model import RoleV2
+from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
+from management.role_binding.service import RoleBindingService
+from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
@@ -529,3 +532,196 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
                 resource_data["type"] = obj.resource_type
 
         return resource_data
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Update role binding by subject – request / response serializers
+# ──────────────────────────────────────────────────────────────────────
+
+
+class RoleBindingFieldMaskingMixin:
+    """Shared field-masking logic for role binding response serializers.
+
+    Provides building blocks that apply the ``field_selection`` context to
+    individual response sections (subject, roles, resource).
+
+    Subclasses declare ``SerializerMethodField`` and implement ``get_*``
+    methods that extract data from their specific input type (e.g. Group
+    model vs ``UpdateRoleBindingResult`` dataclass), then delegate to these
+    helpers for consistent masking.
+
+    Masking rules
+    -------------
+    * Default (no ``field_selection``): subject returns ``id`` + ``type``;
+      roles returns ``id`` only; resource returns ``id`` only.
+    * With ``field_selection``: only explicitly requested fields appear.
+      ``subject.type``, ``role.id``, and ``resource.id`` are always included.
+    """
+
+    def _get_field_selection(self):
+        """Get field selection from context."""
+        return self.context.get("field_selection")
+
+    # ── Building-block helpers ───────────────────────────────────────
+
+    def _build_subject_data(self, subject_type, subject_obj):
+        """Build a subject dict with field masking applied.
+
+        Args:
+            subject_type: ``"group"`` or ``"user"`` (a SubjectType value).
+            subject_obj: The underlying Group or Principal model instance.
+        """
+        field_selection = self._get_field_selection()
+
+        if field_selection is None:
+            subject = {"id": subject_obj.uuid, "type": subject_type}
+            if subject_type == SubjectType.USER:
+                subject["user"] = {"username": subject_obj.username}
+            return subject
+
+        # type is always included
+        subject = {"type": subject_type}
+        subject_fields = field_selection.get_nested("subject")
+
+        if "id" in subject_fields:
+            subject["id"] = subject_obj.uuid
+
+        if subject_type == SubjectType.GROUP:
+            group_details = self._extract_nested_fields("group.", subject_fields, subject_obj)
+            if group_details:
+                subject["group"] = group_details
+        elif subject_type == SubjectType.USER:
+            user_details = self._extract_nested_fields("user.", subject_fields, subject_obj)
+            if user_details:
+                subject["user"] = user_details
+
+        return subject
+
+    def _build_role_data(self, role):
+        """Build a role dict with field masking applied.  ``id`` is always included."""
+        field_selection = self._get_field_selection()
+        role_data = {"id": role.uuid}
+
+        if field_selection is not None:
+            for field_name in field_selection.get_nested("role"):
+                if field_name != "id":
+                    value = getattr(role, field_name, None)
+                    if value is not None:
+                        role_data[field_name] = value
+
+        return role_data
+
+    def _build_resource_data(self, resource_id, resource_name=None, resource_type=None):
+        """Build a resource dict with field masking applied.  ``id`` is always included."""
+        field_selection = self._get_field_selection()
+        resource_data = {"id": resource_id}
+
+        if field_selection is not None:
+            field_values = {"name": resource_name, "type": resource_type}
+            for field_name in field_selection.get_nested("resource"):
+                if field_name != "id":
+                    value = field_values.get(field_name)
+                    if value is not None:
+                        resource_data[field_name] = value
+
+        return resource_data
+
+    @staticmethod
+    def _extract_nested_fields(prefix, field_paths, obj):
+        """Extract attribute values matching field paths with a given prefix.
+
+        Handles the ``user_count`` → ``principalCount`` special case for groups.
+        """
+        details = {}
+        prefix_len = len(prefix)
+        for field_path in field_paths:
+            if field_path.startswith(prefix):
+                attr_name = field_path[prefix_len:]
+                if attr_name == "user_count":
+                    details[attr_name] = getattr(obj, "principalCount", 0)
+                else:
+                    value = getattr(obj, attr_name, None)
+                    if value is not None:
+                        details[attr_name] = value
+        return details
+
+
+class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serializers.Serializer):
+    """Input serializer for update role binding API.
+
+    Inherits from ``RoleBindingInputSerializerMixin`` for shared NUL-byte
+    sanitization (``to_internal_value``) and ``validate_fields``.
+    """
+
+    # Query parameters
+    resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
+    resource_type = serializers.CharField(required=True, help_text="Resource type (e.g., 'workspace')")
+    subject_id = serializers.CharField(required=True, help_text="Subject ID (UUID)")
+    subject_type = serializers.CharField(required=True, help_text="Subject type (e.g., 'group')")
+    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+
+    # Request body
+    roles = RoleIdSerializer(many=True, required=True, help_text="Roles to assign")
+
+    def validate_roles(self, value):
+        """Validate that at least one role is provided.
+
+        Custom validator instead of allow_empty=False so the error surfaces as
+        field="roles" with a clear message, rather than DRF's default
+        field="roles.non_field_errors" / "This list may not be empty."
+        """
+        if not value:
+            raise serializers.ValidationError("At least one role is required.")
+        return value
+
+    def validate_subject_type(self, value):
+        """Validate subject_type is a supported enum value."""
+        if not SubjectType.is_valid(value):
+            supported = ", ".join(SubjectType.values())
+            raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
+        return value
+
+    def save(self):
+        """Execute the update via the service layer and return the result.
+
+        Domain exceptions (NotFoundError, InvalidFieldError, RequiredFieldError)
+        propagate to the global exception handler which formats them as
+        Problem Details responses.
+        """
+        validated = self.validated_data
+        tenant = self.context["request"].tenant
+        role_ids = [str(role["id"]) for role in validated["roles"]]
+        service = RoleBindingService(tenant=tenant)
+
+        return service.update_role_bindings_for_subject(
+            resource_type=validated["resource_type"],
+            resource_id=validated["resource_id"],
+            subject_type=validated["subject_type"],
+            subject_id=validated["subject_id"],
+            role_ids=role_ids,
+        )
+
+
+class UpdateRoleBindingResponseSerializer(RoleBindingFieldMaskingMixin, serializers.Serializer):
+    """Output serializer for the update role binding API.
+
+    Serializes an ``UpdateRoleBindingResult`` dataclass into the API response.
+    Data extraction is result-specific; field masking is delegated to
+    ``RoleBindingFieldMaskingMixin``.
+    """
+
+    subject = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+
+    def get_subject(self, result):
+        """Delegate to ``_build_subject_data`` with result's subject info."""
+        return self._build_subject_data(result.subject_type, result.subject)
+
+    def get_roles(self, result):
+        """Delegate per-role masking to ``_build_role_data``."""
+        return [self._build_role_data(role) for role in result.roles]
+
+    def get_resource(self, result):
+        """Delegate to ``_build_resource_data`` with result's resource info."""
+        return self._build_resource_data(result.resource_id, result.resource_name, result.resource_type)
