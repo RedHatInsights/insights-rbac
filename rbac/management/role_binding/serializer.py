@@ -27,8 +27,8 @@ from management.models import Group
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
-from management.subject import SubjectType
 from management.role_binding.service import RoleBindingService
+from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
