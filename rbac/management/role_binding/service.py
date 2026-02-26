@@ -186,27 +186,48 @@ class RoleBindingService:
             if key not in resource_names:
                 resource_names[key] = self.get_resource_name(req.resource_id, req.resource_type)
 
+        desired_binding_keys = {
+            (roles_by_uuid[req.role_id].id, req.resource_type, req.resource_id) for req in requests
+        }
+
+        existing_bindings = list(
+            RoleBinding.objects.filter(
+                tenant=self.tenant,
+                role_id__in=[k[0] for k in desired_binding_keys],
+            )
+        )
+        existing_keys = {(b.role_id, b.resource_type, b.resource_id) for b in existing_bindings}
+
+        new_keys = desired_binding_keys - existing_keys
+        if new_keys:
+            new_bindings = RoleBinding.objects.bulk_create(
+                [
+                    RoleBinding(
+                        role_id=role_id,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        tenant=self.tenant,
+                    )
+                    for role_id, resource_type, resource_id in new_keys
+                ]
+            )
+            existing_bindings.extend(new_bindings)
+
+        bindings_index = {(b.role_id, b.resource_type, b.resource_id): b for b in existing_bindings}
+
+        group_links = []
+        user_links = []
         created = []
-        affected_bindings = set()
         for req in requests:
             role = roles_by_uuid[req.role_id]
-
-            binding, _ = RoleBinding.objects.get_or_create(
-                role=role,
-                resource_type=req.resource_type,
-                resource_id=req.resource_id,
-                tenant=self.tenant,
-            )
-            affected_bindings.add(binding)
+            binding = bindings_index[(role.id, req.resource_type, req.resource_id)]
 
             if req.subject_type == SubjectType.GROUP:
                 subject = groups_by_uuid[req.subject_id]
-                RoleBindingGroup.objects.get_or_create(binding=binding, group=subject)
+                group_links.append(RoleBindingGroup(binding=binding, group=subject))
             else:
                 subject = principals_by_uuid[req.subject_id]
-                RoleBindingPrincipal.objects.get_or_create(
-                    binding=binding, principal=subject, defaults={"source": "api"}
-                )
+                user_links.append(RoleBindingPrincipal(binding=binding, principal=subject, source="api"))
 
             created.append(
                 {
@@ -218,6 +239,13 @@ class RoleBindingService:
                     "resource_name": resource_names.get((req.resource_type, req.resource_id)),
                 }
             )
+
+        if group_links:
+            RoleBindingGroup.objects.bulk_create(group_links, ignore_conflicts=True)
+        if user_links:
+            RoleBindingPrincipal.objects.bulk_create(user_links, ignore_conflicts=True)
+
+        affected_bindings = set(bindings_index.values())
 
         if affected_bindings:
             relations_to_add = []
