@@ -2159,3 +2159,39 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_duplicate_role_ids_are_deduplicated(self, mock_permission):
+        """Test that duplicate role IDs in the payload are silently deduplicated."""
+        url = self._get_by_subject_url()
+        duplicate_role_id = str(self.role1.uuid)
+
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": duplicate_role_id}, {"id": duplicate_role_id}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Only one binding should be created despite the duplicate
+        expected = {
+            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "roles": [{"id": self.role1.uuid}],
+            "resource": {"id": str(self.workspace.id)},
+        }
+        self.assertEqual(response.data, expected)
+
+        # Verify only one RoleBinding row exists in the DB
+        binding_count = RoleBinding.objects.filter(
+            role=self.role1,
+            resource_id=str(self.workspace.id),
+            resource_type="workspace",
+            tenant=self.tenant,
+        ).count()
+        self.assertEqual(binding_count, 1)
