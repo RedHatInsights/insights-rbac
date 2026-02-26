@@ -21,8 +21,17 @@ import uuid
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from management.principal.model import Principal as PrincipalModel
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
@@ -1092,3 +1101,148 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         )
         self.assertEqual(bindings.count(), 1)
         self.assertEqual(RoleBindingPrincipal.objects.filter(binding=bindings.first()).count(), 100)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_tuples_for_new_group_binding(self):
+        """New group binding emits role, resource, and subject tuples."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+
+        self.assertEqual(len(store), 3)
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        binding_uuid = str(binding.uuid)
+
+        role_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("role"),
+                subject("rbac", "role", self.role1.uuid),
+            )
+        )
+        self.assertEqual(len(role_tuples), 1)
+
+        resource_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "workspace", str(self.workspace.id)),
+                relation("binding"),
+                subject("rbac", "role_binding", binding_uuid),
+            )
+        )
+        self.assertEqual(len(resource_tuples), 1)
+
+        subject_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "group", self.group.uuid, relation="member"),
+            )
+        )
+        self.assertEqual(len(subject_tuples), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_tuples_for_new_user_binding(self):
+        """New user binding emits role, resource, and principal subject tuples."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "user", self.principal.uuid)])
+
+        self.assertEqual(len(store), 3)
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        binding_uuid = str(binding.uuid)
+        principal_resource_id = PrincipalModel.user_id_to_principal_resource_id(self.principal.user_id)
+
+        subject_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "principal", principal_resource_id),
+            )
+        )
+        self.assertEqual(len(subject_tuples), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_skips_binding_tuples_for_reused_binding(self):
+        """Adding a subject to an existing binding only emits the subject tuple."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+        self.assertEqual(len(store), 3)
+
+        group2 = Group.objects.create(name="group2", tenant=self.tenant)
+        store_second = InMemoryTuples()
+        service_second = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store_second))
+
+        service_second.batch_create([self._make_request(self.role1, "group", group2.uuid)])
+
+        self.assertEqual(len(store_second), 1, "Reused binding should only emit the new subject tuple")
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        subject_tuples = store_second.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", str(binding.uuid)),
+                relation("subject"),
+                subject("rbac", "group", group2.uuid, relation="member"),
+            )
+        )
+        self.assertEqual(len(subject_tuples), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
+    def test_replication_disabled_uses_noop(self):
+        """With replication disabled, no tuples are written."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+
+        self.assertEqual(len(store), 0)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_multiple_subjects_same_binding(self):
+        """Two subjects on the same role+resource emit 2 binding + 2 subject tuples."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role1, "user", self.principal.uuid),
+            ]
+        )
+
+        self.assertEqual(len(store), 4, "Expected 2 binding-level + 2 subject tuples")
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        binding_uuid = str(binding.uuid)
+
+        role_tuples = store.find_tuples(all_of(resource("rbac", "role_binding", binding_uuid), relation("role")))
+        self.assertEqual(len(role_tuples), 1)
+
+        resource_tuples = store.find_tuples(
+            all_of(resource("rbac", "workspace", str(self.workspace.id)), relation("binding"))
+        )
+        self.assertEqual(len(resource_tuples), 1)
+
+        group_subject = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "group", self.group.uuid, relation="member"),
+            )
+        )
+        self.assertEqual(len(group_subject), 1)
+
+        principal_resource_id = PrincipalModel.user_id_to_principal_resource_id(self.principal.user_id)
+        user_subject = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "principal", principal_resource_id),
+            )
+        )
+        self.assertEqual(len(user_subject), 1)

@@ -573,7 +573,7 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
     service_class = RoleBindingService
 
     requests = CreateRoleBindingItemSerializer(many=True, min_length=1, max_length=100)
-    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Response field mask")
+    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control which fields are included")
 
     @property
     def service(self):
