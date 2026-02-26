@@ -464,6 +464,9 @@ class RoleV2ServiceTests(IdentityRequest):
 
         self.assertIn(r2.uuid, context.exception.uuids)
 
+        self.assertTrue(CustomRoleV2.objects.filter(pk=r1.pk).exists())
+        self.assertTrue(CustomRoleV2.objects.filter(pk=r2.pk).exists())
+
     def test_delete_nonexistent(self):
         """Test that a nonexistent role cannot be deleted."""
         fake_a = uuid.uuid4()
@@ -480,15 +483,19 @@ class RoleV2ServiceTests(IdentityRequest):
         # Create some seeded roles.
         seed_roles()
 
-        system_role = SeededRoleV2.objects.first()
+        seeded_role = SeededRoleV2.objects.first()
         custom_role = self.service.create("custom", "custom", [self.permission1_data], self.tenant)
 
-        self.assertIsNotNone(system_role)
+        self.assertIsNotNone(seeded_role)
 
         with self.assertRaises(CustomRoleRequiredError) as context:
-            self.service.bulk_delete([str(system_role.uuid), str(custom_role.uuid)])
+            self.service.bulk_delete([str(seeded_role.uuid), str(custom_role.uuid)])
 
-        self.assertIn(str(system_role.uuid), str(context.exception))
+        self.assertIn(str(seeded_role.uuid), str(context.exception))
+
+        # No role should have been deleted.
+        self.assertTrue(CustomRoleV2.objects.filter(pk=custom_role.pk).exists())
+        self.assertTrue(SeededRoleV2.objects.filter(pk=seeded_role.pk).exists())
 
     def test_delete_platform_role(self):
         """Test that a platform role cannot be deleted."""
@@ -504,6 +511,7 @@ class RoleV2ServiceTests(IdentityRequest):
             self.service.bulk_delete([str(platform_role.uuid), str(custom_role.uuid)])
 
         self.assertIn(str(platform_role.uuid), str(context.exception))
+        self.assertTrue(PlatformRoleV2.objects.filter(pk=platform_role.pk).exists())
 
     def test_delete_duplicate_ids(self):
         """Test that a role is deleted if its ID is provided multiple times."""
