@@ -23,7 +23,7 @@ from django.db import models, transaction
 from django.db.models import Q, QuerySet
 from management.group.model import Group
 from management.principal.model import Principal
-from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+from management.relation_replicator.types import RelationTuple
 from management.role_binding.queryset import RoleBindingQuerySet
 from migration_tool.models import (
     V2boundresource,
@@ -54,45 +54,32 @@ class RoleBinding(TenantAwareModel):
 
     def _role_relation_tuple(self) -> RelationTuple:
         """``rbac/role_binding:<uuid>#role@rbac/role:<role_uuid>``."""
-        return RelationTuple(
-            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
-            relation="role",
-            subject=SubjectReference(
-                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid)),
-            ),
+        return create_relationship(
+            ("rbac", "role_binding"), str(self.uuid), ("rbac", "role"), str(self.role.uuid), "role"
         )
 
     def _resource_binding_tuple(self) -> RelationTuple:
         """``rbac/<resource_type>:<resource_id>#binding@rbac/role_binding:<uuid>``."""
-        ns, name = self._resource_type_pair()
-        return RelationTuple(
-            resource=ObjectReference(type=ObjectType(namespace=ns, name=name), id=self.resource_id),
-            relation="binding",
-            subject=SubjectReference(
-                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
-            ),
+        return create_relationship(
+            self._resource_type_pair(), self.resource_id, ("rbac", "role_binding"), str(self.uuid), "binding"
         )
 
     def _group_subject_tuple(self, group: "Group") -> RelationTuple:
         """``rbac/role_binding:<uuid>#subject@rbac/group:<group_uuid>[#member]``."""
-        return RelationTuple(
-            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
-            relation="subject",
-            subject=SubjectReference(
-                subject=ObjectReference(type=ObjectType(namespace="rbac", name="group"), id=str(group.uuid)),
-                relation="member",
-            ),
+        return create_relationship(
+            ("rbac", "role_binding"),
+            str(self.uuid),
+            ("rbac", "group"),
+            str(group.uuid),
+            "subject",
+            subject_relation="member",
         )
 
     def _user_subject_tuple(self, principal: "Principal") -> RelationTuple:
         """``rbac/role_binding:<uuid>#subject@rbac/principal:<principal_resource_id>``."""
         principal_resource_id = Principal.user_id_to_principal_resource_id(principal.user_id)
-        return RelationTuple(
-            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
-            relation="subject",
-            subject=SubjectReference(
-                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id),
-            ),
+        return create_relationship(
+            ("rbac", "role_binding"), str(self.uuid), ("rbac", "principal"), principal_resource_id, "subject"
         )
 
     def binding_tuples(self) -> list[RelationTuple]:

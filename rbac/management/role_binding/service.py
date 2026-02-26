@@ -163,9 +163,7 @@ class RoleBindingService:
         group_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.GROUP}
         user_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.USER}
 
-        roles_by_uuid = {
-            str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids).assignable()
-        }
+        roles_by_uuid = {str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids).assignable()}
         missing_roles = role_uuids - set(roles_by_uuid.keys())
         if missing_roles:
             raise RolesNotFoundError(list(missing_roles))
