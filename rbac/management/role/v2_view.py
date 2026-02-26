@@ -19,7 +19,7 @@
 from management.atomic_transactions import atomic
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
-from management.role.v2_exceptions import CustomRoleRequiredError, RoleNotFoundError
+from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
     RoleFieldSelection,
@@ -176,7 +176,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         try:
             service.bulk_delete(ids, from_tenant=self.request.tenant)
-        except RoleNotFoundError as e:
+        except RolesNotFoundError as e:
             return Response({"title": "Resource was not found", "detail": str(e)}, status=status.HTTP_404_NOT_FOUND)
         except CustomRoleRequiredError as e:
             # This should be impossible. We constrain deletions to be from the user's tenant. Non-custom roles should

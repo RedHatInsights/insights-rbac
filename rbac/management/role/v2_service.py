@@ -43,7 +43,7 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
-    RoleNotFoundError,
+    RolesNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.utils import as_uuid
@@ -184,7 +184,7 @@ class RoleV2Service:
                 .first()
             )
             if not role:
-                raise RoleNotFoundError(role_uuid)
+                raise RolesNotFoundError([role_uuid])
 
             # Capture current state before update for outbox replication
             # The permissions are already loaded from prefetch_related above
@@ -217,7 +217,7 @@ class RoleV2Service:
 
             return role
 
-        except RoleNotFoundError:
+        except RolesNotFoundError:
             raise
         except ValidationError as e:
             error_msg = str(e)
@@ -262,8 +262,7 @@ class RoleV2Service:
         roles: list[RoleV2] = list(query)
 
         if len(roles) != len(ids):
-            missing_ids = {str(u) for u in ids.difference(r.uuid for r in roles)}
-            raise RoleNotFoundError(f"Failed to find roles with provided UUIDs: {missing_ids}")
+            raise RolesNotFoundError(ids.difference(r.uuid for r in roles))
 
         non_custom_roles = [r for r in roles if r.type != RoleV2.Types.CUSTOM]
 

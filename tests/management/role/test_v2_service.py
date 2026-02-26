@@ -23,7 +23,7 @@ from management.exceptions import RequiredFieldError
 from management.models import Permission
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
-from management.role.v2_exceptions import RoleAlreadyExistsError, RoleNotFoundError, CustomRoleRequiredError
+from management.role.v2_exceptions import RoleAlreadyExistsError, RolesNotFoundError, CustomRoleRequiredError
 from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2, PlatformRoleV2
 from management.role.v2_service import RoleV2Service
 from management.tenant_service import V2TenantBootstrapService
@@ -459,19 +459,21 @@ class RoleV2ServiceTests(IdentityRequest):
         r1 = self.service.create("r1", "r1", [self.permission1_data], self.tenant)
         r2 = self.service.create("r2", "r2", [self.permission1_data], tenant2)
 
-        with self.assertRaises(RoleNotFoundError) as context:
+        with self.assertRaises(RolesNotFoundError) as context:
             self.service.bulk_delete([str(r1.uuid), str(r2.uuid)], from_tenant=self.tenant)
 
-        self.assertIn(str(r2.uuid), str(context.exception))
+        self.assertIn(r2.uuid, context.exception.uuids)
 
     def test_delete_nonexistent(self):
         """Test that a nonexistent role cannot be deleted."""
-        fake_id = str(uuid.uuid4())
+        fake_a = uuid.uuid4()
+        fake_b = uuid.uuid4()
 
-        with self.assertRaises(RoleNotFoundError) as context:
-            self.service.bulk_delete([fake_id])
+        with self.assertRaises(RolesNotFoundError) as context:
+            self.service.bulk_delete([str(fake_a), fake_b])
 
-        self.assertIn(str(fake_id), str(context.exception))
+        self.assertIn(fake_a, context.exception.uuids)
+        self.assertIn(fake_b, context.exception.uuids)
 
     def test_delete_seeded_role(self):
         """Test that a seeded role cannot be deleted."""

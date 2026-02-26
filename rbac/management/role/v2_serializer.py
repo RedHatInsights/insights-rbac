@@ -22,7 +22,7 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
-    RoleNotFoundError,
+    RolesNotFoundError,
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
@@ -216,7 +216,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
                 permission_data=permission_data,
                 tenant=tenant,
             )
-        except RoleNotFoundError as e:
+        except RolesNotFoundError as e:
             from rest_framework.exceptions import NotFound
 
             raise NotFound(str(e))
