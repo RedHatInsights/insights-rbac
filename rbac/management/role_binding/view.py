@@ -62,7 +62,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """
 
     serializer_class = RoleBindingListOutputSerializer
-    permission_classes = ()
+    permission_classes = (RoleBindingKesselAccessPermission | RoleBindingSystemUserAccessPermission,)
     pagination_class = V2CursorPagination
 
     def get_queryset(self):
