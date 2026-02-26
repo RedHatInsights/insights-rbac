@@ -1331,6 +1331,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self._request_delete({"ids": [str(role.uuid)]})
 
         self._assert_delete_not_found(response, [role.uuid])
+        self.assertTrue(RoleV2.objects.filter(pk=role.pk).exists())
 
     def test_delete_seeded(self):
         """Test that deleting a seeded role fails with status 404."""
@@ -1342,6 +1343,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self._request_delete({"ids": [str(seeded_role.uuid)]})
 
         self._assert_delete_not_found(response, [seeded_role.uuid])
+        self.assertTrue(RoleV2.objects.filter(pk=seeded_role.pk).exists())
 
     def test_delete_missing_ids(self):
         """Test that a delete request with no IDs fails with status 400."""
