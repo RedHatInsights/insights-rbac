@@ -74,6 +74,7 @@ class SubjectManagerTests(IdentityRequest):
             username="testuser",
             tenant=self.tenant,
             type=Principal.Types.USER,
+            user_id="testuser",
         )
 
     def tearDown(self):
