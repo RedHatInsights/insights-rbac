@@ -17,6 +17,7 @@
 """Test the RoleV2ViewSet."""
 
 import uuid
+from collections.abc import Iterable
 from importlib import reload
 from unittest.mock import patch
 
@@ -33,7 +34,7 @@ from management.role.definer import seed_roles
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
 from management.tenant_service import V2TenantBootstrapService
-from management.utils import PRINCIPAL_CACHE
+from management.utils import PRINCIPAL_CACHE, as_uuid
 
 from rbac import urls
 from tests.identity_request import IdentityRequest
@@ -1283,6 +1284,27 @@ class RoleV2ViewSetTests(IdentityRequest):
     def _request_delete(self, data: dict):
         return self.client.post(self.delete_url, data, format="json")
 
+    def _assert_delete_not_found(self, response, uuids: Iterable[str | uuid.UUID]):
+        uuids = {as_uuid(u) for u in uuids}
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        data = response.data
+
+        self.assertIn("status", data)
+        self.assertEqual(response.status_code, data["status"])
+
+        self.assertIn("title", data)
+        self.assertEqual(data["title"], "Not found.")
+
+        self.assertIn("detail", data)
+
+        for u in uuids:
+            self.assertIn(str(u), data["detail"])
+
+        self.assertIn("errors", data)
+        self.assertEqual(data["errors"], [{"message": data["detail"], "field": "ids"}])
+
     def test_delete_empty(self):
         """Test that deleting 0 roles is successful."""
         response = self._request_delete({"ids": []})
@@ -1294,10 +1316,8 @@ class RoleV2ViewSetTests(IdentityRequest):
         fake_role_id = str(uuid.uuid4())
 
         response = self._request_delete({"ids": [create_response["id"], fake_role_id]})
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        self.assertIn("detail", response.data)
-        self.assertIn(fake_role_id, response.data["detail"])
+        self._assert_delete_not_found(response, [fake_role_id])
         self.assertNotIn(create_response["id"], response.data["detail"])  # Existing role should not be in the error.
 
         # The existing role should not have been deleted.
@@ -1309,10 +1329,8 @@ class RoleV2ViewSetTests(IdentityRequest):
         role = RoleV2Service().create("test role", "test role", [self.permission1_data], tenant2)
 
         response = self._request_delete({"ids": [str(role.uuid)]})
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        self.assertIn("detail", response.data)
-        self.assertIn(str(role.uuid), response.data["detail"])
+        self._assert_delete_not_found(response, [role.uuid])
 
     def test_delete_seeded(self):
         """Test that deleting a seeded role fails with status 404."""
@@ -1322,13 +1340,8 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIsNotNone(seeded_role)
 
         response = self._request_delete({"ids": [str(seeded_role.uuid)]})
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        self.assertIn("title", response.data)
-        self.assertEqual("Resource was not found", response.data["title"])
-
-        self.assertIn("detail", response.data)
-        self.assertIn(str(seeded_role.uuid), response.data["detail"])
+        self._assert_delete_not_found(response, [seeded_role.uuid])
 
     def test_delete_missing_ids(self):
         """Test that a delete request with no IDs fails with status 400."""

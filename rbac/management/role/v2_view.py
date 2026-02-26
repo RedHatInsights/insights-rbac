@@ -30,7 +30,7 @@ from management.role.v2_serializer import (
     _validate_fields_parameter,
 )
 from management.role.v2_service import RoleV2Service
-from management.utils import FieldSelectionValidationError
+from management.utils import FieldSelectionValidationError, v2response_error_from_errors
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.response import Response
@@ -177,7 +177,12 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         try:
             service.bulk_delete(ids, from_tenant=self.request.tenant)
         except RolesNotFoundError as e:
-            return Response({"title": "Resource was not found", "detail": str(e)}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                v2response_error_from_errors(
+                    errors=[{"detail": str(e), "status": status.HTTP_404_NOT_FOUND, "source": "ids"}], exc=e
+                ),
+                status=status.HTTP_404_NOT_FOUND,
+            )
         except CustomRoleRequiredError as e:
             # This should be impossible. We constrain deletions to be from the user's tenant. Non-custom roles should
             # only exist in the public tenant, and there shouldn't be any users in the public tenant. Thus,
