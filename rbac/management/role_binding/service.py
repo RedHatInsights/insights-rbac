@@ -770,7 +770,7 @@ class RoleBindingService:
         )
 
         # 7. Replicate to SpiceDB via the outbox
-        self._replicate_tuples(tuples_to_add, tuples_to_remove)
+        self._replicate_tuples(tuples_to_add, tuples_to_remove, ReplicationEventType.UPDATE_ROLE_BINDINGS_FOR_SUBJECT)
 
     def _remove_access(
         self,
@@ -860,6 +860,7 @@ class RoleBindingService:
         self,
         tuples_to_add: list[RelationTuple],
         tuples_to_remove: list[RelationTuple],
+        event_type: ReplicationEventType,
     ) -> None:
         """Replicate relation tuple changes to SpiceDB via the outbox.
 
@@ -868,13 +869,18 @@ class RoleBindingService:
         and sends it to SpiceDB.
 
         No-ops when both lists are empty (avoids an empty outbox row).
+
+        Args:
+            tuples_to_add: Relation tuples to add.
+            tuples_to_remove: Relation tuples to remove.
+            event_type: The replication event type.
         """
         if not tuples_to_add and not tuples_to_remove:
             return
 
         self._replicator.replicate(
             ReplicationEvent(
-                event_type=ReplicationEventType.UPDATE_ROLE_BINDINGS_FOR_SUBJECT,
+                event_type=event_type,
                 info={"org_id": str(self.tenant.org_id)},
                 partition_key=PartitionKey.byEnvironment(),
                 add=tuples_to_add,

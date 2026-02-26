@@ -28,6 +28,7 @@ from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
 from management.subject import SubjectType
+from management.role_binding.service import RoleBindingService
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
@@ -687,8 +688,6 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
         propagate to the global exception handler which formats them as
         Problem Details responses.
         """
-        from .service import RoleBindingService
-
         validated = self.validated_data
         tenant = self.context["request"].tenant
         role_ids = [str(role["id"]) for role in validated["roles"]]
