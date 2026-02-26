@@ -3006,7 +3006,7 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         # Assert on error structure rather than exact message text
         error_fields = [e["field"] for e in response.data.get("errors", [])]
-        self.assertIn("parent_id filter", error_fields)
+        self.assertIn("parent_id", error_fields)
 
     def test_workspace_list_filter_by_parent_id_nonexistent(self):
         """Test that filtering by a valid but non-existent parent_id returns empty results."""

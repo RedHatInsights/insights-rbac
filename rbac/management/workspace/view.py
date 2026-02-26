@@ -25,7 +25,7 @@ from django.db import OperationalError, transaction
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
-from management.utils import validate_and_get_key
+from management.utils import clean_query_param, validate_and_get_key
 from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
@@ -179,49 +179,27 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
 
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
-        name = request.query_params.get("name")
-        parent_id = request.query_params.get("parent_id")
-        id_filter = request.query_params.get("ids")
+        name = clean_query_param(request.query_params.get("name"), "name")
+        parent_id = clean_query_param(request.query_params.get("parent_id"), "parent_id")
+        id_filter = clean_query_param(request.query_params.get("ids"), "ids")
 
-        # Validate name parameter: treat empty strings as "return all", reject NUL characters
-        if name is not None:
-            if not name.strip():
-                name = None  # Treat empty name as unset, returning all results
-            elif "\x00" in name:
-                raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
-
-        # Validate parent_id parameter: treat empty strings as "return all", validate UUID format
+        # Validate parent_id is a valid UUID
         if parent_id is not None:
-            if not parent_id.strip():
-                parent_id = None  # Treat empty parent_id as unset, returning all results
-            else:
-                if "\x00" in parent_id:
-                    raise serializers.ValidationError(
-                        {"parent_id": "The 'parent_id' query parameter contains invalid characters."}
-                    )
-                validate_uuid(parent_id, "parent_id filter")
+            validate_uuid(parent_id, "parent_id")
 
         # Validate and filter by ids parameter (comma-separated list of UUIDs)
         if id_filter is not None:
-            if not id_filter.strip():
-                id_filter = None  # Treat empty ids as unset, returning all results
-            else:
-                if "\x00" in id_filter:
-                    raise serializers.ValidationError(
-                        {"ids": "The 'ids' query parameter contains invalid characters."}
-                    )
+            ids = list(
+                dict.fromkeys(stripped for id_val in id_filter.split(",") if (stripped := id_val.strip().lower()))
+            )
 
-                ids = list(
-                    dict.fromkeys(stripped for id_val in id_filter.split(",") if (stripped := id_val.strip().lower()))
-                )
+            for workspace_id in ids:
+                validate_uuid(workspace_id, "workspace id filter")
+            queryset = queryset.filter(id__in=ids)
 
-                for workspace_id in ids:
-                    validate_uuid(workspace_id, "workspace id filter")
-                queryset = queryset.filter(id__in=ids)
-
-                # When filtering by ids, default to standard type unless type is explicitly specified
-                if "type" not in request.query_params:
-                    type_field = Workspace.Types.STANDARD
+            # When filtering by ids, default to standard type unless type is explicitly specified
+            if "type" not in request.query_params:
+                type_field = Workspace.Types.STANDARD
 
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)
