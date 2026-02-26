@@ -45,21 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
-    """Role Binding ViewSet.
-
-    Provides access to role bindings with support for listing and batch creation.
-
-    Query Parameters (by-subject endpoint):
-        Required:
-            - resource_id: Filter by resource ID
-            - resource_type: Filter by resource type
-
-        Optional:
-            - subject_type: Filter by subject type (e.g., 'group')
-            - subject_id: Filter by subject ID
-            - fields: Control which fields are included in the response
-            - order_by: Sort by specified field(s), prefix with '-' for descending
-    """
+    """Role Binding ViewSet."""
 
     serializer_class = RoleBindingListOutputSerializer
     permission_classes = (

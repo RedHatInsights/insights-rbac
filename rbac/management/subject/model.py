@@ -14,20 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Domain types and services for subjects in the RBAC system.
-
-A "subject" is an entity that can be granted permissions via role bindings.
-Currently supported subjects are:
-- Groups (collections of users)
-- Users (individual principals)
-"""
+"""Subject domain model with Active Record pattern."""
 
 from enum import StrEnum
 
 from management.group.model import Group
 from management.principal.model import Principal
 from management.subject.queryset import SubjectQuerySet
-from management.tenant_mapping.model import Tenant
 
 
 class SubjectType(StrEnum):
@@ -45,29 +38,6 @@ class SubjectType(StrEnum):
     def values(cls) -> list[str]:
         """Return list of all valid subject type values."""
         return list(cls._value2member_map_.keys())
-
-
-class SubjectService:
-    """Service for subject-related operations.
-
-    Provides bulk resolution of groups and users/principals.
-    """
-
-    def __init__(self, tenant: Tenant):
-        """Initialize the service with a tenant context."""
-        self.tenant = tenant
-
-    def resolve_groups(self, group_uuids: set[str]) -> dict[str, Group]:
-        """Resolve group UUIDs to Group objects in bulk."""
-        if not group_uuids:
-            return {}
-        return {str(g.uuid): g for g in Group.objects.filter(uuid__in=group_uuids)}
-
-    def resolve_users(self, user_uuids: set[str]) -> dict[str, Principal]:
-        """Resolve user UUIDs to Principal objects in bulk."""
-        if not user_uuids:
-            return {}
-        return {str(p.uuid): p for p in Principal.objects.filter(uuid__in=user_uuids)}
 
 
 class Subject:

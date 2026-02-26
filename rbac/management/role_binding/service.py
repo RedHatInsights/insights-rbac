@@ -78,7 +78,7 @@ class RoleBindingService:
     def __init__(self, tenant: Tenant, replicator: Optional[RelationReplicator] = None):
         """Initialize the service with a tenant."""
         self.tenant = tenant
-        self.subject_service = SubjectService(tenant)
+        self.subject_service = SubjectService()
         if settings.REPLICATION_TO_RELATION_ENABLED:
             self._replicator = replicator if replicator is not None else OutboxReplicator()
         else:
@@ -199,6 +199,7 @@ class RoleBindingService:
         existing_keys = {(b.role_id, b.resource_type, b.resource_id) for b in existing_bindings}
 
         new_keys = desired_binding_keys - existing_keys
+        new_bindings: list[RoleBinding] = []
         if new_keys:
             new_bindings = RoleBinding.objects.bulk_create(
                 [
@@ -245,13 +246,19 @@ class RoleBindingService:
         if user_links:
             RoleBindingPrincipal.objects.bulk_create(user_links, ignore_conflicts=True)
 
-        affected_bindings = set(bindings_index.values())
+        relations_to_add = []
+        for binding in new_bindings:
+            relations_to_add.extend(binding.binding_tuples())
 
-        if affected_bindings:
-            relations_to_add = []
-            for binding in affected_bindings:
-                relations_to_add.extend(binding.as_tuples())
+        for req in requests:
+            role = roles_by_uuid[req.role_id]
+            binding = bindings_index[(role.id, req.resource_type, req.resource_id)]
+            if req.subject_type == SubjectType.GROUP:
+                relations_to_add.append(binding.subject_tuple(groups_by_uuid[req.subject_id]))
+            else:
+                relations_to_add.append(binding.subject_tuple(principals_by_uuid[req.subject_id]))
 
+        if relations_to_add:
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=ReplicationEventType.BATCH_CREATE_ROLE_BINDING,
