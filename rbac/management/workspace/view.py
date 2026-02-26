@@ -180,6 +180,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         type_values = Workspace.Types.values + [all_types]
         type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
         name = request.query_params.get("name")
+        parent_id = request.query_params.get("parent_id")
         id_filter = request.query_params.get("ids")
 
         # Validate name parameter: treat empty strings as "return all", reject NUL characters
@@ -188,6 +189,17 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                 name = None  # Treat empty name as unset, returning all results
             elif "\x00" in name:
                 raise serializers.ValidationError({"name": "The 'name' query parameter contains invalid characters."})
+
+        # Validate parent_id parameter: treat empty strings as "return all", validate UUID format
+        if parent_id is not None:
+            if not parent_id.strip():
+                parent_id = None  # Treat empty parent_id as unset, returning all results
+            else:
+                if "\x00" in parent_id:
+                    raise serializers.ValidationError(
+                        {"parent_id": "The 'parent_id' query parameter contains invalid characters."}
+                    )
+                validate_uuid(parent_id, "parent_id filter")
 
         # Validate and filter by ids parameter (comma-separated list of UUIDs)
         if id_filter is not None:
@@ -215,6 +227,8 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             queryset = queryset.filter(type=type_field)
         if name:
             queryset = queryset.filter(name__iexact=name.lower())
+        if parent_id:
+            queryset = queryset.filter(parent_id=parent_id)
 
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)

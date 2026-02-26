@@ -2891,6 +2891,168 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("data")[0]["id"], str(self.standard_workspace.id))
         self.assertEqual(payload.get("data")[0]["type"], "standard")
 
+    def test_workspace_list_filter_by_parent_id(self):
+        """Test filtering workspaces by parent_id returns only direct children."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # Filter for children of default_workspace — should return standard workspaces under it
+        response = client.get(
+            f"{url}?parent_id={self.default_workspace.id}&type=all", None, format="json", **self.headers
+        )
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        # default_workspace has: standard_workspace, ungrouped_workspace as direct children
+        self.assertEqual(payload.get("meta").get("count"), 2)
+        returned_ids = [ws["id"] for ws in payload.get("data")]
+        self.assertIn(str(self.standard_workspace.id), returned_ids)
+        self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
+
+    def test_workspace_list_filter_by_parent_id_non_root_parent(self):
+        """Test that parent_id works for intermediate hierarchy nodes, not just root/default."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # standard_sub_workspace is a child of standard_workspace
+        response = client.get(
+            f"{url}?parent_id={self.standard_workspace.id}&type=all", None, format="json", **self.headers
+        )
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["id"], str(self.standard_sub_workspace.id))
+
+    def test_workspace_list_filter_by_parent_id_returns_only_direct_children(self):
+        """Test that parent_id filter returns only direct children, not deeper descendants."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # standard_sub_workspace is a child of standard_workspace, NOT of default_workspace
+        response = client.get(
+            f"{url}?parent_id={self.default_workspace.id}&type=standard", None, format="json", **self.headers
+        )
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        returned_ids = [ws["id"] for ws in payload.get("data")]
+        # standard_sub_workspace should NOT appear — it's a grandchild, not a direct child
+        self.assertNotIn(str(self.standard_sub_workspace.id), returned_ids)
+        self.assertIn(str(self.standard_workspace.id), returned_ids)
+        # ungrouped_workspace is a direct child of default but has type=ungrouped-hosts, not standard
+        self.assertNotIn(str(self.ungrouped_workspace.id), returned_ids)
+
+    def test_workspace_list_filter_by_parent_id_with_name(self):
+        """Test combining parent_id and name filters."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(
+            f"{url}?parent_id={self.default_workspace.id}&name=Standard Workspace&type=all",
+            None,
+            format="json",
+            **self.headers,
+        )
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["id"], str(self.standard_workspace.id))
+
+    def test_workspace_list_filter_by_parent_id_with_ids(self):
+        """Test combining parent_id with ids returns only workspaces matching both filters."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # standard_sub_workspace is a child of standard_workspace, NOT of default_workspace
+        # so it should be excluded by the parent_id filter even though it's in the ids list
+        ids_param = f"{self.standard_workspace.id},{self.standard_sub_workspace.id}"
+        response = client.get(
+            f"{url}?parent_id={self.default_workspace.id}&ids={ids_param}&type=all",
+            None,
+            format="json",
+            **self.headers,
+        )
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        returned_ids = {ws["id"] for ws in payload.get("data")}
+        # Only standard_workspace is both in the ids list AND a child of default_workspace
+        self.assertIn(str(self.standard_workspace.id), returned_ids)
+        self.assertNotIn(str(self.standard_sub_workspace.id), returned_ids)
+
+    def test_workspace_list_filter_by_parent_id_empty_string(self):
+        """Test that filtering by empty parent_id returns all workspaces."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?parent_id=", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("data", response.data)
+        self.assertEqual(response.data.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_filter_by_parent_id_whitespace_only(self):
+        """Test that filtering by whitespace-only parent_id returns all workspaces."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?parent_id=   ", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("data", response.data)
+        self.assertEqual(response.data.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_filter_by_parent_id_invalid_uuid(self):
+        """Test that filtering by invalid parent_id UUID returns a validation error."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?parent_id=not-a-uuid", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # Assert on error structure rather than exact message text
+        error_fields = [e["field"] for e in response.data.get("errors", [])]
+        self.assertIn("parent_id filter", error_fields)
+
+    def test_workspace_list_filter_by_parent_id_nonexistent(self):
+        """Test that filtering by a valid but non-existent parent_id returns empty results."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        non_existent_uuid = "00000000-0000-0000-0000-000000000000"
+        response = client.get(f"{url}?parent_id={non_existent_uuid}", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(payload.get("meta").get("count"), 0)
+        self.assertEqual(len(payload.get("data")), 0)
+
+    def test_workspace_list_filter_by_parent_id_with_nul_character(self):
+        """Test that filtering by parent_id containing NUL character returns a validation error."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?parent_id=test\x00uuid", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
+        self.assertIn("parent_id", str(response.data))
+        self.assertIn("invalid characters", str(response.data))
+
+    def test_workspace_list_filter_by_parent_id_cross_tenant(self):
+        """Test that parent_id from another tenant returns no results and does not leak current-tenant workspaces."""
+        other_tenant = Tenant.objects.create(tenant_name="Other Tenant")
+        other_root = Workspace.objects.create(name="Other Root", type="root", tenant=other_tenant)
+
+        # Sanity check: current tenant has workspaces
+        current_tenant_workspaces = Workspace.objects.filter(tenant=self.tenant)
+        self.assertTrue(current_tenant_workspaces.exists())
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        # Try to filter by a parent_id that belongs to a different tenant
+        response = client.get(f"{url}?parent_id={other_root.id}", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(payload.get("meta").get("count"), 0)
+
+        # Verify no current-tenant workspaces leaked into the response
+        returned_ids = {ws["id"] for ws in payload.get("data")}
+        self.assertNotIn(str(self.default_workspace.id), returned_ids)
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class WorkspaceTestsDetail(WorkspaceViewTests):

@@ -512,6 +512,8 @@ namespace Workspaces {
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
+        @doc("Filter workspaces by parent workspace UUID. Returns only direct children of the specified workspace. Useful for lazy-loading a nested tree structure.")
+        @query parent_id?: UUID;
         @doc("Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.")
         @query(#{explode: false}) ids?: UUID[];
 
