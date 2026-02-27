@@ -46,6 +46,7 @@ from management.role.v2_exceptions import (
     RolesNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role_binding.model import RoleBinding
 from management.utils import as_uuid
 
 from api.models import Tenant
@@ -270,4 +271,46 @@ class RoleV2Service:
             error_info = ", ".join(f"{str(r.uuid)} ({r.name!r})" for r in non_custom_roles)
             raise CustomRoleRequiredError(f"Only custom roles can be deleted, but got the following: {error_info}")
 
-        query.delete()
+        relations_to_remove = []
+        binding_pks_to_remove = []
+
+        # We must still explicitly lock the roles to prevent conflicts with old dual-write code that does not
+        # necessarily use SERIALIZABLE transactions.
+        roles_to_remove = list(
+            CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles))
+            .prefetch_related("permissions")
+            .select_for_update(of=["self"])
+        )
+
+        for role_binding in (
+            RoleBinding.objects.filter(role__in=roles)
+            .prefetch_related("role", "group_entries", "principal_entries")
+            .iterator(chunk_size=1000)
+        ):
+            relations_to_remove.extend(role_binding.binding_tuples())
+
+            relations_to_remove.extend(
+                role_binding.subject_tuple(p) for p in set(e.principal for e in role_binding.principal_entries.all())
+            )
+
+            relations_to_remove.extend(
+                role_binding.subject_tuple(g) for g in set(e.group for e in role_binding.group_entries.all())
+            )
+
+            binding_pks_to_remove.append(role_binding.pk)
+
+        for role in roles_to_remove:
+            relations_to_remove.extend(role.as_tuples())
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.DELETE_CUSTOM_ROLE,
+                info={"role_uuids": [str(r.uuid) for r in roles_to_remove]},
+                partition_key=PartitionKey.byEnvironment(),
+                add=[],
+                remove=relations_to_remove,
+            )
+        )
+
+        RoleBinding.objects.filter(pk__in=binding_pks_to_remove).delete()
+        CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles_to_remove)).delete()

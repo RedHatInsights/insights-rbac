@@ -17,15 +17,18 @@
 """Test the RoleV2Service."""
 
 import uuid
+from unittest.mock import patch
 
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
-from management.models import Permission
+from management.models import Group, Workspace, Permission
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_exceptions import RoleAlreadyExistsError, RolesNotFoundError, CustomRoleRequiredError
 from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2, PlatformRoleV2
 from management.role.v2_service import RoleV2Service
+from management.role_binding.model import RoleBinding
+from management.role_binding.service import RoleBindingService
 from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
@@ -526,6 +529,68 @@ class RoleV2ServiceTests(IdentityRequest):
         self.service.bulk_delete([role.uuid, str(role.uuid), str(role.uuid)])
 
         self.assertFalse(RoleV2.objects.filter(pk=role.pk).exists())
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_delete_replication(self):
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+
+        V2TenantBootstrapService(replicator=replicator).bootstrap_tenant(self.tenant, force=True)
+
+        initial_tuples = set(tuples)
+
+        service = RoleV2Service(tenant=self.tenant, replicator=replicator)
+
+        def assert_permission_count(count: int, role_uuid: str):
+            self.assertEqual(
+                count,
+                tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role", role_uuid),
+                        relation("inventory_hosts_read"),
+                        subject("rbac", "principal", "*"),
+                    )
+                ),
+            )
+
+        def assert_role_binding_group_count(count: int, role_binding_uuid: str, group_uuid: str):
+            self.assertEqual(
+                count,
+                tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", group_uuid, "member"),
+                    )
+                ),
+            )
+
+        role = service.create("a role", "a description", [self.permission1_data], self.tenant)
+        assert_permission_count(1, str(role.uuid))
+
+        group = Group.objects.create(tenant=self.tenant, name="a group")
+        workspace = Workspace.objects.default(tenant=self.tenant)
+
+        RoleBindingService(tenant=self.tenant, replicator=replicator).update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(workspace.id),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[str(role.uuid)],
+        )
+
+        role_binding = RoleBinding.objects.get(role=role)
+
+        assert_role_binding_group_count(1, role_binding_uuid=str(role_binding.uuid), group_uuid=str(group.uuid))
+
+        service.bulk_delete([str(role.uuid)])
+
+        assert_permission_count(0, str(role.uuid))
+        assert_role_binding_group_count(0, role_binding_uuid=str(role_binding.uuid), group_uuid=str(group.uuid))
+
+        # We have created a role and a role binding, then destroyed them. We should have exactly the same tuples as
+        # when we started.
+        self.assertEqual(set(tuples), initial_tuples)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
