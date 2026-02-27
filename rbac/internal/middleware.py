@@ -50,7 +50,7 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             return
 
         if request.path.startswith(settings.A2S_PATH_PREFIX):
-            # _a2s/ (agent-to-service) paths use public IdentityHeaderMiddleware auth
+            # A2S (agent-to-service) paths use public IdentityHeaderMiddleware auth
             return
 
         user = None

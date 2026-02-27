@@ -576,3 +576,6 @@ class MCPViewNonAdminTests(IdentityRequest):
         self.assertFalse(result["isError"])
         tool_output = json.loads(result["content"][0]["text"])
         self.assertIn("errors", tool_output)
+        self.assertIsInstance(tool_output["errors"], list)
+        self.assertGreater(len(tool_output["errors"]), 0)
+        self.assertEqual(tool_output["errors"][0]["status"], "403")

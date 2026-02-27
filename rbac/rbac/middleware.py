@@ -69,6 +69,17 @@ def catch_integrity_error(func):
     return inner
 
 
+def _is_a2s_path(request: WSGIRequest) -> bool:
+    """Return True if the request targets an agent-to-service (A2S) endpoint.
+
+    A2S paths live under /_private/_a2s/ but use public IdentityHeaderMiddleware
+    auth instead of the internal PSK/token auth used by other /_private/ paths.
+    When no valid identity is found, A2S requests are passed through without a
+    user so that unauthenticated MCP tools (e.g. hello) still work.
+    """
+    return request.path.startswith(settings.A2S_PATH_PREFIX)
+
+
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
     no_auth_list = [
@@ -228,7 +239,7 @@ class IdentityHeaderMiddleware:
 
         if any(
             [request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]
-        ) and not request.path.startswith(settings.A2S_PATH_PREFIX):
+        ) and not _is_a2s_path(request):
             # This request is for a private API endpoint (except _a2s/ which uses public auth)
             return self.get_response(request)
 
@@ -268,7 +279,7 @@ class IdentityHeaderMiddleware:
             # If we did not get the user information or service account information from the "x-rh-identity" header,
             # then the request is directly unauthorized.
             if not user_info and not service_account:
-                if request.path.startswith(settings.A2S_PATH_PREFIX):
+                if _is_a2s_path(request):
                     return self.get_response(request)
                 logger.debug("x-rh-identity does not contain user_info or service_account keys: %s", json_rh_auth)
                 return HttpResponseUnauthorizedRequest()
@@ -312,7 +323,7 @@ class IdentityHeaderMiddleware:
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
-            if request.path.startswith(settings.A2S_PATH_PREFIX):
+            if _is_a2s_path(request):
                 return self.get_response(request)
             user = build_user_from_psk(request) or build_system_user_from_token(
                 request, token_validator=self.token_validator

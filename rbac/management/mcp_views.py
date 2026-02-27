@@ -35,7 +35,6 @@ from management.principal.view import PrincipalView
 from mcp.server.fastmcp import FastMCP
 
 from api.common import RH_IDENTITY_HEADER
-from api.models import User
 
 # Cache the view function — PrincipalView.as_view() returns a new callable each time,
 # but the result is stateless and reusable.
@@ -198,20 +197,8 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
     return response
 
 
-# Cache tool metadata at module level — tools are static (listChanged: False),
-# so there is no need to create a new event loop per request.
-_CACHED_TOOLS: list[Any] | None = None
-_tools_lock: threading.Lock = threading.Lock()
-
-
-def _get_tools() -> list[Any]:
-    """Return cached tool metadata, resolving it lazily on first call."""
-    global _CACHED_TOOLS
-    if _CACHED_TOOLS is None:
-        with _tools_lock:
-            if _CACHED_TOOLS is None:
-                _CACHED_TOOLS = asyncio.run(mcp.list_tools())
-    return _CACHED_TOOLS
+# Resolve tool metadata once at import time — tools are static (listChanged: False).
+_CACHED_TOOLS: list[Any] = asyncio.run(mcp.list_tools())
 
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
@@ -223,7 +210,7 @@ def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, 
             "description": tool.description or "",
             "inputSchema": tool.inputSchema,
         }
-        for tool in _get_tools()
+        for tool in _CACHED_TOOLS
     ]
     return _success_response(request_id, {"tools": tools_data})
 
@@ -250,7 +237,7 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
     if tool_name in _AUTH_REQUIRED_TOOLS:
         user = getattr(request, "user", None)
-        if not user or not isinstance(user, User) or not user.org_id:
+        if not user or not getattr(user, "org_id", None):
             return _error_response(request_id, -32000, "Authentication required")
 
     # Store the full request so the tool can access auth context
