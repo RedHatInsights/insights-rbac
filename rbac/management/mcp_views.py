@@ -160,6 +160,15 @@ def _parse_jsonrpc(body: bytes) -> _ParseResult:
             _error_response(payload.get("id"), -32600, "Invalid Request: jsonrpc must be '2.0'"),
         )
 
+    method = payload.get("method")
+    if not isinstance(method, str) or not method:
+        return (
+            None,
+            payload.get("id"),
+            None,
+            _error_response(payload.get("id"), -32600, "Invalid Request: method must be a non-empty string"),
+        )
+
     request_id = payload.get("id")
     if request_id is None:
         return payload, None, None, None

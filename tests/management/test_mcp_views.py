@@ -115,6 +115,27 @@ class MCPViewTests(IdentityRequest):
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32600)
 
+    def test_missing_method_returns_error(self):
+        """Negative: Missing method field returns -32600 error."""
+        body = {"jsonrpc": "2.0", "id": 40, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32600)
+        self.assertIn("method", data["error"]["message"])
+
+    def test_notification_without_method_returns_error(self):
+        """Negative: Notification (no id) without method returns -32600 error."""
+        body = {"jsonrpc": "2.0"}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32600)
+
     def test_get_returns_405(self):
         """Negative: GET request returns 405 (SSE not supported in WSGI)."""
         response = self.client.get(self.url, **self.headers)
