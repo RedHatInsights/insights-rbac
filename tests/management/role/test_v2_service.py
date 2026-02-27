@@ -430,6 +430,13 @@ class RoleV2ServiceTests(IdentityRequest):
     # Tests for bulk_delete()
     # ==========================================================================
 
+    def test_delete_empty(self):
+        """Test that calling bulk_delete with no roles is successful."""
+        try:
+            self.service.bulk_delete([])
+        except Exception as e:
+            self.fail(f"Unexpected exception: {e}")
+
     def test_delete_roles_across_tenants(self):
         """Test that custom roles can be deleted."""
         tenant2 = V2TenantBootstrapService(OutboxReplicator()).new_bootstrapped_tenant("t2").tenant
