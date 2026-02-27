@@ -89,7 +89,7 @@ _jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 class RoleBindingService:
     """Service for role binding queries and operations."""
 
-    def __init__(self, tenant: Tenant, replicator: Optional[RelationReplicator] = None):
+    def __init__(self, tenant: Tenant, replicator: RelationReplicator | None = None):
         """Initialize the service with a tenant and optional replicator."""
         self.tenant = tenant
         self.subject_service = SubjectService()

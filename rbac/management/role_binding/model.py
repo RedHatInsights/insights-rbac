@@ -25,13 +25,7 @@ from management.group.model import Group
 from management.principal.model import Principal
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role_binding.queryset import RoleBindingQuerySet
-from migration_tool.models import (
-    V2boundresource,
-    V2rolebinding,
-    role_binding_group_subject_tuple,
-    role_binding_user_subject_tuple,
-)
-from migration_tool.utils import create_relationship
+from migration_tool.models import V2boundresource, V2rolebinding
 from uuid_utils.compat import UUID, uuid7
 
 from api.models import TenantAwareModel
@@ -49,9 +43,18 @@ class RoleBinding(TenantAwareModel):
     resource_id = models.CharField(max_length=256, null=False)
 
     # ── Relation tuple generation ────────────────────────────────────
+    #
+    # These methods produce ``RelationTuple`` objects that mirror the
+    # SpiceDB relationships for this binding.  They are **pure data
+    # transformations** — no DB writes.  The service layer collects
+    # these tuples and sends them via the ``OutboxReplicator``.
 
     def _resource_type_pair(self) -> tuple[str, str]:
-        """Return the (namespace, name) pair for this binding's resource type."""
+        """Return the (namespace, name) pair for this binding's resource type.
+
+        Convention: resource_type stored as ``"workspace"`` maps to
+        ``("rbac", "workspace")`` in the relations graph.
+        """
         return ("rbac", self.resource_type)
 
     def _role_relation_tuple(self) -> RelationTuple:
@@ -106,7 +109,11 @@ class RoleBinding(TenantAwareModel):
         return [self._role_relation_tuple(), self._resource_binding_tuple()]
 
     def subject_tuple(self, subject: "Group | Principal") -> RelationTuple:
-        """Return the subject tuple for this binding and the given subject."""
+        """Return the subject tuple for this binding and the given subject.
+
+        Dispatches to ``group_subject_tuple`` or ``user_subject_tuple``
+        based on the subject's type.
+        """
         if isinstance(subject, Group):
             return self._group_subject_tuple(subject)
         return self._user_subject_tuple(subject)
@@ -121,22 +128,36 @@ class RoleBinding(TenantAwareModel):
     ) -> tuple[list[RelationTuple], list[RelationTuple]]:
         """Compute the full set of relation tuples for a role binding changeset.
 
-        Pure data transformation -- no DB writes. The service calls this
+        Pure data transformation — no DB writes.  The service calls this
         once after performing the DB mutations and passes the result to the
         outbox replicator.
+
+        Args:
+            subject: The group or principal being updated.
+            bindings_created: Newly created RoleBinding instances.
+            bindings_deleted: Orphaned RoleBinding instances that were deleted.
+            subject_linked_to: Bindings the subject was linked to (added).
+            subject_unlinked_from: Bindings the subject was unlinked from (removed).
+
+        Returns:
+            ``(tuples_to_add, tuples_to_remove)`` ready for replication.
         """
         tuples_to_add: list[RelationTuple] = []
         tuples_to_remove: list[RelationTuple] = []
 
+        # New bindings: role + resource binding tuples
         for binding in bindings_created:
             tuples_to_add.extend(binding.binding_tuples())
 
+        # Deleted (orphaned) bindings: role + resource binding tuples
         for binding in bindings_deleted:
             tuples_to_remove.extend(binding.binding_tuples())
 
+        # Subject linked: subject tuple per binding
         for binding in subject_linked_to:
             tuples_to_add.append(binding.subject_tuple(subject))
 
+        # Subject unlinked: subject tuple per binding
         for binding in subject_unlinked_from:
             tuples_to_remove.append(binding.subject_tuple(subject))
 
@@ -230,23 +251,15 @@ class RoleBinding(TenantAwareModel):
         """Return relation tuples for this binding's relationships only."""
         tuples: list[RelationTuple] = []
 
-        tuples.append(
-            create_relationship(
-                ("rbac", "role_binding"), str(self.uuid), ("rbac", "role"), str(self.role.uuid), "role"
-            )
-        )
+        tuples.append(self._role_relation_tuple())
 
         for group in self.bound_groups():
-            tuples.append(role_binding_group_subject_tuple(str(self.uuid), str(group.uuid)))
+            tuples.append(self._group_subject_tuple(group))
 
         for entry in self.principal_entries.select_related("principal").all():
-            tuples.append(role_binding_user_subject_tuple(str(self.uuid), entry.principal.user_id))
+            tuples.append(self._user_subject_tuple(entry.principal))
 
-        tuples.append(
-            create_relationship(
-                ("rbac", self.resource_type), self.resource_id, ("rbac", "role_binding"), str(self.uuid), "binding"
-            )
-        )
+        tuples.append(self._resource_binding_tuple())
 
         return tuples
 
