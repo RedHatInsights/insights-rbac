@@ -366,9 +366,14 @@ class DualWriteTestCase(TestCase):
         )
 
     def expect_role_bindings_to_resource(
-        self, num: int, target: V2boundresource, for_v2_roles: list[str], for_groups: list[str]
+        self,
+        num: int,
+        target: V2boundresource,
+        for_v2_roles: list[str],
+        for_groups: list[str],
+        for_principals: list[str] = [],
     ):
-        """Assert there are [num] role bindings with the given roles and groups."""
+        """Assert there are [num] role bindings with the given roles, groups, principals."""
         # Find all bindings for the given workspace
         resources = self.tuples.find_tuples_grouped(
             all_of(
@@ -401,6 +406,14 @@ class DualWriteTestCase(TestCase):
                     subject("rbac", "group", group_id, "member"),
                 )
                 for group_id in for_groups
+            ]
+            + [
+                all_of(
+                    resource_type("rbac", "role_binding"),
+                    relation("subject"),
+                    subject("rbac", "principal", Principal.user_id_to_principal_resource_id(user_id)),
+                )
+                for user_id in for_principals
             ],
             group_by=lambda t: (
                 t.resource.type.namespace,
@@ -422,12 +435,14 @@ class DualWriteTestCase(TestCase):
             f"Unmatched role bindings: {unmatched}",
         )
 
-    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
+    def expect_1_role_binding_to_workspace(
+        self, workspace: str, for_v2_roles: list[str], for_groups: list[str], for_principals: list[str] = []
+    ):
         """Assert there is a role binding with the given roles and groups."""
-        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
+        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups, for_principals)
 
     def expect_role_bindings_to_workspace(
-        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str], for_principals: list[str] = []
     ):
         """Assert there are [num] role bindings for the given workspace with the given roles and groups."""
         self.expect_role_bindings_to_resource(
@@ -435,24 +450,27 @@ class DualWriteTestCase(TestCase):
             target=V2boundresource(("rbac", "workspace"), workspace),
             for_v2_roles=for_v2_roles,
             for_groups=for_groups,
+            for_principals=for_principals,
         )
 
-    def expect_1_role_binding_to_tenant(self, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+    def expect_1_role_binding_to_tenant(
+        self, org_id: str, for_v2_roles: list[str], for_groups: list[str], for_principals: list[str] = []
+    ):
         """Assert there is a role binding for the given workspace with the given roles and groups."""
         self.expect_role_bindings_to_tenant(
-            num=1,
-            org_id=org_id,
-            for_v2_roles=for_v2_roles,
-            for_groups=for_groups,
+            num=1, org_id=org_id, for_v2_roles=for_v2_roles, for_groups=for_groups, for_principals=for_principals
         )
 
-    def expect_role_bindings_to_tenant(self, num: int, org_id: str, for_v2_roles: list[str], for_groups: list[str]):
+    def expect_role_bindings_to_tenant(
+        self, num: int, org_id: str, for_v2_roles: list[str], for_groups: list[str], for_principals: list[str] = []
+    ):
         """Assert there is a role binding for the given tenant with the given roles and groups."""
         self.expect_role_bindings_to_resource(
             num=num,
             target=V2boundresource(("rbac", "tenant"), Tenant.org_id_to_tenant_resource_id(org_id)),
             for_v2_roles=for_v2_roles,
             for_groups=for_groups,
+            for_principals=for_principals,
         )
 
     def expect_binding_present(self, target: V2boundresource, v2_role_id: str, group_id: str):
@@ -2506,14 +2524,21 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
 
 class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
+    user_id: str
+    user: Principal
+
+    def setUp(self):
+        super().setUp()
+
+        self.user_id = "user_id"
+        self.user = self.fixture.new_principals_in_tenant(
+            [self.user_id], self.fixture.new_tenant("car_source").tenant
+        )[0]
 
     def test_adding_same_principal_to_two_cars_and_expire_one(self):
-        user_id = "user_id"
-        user = self.fixture.new_principals_in_tenant([user_id], self.fixture.new_tenant("car_source").tenant)[0]
-
         system_role = self.given_v1_system_role("rtest", permissions=["app1:hosts:read", "inventory:hosts:write"])
-        car_1 = self.given_car(user_id, [system_role])
-        car_2 = self.given_car(user_id, [system_role])
+        car_1 = self.given_car(self.user_id, [system_role])
+        car_2 = self.given_car(self.user_id, [system_role])
 
         # See the user bound multiple times
         mappings = BindingMapping.objects.filter(role=system_role).first().mappings
@@ -2521,8 +2546,8 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         self.assertEqual(
             mappings["users"],
             {
-                str(car_1.source_key()): user_id,
-                str(car_2.source_key()): user_id,
+                str(car_1.source_key()): self.user_id,
+                str(car_2.source_key()): self.user_id,
             },
         )
 
@@ -2530,8 +2555,8 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         self.expect_role_binding_principals(
             role_binding,
             [
-                (str(car_1.source_key()), user),
-                (str(car_2.source_key()), user),
+                (str(car_1.source_key()), self.user),
+                (str(car_2.source_key()), self.user),
             ],
         )
 
@@ -2539,7 +2564,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}"),
+                subject("rbac", "principal", f"localhost/{self.user_id}"),
             )
         )
         self.assertEqual(len(tuples), 1)
@@ -2558,7 +2583,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         self.expect_role_binding_principals(
             role_binding,
             [
-                (str(car_2.source_key()), user),
+                (str(car_2.source_key()), self.user),
             ],
         )
 
@@ -2566,10 +2591,79 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}"),
+                subject("rbac", "principal", f"localhost/{self.user_id}"),
             )
         )
         self.assertEqual(len(tuples), 1)
+
+    def _expect_user_default_count(self, count: int, role: Role):
+        self.expect_role_bindings_to_workspace(
+            count,
+            self.default_workspace(),
+            for_v2_roles=[str(role.uuid)],
+            for_groups=[],
+            for_principals=[self.user_id],
+        )
+
+    def _expect_user_root_count(self, count: int, role: Role):
+        self.expect_role_bindings_to_workspace(
+            count,
+            self.root_workspace(),
+            for_v2_roles=[str(role.uuid)],
+            for_groups=[],
+            for_principals=[self.user_id],
+        )
+
+    def _expect_user_tenant_count(self, count: int, role: Role):
+        self.expect_role_bindings_to_tenant(
+            count,
+            org_id=self.tenant.org_id,
+            for_v2_roles=[str(role.uuid)],
+            for_groups=[],
+            for_principals=[self.user_id],
+        )
+
+    def test_scope_assignment(self):
+        system_role = self.given_v1_system_role("test", permissions=["app:resource:verb"])
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            car = self.given_car(self.user_id, [system_role])
+
+            self._expect_user_default_count(1, system_role)
+            self._expect_user_root_count(0, system_role)
+            self._expect_user_tenant_count(0, system_role)
+
+            self.given_car_expired(car)
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="app:resource:verb", TENANT_SCOPE_PERMISSIONS=""):
+            car = self.given_car(self.user_id, [system_role])
+
+            self._expect_user_default_count(0, system_role)
+            self._expect_user_root_count(1, system_role)
+            self._expect_user_tenant_count(0, system_role)
+
+            self.given_car_expired(car)
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="app:resource:verb"):
+            car = self.given_car(self.user_id, [system_role])
+
+            self._expect_user_default_count(0, system_role)
+            self._expect_user_root_count(0, system_role)
+            self._expect_user_tenant_count(1, system_role)
+
+            self.given_car_expired(car)
+
+    def test_scope_removal(self):
+        system_role = self.given_v1_system_role("test", permissions=["app:resource:verb"])
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="app:resource:verb"):
+            car = self.given_car(self.user_id, [system_role])
+            self._expect_user_tenant_count(1, system_role)
+
+        # Expiring the CAR should remove the role binding even if the role's scope has changed in the interim.
+        with self.settings(ROOT_SCOPE_PERIMSSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            self.given_car_expired(car)
+            self._expect_user_root_count(0, system_role)
 
 
 class RbacFixture:

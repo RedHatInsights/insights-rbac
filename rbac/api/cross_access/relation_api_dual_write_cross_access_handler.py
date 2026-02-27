@@ -22,7 +22,7 @@ from typing import Iterable, Optional
 
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
-from management.permission.scope_service import Scope
+from management.permission.scope_service import Scope, ImplicitResourceService
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
     PartitionKey,
@@ -45,10 +45,16 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         cross_account_request: CrossAccountRequest,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
+        resource_service: Optional[ImplicitResourceService] = None,
     ):
         """Initialize RelationApiDualWriteCrossAccessHandler."""
         if not self.replication_enabled():
             return
+
+        if resource_service is None:
+            resource_service = ImplicitResourceService.from_settings()
+
+        self._resource_service = resource_service
 
         try:
             self.cross_account_request = cross_account_request
@@ -111,7 +117,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         for role in roles:
             self._update_mapping_for_system_role(
                 role,
-                scope=Scope.DEFAULT,
+                scope=self._resource_service.scope_for_role(role),
                 update_mapping=add_principal_to_binding,
                 create_default_mapping_for_system_role=lambda resource: self._create_default_mapping_for_system_role(
                     system_role=role,
@@ -140,9 +146,10 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
                 self.relations_to_remove.append(removal)
 
         for role in roles:
-            self._update_mapping_for_system_role(
-                role,
-                scope=Scope.DEFAULT,
-                update_mapping=remove_principal_from_binding,
-                create_default_mapping_for_system_role=None,
-            )
+            for scope in Scope:
+                self._update_mapping_for_system_role(
+                    role,
+                    scope=scope,
+                    update_mapping=remove_principal_from_binding,
+                    create_default_mapping_for_system_role=None,
+                )
