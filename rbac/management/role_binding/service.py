@@ -172,14 +172,13 @@ class RoleBindingService:
     @atomic
     def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
         """Create multiple role bindings."""
-        role_uuids = {req.role_id for req in requests}
+        role_uuids = list({req.role_id for req in requests})
+        roles = self._get_roles(role_uuids)
+        roles_by_uuid = {str(r.uuid): r for r in roles}
+        roles_by_id = {r.id: r for r in roles}
+
         group_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.GROUP}
         user_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.USER}
-
-        roles_by_uuid = {str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids).assignable()}
-        missing_roles = role_uuids - set(roles_by_uuid.keys())
-        if missing_roles:
-            raise InvalidFieldError("roles", f"The following roles do not exist: {', '.join(missing_roles)}")
 
         groups_by_uuid = self.subject_service.resolve_groups(group_uuids)
         missing_groups = group_uuids - set(groups_by_uuid.keys())
@@ -191,100 +190,56 @@ class RoleBindingService:
         if missing_users:
             raise NotFoundError(SubjectType.USER, ", ".join(missing_users))
 
-        resource_names: dict[tuple[str, str], str | None] = {}
+        subject_resource_groups: dict[tuple, set[int]] = {}
         for req in requests:
-            key = (req.resource_type, req.resource_id)
-            if key not in resource_names:
-                resource_names[key] = self.get_resource_name(req.resource_id, req.resource_type)
+            key = (req.subject_type, req.subject_id, req.resource_type, req.resource_id)
+            subject_resource_groups.setdefault(key, set()).add(roles_by_uuid[req.role_id].id)
 
-        desired_binding_keys = {
-            (roles_by_uuid[req.role_id].id, req.resource_type, req.resource_id) for req in requests
-        }
-
-        existing_bindings = list(
-            RoleBinding.objects.filter(
-                tenant=self.tenant,
-                role_id__in=[k[0] for k in desired_binding_keys],
-            )
-        )
-        existing_keys = {(b.role_id, b.resource_type, b.resource_id) for b in existing_bindings}
-
-        new_keys = desired_binding_keys - existing_keys
-        new_bindings: list[RoleBinding] = []
-        if new_keys:
-            new_bindings = RoleBinding.objects.bulk_create(
-                [
-                    RoleBinding(
-                        role_id=role_id,
-                        resource_type=resource_type,
-                        resource_id=resource_id,
-                        tenant=self.tenant,
-                    )
-                    for role_id, resource_type, resource_id in new_keys
-                ]
-            )
-            existing_bindings.extend(new_bindings)
-
-        bindings_index = {(b.role_id, b.resource_type, b.resource_id): b for b in existing_bindings}
-
-        group_links = []
-        user_links = []
-        created = []
-        for req in requests:
-            role = roles_by_uuid[req.role_id]
-            binding = bindings_index[(role.id, req.resource_type, req.resource_id)]
-
-            if req.subject_type == SubjectType.GROUP:
-                subject = groups_by_uuid[req.subject_id]
-                group_links.append(RoleBindingGroup(binding=binding, group=subject))
+        all_tuples_to_add: list[RelationTuple] = []
+        for (subject_type, subject_id, resource_type, resource_id), role_ids in subject_resource_groups.items():
+            if subject_type == SubjectType.GROUP:
+                subject = groups_by_uuid[subject_id]
             else:
-                subject = principals_by_uuid[req.subject_id]
-                user_links.append(RoleBindingPrincipal(binding=binding, principal=subject, source="api"))
+                subject = principals_by_uuid[subject_id]
+            created, linked = self._add_access(subject, resource_type, resource_id, roles_by_id, role_ids)
+            tuples_add, _ = RoleBinding.replication_tuples(
+                subject=subject,
+                bindings_created=created,
+                subject_linked_to=linked,
+            )
+            all_tuples_to_add.extend(tuples_add)
 
-            created.append(
+        self._replicate_tuples(all_tuples_to_add, [], ReplicationEventType.BATCH_CREATE_ROLE_BINDING)
+
+        resource_names: dict[tuple[str, str], str | None] = {}
+        result = []
+        for req in requests:
+            rkey = (req.resource_type, req.resource_id)
+            if rkey not in resource_names:
+                resource_names[rkey] = self.get_resource_name(req.resource_id, req.resource_type)
+            role = roles_by_uuid[req.role_id]
+            subject = (
+                groups_by_uuid[req.subject_id]
+                if req.subject_type == SubjectType.GROUP
+                else principals_by_uuid[req.subject_id]
+            )
+            result.append(
                 {
                     "role": role,
                     "subject_type": req.subject_type,
                     "subject": subject,
                     "resource_type": req.resource_type,
                     "resource_id": req.resource_id,
-                    "resource_name": resource_names.get((req.resource_type, req.resource_id)),
+                    "resource_name": resource_names.get(rkey),
                 }
-            )
-
-        if group_links:
-            RoleBindingGroup.objects.bulk_create(group_links, ignore_conflicts=True)
-        if user_links:
-            RoleBindingPrincipal.objects.bulk_create(user_links, ignore_conflicts=True)
-
-        relations_to_add = []
-        for binding in new_bindings:
-            relations_to_add.extend(binding.binding_tuples())
-
-        for req in requests:
-            role = roles_by_uuid[req.role_id]
-            binding = bindings_index[(role.id, req.resource_type, req.resource_id)]
-            if req.subject_type == SubjectType.GROUP:
-                relations_to_add.append(binding.subject_tuple(groups_by_uuid[req.subject_id]))
-            else:
-                relations_to_add.append(binding.subject_tuple(principals_by_uuid[req.subject_id]))
-
-        if relations_to_add:
-            self._replicator.replicate(
-                ReplicationEvent(
-                    event_type=ReplicationEventType.BATCH_CREATE_ROLE_BINDING,
-                    info={"org_id": str(self.tenant.org_id)},
-                    partition_key=PartitionKey.byEnvironment(),
-                    add=relations_to_add,
-                )
             )
 
         logger.info(
             "Created %d role binding(s) for tenant %s",
-            len(created),
+            len(result),
             self.tenant.org_id,
         )
-        return created
+        return result
 
     def _build_base_queryset(
         self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None

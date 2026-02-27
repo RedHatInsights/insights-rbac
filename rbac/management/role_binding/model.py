@@ -247,22 +247,6 @@ class RoleBinding(TenantAwareModel):
         principals_by_id = {p.user_id: p for p in principals}
         self.update_principals((s, principals_by_id[u]) for s, u in user_ids_by_source)
 
-    def as_tuples(self) -> list[RelationTuple]:
-        """Return relation tuples for this binding's relationships only."""
-        tuples: list[RelationTuple] = []
-
-        tuples.append(self._role_relation_tuple())
-
-        for group in self.bound_groups():
-            tuples.append(self._group_subject_tuple(group))
-
-        for entry in self.principal_entries.select_related("principal").all():
-            tuples.append(self._user_subject_tuple(entry.principal))
-
-        tuples.append(self._resource_binding_tuple())
-
-        return tuples
-
     def as_migration_value(self, force_group_uuids: Optional[list[str]] = None) -> V2rolebinding:
         """Return the V2rolebinding equivalent of this role binding.
 
