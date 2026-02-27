@@ -20,7 +20,6 @@
 import asyncio
 import json
 import logging
-import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -43,11 +42,6 @@ _principal_view = PrincipalView.as_view()
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-03-26"
-
-# Thread-local storage for the Django request during MCP tool execution.
-# Each WSGI request runs in its own thread; the tool call runs synchronously
-# in the same thread, so it can read the request set by the view handler.
-_mcp_request_context: threading.local = threading.local()
 
 # Factory for building internal Django requests to delegate to views.
 _request_factory = RequestFactory()
@@ -72,18 +66,28 @@ def list_principals(
     status: str = "enabled",
     username_only: str = "false",
 ) -> str:
+    """Schema-only wrapper for FastMCP tool registration.
+
+    Execution is handled by _list_principals_impl with an explicit request
+    parameter, so this function is never called directly.
+    """
+    raise RuntimeError("list_principals should not be called via FastMCP dispatch")
+
+
+def _list_principals_impl(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    sort_order: str = "asc",
+    status: str = "enabled",
+    username_only: str = "false",
+) -> str:
     """List principals by delegating to PrincipalView.
 
     Uses the same Django view class, authentication, and permission checks
     as the /api/v1/principals/ REST API endpoint.
     """
-    # Defense-in-depth: _handle_tools_call already blocks unauthenticated
-    # callers for tools in _AUTH_REQUIRED_TOOLS, but guard here too in case
-    # this function is ever called outside the normal dispatch path.
-    request: HttpRequest | None = getattr(_mcp_request_context, "request", None)
-    if request is None:
-        return json.dumps({"errors": [{"detail": "Authentication required. Provide x-rh-identity header."}]})
-
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
@@ -227,28 +231,27 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     FastMCP's async call_tool) to avoid Django's SynchronousOnlyOperation
     error when tools access the ORM.
 
-    Stores the original Django request in thread-local context so the tool
-    function can build an internal request with the same authentication and
-    delegate to the appropriate Django view class.
+    Tools that need auth context receive the Django request explicitly via
+    a closure, so no thread-local state is needed.
     """
     tool_name: str = params.get("name", "")
     if "arguments" not in params:
         return _error_response(request_id, -32602, "Missing required field: arguments")
     arguments: dict[str, Any] = params.get("arguments", {})
 
-    tool_fn = _TOOL_FUNCTIONS.get(tool_name)
-    if tool_fn is None:
+    config = _TOOL_CONFIG.get(tool_name)
+    if config is None:
         return _error_response(request_id, -32602, f"Unknown tool: {tool_name}")
 
     logger.info("MCP tools/call: tool='%s', argument_keys=%s", tool_name, list(arguments.keys()))
 
-    if tool_name in _AUTH_REQUIRED_TOOLS:
+    if config["requires_auth"]:
         user = getattr(request, "user", None)
         if not user or not getattr(user, "org_id", None):
             return _error_response(request_id, -32000, "Authentication required")
 
-    # Store the full request so the tool can access auth context
-    _mcp_request_context.request = request
+    # Build tool callable with request closure for tools that need auth context
+    tool_fn = config["fn"](request)
 
     try:
         result = tool_fn(**arguments)
@@ -259,23 +262,25 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     except Exception:
         logger.exception("Error executing MCP tool '%s'", tool_name)
         return _error_response(request_id, -32603, "Internal error executing tool")
-    finally:
-        _mcp_request_context.request = None
 
 
-# --- Registries ---
+# --- Tool configuration ---
+#
+# Single registry for tool execution and auth requirements.
+# FastMCP is used only for schema generation (tools/list).
+# Each tool's "fn" is a factory that receives the request and returns
+# a callable(**arguments) -> str, allowing authenticated tools to
+# access the request without thread-local state.
 
-# Tool functions called directly in sync context to avoid Django's
-# SynchronousOnlyOperation error.  FastMCP is used only for tool
-# schema generation (tools/list), not for tool execution.
-
-# Tools that require x-rh-identity authentication.
-# Tools not listed here (e.g. hello) are publicly accessible.
-_AUTH_REQUIRED_TOOLS: set[str] = {"list_principals"}
-
-_TOOL_FUNCTIONS: dict[str, Any] = {
-    "hello": hello,
-    "list_principals": list_principals,
+_TOOL_CONFIG: dict[str, dict[str, Any]] = {
+    "hello": {
+        "requires_auth": False,
+        "fn": lambda request: lambda **kwargs: hello(**kwargs),
+    },
+    "list_principals": {
+        "requires_auth": True,
+        "fn": lambda request: lambda **kwargs: _list_principals_impl(request, **kwargs),
+    },
 }
 
 _HANDLERS: dict[str, Any] = {

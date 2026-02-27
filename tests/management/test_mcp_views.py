@@ -322,7 +322,13 @@ class MCPViewTests(IdentityRequest):
         self.assertEqual(data["error"]["message"], "Unknown tool: nonexistent_tool")
 
     @patch.dict(
-        "management.mcp_views._TOOL_FUNCTIONS", {"hello": lambda **kw: (_ for _ in ()).throw(Exception("boom"))}
+        "management.mcp_views._TOOL_CONFIG",
+        {
+            "hello": {
+                "requires_auth": False,
+                "fn": lambda request: lambda **kw: (_ for _ in ()).throw(Exception("boom")),
+            }
+        },
     )
     def test_tools_call_internal_error_returns_32603(self):
         """Negative: tool raising an exception returns JSON-RPC -32603."""
