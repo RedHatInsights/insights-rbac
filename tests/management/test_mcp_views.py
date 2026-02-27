@@ -399,6 +399,38 @@ class MCPViewTests(IdentityRequest):
         self.assertEqual(data["error"]["code"], -32600)
         self.assertIn("params must be an object", data["error"]["message"])
 
+    def test_tools_call_missing_name_returns_unknown_tool(self):
+        """Negative: tools/call without name returns unknown tool error."""
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 34,
+            "params": {"arguments": {}},
+        }
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32602)
+        self.assertIn("Unknown tool", data["error"]["message"])
+
+    def test_tools_call_non_dict_arguments_returns_32602(self):
+        """Negative: tools/call with non-dict arguments returns -32602."""
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 35,
+            "params": {"name": "hello", "arguments": "not a dict"},
+        }
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32602)
+        self.assertIn("arguments must be an object", data["error"]["message"])
+
     def test_tools_call_missing_arguments_returns_32602(self):
         """Negative: tools/call without arguments field returns -32602."""
         body = {

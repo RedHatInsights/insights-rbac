@@ -87,8 +87,10 @@ def _list_principals_impl(
 ) -> str:
     """List principals by delegating to PrincipalView.
 
-    Uses the same Django view class, authentication, and permission checks
-    as the /api/v1/principals/ REST API endpoint.
+    Creates an internal Django request with the same authentication context
+    as the original MCP request, then passes it to PrincipalView.as_view()
+    so that all permission checks, pagination, and proxy calls are handled
+    identically to a normal /api/v1/principals/ GET request.
     """
     query_params: dict[str, str] = {
         "limit": str(limit),
@@ -97,27 +99,17 @@ def _list_principals_impl(
         "status": status,
         "username_only": username_only,
     }
-    return _call_principal_view(request, query_params)
 
-
-def _call_principal_view(mcp_request: HttpRequest, query_params: dict[str, str]) -> str:
-    """Build a GET request and delegate to PrincipalView.
-
-    Creates an internal Django request with the same authentication context
-    as the original MCP request, then passes it to PrincipalView.as_view()
-    so that all permission checks, pagination, and proxy calls are handled
-    identically to a normal /api/v1/principals/ GET request.
-    """
     path = reverse("v1_management:principals")
     view_request = _request_factory.get(path, data=query_params)
 
     # Copy authentication context set by IdentityHeaderMiddleware
-    view_request.user = mcp_request.user
-    view_request.tenant = getattr(mcp_request, "tenant", None)
-    view_request.req_id = getattr(mcp_request, "req_id", None)
+    view_request.user = request.user
+    view_request.tenant = getattr(request, "tenant", None)
+    view_request.req_id = getattr(request, "req_id", None)
 
     # Copy identity header for downstream services
-    identity = mcp_request.META.get(RH_IDENTITY_HEADER)
+    identity = request.META.get(RH_IDENTITY_HEADER)
     if identity:
         view_request.META[RH_IDENTITY_HEADER] = identity
 
@@ -210,6 +202,7 @@ class MCPView(View):
         if request_id is None:
             return HttpResponse(status=202, content_type="application/json")
 
+        assert payload is not None  # guaranteed by _parse_jsonrpc when error is None
         method: str = payload.get("method", "")
         handler = _HANDLERS.get(method)
         if handler is None:
@@ -284,7 +277,9 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     tool_name: str = params.get("name", "")
     if "arguments" not in params:
         return _error_response(request_id, -32602, "Missing required field: arguments")
-    arguments: dict[str, Any] = params.get("arguments", {})
+    arguments = params.get("arguments", {})
+    if not isinstance(arguments, dict):
+        return _error_response(request_id, -32602, "Invalid params: arguments must be an object")
 
     config = _TOOL_CONFIG.get(tool_name)
     if config is None:
