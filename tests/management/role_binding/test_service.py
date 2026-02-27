@@ -36,7 +36,7 @@ from migration_tool.in_memory_tuples import (
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
-from management.role_binding.exceptions import RolesNotFoundError, SubjectsNotFoundError
+from management.exceptions import InvalidFieldError, NotFoundError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
 from management.role_binding.service import CreateBindingRequest, RoleBindingService
@@ -924,7 +924,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
     def test_batch_create_raises_roles_not_found(self):
         """Pass a non-existent role UUID."""
         fake_role_id = str(uuid.uuid4())
-        with self.assertRaises(RolesNotFoundError) as ctx:
+        with self.assertRaises(InvalidFieldError) as ctx:
             self.service.batch_create(
                 [
                     CreateBindingRequest(
@@ -937,33 +937,34 @@ class BatchCreateRoleBindingTests(IdentityRequest):
                 ]
             )
 
-        self.assertIn(fake_role_id, ctx.exception.missing_role_ids)
+        self.assertEqual(ctx.exception.field, "roles")
+        self.assertIn(fake_role_id, str(ctx.exception))
 
     def test_batch_create_raises_subjects_not_found_group(self):
         """Pass a non-existent group UUID."""
         fake_group_id = str(uuid.uuid4())
-        with self.assertRaises(SubjectsNotFoundError) as ctx:
+        with self.assertRaises(NotFoundError) as ctx:
             self.service.batch_create(
                 [
                     self._make_request(self.role1, "group", fake_group_id),
                 ]
             )
 
-        self.assertEqual(ctx.exception.subject_type, "group")
-        self.assertIn(fake_group_id, ctx.exception.missing_uuids)
+        self.assertEqual(ctx.exception.resource_type, "group")
+        self.assertIn(fake_group_id, str(ctx.exception))
 
     def test_batch_create_raises_subjects_not_found_user(self):
         """Pass a non-existent principal UUID."""
         fake_user_id = str(uuid.uuid4())
-        with self.assertRaises(SubjectsNotFoundError) as ctx:
+        with self.assertRaises(NotFoundError) as ctx:
             self.service.batch_create(
                 [
                     self._make_request(self.role1, "user", fake_user_id),
                 ]
             )
 
-        self.assertEqual(ctx.exception.subject_type, "user")
-        self.assertIn(fake_user_id, ctx.exception.missing_uuids)
+        self.assertEqual(ctx.exception.resource_type, "user")
+        self.assertIn(fake_user_id, str(ctx.exception))
 
     def test_batch_create_idempotent_same_subject(self):
         """Granting the same role to the same subject twice is idempotent."""
@@ -1041,19 +1042,20 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         platform = PlatformRoleV2.objects.create(name="platform_role", tenant=self.tenant)
         platform.children.add(seeded)
 
-        with self.assertRaises(RolesNotFoundError) as ctx:
+        with self.assertRaises(InvalidFieldError) as ctx:
             self.service.batch_create(
                 [
                     self._make_request(platform, "group", self.group.uuid),
                 ]
             )
 
-        self.assertIn(str(platform.uuid), ctx.exception.missing_role_ids)
+        self.assertEqual(ctx.exception.field, "roles")
+        self.assertIn(str(platform.uuid), str(ctx.exception))
 
     def test_batch_create_fails_fast_when_one_role_missing(self):
         """Batch with valid role1 and non-existent role2 fails before any DB writes."""
         fake_role_id = str(uuid.uuid4())
-        with self.assertRaises(RolesNotFoundError) as ctx:
+        with self.assertRaises(InvalidFieldError) as ctx:
             self.service.batch_create(
                 [
                     self._make_request(self.role1, "group", self.group.uuid),
@@ -1067,7 +1069,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
                 ]
             )
 
-        self.assertIn(fake_role_id, ctx.exception.missing_role_ids)
+        self.assertEqual(ctx.exception.field, "roles")
+        self.assertIn(fake_role_id, str(ctx.exception))
         self.assertFalse(
             RoleBinding.objects.filter(
                 role=self.role1, resource_id=str(self.workspace.id), resource_type="workspace"
@@ -1077,7 +1080,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
     def test_batch_create_fails_fast_when_one_subject_missing(self):
         """Batch with valid group and non-existent group fails before any DB writes."""
         fake_group_id = str(uuid.uuid4())
-        with self.assertRaises(SubjectsNotFoundError) as ctx:
+        with self.assertRaises(NotFoundError) as ctx:
             self.service.batch_create(
                 [
                     self._make_request(self.role1, "group", self.group.uuid),
@@ -1085,7 +1088,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
                 ]
             )
 
-        self.assertIn(fake_group_id, ctx.exception.missing_uuids)
+        self.assertEqual(ctx.exception.resource_type, "group")
+        self.assertIn(fake_group_id, str(ctx.exception))
         self.assertFalse(
             RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace").exists()
         )

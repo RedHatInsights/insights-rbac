@@ -1887,22 +1887,23 @@ class BatchCreateViewTests(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_batch_create_invalid_subject_returns_400(self, mock_permission):
-        """Non-existent group UUID returns 400 with subject error field."""
+    def test_batch_create_invalid_subject_returns_404(self, mock_permission):
+        """Non-existent group UUID returns 404."""
         url = self._get_batch_create_url()
+        fake_subject_id = str(uuid.uuid4())
         payload = {
             "requests": [
                 {
                     "resource": {"id": str(self.workspace.id), "type": "workspace"},
-                    "subject": {"id": str(uuid.uuid4()), "type": "group"},
+                    "subject": {"id": fake_subject_id, "type": "group"},
                     "role": {"id": str(self.role.uuid)},
                 }
             ]
         }
         response = self.client.post(url, payload, format="json", **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("subject", str(response.data))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn(fake_subject_id, str(response.data))
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",

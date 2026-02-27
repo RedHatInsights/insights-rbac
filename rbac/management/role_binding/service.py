@@ -44,7 +44,6 @@ from management.relation_replicator.relation_replicator import (
 from management.relation_replicator.types import RelationTuple
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
-from management.role_binding.exceptions import RolesNotFoundError, SubjectsNotFoundError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.subject import Subject, SubjectService, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
@@ -180,17 +179,17 @@ class RoleBindingService:
         roles_by_uuid = {str(r.uuid): r for r in RoleV2.objects.filter(uuid__in=role_uuids).assignable()}
         missing_roles = role_uuids - set(roles_by_uuid.keys())
         if missing_roles:
-            raise RolesNotFoundError(list(missing_roles))
+            raise InvalidFieldError("roles", f"The following roles do not exist: {', '.join(missing_roles)}")
 
         groups_by_uuid = self.subject_service.resolve_groups(group_uuids)
         missing_groups = group_uuids - set(groups_by_uuid.keys())
         if missing_groups:
-            raise SubjectsNotFoundError(SubjectType.GROUP, list(missing_groups))
+            raise NotFoundError(SubjectType.GROUP, ", ".join(missing_groups))
 
         principals_by_uuid = self.subject_service.resolve_users(user_uuids)
         missing_users = user_uuids - set(principals_by_uuid.keys())
         if missing_users:
-            raise SubjectsNotFoundError(SubjectType.USER, list(missing_users))
+            raise NotFoundError(SubjectType.USER, ", ".join(missing_users))
 
         resource_names: dict[tuple[str, str], str | None] = {}
         for req in requests:

@@ -26,7 +26,6 @@ from typing import Optional
 from management.models import Group
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
-from management.role_binding.exceptions import RolesNotFoundError, SubjectsNotFoundError
 from management.role_binding.model import RoleBinding
 from management.role_binding.service import CreateBindingRequest, RoleBindingService
 from management.subject import SubjectType
@@ -535,12 +534,6 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
         return resource_data
 
 
-BATCH_CREATE_ERROR_MAPPING = {
-    RolesNotFoundError: "role",
-    SubjectsNotFoundError: "subject",
-}
-
-
 class ResourceInputSerializer(serializers.Serializer):
     """Validates the resource portion of a role binding request."""
 
@@ -599,11 +592,7 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
             )
             for item in validated_data["requests"]
         ]
-        try:
-            return self.service.batch_create(requests)
-        except tuple(BATCH_CREATE_ERROR_MAPPING.keys()) as e:
-            field_name = BATCH_CREATE_ERROR_MAPPING[type(e)]
-            raise serializers.ValidationError({field_name: str(e)})
+        return self.service.batch_create(requests)
 
 
 class BatchCreateRoleBindingResponseItemSerializer(serializers.Serializer):
