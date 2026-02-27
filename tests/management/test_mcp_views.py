@@ -372,6 +372,19 @@ class MCPViewTests(IdentityRequest):
         self.assertEqual(data["error"]["code"], -32602)
         self.assertIn("arguments", data["error"]["message"])
 
+    def test_batch_request_returns_parse_error(self):
+        """Negative: JSON-RPC batch request (array) is not supported and returns -32600."""
+        batch = [
+            {"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {}},
+            {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}},
+        ]
+        response = self.client.post(self.url, data=json.dumps(batch), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32600)
+
     def test_tools_call_invalid_params_returns_32602(self):
         """Negative: passing wrong argument types returns JSON-RPC -32602."""
         body = {

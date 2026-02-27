@@ -18,6 +18,7 @@
 """MCP endpoint for RBAC using Anthropic MCP Python SDK for tool registration and schema generation."""
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import uuid
@@ -150,6 +151,12 @@ class MCPView(View):
         except (json.JSONDecodeError, ValueError):
             return _error_response(None, -32700, "Parse error")
 
+        if isinstance(body, list):
+            return _error_response(None, -32600, "Invalid Request: batch requests are not supported")
+
+        if not isinstance(body, dict):
+            return _error_response(None, -32600, "Invalid Request: expected a JSON object")
+
         if body.get("jsonrpc") != "2.0":
             return _error_response(body.get("id"), -32600, "Invalid Request: jsonrpc must be '2.0'")
 
@@ -201,13 +208,22 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
     return response
 
 
-# Resolve tool metadata once at import time — tools are static (listChanged: False).
-try:
-    _CACHED_TOOLS: list[Any] = asyncio.run(mcp.list_tools())
-except RuntimeError:
-    # Fallback for environments where an event loop is already running (e.g. ASGI, Jupyter)
-    _CACHED_TOOLS = []
-    logger.warning("Could not resolve MCP tool metadata at import time — tools/list will be empty")
+def _resolve_tool_metadata() -> list[Any]:
+    """Resolve tool metadata synchronously from FastMCP.
+
+    Tools are static (listChanged: False), so we resolve once at import time.
+    Handles environments where an event loop is already running (ASGI, Jupyter)
+    by running the async call in a separate thread.
+    """
+    try:
+        return asyncio.run(mcp.list_tools())
+    except RuntimeError:
+        # Event loop already running — run in a new thread with its own loop
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, mcp.list_tools()).result()
+
+
+_CACHED_TOOLS: list[Any] = _resolve_tool_metadata()
 
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
