@@ -19,7 +19,7 @@
 from typing import TYPE_CHECKING
 
 from django.db.models import Count, Q
-from management.exceptions import NotFoundError, RequiredFieldError
+from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.principal.model import Principal
 
@@ -105,9 +105,18 @@ class SubjectQuerySet:
 
         try:
             entity = Principal.objects.get(uuid=id)
-            return Subject(type=SubjectType.USER, entity=entity)
         except Principal.DoesNotExist:
             raise NotFoundError(SubjectType.USER, id)
+
+        if entity.user_id is None:
+            raise InvalidFieldError(
+                "subject_id",
+                f"Principal '{id}' does not have a user_id yet. "
+                "This is required for role binding operations. "
+                "The user_id is populated when the user is synced from the identity provider.",
+            )
+
+        return Subject(type=SubjectType.USER, entity=entity)
 
     @classmethod
     def as_manager(cls) -> "SubjectQuerySet":

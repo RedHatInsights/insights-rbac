@@ -23,7 +23,7 @@ from django.db import models, transaction
 from django.db.models import Q, QuerySet
 from management.group.model import Group
 from management.principal.model import Principal
-from management.relation_replicator.types import RelationTuple
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role_binding.queryset import RoleBindingQuerySet
 from migration_tool.models import (
     V2boundresource,
@@ -48,38 +48,53 @@ class RoleBinding(TenantAwareModel):
     resource_type = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
 
+    # ── Relation tuple generation ────────────────────────────────────
+
     def _resource_type_pair(self) -> tuple[str, str]:
         """Return the (namespace, name) pair for this binding's resource type."""
         return ("rbac", self.resource_type)
 
     def _role_relation_tuple(self) -> RelationTuple:
         """``rbac/role_binding:<uuid>#role@rbac/role:<role_uuid>``."""
-        return create_relationship(
-            ("rbac", "role_binding"), str(self.uuid), ("rbac", "role"), str(self.role.uuid), "role"
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            relation="role",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid)),
+            ),
         )
 
     def _resource_binding_tuple(self) -> RelationTuple:
         """``rbac/<resource_type>:<resource_id>#binding@rbac/role_binding:<uuid>``."""
-        return create_relationship(
-            self._resource_type_pair(), self.resource_id, ("rbac", "role_binding"), str(self.uuid), "binding"
+        ns, name = self._resource_type_pair()
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace=ns, name=name), id=self.resource_id),
+            relation="binding",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            ),
         )
 
     def _group_subject_tuple(self, group: "Group") -> RelationTuple:
         """``rbac/role_binding:<uuid>#subject@rbac/group:<group_uuid>[#member]``."""
-        return create_relationship(
-            ("rbac", "role_binding"),
-            str(self.uuid),
-            ("rbac", "group"),
-            str(group.uuid),
-            "subject",
-            subject_relation="member",
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            relation="subject",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="group"), id=str(group.uuid)),
+                relation="member",
+            ),
         )
 
     def _user_subject_tuple(self, principal: "Principal") -> RelationTuple:
         """``rbac/role_binding:<uuid>#subject@rbac/principal:<principal_resource_id>``."""
         principal_resource_id = Principal.user_id_to_principal_resource_id(principal.user_id)
-        return create_relationship(
-            ("rbac", "role_binding"), str(self.uuid), ("rbac", "principal"), principal_resource_id, "subject"
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.uuid)),
+            relation="subject",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id),
+            ),
         )
 
     def binding_tuples(self) -> list[RelationTuple]:
@@ -95,6 +110,37 @@ class RoleBinding(TenantAwareModel):
         if isinstance(subject, Group):
             return self._group_subject_tuple(subject)
         return self._user_subject_tuple(subject)
+
+    @staticmethod
+    def replication_tuples(
+        subject: "Group | Principal",
+        bindings_created: Iterable["RoleBinding"] = (),
+        bindings_deleted: Iterable["RoleBinding"] = (),
+        subject_linked_to: Iterable["RoleBinding"] = (),
+        subject_unlinked_from: Iterable["RoleBinding"] = (),
+    ) -> tuple[list[RelationTuple], list[RelationTuple]]:
+        """Compute the full set of relation tuples for a role binding changeset.
+
+        Pure data transformation -- no DB writes. The service calls this
+        once after performing the DB mutations and passes the result to the
+        outbox replicator.
+        """
+        tuples_to_add: list[RelationTuple] = []
+        tuples_to_remove: list[RelationTuple] = []
+
+        for binding in bindings_created:
+            tuples_to_add.extend(binding.binding_tuples())
+
+        for binding in bindings_deleted:
+            tuples_to_remove.extend(binding.binding_tuples())
+
+        for binding in subject_linked_to:
+            tuples_to_add.append(binding.subject_tuple(subject))
+
+        for binding in subject_unlinked_from:
+            tuples_to_remove.append(binding.subject_tuple(subject))
+
+        return tuples_to_add, tuples_to_remove
 
     def bound_groups(self) -> QuerySet:
         """Get a QuerySet for all groups bound to this RoleBinding."""

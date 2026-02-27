@@ -38,6 +38,8 @@ from .serializer import (
     RoleBindingListInputSerializer,
     RoleBindingListOutputSerializer,
     RoleBindingOutputSerializer,
+    UpdateRoleBindingRequestSerializer,
+    UpdateRoleBindingResponseSerializer,
 )
 from .service import RoleBindingService
 
@@ -45,13 +47,24 @@ logger = logging.getLogger(__name__)
 
 
 class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
-    """Role Binding ViewSet."""
+    """Role Binding ViewSet.
+
+    Provides access to role bindings with support for listing and updating.
+
+    Query Parameters (by-subject endpoint):
+        Required:
+            - resource_id: Filter by resource ID
+            - resource_type: Filter by resource type
+
+        Optional:
+            - subject_type: Filter by subject type (e.g., 'group')
+            - subject_id: Filter by subject ID
+            - fields: Control which fields are included in the response
+            - order_by: Sort by specified field(s), prefix with '-' for descending
+    """
 
     serializer_class = RoleBindingListOutputSerializer
-    permission_classes = (
-        RoleBindingSystemUserAccessPermission,
-        RoleBindingKesselAccessPermission,
-    )
+    permission_classes = (RoleBindingSystemUserAccessPermission, RoleBindingKesselAccessPermission)
     pagination_class = V2CursorPagination
 
     def get_queryset(self):
@@ -111,8 +124,18 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         )
         return Response({"role_bindings": response_serializer.data}, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=["get"], url_path="by-subject")
+    @action(detail=False, methods=["get", "put"], url_path="by-subject")
     def by_subject(self, request, *args, **kwargs):
+        """Handle role bindings by subject.
+
+        GET: List role bindings grouped by subject.
+        PUT: Update role bindings for a specific subject on a resource.
+        """
+        if request.method == "PUT":
+            return self._update_by_subject(request)
+        return self._list_by_subject(request)
+
+    def _list_by_subject(self, request):
         """List role bindings grouped by subject.
 
         Required query parameters:
@@ -144,3 +167,18 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
+
+    def _update_by_subject(self, request):
+        """Update role bindings for a specific subject on a resource."""
+        data = {**request.query_params.dict(), **request.data}
+
+        serializer = UpdateRoleBindingRequestSerializer(data=data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
+
+        response_context = {
+            "request": request,
+            "field_selection": serializer.validated_data.get("fields"),
+        }
+        response_serializer = UpdateRoleBindingResponseSerializer(result, context=response_context)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
