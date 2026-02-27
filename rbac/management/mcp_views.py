@@ -198,7 +198,12 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
 
 
 # Resolve tool metadata once at import time — tools are static (listChanged: False).
-_CACHED_TOOLS: list[Any] = asyncio.run(mcp.list_tools())
+try:
+    _CACHED_TOOLS: list[Any] = asyncio.run(mcp.list_tools())
+except RuntimeError:
+    # Fallback for environments where an event loop is already running (e.g. ASGI, Jupyter)
+    _CACHED_TOOLS = []
+    logger.warning("Could not resolve MCP tool metadata at import time — tools/list will be empty")
 
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
@@ -227,6 +232,8 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     delegate to the appropriate Django view class.
     """
     tool_name: str = params.get("name", "")
+    if "arguments" not in params:
+        return _error_response(request_id, -32602, "Missing required field: arguments")
     arguments: dict[str, Any] = params.get("arguments", {})
 
     tool_fn = _TOOL_FUNCTIONS.get(tool_name)
@@ -253,8 +260,7 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
         logger.exception("Error executing MCP tool '%s'", tool_name)
         return _error_response(request_id, -32603, "Internal error executing tool")
     finally:
-        if hasattr(_mcp_request_context, "request"):
-            delattr(_mcp_request_context, "request")
+        _mcp_request_context.request = None
 
 
 # --- Registries ---

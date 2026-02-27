@@ -350,6 +350,22 @@ class MCPViewTests(IdentityRequest):
         self.assertEqual(data["error"]["code"], -32600)
         self.assertIn("params must be an object", data["error"]["message"])
 
+    def test_tools_call_missing_arguments_returns_32602(self):
+        """Negative: tools/call without arguments field returns -32602."""
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 33,
+            "params": {"name": "hello"},
+        }
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32602)
+        self.assertIn("arguments", data["error"]["message"])
+
     def test_tools_call_invalid_params_returns_32602(self):
         """Negative: passing wrong argument types returns JSON-RPC -32602."""
         body = {
