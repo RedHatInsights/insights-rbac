@@ -352,7 +352,8 @@ class MCPViewTests(IdentityRequest):
         {
             "hello": {
                 "requires_auth": False,
-                "fn": lambda request, **kw: (_ for _ in ()).throw(Exception("boom")),
+                "passes_request": False,
+                "fn": lambda **kw: (_ for _ in ()).throw(Exception("boom")),
             }
         },
     )

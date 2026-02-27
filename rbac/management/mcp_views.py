@@ -18,7 +18,6 @@
 """MCP endpoint for RBAC using Anthropic MCP Python SDK for tool registration and schema generation."""
 
 import asyncio
-import concurrent.futures
 import json
 import logging
 import uuid
@@ -208,30 +207,9 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
     return response
 
 
-def _resolve_tool_metadata() -> list[Any]:
-    """Resolve tool metadata synchronously from FastMCP.
-
-    Handles environments where an event loop is already running (ASGI, Jupyter)
-    by running the async call in a separate thread.
-    """
-    try:
-        return asyncio.run(mcp.list_tools())
-    except RuntimeError:
-        # Event loop already running — run in a new thread with its own loop
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, mcp.list_tools()).result()
-
-
-# Lazily cached tool metadata — resolved on first tools/list request.
-_cached_tools: list[Any] | None = None
-
-
-def _get_cached_tools() -> list[Any]:
-    """Return cached tool metadata, resolving on first call."""
-    global _cached_tools
-    if _cached_tools is None:
-        _cached_tools = _resolve_tool_metadata()
-    return _cached_tools
+# Tool metadata resolved once — tools are static (listChanged: False).
+# This WSGI-only view always runs outside an event loop, so asyncio.run is safe.
+_TOOLS: list[Any] = asyncio.run(mcp.list_tools())
 
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
@@ -243,7 +221,7 @@ def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, 
             "description": tool.description or "",
             "inputSchema": tool.inputSchema,
         }
-        for tool in _get_cached_tools()
+        for tool in _TOOLS
     ]
     return _success_response(request_id, {"tools": tools_data})
 
@@ -277,7 +255,10 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     tool_fn = config["fn"]
 
     try:
-        result = tool_fn(request, **arguments)
+        if config.get("passes_request"):
+            result = tool_fn(request, **arguments)
+        else:
+            result = tool_fn(**arguments)
         content = [{"type": "text", "text": result}]
         return _success_response(request_id, {"content": content, "isError": False})
     except TypeError as exc:
@@ -291,16 +272,18 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 #
 # Single registry for tool execution and auth requirements.
 # FastMCP is used only for schema generation (tools/list).
-# Each tool's "fn" accepts (request, **kwargs) directly — no factory indirection.
+# "passes_request" controls whether the Django request is passed as the first argument.
 
 _TOOL_CONFIG: dict[str, dict[str, Any]] = {
     "hello": {
         "requires_auth": False,
-        "fn": lambda request, **kwargs: hello(**kwargs),
+        "passes_request": False,
+        "fn": hello,
     },
     "list_principals": {
         "requires_auth": True,
-        "fn": lambda request, **kwargs: _list_principals_impl(request, **kwargs),
+        "passes_request": True,
+        "fn": _list_principals_impl,
     },
 }
 
