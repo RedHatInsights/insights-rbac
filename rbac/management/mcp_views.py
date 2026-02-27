@@ -21,8 +21,10 @@ import asyncio
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from functools import lru_cache
+from typing import Any, Callable
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
@@ -207,9 +209,14 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
     return response
 
 
-# Tool metadata resolved once — tools are static (listChanged: False).
-# This WSGI-only view always runs outside an event loop, so asyncio.run is safe.
-_TOOLS: list[Any] = asyncio.run(mcp.list_tools())
+@lru_cache(maxsize=1)
+def _get_tools() -> list[Any]:
+    """Resolve and cache tool metadata from FastMCP on first call.
+
+    Tools are static (listChanged: False). Lazy initialization avoids
+    import-time side effects from asyncio.run.
+    """
+    return asyncio.run(mcp.list_tools())
 
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
@@ -221,7 +228,7 @@ def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, 
             "description": tool.description or "",
             "inputSchema": tool.inputSchema,
         }
-        for tool in _TOOLS
+        for tool in _get_tools()
     ]
     return _success_response(request_id, {"tools": tools_data})
 
@@ -247,18 +254,16 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
     logger.info("MCP tools/call: tool='%s', argument_keys=%s", tool_name, list(arguments.keys()))
 
-    if config["requires_auth"]:
+    if config.requires_auth:
         user = getattr(request, "user", None)
         if not user or not getattr(user, "org_id", None):
             return _error_response(request_id, -32000, "Authentication required")
 
-    tool_fn = config["fn"]
-
     try:
-        if config.get("passes_request"):
-            result = tool_fn(request, **arguments)
+        if config.passes_request:
+            result = config.fn(request, **arguments)
         else:
-            result = tool_fn(**arguments)
+            result = config.fn(**arguments)
         content = [{"type": "text", "text": result}]
         return _success_response(request_id, {"content": content, "isError": False})
     except TypeError as exc:
@@ -272,19 +277,20 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 #
 # Single registry for tool execution and auth requirements.
 # FastMCP is used only for schema generation (tools/list).
-# "passes_request" controls whether the Django request is passed as the first argument.
 
-_TOOL_CONFIG: dict[str, dict[str, Any]] = {
-    "hello": {
-        "requires_auth": False,
-        "passes_request": False,
-        "fn": hello,
-    },
-    "list_principals": {
-        "requires_auth": True,
-        "passes_request": True,
-        "fn": _list_principals_impl,
-    },
+
+@dataclass(frozen=True)
+class ToolConfig:
+    """Configuration for an MCP tool."""
+
+    fn: Callable[..., str]
+    requires_auth: bool = False
+    passes_request: bool = False
+
+
+_TOOL_CONFIG: dict[str, ToolConfig] = {
+    "hello": ToolConfig(fn=hello),
+    "list_principals": ToolConfig(fn=_list_principals_impl, requires_auth=True, passes_request=True),
 }
 
 _HANDLERS: dict[str, Any] = {

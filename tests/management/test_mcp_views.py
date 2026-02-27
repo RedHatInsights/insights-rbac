@@ -23,6 +23,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
+from management.mcp_views import ToolConfig
 from management.models import Access, Group, Permission, Policy, Principal, Role
 from tests.identity_request import IdentityRequest
 
@@ -349,13 +350,7 @@ class MCPViewTests(IdentityRequest):
 
     @patch.dict(
         "management.mcp_views._TOOL_CONFIG",
-        {
-            "hello": {
-                "requires_auth": False,
-                "passes_request": False,
-                "fn": lambda **kw: (_ for _ in ()).throw(Exception("boom")),
-            }
-        },
+        {"hello": ToolConfig(fn=lambda **kw: (_ for _ in ()).throw(Exception("boom")))},
     )
     def test_tools_call_internal_error_returns_32603(self):
         """Negative: tool raising an exception returns JSON-RPC -32603."""
