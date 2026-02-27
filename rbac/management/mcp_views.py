@@ -211,7 +211,6 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
 def _resolve_tool_metadata() -> list[Any]:
     """Resolve tool metadata synchronously from FastMCP.
 
-    Tools are static (listChanged: False), so we resolve once at import time.
     Handles environments where an event loop is already running (ASGI, Jupyter)
     by running the async call in a separate thread.
     """
@@ -223,7 +222,16 @@ def _resolve_tool_metadata() -> list[Any]:
             return pool.submit(asyncio.run, mcp.list_tools()).result()
 
 
-_CACHED_TOOLS: list[Any] = _resolve_tool_metadata()
+# Lazily cached tool metadata — resolved on first tools/list request.
+_cached_tools: list[Any] | None = None
+
+
+def _get_cached_tools() -> list[Any]:
+    """Return cached tool metadata, resolving on first call."""
+    global _cached_tools
+    if _cached_tools is None:
+        _cached_tools = _resolve_tool_metadata()
+    return _cached_tools
 
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
@@ -235,7 +243,7 @@ def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, 
             "description": tool.description or "",
             "inputSchema": tool.inputSchema,
         }
-        for tool in _CACHED_TOOLS
+        for tool in _get_cached_tools()
     ]
     return _success_response(request_id, {"tools": tools_data})
 
@@ -247,8 +255,8 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     FastMCP's async call_tool) to avoid Django's SynchronousOnlyOperation
     error when tools access the ORM.
 
-    Tools that need auth context receive the Django request explicitly via
-    a closure, so no thread-local state is needed.
+    Tools that need auth context receive the Django request as the first
+    argument, so no thread-local state is needed.
     """
     tool_name: str = params.get("name", "")
     if "arguments" not in params:
@@ -266,11 +274,10 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
         if not user or not getattr(user, "org_id", None):
             return _error_response(request_id, -32000, "Authentication required")
 
-    # Build tool callable with request closure for tools that need auth context
-    tool_fn = config["fn"](request)
+    tool_fn = config["fn"]
 
     try:
-        result = tool_fn(**arguments)
+        result = tool_fn(request, **arguments)
         content = [{"type": "text", "text": result}]
         return _success_response(request_id, {"content": content, "isError": False})
     except TypeError as exc:
@@ -284,18 +291,16 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 #
 # Single registry for tool execution and auth requirements.
 # FastMCP is used only for schema generation (tools/list).
-# Each tool's "fn" is a factory that receives the request and returns
-# a callable(**arguments) -> str, allowing authenticated tools to
-# access the request without thread-local state.
+# Each tool's "fn" accepts (request, **kwargs) directly — no factory indirection.
 
 _TOOL_CONFIG: dict[str, dict[str, Any]] = {
     "hello": {
         "requires_auth": False,
-        "fn": lambda request: lambda **kwargs: hello(**kwargs),
+        "fn": lambda request, **kwargs: hello(**kwargs),
     },
     "list_principals": {
         "requires_auth": True,
-        "fn": lambda request: lambda **kwargs: _list_principals_impl(request, **kwargs),
+        "fn": lambda request, **kwargs: _list_principals_impl(request, **kwargs),
     },
 }
 

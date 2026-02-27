@@ -207,6 +207,32 @@ class MCPViewTests(IdentityRequest):
         self.assertEqual(len(tool_output["data"]), 1)
         self.assertEqual(tool_output["data"][0]["username"], "test_user")
 
+    @patch("management.mcp_views._principal_view")
+    def test_tools_call_list_principals_non_drf_response(self, mock_principal_view):
+        """Positive: tools/call handles plain HttpResponse (non-DRF) via content.decode() fallback."""
+        from django.http import HttpResponse as DjangoHttpResponse
+
+        payload = {"data": [{"username": "plain_user"}], "meta": {"count": 1}}
+        mock_principal_view.return_value = DjangoHttpResponse(
+            json.dumps(payload), content_type="application/json", status=200
+        )
+
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 50,
+            "params": {"name": "list_principals", "arguments": {}},
+        }
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data["id"], 50)
+        result = data["result"]
+        self.assertFalse(result["isError"])
+        tool_output = json.loads(result["content"][0]["text"])
+        self.assertEqual(tool_output["data"][0]["username"], "plain_user")
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
         return_value={
@@ -326,7 +352,7 @@ class MCPViewTests(IdentityRequest):
         {
             "hello": {
                 "requires_auth": False,
-                "fn": lambda request: lambda **kw: (_ for _ in ()).throw(Exception("boom")),
+                "fn": lambda request, **kw: (_ for _ in ()).throw(Exception("boom")),
             }
         },
     )
