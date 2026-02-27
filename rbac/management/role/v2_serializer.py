@@ -152,6 +152,15 @@ class RoleV2ListSerializer(serializers.Serializer):
         return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
 
 
+class RoleIdSerializer(serializers.Serializer):
+    """Serializer for a role ID reference.
+
+    Reusable nested serializer for any API that accepts role references by UUID.
+    """
+
+    id = serializers.UUIDField(required=True, help_text="Role identifier")
+
+
 class RoleV2RequestSerializer(serializers.ModelSerializer):
     """Serializer for RoleV2 create/update requests."""
 

@@ -16,11 +16,11 @@
 #
 """QuerySet for RoleBinding lookups."""
 
-from django.db.models import F, QuerySet
+from django.db.models import Count, F, QuerySet
 
 
 class RoleBindingQuerySet(QuerySet):
-    """Custom QuerySet for RoleBinding lookups."""
+    """Custom QuerySet for RoleBinding with domain-aware query methods."""
 
     def for_tenant(self, tenant, role_id=None):
         """Return role bindings for a tenant with related data eagerly loaded.
@@ -38,3 +38,14 @@ class RoleBindingQuerySet(QuerySet):
         if role_id:
             qs = qs.filter(role__uuid=role_id)
         return qs
+
+    def for_resource(self, resource_type, resource_id, tenant):
+        """Filter to bindings on a specific resource for a tenant."""
+        return self.filter(resource_type=resource_type, resource_id=resource_id, tenant=tenant)
+
+    def orphaned(self):
+        """Filter to bindings that have no subjects (groups or principals) attached."""
+        return self.annotate(
+            group_count=Count("group_entries"),
+            principal_count=Count("principal_entries"),
+        ).filter(group_count=0, principal_count=0)
