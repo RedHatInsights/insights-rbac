@@ -123,58 +123,79 @@ def _list_principals_impl(
 
 # --- JSON-RPC parsing ---
 
-_ParseResult = tuple[dict[str, Any] | None, Any, dict[str, Any] | None, JsonResponse | None]
+
+@dataclass
+class JsonRpcRequest:
+    """Parsed JSON-RPC 2.0 request."""
+
+    request_id: Any | None
+    method: str
+    params: dict[str, Any]
+    is_notification: bool = False
+    error: JsonResponse | None = None
 
 
-def _parse_jsonrpc(body: bytes) -> _ParseResult:
+def _parse_jsonrpc(body: bytes) -> JsonRpcRequest:
     """Parse and validate a JSON-RPC 2.0 request body.
 
-    Returns (payload, request_id, params, error). If error is not None,
-    the caller should return it immediately. If request_id is None, the
-    request is a notification (caller returns 202).
+    Returns a JsonRpcRequest. If error is set, the caller should return
+    it immediately. If is_notification is True, the caller returns 202.
     """
     try:
         payload = json.loads(body)
     except (json.JSONDecodeError, ValueError):
-        return None, None, None, _error_response(None, -32700, "Parse error")
+        return JsonRpcRequest(
+            request_id=None, method="", params={}, error=_error_response(None, -32700, "Parse error")
+        )
 
     if isinstance(payload, list):
-        return None, None, None, _error_response(None, -32600, "Invalid Request: batch requests are not supported")
+        return JsonRpcRequest(
+            request_id=None,
+            method="",
+            params={},
+            error=_error_response(None, -32600, "Invalid Request: batch requests are not supported"),
+        )
 
     if not isinstance(payload, dict):
-        return None, None, None, _error_response(None, -32600, "Invalid Request: expected a JSON object")
+        return JsonRpcRequest(
+            request_id=None,
+            method="",
+            params={},
+            error=_error_response(None, -32600, "Invalid Request: expected a JSON object"),
+        )
+
+    req_id = payload.get("id")
 
     if payload.get("jsonrpc") != "2.0":
-        return (
-            None,
-            payload.get("id"),
-            None,
-            _error_response(payload.get("id"), -32600, "Invalid Request: jsonrpc must be '2.0'"),
+        return JsonRpcRequest(
+            request_id=req_id,
+            method="",
+            params={},
+            error=_error_response(req_id, -32600, "Invalid Request: jsonrpc must be '2.0'"),
         )
 
     method = payload.get("method")
     if not isinstance(method, str) or not method:
-        return (
-            None,
-            payload.get("id"),
-            None,
-            _error_response(payload.get("id"), -32600, "Invalid Request: method must be a non-empty string"),
+        return JsonRpcRequest(
+            request_id=req_id,
+            method="",
+            params={},
+            error=_error_response(req_id, -32600, "Invalid Request: method must be a non-empty string"),
         )
 
-    request_id = payload.get("id")
-    if request_id is None:
-        return payload, None, None, None
+    if req_id is None:
+        return JsonRpcRequest(request_id=None, method=method, params={}, is_notification=True)
 
     raw_params = payload.get("params") or {}
     if not isinstance(raw_params, dict):
-        return (
-            payload,
-            request_id,
-            None,
-            _error_response(request_id, -32600, "Invalid Request: params must be an object"),
+        return JsonRpcRequest(
+            request_id=req_id,
+            method=method,
+            params={},
+            error=_error_response(req_id, -32600, "Invalid Request: params must be an object"),
         )
 
-    return payload, request_id, raw_params, None
+    return JsonRpcRequest(request_id=req_id, method=method, params=raw_params)
 
 
 # --- Django View implementing MCP StreamableHTTP transport ---
@@ -195,20 +216,18 @@ class MCPView(View):
 
     def post(self, request: HttpRequest) -> HttpResponse:
         """Handle MCP JSON-RPC requests via HTTP POST."""
-        payload, request_id, params, error = _parse_jsonrpc(request.body)
-        if error is not None:
-            return error
+        rpc = _parse_jsonrpc(request.body)
+        if rpc.error is not None:
+            return rpc.error
 
-        if request_id is None:
+        if rpc.is_notification:
             return HttpResponse(status=202, content_type="application/json")
 
-        assert payload is not None  # guaranteed by _parse_jsonrpc when error is None
-        method: str = payload.get("method", "")
-        handler = _HANDLERS.get(method)
+        handler = _HANDLERS.get(rpc.method)
         if handler is None:
-            return _error_response(request_id, -32601, f"Method not found: {method}")
+            return _error_response(rpc.request_id, -32601, f"Method not found: {rpc.method}")
 
-        return handler(request, request_id, params)
+        return handler(request, rpc.request_id, rpc.params)
 
     def get(self, request: HttpRequest) -> HttpResponse:
         """SSE streaming is not supported in WSGI mode."""
