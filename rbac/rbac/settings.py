@@ -316,6 +316,7 @@ if CW_AWS_ACCESS_KEY_ID:
 CORS_ORIGIN_ALLOW_ALL = True
 
 CORS_ALLOW_HEADERS = default_headers + ("x-rh-identity", "HTTP_X_RH_IDENTITY")
+CORS_EXPOSE_HEADERS = ["Mcp-Session-Id"]
 
 APPEND_SLASH = False
 
@@ -410,6 +411,7 @@ if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
 
 # Internal API Configuration
 INTERNAL_API_PATH_PREFIXES = ["/_private/"]
+A2S_PATH_PREFIX = "/_private/_a2s/"
 
 try:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(

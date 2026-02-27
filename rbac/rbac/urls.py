@@ -39,6 +39,7 @@ urlpatterns = [
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include(("api.urls", "v1_api"))),
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include(("management.urls", "v1_management"))),
     path("_private/", include(("internal.urls", "internal"))),
+    path("_private/_a2s/", include(("management.mcp_urls", "mcp"))),
     path("", include("django_prometheus.urls")),
 ]
 

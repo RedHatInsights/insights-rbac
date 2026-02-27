@@ -49,6 +49,10 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             # We are not in an internal API section
             return
 
+        if request.path.startswith(settings.A2S_PATH_PREFIX):
+            # _a2s/ (agent-to-service) paths use public IdentityHeaderMiddleware auth
+            return
+
         user = None
         # If the path starts with /_private/_s2s/, it is using psk to authenticate
         if request.path.startswith("/_private/_s2s/"):
