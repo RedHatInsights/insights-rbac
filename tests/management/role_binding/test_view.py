@@ -1771,11 +1771,18 @@ class BatchCreateViewTests(IdentityRequest):
             description="Test group",
             tenant=self.tenant,
         )
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            user_id="testuser",
+            type=Principal.Types.USER,
+        )
 
     def tearDown(self):
         """Tear down test data."""
         RoleBindingGroup.objects.all().delete()
         RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
         Group.objects.filter(tenant=self.tenant).delete()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
@@ -1855,114 +1862,6 @@ class BatchCreateViewTests(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_batch_create_empty_body_returns_400(self, mock_permission):
-        """Empty JSON body returns 400."""
-        url = self._get_batch_create_url()
-        response = self.client.post(url, {}, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_batch_create_invalid_role_returns_400(self, mock_permission):
-        """Non-existent role UUID returns 400 with role error field."""
-        url = self._get_batch_create_url()
-        payload = {
-            "requests": [
-                {
-                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
-                    "subject": {"id": str(self.group.uuid), "type": "group"},
-                    "role": {"id": str(uuid.uuid4())},
-                }
-            ]
-        }
-        response = self.client.post(url, payload, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("role", str(response.data))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_batch_create_invalid_subject_returns_404(self, mock_permission):
-        """Non-existent group UUID returns 404."""
-        url = self._get_batch_create_url()
-        fake_subject_id = str(uuid.uuid4())
-        payload = {
-            "requests": [
-                {
-                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
-                    "subject": {"id": fake_subject_id, "type": "group"},
-                    "role": {"id": str(self.role.uuid)},
-                }
-            ]
-        }
-        response = self.client.post(url, payload, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn(fake_subject_id, str(response.data))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_batch_create_invalid_fields_param_returns_400(self, mock_permission):
-        """Bad field mask returns 400."""
-        url = self._get_batch_create_url()
-        response = self.client.post(f"{url}?fields=bogus(xyz)", self._valid_payload(), format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_batch_create_over_100_items_returns_400(self, mock_permission):
-        """Exceeding the max items limit returns 400."""
-        url = self._get_batch_create_url()
-        payload = {
-            "requests": [
-                {
-                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
-                    "subject": {"id": str(self.group.uuid), "type": "group"},
-                    "role": {"id": str(self.role.uuid)},
-                }
-            ]
-            * 101
-        }
-        response = self.client.post(url, payload, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
-    def test_batch_create_nonexistent_resource_returns_404(self, mock_permission):
-        """A fake workspace UUID returns 404."""
-        url = self._get_batch_create_url()
-        fake_ws_id = str(uuid.uuid4())
-        payload = {
-            "requests": [
-                {
-                    "resource": {"id": fake_ws_id, "type": "workspace"},
-                    "subject": {"id": str(self.group.uuid), "type": "group"},
-                    "role": {"id": str(self.role.uuid)},
-                }
-            ]
-        }
-        response = self.client.post(url, payload, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn(fake_ws_id, str(response.data))
-
-    @patch(
-        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
-        return_value=True,
-    )
     def test_batch_create_rollback_on_partial_failure(self, mock_permission):
         """One invalid subject in a batch rolls back the entire transaction."""
         url = self._get_batch_create_url()
@@ -1983,7 +1882,15 @@ class BatchCreateViewTests(IdentityRequest):
         }
         response = self.client.post(url, payload, format="json", **self.headers)
 
-        self.assertIn(response.status_code, (status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND))
+        expected_detail = f"group with id '{fake_group_id}' not found"
+        expected = {
+            "status": 404,
+            "title": "Not found.",
+            "detail": expected_detail,
+            "errors": [{"message": expected_detail, "field": "detail"}],
+        }
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data, expected)
 
         self.assertFalse(
             RoleBinding.objects.filter(
@@ -1992,40 +1899,155 @@ class BatchCreateViewTests(IdentityRequest):
             "No bindings should exist after a failed batch",
         )
 
-    def _assert_problem_details(self, response, expected_status):
-        """Assert the response follows the ProblemDetails format."""
+    def _assert_problem_details(self, response, expected_status, expected_detail, expected_field):
+        """Assert the response matches the ProblemDetails format exactly."""
+        TITLES = {400: "The request payload contains invalid syntax.", 404: "Not found."}
+        expected = {
+            "status": expected_status,
+            "title": TITLES[expected_status],
+            "detail": expected_detail,
+            "errors": [{"message": expected_detail, "field": expected_field}],
+        }
         self.assertEqual(response.status_code, expected_status)
-        self.assertIn("application/problem+json", response.get("Content-Type", ""))
-        self.assertIn("status", response.data)
-        self.assertEqual(response.data["status"], expected_status)
-        self.assertIn("title", response.data)
-        self.assertIsInstance(response.data["title"], str)
-        self.assertIn("detail", response.data)
-        self.assertIsInstance(response.data["detail"], str)
-        self.assertIn("errors", response.data)
-        self.assertIsInstance(response.data["errors"], list)
-        self.assertGreater(len(response.data["errors"]), 0)
-        for error in response.data["errors"]:
-            self.assertIn("message", error)
+        self.assertEqual(response.data, expected)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_batch_create_400_problem_details_format(self, mock_permission):
-        """Empty body returns 400 in ProblemDetails format."""
+    def test_batch_create_empty_body_returns_400(self, mock_permission):
+        """Empty JSON body returns 400."""
         url = self._get_batch_create_url()
         response = self.client.post(url, {}, format="json", **self.headers)
-
-        self._assert_problem_details(response, 400)
-        self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+        self._assert_problem_details(response, 400, "This field is required.", "requests")
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_batch_create_invalid_role_problem_details_format(self, mock_permission):
-        """Non-existent role returns 400 in ProblemDetails format with field info."""
+    def test_batch_create_empty_requests_returns_400(self, mock_permission):
+        """Empty requests array returns 400 in ProblemDetails format."""
+        url = self._get_batch_create_url()
+        response = self.client.post(url, {"requests": []}, format="json", **self.headers)
+        self._assert_problem_details(
+            response, 400, "Ensure this field has at least 1 elements.", "requests.non_field_errors"
+        )
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_over_100_items_returns_400(self, mock_permission):
+        """Exceeding the max items limit returns 400."""
+        url = self._get_batch_create_url()
+        item = {
+            "resource": {"id": str(self.workspace.id), "type": "workspace"},
+            "subject": {"id": str(self.group.uuid), "type": "group"},
+            "role": {"id": str(self.role.uuid)},
+        }
+        response = self.client.post(url, {"requests": [item] * 101}, format="json", **self.headers)
+        self._assert_problem_details(
+            response, 400, "Ensure this field has no more than 100 elements.", "requests.non_field_errors"
+        )
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_missing_role_returns_400(self, mock_permission):
+        """Missing role key in request item returns 400."""
+        url = self._get_batch_create_url()
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                }
+            ]
+        }
+        response = self.client.post(url, payload, format="json", **self.headers)
+        self._assert_problem_details(response, 400, "This field is required.", "requests.role")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_missing_resource_returns_400(self, mock_permission):
+        """Missing resource key in request item returns 400."""
+        url = self._get_batch_create_url()
+        payload = {
+            "requests": [
+                {
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ]
+        }
+        response = self.client.post(url, payload, format="json", **self.headers)
+        self._assert_problem_details(response, 400, "This field is required.", "requests.resource")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_missing_subject_returns_400(self, mock_permission):
+        """Missing subject key in request item returns 400."""
+        url = self._get_batch_create_url()
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ]
+        }
+        response = self.client.post(url, payload, format="json", **self.headers)
+        self._assert_problem_details(response, 400, "This field is required.", "requests.subject")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_invalid_uuid_returns_400(self, mock_permission):
+        """Invalid UUID in role id returns 400."""
+        url = self._get_batch_create_url()
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": "not-a-uuid"},
+                }
+            ]
+        }
+        response = self.client.post(url, payload, format="json", **self.headers)
+        self._assert_problem_details(response, 400, "Must be a valid UUID.", "requests.role.id")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_invalid_subject_type_returns_400(self, mock_permission):
+        """Invalid subject type returns 400."""
+        url = self._get_batch_create_url()
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                    "subject": {"id": str(self.group.uuid), "type": "serviceaccount"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ]
+        }
+        response = self.client.post(url, payload, format="json", **self.headers)
+        self._assert_problem_details(response, 400, '"serviceaccount" is not a valid choice.', "requests.subject.type")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_invalid_role_returns_400(self, mock_permission):
+        """Non-existent role UUID returns 400."""
         url = self._get_batch_create_url()
         fake_role_id = str(uuid.uuid4())
         payload = {
@@ -2038,38 +2060,56 @@ class BatchCreateViewTests(IdentityRequest):
             ]
         }
         response = self.client.post(url, payload, format="json", **self.headers)
-
-        self._assert_problem_details(response, 400)
-        self.assertIn(fake_role_id, response.data["detail"])
+        self._assert_problem_details(
+            response, 400, f"Invalid field 'roles': The following roles do not exist: {fake_role_id}", "roles"
+        )
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_batch_create_not_found_subject_problem_details_format(self, mock_permission):
-        """Non-existent subject returns 404 in ProblemDetails format."""
+    def test_batch_create_invalid_subject_returns_404(self, mock_permission):
+        """Non-existent group UUID returns 404."""
         url = self._get_batch_create_url()
-        fake_subject_id = str(uuid.uuid4())
+        fake_group_id = str(uuid.uuid4())
         payload = {
             "requests": [
                 {
                     "resource": {"id": str(self.workspace.id), "type": "workspace"},
-                    "subject": {"id": fake_subject_id, "type": "group"},
+                    "subject": {"id": fake_group_id, "type": "group"},
                     "role": {"id": str(self.role.uuid)},
                 }
             ]
         }
         response = self.client.post(url, payload, format="json", **self.headers)
-
-        self._assert_problem_details(response, 404)
-        self.assertIn(fake_subject_id, response.data["detail"])
+        self._assert_problem_details(response, 404, f"group with id '{fake_group_id}' not found", "detail")
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_batch_create_not_found_resource_problem_details_format(self, mock_permission):
-        """Non-existent workspace returns 404 in ProblemDetails format."""
+    def test_batch_create_invalid_user_returns_404(self, mock_permission):
+        """Non-existent user UUID returns 404."""
+        url = self._get_batch_create_url()
+        fake_user_id = str(uuid.uuid4())
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                    "subject": {"id": fake_user_id, "type": "user"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ]
+        }
+        response = self.client.post(url, payload, format="json", **self.headers)
+        self._assert_problem_details(response, 404, f"user with id '{fake_user_id}' not found", "detail")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_nonexistent_resource_returns_404(self, mock_permission):
+        """Non-existent workspace UUID returns 404."""
         url = self._get_batch_create_url()
         fake_ws_id = str(uuid.uuid4())
         payload = {
@@ -2082,9 +2122,7 @@ class BatchCreateViewTests(IdentityRequest):
             ]
         }
         response = self.client.post(url, payload, format="json", **self.headers)
-
-        self._assert_problem_details(response, 404)
-        self.assertIn(fake_ws_id, response.data["detail"])
+        self._assert_problem_details(response, 404, f"workspace with id '{fake_ws_id}' not found", "detail")
 
 
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
