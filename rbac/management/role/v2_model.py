@@ -31,6 +31,9 @@ from uuid_utils.compat import uuid7
 
 from api.models import TenantAwareModel
 
+if TYPE_CHECKING:
+    from management.role_binding.model import RoleBinding
+
 
 class RoleV2(TenantAwareModel):
     """V2 Role model."""
@@ -153,24 +156,57 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
     _expected_type = RoleV2.Types.CUSTOM
     objects = TypedRoleV2Manager(role_type=_expected_type)
 
-    def as_tuples(self) -> list[RelationTuple]:
-        """Return relation tuples for this role's permissions."""
-        return [
-            RelationTuple(
-                resource=ObjectReference(
-                    type=ObjectType(namespace="rbac", name="role"),
-                    id=str(self.uuid),
+    @staticmethod
+    def _permission_tuple(role: "CustomRoleV2", permission: Permission) -> RelationTuple:
+        """Build a single ``rbac/role:<uuid>#<perm>@rbac/principal:*`` tuple."""
+        return RelationTuple(
+            resource=ObjectReference(
+                type=ObjectType(namespace="rbac", name="role"),
+                id=str(role.uuid),
+            ),
+            relation=permission.v2_string(),
+            subject=SubjectReference(
+                subject=ObjectReference(
+                    type=ObjectType(namespace="rbac", name="principal"),
+                    id="*",
                 ),
-                relation=p.v2_string(),
-                subject=SubjectReference(
-                    subject=ObjectReference(
-                        type=ObjectType(namespace="rbac", name="principal"),
-                        id="*",
-                    ),
-                ),
-            )
-            for p in self.permissions.all()
-        ]
+            ),
+        )
+
+    @staticmethod
+    def replication_tuples(
+        role: "CustomRoleV2",
+        old_permissions: Iterable[Permission] = (),
+        new_permissions: Iterable[Permission] = (),
+        bindings_deleted: Iterable["RoleBinding"] = (),
+    ) -> tuple[list[RelationTuple], list[RelationTuple]]:
+        """Compute the delta (tuples to add vs. remove) for a role create, update, or delete.
+
+        For deleted bindings, delegates to ``RoleBinding.all_tuples`` to
+        collect the full snapshot of tuples to remove.
+
+        Pure data transformation -- no DB writes.
+
+        Args:
+            role: The role being created, updated, or deleted.
+            old_permissions: Permissions before mutation (empty for create).
+            new_permissions: Permissions after mutation (empty for delete).
+            bindings_deleted: RoleBindings being removed (delete only).
+                Must have ``group_entries`` and ``principal_entries`` prefetched.
+
+        Returns:
+            ``(tuples_to_add, tuples_to_remove)`` ready for replication.
+        """
+        old_set = set(old_permissions)
+        new_set = set(new_permissions)
+
+        tuples_to_add = [CustomRoleV2._permission_tuple(role, p) for p in new_set - old_set]
+        tuples_to_remove = [CustomRoleV2._permission_tuple(role, p) for p in old_set - new_set]
+
+        for binding in bindings_deleted:
+            tuples_to_remove.extend(binding.all_tuples())
+
+        return tuples_to_add, tuples_to_remove
 
 
 class SeededRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
