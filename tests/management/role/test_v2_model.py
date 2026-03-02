@@ -568,9 +568,7 @@ class CustomRoleV2ReplicationTupleTests(IdentityRequest):
         RoleBindingPrincipal.objects.create(binding=binding, principal=principal, source="direct")
 
         binding = RoleBinding.objects.prefetch_related("group_entries", "principal_entries").get(pk=binding.pk)
-        binding_ref = ObjectReference(
-            type=ObjectType(namespace="rbac", name="role_binding"), id=str(binding.uuid)
-        )
+        binding_ref = ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(binding.uuid))
 
         to_add, to_remove = CustomRoleV2.replication_tuples(
             self.role,

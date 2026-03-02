@@ -17,6 +17,10 @@
 
 """Model for role V2 management."""
 
+from __future__ import annotations
+
+from typing import Iterable, TYPE_CHECKING
+
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone

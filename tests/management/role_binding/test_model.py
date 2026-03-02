@@ -785,9 +785,7 @@ class RoleBindingReplicationTupleTests(IdentityRequest):
             resource=binding_ref,
             relation="subject",
             subject=SubjectReference(
-                subject=ObjectReference(
-                    type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id
-                )
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id)
             ),
         )
 
