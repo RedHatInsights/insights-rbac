@@ -108,6 +108,24 @@ class RoleBinding(TenantAwareModel):
         """
         return [self._role_relation_tuple(), self._resource_binding_tuple()]
 
+    def all_tuples(self) -> list[RelationTuple]:
+        """Return the complete set of SpiceDB tuples for this binding.
+
+        This is a full snapshot (role, resource, and all subject tuples)
+        derived from the current DB state -- not a diff.  Used as a
+        building block by ``CustomRoleV2.replication_tuples`` when entire
+        bindings are being torn down.
+
+        Expects ``group_entries`` and ``principal_entries`` to be prefetched
+        (or accepts the extra queries if they are not).
+        """
+        tuples = self.binding_tuples()
+        for entry in self.group_entries.all():
+            tuples.append(self._group_subject_tuple(entry.group))
+        for entry in self.principal_entries.all():
+            tuples.append(self._user_subject_tuple(entry.principal))
+        return tuples
+
     def subject_tuple(self, subject: "Group | Principal") -> RelationTuple:
         """Return the subject tuple for this binding and the given subject.
 
@@ -126,7 +144,11 @@ class RoleBinding(TenantAwareModel):
         subject_linked_to: Iterable["RoleBinding"] = (),
         subject_unlinked_from: Iterable["RoleBinding"] = (),
     ) -> tuple[list[RelationTuple], list[RelationTuple]]:
-        """Compute the full set of relation tuples for a role binding changeset.
+        """Compute the delta (tuples to add vs. remove) for a role-binding changeset.
+
+        Unlike ``all_tuples``, which returns a full snapshot for a single
+        binding, this method computes the minimal diff across multiple
+        bindings for a given subject.
 
         Pure data transformation — no DB writes.  The service calls this
         once after performing the DB mutations and passes the result to the

@@ -29,6 +29,7 @@ from management.models import (
     RoleV2,
 )
 from management.principal.model import Principal
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role_binding.model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
 
@@ -750,3 +751,56 @@ class RoleBindingReplicationTupleTests(IdentityRequest):
         self.assertEqual(len(to_add), 3)
         # Removes: 2 binding tuples (role + resource) + 1 subject tuple = 3
         self.assertEqual(len(to_remove), 3)
+
+    # ── all_tuples (full snapshot for a binding) ───────────────────
+
+    def test_all_tuples_returns_exact_tuples_for_each_subject_combination(self):
+        """all_tuples returns the exact set of SpiceDB tuples derived from DB state."""
+        binding_ref = ObjectReference(
+            type=ObjectType(namespace="rbac", name="role_binding"), id=str(self.binding.uuid)
+        )
+        principal_resource_id = Principal.user_id_to_principal_resource_id(self.principal.user_id)
+
+        role_tuple = RelationTuple(
+            resource=binding_ref,
+            relation="role",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid))
+            ),
+        )
+        resource_tuple = RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="workspace"), id="ws-1"),
+            relation="binding",
+            subject=SubjectReference(subject=binding_ref),
+        )
+        group_subject = RelationTuple(
+            resource=binding_ref,
+            relation="subject",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="group"), id=str(self.group.uuid)),
+                relation="member",
+            ),
+        )
+        principal_subject = RelationTuple(
+            resource=binding_ref,
+            relation="subject",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id)
+            ),
+        )
+
+        cases = [
+            ("group_only", [self.group], [], {role_tuple, resource_tuple, group_subject}),
+            ("principal_only", [], [self.principal], {role_tuple, resource_tuple, principal_subject}),
+            ("both", [self.group], [self.principal], {role_tuple, resource_tuple, group_subject, principal_subject}),
+        ]
+        for label, groups, principals, expected in cases:
+            with self.subTest(label):
+                self.binding.group_entries.all().delete()
+                RoleBindingPrincipal.objects.filter(binding=self.binding).delete()
+                for g in groups:
+                    RoleBindingGroup.objects.create(binding=self.binding, group=g)
+                for p in principals:
+                    RoleBindingPrincipal.objects.create(binding=self.binding, principal=p, source="direct")
+
+                self.assertEqual(set(self.binding.all_tuples()), expected)
