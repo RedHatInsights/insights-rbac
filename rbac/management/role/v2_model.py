@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, TYPE_CHECKING
+from typing import Iterable
 
 from django.db import models
 from django.db.models import signals
@@ -29,14 +29,12 @@ from management.models import Permission, Role
 from management.rbac_fields import AutoDateTimeField
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role.queryset import RoleV2QuerySet
+from management.role_binding.model import RoleBinding
 from migration_tool.models import V2role
 from rest_framework import serializers
 from uuid_utils.compat import uuid7
 
 from api.models import TenantAwareModel
-
-if TYPE_CHECKING:
-    from management.role_binding.model import RoleBinding
 
 
 class RoleV2(TenantAwareModel):
@@ -182,7 +180,7 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
         role: "CustomRoleV2",
         old_permissions: Iterable[Permission] = (),
         new_permissions: Iterable[Permission] = (),
-        bindings_deleted: Iterable["RoleBinding"] = (),
+        bindings_deleted: Iterable[RoleBinding] = (),
     ) -> tuple[list[RelationTuple], list[RelationTuple]]:
         """Compute the delta (tuples to add vs. remove) for a role create, update, or delete.
 
