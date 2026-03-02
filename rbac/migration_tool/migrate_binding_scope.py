@@ -273,7 +273,7 @@ def migrate_all_role_bindings(
             )
 
             if car is None:
-                logger.warning(f"Cross-account request vanished before it could be migrated: pk={car.pk!r}")
+                logger.warning(f"Cross-account request vanished before it could be migrated: pk={raw_car.pk!r}")
                 continue
 
             try:
