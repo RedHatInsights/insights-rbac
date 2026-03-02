@@ -1323,6 +1323,135 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         )
         self.assertEqual(len(user_subject), 1)
 
+    def test_batch_create_same_subject_different_roles(self):
+        """Same resource+subject with two different roles creates two bindings."""
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role2, "group", self.group.uuid),
+            ]
+        )
+
+        self.assertEqual(len(results), 2)
+
+        bindings = RoleBinding.objects.filter(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        self.assertEqual(bindings.count(), 2)
+
+        roles = set(bindings.values_list("role_id", flat=True))
+        self.assertEqual(roles, {self.role1.id, self.role2.id})
+
+        for binding in bindings:
+            self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+
+    def test_batch_create_different_resources(self):
+        """Bindings on different resources in a single batch are independent."""
+        ws2 = Workspace.objects.create(
+            name="Second Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(self.workspace.id)),
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(ws2.id)),
+            ]
+        )
+
+        self.assertEqual(len(results), 2)
+
+        ws1_bindings = RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace")
+        ws2_bindings = RoleBinding.objects.filter(resource_id=str(ws2.id), resource_type="workspace")
+        self.assertEqual(ws1_bindings.count(), 1)
+        self.assertEqual(ws2_bindings.count(), 1)
+        self.assertNotEqual(ws1_bindings.first().id, ws2_bindings.first().id)
+
+    def test_batch_create_partial_overlap(self):
+        """Existing binding is a no-op while new binding in the same batch is created."""
+        self.service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+        binding_before = RoleBinding.objects.get(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role2, "group", self.group.uuid),
+            ]
+        )
+
+        binding_role1 = RoleBinding.objects.get(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(binding_role1.id, binding_before.id)
+
+        self.assertTrue(
+            RoleBinding.objects.filter(
+                role=self.role2, resource_type="workspace", resource_id=str(self.workspace.id)
+            ).exists()
+        )
+
+    def test_batch_create_additive_only(self):
+        """Creating a new binding does not remove existing bindings for the same subject."""
+        self.service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+
+        self.service.batch_create([self._make_request(self.role2, "group", self.group.uuid)])
+
+        self.assertTrue(
+            RoleBinding.objects.filter(
+                role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+            ).exists(),
+            "Pre-existing role1 binding must not be removed",
+        )
+        self.assertTrue(
+            RoleBinding.objects.filter(
+                role=self.role2, resource_type="workspace", resource_id=str(self.workspace.id)
+            ).exists(),
+        )
+
+    def test_batch_create_duplicate_triples_deduplicated(self):
+        """Identical triples within a single batch produce only one binding."""
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        self.assertEqual(len(results), 2, "Results mirror input length")
+
+        bindings = RoleBinding.objects.filter(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(bindings.count(), 1)
+        self.assertEqual(RoleBindingGroup.objects.filter(binding=bindings.first(), group=self.group).count(), 1)
+
+    def test_batch_create_nonexistent_resource_raises_error(self):
+        """A fake workspace UUID is rejected by resource validation."""
+        fake_ws_id = str(uuid.uuid4())
+        with self.assertRaises(NotFoundError) as ctx:
+            self.service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=fake_ws_id,
+                        subject_type="group",
+                        subject_id=str(self.group.uuid),
+                    ),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.resource_type, "workspace")
+        self.assertIn(fake_ws_id, str(ctx.exception))
+
+        self.assertFalse(RoleBinding.objects.filter(resource_id=fake_ws_id).exists())
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityRequest):

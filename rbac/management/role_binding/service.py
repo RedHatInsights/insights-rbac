@@ -190,6 +190,10 @@ class RoleBindingService:
         if missing_users:
             raise NotFoundError(SubjectType.USER, ", ".join(missing_users))
 
+        unique_resources = {(req.resource_type, req.resource_id) for req in requests}
+        for resource_type, resource_id in unique_resources:
+            self._validate_resource(resource_type, resource_id)
+
         subject_resource_groups: dict[tuple, set[int]] = {}
         for req in requests:
             key = (req.subject_type, req.subject_id, req.resource_type, req.resource_id)
