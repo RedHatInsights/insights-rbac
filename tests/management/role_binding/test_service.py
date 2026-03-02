@@ -1463,6 +1463,97 @@ class BatchCreateRoleBindingTests(IdentityRequest):
 
         self.assertFalse(RoleBinding.objects.filter(resource_id=fake_ws_id).exists())
 
+    def test_batch_create_non_workspace_resource(self):
+        """Bindings can be created for resource types without a local table."""
+        app_id = str(uuid.uuid4())
+        results = self.service.batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(self.role1.uuid),
+                    resource_type="application",
+                    resource_id=app_id,
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                ),
+            ]
+        )
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result["resource_type"], "application")
+        self.assertEqual(result["resource_id"], app_id)
+        self.assertIsNone(result["resource_name"])
+
+        binding = RoleBinding.objects.get(resource_type="application", resource_id=app_id)
+        self.assertEqual(binding.role, self.role1)
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+
+    def test_batch_create_mixed_resource_types(self):
+        """A batch with workspace and non-workspace resources succeeds for both."""
+        app_id = str(uuid.uuid4())
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                CreateBindingRequest(
+                    role_id=str(self.role2.uuid),
+                    resource_type="application",
+                    resource_id=app_id,
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                ),
+            ]
+        )
+
+        self.assertEqual(len(results), 2)
+
+        ws_binding = RoleBinding.objects.get(
+            resource_type="workspace", resource_id=str(self.workspace.id), role=self.role1
+        )
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=ws_binding, group=self.group).exists())
+
+        app_binding = RoleBinding.objects.get(resource_type="application", resource_id=app_id, role=self.role2)
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=app_binding, group=self.group).exists())
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_batch_create_non_workspace_resource_replicates(self):
+        """Replication tuples use the correct resource type for non-workspace resources."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        app_id = str(uuid.uuid4())
+        service.batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(self.role1.uuid),
+                    resource_type="application",
+                    resource_id=app_id,
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                ),
+            ]
+        )
+
+        binding = RoleBinding.objects.get(resource_type="application", resource_id=app_id)
+        binding_uuid = str(binding.uuid)
+
+        resource_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "application", app_id),
+                relation("binding"),
+                subject("rbac", "role_binding", binding_uuid),
+            )
+        )
+        self.assertEqual(len(resource_tuples), 1)
+
+        role_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("role"),
+                subject("rbac", "role", self.role1.uuid),
+            )
+        )
+        self.assertEqual(len(role_tuples), 1)
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityRequest):

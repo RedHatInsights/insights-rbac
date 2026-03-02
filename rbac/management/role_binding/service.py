@@ -746,11 +746,11 @@ class RoleBindingService:
     def _validate_resource(self, resource_type: str, resource_id: str) -> None:
         """Validate that the resource exists and belongs to this tenant.
 
-        # TODO: Resource validation is workspace-specific because workspace is
-        # the only resource type with a local table. Role bindings can be
-        # created for any resource type, so this lookup needs to be made
-        # generic as more resource
-        # types are supported.
+        Only resource types with a local table (currently workspace) are
+        checked for existence.  All other types are accepted as is because
+        there is no local record to validate against.
+
+        TODO: check in inventory API for existence of the resource.
 
         Args:
             resource_type: The type of resource (e.g., ``"workspace"``)
@@ -758,7 +758,6 @@ class RoleBindingService:
 
         Raises:
             RequiredFieldError: If resource_type or resource_id is empty
-            InvalidFieldError: If resource_type is not supported
             NotFoundError: If the resource cannot be found for this tenant
         """
         if not resource_type:
@@ -770,8 +769,6 @@ class RoleBindingService:
         if resource_type == "workspace":
             if not Workspace.objects.exists_for_tenant(resource_id, tenant=self.tenant):
                 raise NotFoundError(resource_type, resource_id)
-        else:
-            raise InvalidFieldError("resource_type", f"Unsupported resource type: '{resource_type}'")
 
     def _get_roles(self, role_ids: list[str]) -> list[RoleV2]:
         """Get assignable roles by their UUIDs, validating all exist.
