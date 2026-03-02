@@ -528,6 +528,53 @@ class RoleBindingServiceTests(IdentityRequest):
         parent_binding.delete()
         parent_group.delete()
 
+    def test_validate_resource_accepts_supported_types(self):
+        """Test that _validate_resource accepts all SUPPORTED_RESOURCE_TYPES."""
+        resources_by_type = {
+            "workspace": str(self.workspace.id),
+        }
+        for resource_type in RoleBindingService.SUPPORTED_RESOURCE_TYPES:
+            with self.subTest(resource_type=resource_type):
+                resource_id = resources_by_type.get(resource_type, "some-id")
+                self.service._validate_resource(resource_type, resource_id)
+
+    def test_validate_resource_rejects_unsupported_types(self):
+        """Test that _validate_resource raises InvalidFieldError for unsupported types."""
+        from management.exceptions import InvalidFieldError
+
+        unsupported_types = ["host", "project", "inventory", ""]
+        for resource_type in unsupported_types:
+            if not resource_type:
+                continue
+            with self.subTest(resource_type=resource_type):
+                with self.assertRaises(InvalidFieldError) as context:
+                    self.service._validate_resource(resource_type, "some-id")
+
+                self.assertEqual(context.exception.field, "resource_type")
+                self.assertIn(resource_type, str(context.exception))
+                for supported in sorted(RoleBindingService.SUPPORTED_RESOURCE_TYPES):
+                    self.assertIn(supported, str(context.exception))
+
+    def test_validate_resource_rejects_missing_required_fields(self):
+        """Test that _validate_resource raises RequiredFieldError for empty type or id."""
+        from management.exceptions import RequiredFieldError
+
+        test_cases = [
+            ("empty_resource_type", "", str(self.workspace.id)),
+            ("empty_resource_id", "workspace", ""),
+        ]
+        for description, resource_type, resource_id in test_cases:
+            with self.subTest(case=description):
+                with self.assertRaises(RequiredFieldError):
+                    self.service._validate_resource(resource_type, resource_id)
+
+    def test_validate_resource_rejects_nonexistent_workspace(self):
+        """Test that _validate_resource raises NotFoundError for unknown workspace."""
+        from management.exceptions import NotFoundError
+
+        with self.assertRaises(NotFoundError):
+            self.service._validate_resource("workspace", "00000000-0000-0000-0000-000000000000")
+
     def test_get_role_bindings_works_without_tenant_mapping(self):
         """Test that role binding queries work when tenant has no TenantMapping.
 
