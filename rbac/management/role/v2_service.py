@@ -113,12 +113,14 @@ class RoleV2Service:
             role.save()
             role.permissions.set(permissions)
 
+            tuples_to_add, _ = CustomRoleV2.replication_tuples(role, new_permissions=permissions)
+
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
                     info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
                     partition_key=PartitionKey.byEnvironment(),
-                    add=role.as_tuples(),
+                    add=tuples_to_add,
                 )
             )
 
