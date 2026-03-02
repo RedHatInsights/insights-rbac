@@ -118,6 +118,46 @@ class SubjectQuerySet:
 
         return Subject(type=SubjectType.USER, entity=entity)
 
+    def groups(self, uuids: set[str]) -> dict[str, Group]:
+        """Resolve multiple group UUIDs to Group objects.
+
+        Args:
+            uuids: Set of group UUID strings to resolve
+
+        Returns:
+            Dict mapping UUID string to Group instance
+        """
+        if not uuids:
+            return {}
+        return {str(g.uuid): g for g in Group.objects.filter(uuid__in=uuids)}
+
+    def users(self, uuids: set[str]) -> dict[str, Principal]:
+        """Resolve multiple user UUIDs to Principal objects.
+
+        Validates that every resolved Principal has a ``user_id``,
+        matching the single-lookup check in ``user()``.
+
+        Args:
+            uuids: Set of principal UUID strings to resolve
+
+        Returns:
+            Dict mapping UUID string to Principal instance
+
+        Raises:
+            InvalidFieldError: If any resolved Principal has no user_id
+        """
+        if not uuids:
+            return {}
+        result = {str(p.uuid): p for p in Principal.objects.filter(uuid__in=uuids)}
+        unsynced = [uid for uid, p in result.items() if p.user_id is None]
+        if unsynced:
+            raise InvalidFieldError(
+                "subject_id",
+                f"The following principals do not have a user_id yet: {', '.join(unsynced)}. "
+                "The user_id is populated when the user is synced from the identity provider.",
+            )
+        return result
+
     @classmethod
     def as_manager(cls) -> "SubjectQuerySet":
         """Return a manager instance, following Django's pattern."""

@@ -45,7 +45,7 @@ from management.relation_replicator.types import RelationTuple
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
-from management.subject import Subject, SubjectService, SubjectType
+from management.subject import Subject, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
@@ -91,7 +91,6 @@ class RoleBindingService:
     def __init__(self, tenant: Tenant, replicator: RelationReplicator | None = None):
         """Initialize the service with a tenant and optional replicator."""
         self.tenant = tenant
-        self.subject_service = SubjectService()
         if settings.REPLICATION_TO_RELATION_ENABLED:
             self._replicator = replicator if replicator is not None else OutboxReplicator()
         else:
@@ -180,12 +179,12 @@ class RoleBindingService:
         group_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.GROUP}
         user_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.USER}
 
-        groups_by_uuid = self.subject_service.resolve_groups(group_uuids)
+        groups_by_uuid = Subject.objects.groups(group_uuids)
         missing_groups = group_uuids - set(groups_by_uuid.keys())
         if missing_groups:
             raise NotFoundError(SubjectType.GROUP, ", ".join(missing_groups))
 
-        principals_by_uuid = self.subject_service.resolve_users(user_uuids)
+        principals_by_uuid = Subject.objects.users(user_uuids)
         missing_users = user_uuids - set(principals_by_uuid.keys())
         if missing_users:
             raise NotFoundError(SubjectType.USER, ", ".join(missing_users))

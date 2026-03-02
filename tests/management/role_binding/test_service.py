@@ -1094,6 +1094,17 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace").exists()
         )
 
+    def test_batch_create_rejects_user_without_user_id(self):
+        """A principal without user_id is rejected."""
+        unsynced = Principal.objects.create(
+            username="unsynced_user",
+            tenant=self.tenant,
+            user_id=None,
+            type=Principal.Types.USER,
+        )
+        with self.assertRaises(InvalidFieldError):
+            self.service.batch_create([self._make_request(self.role1, "user", unsynced.uuid)])
+
     def test_batch_create_shared_binding_two_groups(self):
         """Same role+resource with two different groups shares one RoleBinding."""
         group2 = Group.objects.create(name="group2", tenant=self.tenant)
