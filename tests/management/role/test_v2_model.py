@@ -22,11 +22,17 @@ from rest_framework import serializers
 
 from management.models import (
     CustomRoleV2,
+    Group,
     Permission,
     PlatformRoleV2,
+    RoleBinding,
+    RoleBindingGroup,
     RoleV2,
     SeededRoleV2,
 )
+from management.principal.model import Principal
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+from management.role_binding.model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
 
 
@@ -461,3 +467,147 @@ class RoleV2QuerySetTests(IdentityRequest):
         self.custom_role.delete()
         self.seeded_role.delete()
         self.assertEqual(RoleV2.objects.assignable().count(), 0)
+
+
+class CustomRoleV2ReplicationTupleTests(IdentityRequest):
+    """Tests for CustomRoleV2 relation tuple generation methods."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.perm_read = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.perm_write = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+        self.perm_delete = Permission.objects.create(permission="app:resource:delete", tenant=self.tenant)
+        self.role = CustomRoleV2.objects.create(name="test_role", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down."""
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+
+    def _permission_tuple(self, permission: Permission) -> RelationTuple:
+        """Build the expected permission tuple for self.role."""
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid)),
+            relation=permission.v2_string(),
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id="*")
+            ),
+        )
+
+    # ── _permission_tuple ─────────────────────────────────────────────
+
+    def test_permission_tuple_returns_exact_tuple(self):
+        """_permission_tuple builds rbac/role:<uuid>#<perm>@rbac/principal:*."""
+        self.assertEqual(
+            CustomRoleV2._permission_tuple(self.role, self.perm_read),
+            self._permission_tuple(self.perm_read),
+        )
+
+    # ── replication_tuples (permission delta) ─────────────────────────
+
+    def test_replication_tuples_computes_permission_diff(self):
+        """replication_tuples returns the exact delta for each role lifecycle operation."""
+        read = self._permission_tuple(self.perm_read)
+        write = self._permission_tuple(self.perm_write)
+        delete = self._permission_tuple(self.perm_delete)
+
+        cases = [
+            (
+                "create",
+                [],
+                [self.perm_read, self.perm_write],
+                {read, write},
+                set(),
+            ),
+            (
+                "noop",
+                [self.perm_read, self.perm_write],
+                [self.perm_read, self.perm_write],
+                set(),
+                set(),
+            ),
+            (
+                "update_swap_permission",
+                [self.perm_read, self.perm_write],
+                [self.perm_write, self.perm_delete],
+                {delete},
+                {read},
+            ),
+            (
+                "delete",
+                [self.perm_read, self.perm_write],
+                [],
+                set(),
+                {read, write},
+            ),
+        ]
+        for label, old, new, expected_add, expected_remove in cases:
+            with self.subTest(label):
+                to_add, to_remove = CustomRoleV2.replication_tuples(
+                    self.role, old_permissions=old, new_permissions=new
+                )
+                self.assertEqual(set(to_add), expected_add)
+                self.assertEqual(set(to_remove), expected_remove)
+
+    # ── replication_tuples (delete with bindings) ─────────────────────
+
+    def test_replication_tuples_delete_includes_binding_and_subject_tuples(self):
+        """Deleting a role removes permission tuples and all associated binding tuples."""
+        group = Group.objects.create(name="g1", tenant=self.tenant)
+        principal = Principal.objects.create(tenant=self.tenant, username="u1", user_id="uid1")
+        principal_resource_id = Principal.user_id_to_principal_resource_id(principal.user_id)
+
+        binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-1",
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(binding=binding, group=group)
+        RoleBindingPrincipal.objects.create(binding=binding, principal=principal, source="direct")
+
+        binding = RoleBinding.objects.prefetch_related("group_entries", "principal_entries").get(pk=binding.pk)
+        binding_ref = ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(binding.uuid))
+
+        to_add, to_remove = CustomRoleV2.replication_tuples(
+            self.role,
+            old_permissions=[self.perm_read],
+            bindings_deleted=[binding],
+        )
+
+        expected_remove = {
+            self._permission_tuple(self.perm_read),
+            RelationTuple(
+                resource=binding_ref,
+                relation="role",
+                subject=SubjectReference(
+                    subject=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid))
+                ),
+            ),
+            RelationTuple(
+                resource=ObjectReference(type=ObjectType(namespace="rbac", name="workspace"), id="ws-1"),
+                relation="binding",
+                subject=SubjectReference(subject=binding_ref),
+            ),
+            RelationTuple(
+                resource=binding_ref,
+                relation="subject",
+                subject=SubjectReference(
+                    subject=ObjectReference(type=ObjectType(namespace="rbac", name="group"), id=str(group.uuid)),
+                    relation="member",
+                ),
+            ),
+            RelationTuple(
+                resource=binding_ref,
+                relation="subject",
+                subject=SubjectReference(
+                    subject=ObjectReference(
+                        type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id
+                    )
+                ),
+            ),
+        }
+
+        self.assertEqual(set(to_add), set())
+        self.assertEqual(set(to_remove), expected_remove)
