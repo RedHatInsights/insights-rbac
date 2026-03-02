@@ -22,7 +22,7 @@ from typing import Iterable, Optional
 
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
-from management.permission.scope_service import Scope, ImplicitResourceService
+from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
     PartitionKey,

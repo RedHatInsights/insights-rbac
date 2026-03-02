@@ -20,9 +20,6 @@ from typing import Optional
 
 from django.conf import settings
 from django.db import transaction
-
-from api.cross_access.model import CrossAccountRequest
-from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -30,6 +27,8 @@ from management.relation_replicator.relation_replicator import RelationReplicato
 from management.role.model import Role
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 
+from api.cross_access.model import CrossAccountRequest
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
