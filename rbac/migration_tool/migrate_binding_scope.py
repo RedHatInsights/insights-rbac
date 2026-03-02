@@ -20,6 +20,9 @@ from typing import Optional
 
 from django.conf import settings
 from django.db import transaction
+
+from api.cross_access.model import CrossAccountRequest
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -105,6 +108,38 @@ def migrate_system_role_bindings_for_group(group: Group, replicator: RelationRep
     return bindings_cleaned
 
 
+def _migrate_car_bindings(car: CrossAccountRequest, replicator: RelationReplicator):
+    if car.status != "approved":
+        return 0
+
+    roles = list(car.roles.all())
+
+    if len(roles) == 0:
+        return 0
+
+    dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+        cross_account_request=car,
+        event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
+        replicator=replicator,
+    )
+
+    dual_write_handler.generate_relations_to_remove_roles(roles)
+    bindings_cleaned = len(dual_write_handler.relations_to_remove)
+    dual_write_handler.replicate()
+
+    dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+        cross_account_request=car,
+        event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
+        replicator=replicator,
+    )
+
+    dual_write_handler.generate_relations_to_add_roles(roles)
+    dual_write_handler.replicate()
+
+    logger.info(f"Processed {bindings_cleaned} binding/relation removals for CAR {car.id}")
+    return bindings_cleaned
+
+
 def migrate_all_role_bindings(
     replicator: RelationReplicator = OutboxReplicator(),
     tenant: Optional[Tenant] = None,
@@ -121,6 +156,13 @@ def migrate_all_role_bindings(
 
     Returns: Tuple of (items_checked, items_migrated)
     """
+    if tenant:
+        if tenant.tenant_name == "public":
+            raise ValueError("Cannot migrate binding scope for the public tenant.")
+
+        if tenant.org_id is None:
+            raise ValueError("Cannot migrate binding scope for a tenant without an org_id.")
+
     tenant_info = f" for tenant {tenant.org_id}" if tenant else ""
     logger.info(f"Starting binding scope migration{tenant_info}")
     logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
@@ -210,12 +252,53 @@ def migrate_all_role_bindings(
         f"Completed system role migration via groups: {groups_checked} groups checked, {groups_migrated} migrated"
     )
 
-    total_checked = custom_roles_checked + groups_checked
-    total_migrated = custom_roles_migrated + groups_migrated
+    # Part 3: migrate cross-account requests
+
+    cars = CrossAccountRequest.objects.filter(status="approved")
+
+    if tenant:
+        cars = cars.filter(target_org=tenant.org_id)
+
+    total_cars = cars.count()
+    logger.info(f"Found {total_cars} cross-account requests to migrate.")
+
+    cars_checked = 0
+    cars_migrated = 0
+
+    for raw_car in cars.iterator():
+        cars_checked += 1
+
+        with transaction.atomic():
+            car: Optional[CrossAccountRequest] = (
+                CrossAccountRequest.objects.filter(pk=raw_car.pk).select_for_update().first()
+            )
+
+            if car is None:
+                logger.warning(f"Cross-account request vanished before it could be migrated: pk={car.pk!r}")
+                continue
+
+            try:
+                migrated = _migrate_car_bindings(car=car, replicator=replicator)
+
+                if migrated > 0:
+                    cars_migrated += 1
+            except Exception as e:
+                logger.error(
+                    f"Failed to migrate roles for cross-account request with pk={car.pk!r}: {e}", exc_info=True
+                )
+                continue
+
+        if cars_checked % 10 == 0 or cars_checked == total_cars:
+            logger.info(f"Progress (CARs): processed {cars_checked}/{total_cars}, migrated {cars_migrated}")
+
+    logger.info(f"Completed cross-account request migration: {cars_checked} CARs checked, {cars_migrated} migrated")
+
+    total_checked = custom_roles_checked + groups_checked + cars_checked
+    total_migrated = custom_roles_migrated + groups_migrated + cars_migrated
 
     logger.info(
         f"Completed binding scope migration{tenant_info}: "
-        f"{custom_roles_migrated} custom roles + {groups_migrated} groups migrated"
+        f"{custom_roles_migrated} custom roles + {groups_migrated} groups + {cars_migrated} CARs migrated"
     )
 
     return total_checked, total_migrated
