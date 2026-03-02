@@ -171,77 +171,82 @@ class RoleBindingService:
     @atomic
     def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
         """Create multiple role bindings."""
-        role_uuids = list({req.role_id for req in requests})
-        roles = self._get_roles(role_uuids)
+        roles = self._get_roles(list({req.role_id for req in requests}))
         roles_by_uuid = {str(r.uuid): r for r in roles}
         roles_by_id = {r.id: r for r in roles}
 
-        group_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.GROUP}
-        user_uuids = {req.subject_id for req in requests if req.subject_type == SubjectType.USER}
+        subjects_by_uuid = self._resolve_subjects(requests)
 
-        groups_by_uuid = Subject.objects.groups(group_uuids)
-        missing_groups = group_uuids - set(groups_by_uuid.keys())
-        if missing_groups:
-            raise NotFoundError(SubjectType.GROUP, ", ".join(missing_groups))
-
-        principals_by_uuid = Subject.objects.users(user_uuids)
-        missing_users = user_uuids - set(principals_by_uuid.keys())
-        if missing_users:
-            raise NotFoundError(SubjectType.USER, ", ".join(missing_users))
-
-        unique_resources = {(req.resource_type, req.resource_id) for req in requests}
-        for resource_type, resource_id in unique_resources:
+        for resource_type, resource_id in {(r.resource_type, r.resource_id) for r in requests}:
             self._validate_resource(resource_type, resource_id)
 
-        subject_resource_groups: dict[tuple, set[int]] = {}
-        for req in requests:
-            key = (req.subject_type, req.subject_id, req.resource_type, req.resource_id)
-            subject_resource_groups.setdefault(key, set()).add(roles_by_uuid[req.role_id].id)
-
+        access_groups = self._group_by_subject_resource(requests, roles_by_uuid)
         all_tuples_to_add: list[RelationTuple] = []
-        for (subject_type, subject_id, resource_type, resource_id), role_ids in subject_resource_groups.items():
-            if subject_type == SubjectType.GROUP:
-                subject = groups_by_uuid[subject_id]
-            else:
-                subject = principals_by_uuid[subject_id]
+
+        for key, role_ids in access_groups.items():
+            subject_type, subject_id, resource_type, resource_id = key
+            subject = subjects_by_uuid[subject_id]
+
             created, linked = self._add_access(subject, resource_type, resource_id, roles_by_id, role_ids)
             tuples_add, _ = RoleBinding.replication_tuples(
-                subject=subject,
-                bindings_created=created,
-                subject_linked_to=linked,
+                subject=subject, bindings_created=created, subject_linked_to=linked
             )
             all_tuples_to_add.extend(tuples_add)
 
         self._replicate_tuples(all_tuples_to_add, [], ReplicationEventType.BATCH_CREATE_ROLE_BINDING)
 
-        resource_names: dict[tuple[str, str], str | None] = {}
-        result = []
-        for req in requests:
-            rkey = (req.resource_type, req.resource_id)
-            if rkey not in resource_names:
-                resource_names[rkey] = self.get_resource_name(req.resource_id, req.resource_type)
-            role = roles_by_uuid[req.role_id]
-            subject = (
-                groups_by_uuid[req.subject_id]
-                if req.subject_type == SubjectType.GROUP
-                else principals_by_uuid[req.subject_id]
-            )
-            result.append(
-                {
-                    "role": role,
-                    "subject_type": req.subject_type,
-                    "subject": subject,
-                    "resource_type": req.resource_type,
-                    "resource_id": req.resource_id,
-                    "resource_name": resource_names.get(rkey),
-                }
-            )
+        resource_names = self._compute_resource_names(requests)
+        result = [
+            {
+                "role": roles_by_uuid[req.role_id],
+                "subject_type": req.subject_type,
+                "subject": subjects_by_uuid[req.subject_id],
+                "resource_type": req.resource_type,
+                "resource_id": req.resource_id,
+                "resource_name": resource_names[(req.resource_type, req.resource_id)],
+            }
+            for req in requests
+        ]
 
-        logger.info(
-            "Created %d role binding(s) for tenant %s",
-            len(result),
-            self.tenant.org_id,
-        )
+        logger.info("Created %d role binding(s) for tenant %s", len(result), self.tenant.org_id)
+        return result
+
+    def _resolve_subjects(self, requests: list[CreateBindingRequest]) -> dict[str, Group | Principal]:
+        """Batch-resolve all subjects, raising NotFoundError for any missing."""
+        group_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.GROUP}
+        user_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.USER}
+
+        groups_by_uuid = Subject.objects.groups(group_uuids)
+        missing = group_uuids - set(groups_by_uuid.keys())
+        if missing:
+            raise NotFoundError(SubjectType.GROUP, ", ".join(missing))
+
+        principals_by_uuid = Subject.objects.users(user_uuids)
+        missing = user_uuids - set(principals_by_uuid.keys())
+        if missing:
+            raise NotFoundError(SubjectType.USER, ", ".join(missing))
+
+        return {**groups_by_uuid, **principals_by_uuid}
+
+    @staticmethod
+    def _group_by_subject_resource(
+        requests: list[CreateBindingRequest],
+        roles_by_uuid: dict[str, RoleV2],
+    ) -> dict[tuple, set[int]]:
+        """Group requests into (subject_type, subject_id, resource_type, resource_id) -> role PKs."""
+        groups: dict[tuple, set[int]] = {}
+        for req in requests:
+            key = (req.subject_type, req.subject_id, req.resource_type, req.resource_id)
+            groups.setdefault(key, set()).add(roles_by_uuid[req.role_id].id)
+        return groups
+
+    def _compute_resource_names(self, requests: list[CreateBindingRequest]) -> dict[tuple[str, str], str | None]:
+        """Resolve display names for each unique resource."""
+        result: dict[tuple[str, str], str | None] = {}
+        for req in requests:
+            key = (req.resource_type, req.resource_id)
+            if key not in result:
+                result[key] = self.get_resource_name(req.resource_id, req.resource_type)
         return result
 
     def _build_base_queryset(
