@@ -27,7 +27,7 @@ from management.models import Group
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
-from management.role_binding.service import RoleBindingService
+from management.role_binding.service import CreateBindingRequest, RoleBindingService
 from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
@@ -532,6 +532,150 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
                 resource_data["type"] = obj.resource_type
 
         return resource_data
+
+
+class ResourceInputSerializer(serializers.Serializer):
+    """Validates the resource portion of a role binding request."""
+
+    id = serializers.UUIDField(help_text="UUID of the resource")
+    type = serializers.CharField(help_text="Type of resource")
+
+
+class SubjectInputSerializer(serializers.Serializer):
+    """Validates the subject portion of a role binding request."""
+
+    id = serializers.UUIDField(help_text="UUID of the subject")
+    type = serializers.ChoiceField(choices=["user", "group"], help_text="Type of subject")
+
+
+class CreateRoleBindingItemSerializer(serializers.Serializer):
+    """Validates a single role binding request item."""
+
+    resource = ResourceInputSerializer()
+    subject = SubjectInputSerializer()
+    role = RoleIdSerializer()
+
+
+class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
+    """Validates and processes a batch create role bindings request."""
+
+    service_class = RoleBindingService
+
+    requests = CreateRoleBindingItemSerializer(many=True, min_length=1, max_length=100)
+    fields = serializers.CharField(
+        required=False, default="", allow_blank=True, help_text="Control which fields are included"
+    )
+
+    @property
+    def service(self):
+        """Return the service instance."""
+        return self.context.get("role_binding_service") or self.service_class(tenant=self.context["request"].tenant)
+
+    def validate_fields(self, value):
+        """Parse and validate the fields query parameter for response field masking."""
+        if not value:
+            return None
+        try:
+            return RoleBindingFieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+    def create(self, validated_data):
+        """Create role bindings using the service layer."""
+        requests = [
+            CreateBindingRequest(
+                role_id=str(item["role"]["id"]),
+                resource_type=item["resource"]["type"],
+                resource_id=str(item["resource"]["id"]),
+                subject_type=item["subject"]["type"],
+                subject_id=str(item["subject"]["id"]),
+            )
+            for item in validated_data["requests"]
+        ]
+        return self.service.batch_create(requests)
+
+
+class BatchCreateRoleBindingResponseItemSerializer(serializers.Serializer):
+    """Serializes a single created role binding for the batch create response."""
+
+    DEFAULT_FIELDS = {
+        "role": {"id"},
+        "subject": {"id", "type"},
+        "resource": {"id"},
+    }
+
+    role = serializers.SerializerMethodField()
+    subject = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+
+    def __init__(self, *args, **kwargs):
+        """Initialize with dynamic field selection from context."""
+        super().__init__(*args, **kwargs)
+
+        allowed = self.context.get("fields")
+        if allowed is not None:
+            requested = set(allowed.nested_fields.keys())
+            for field_name in set(self.fields) - requested:
+                self.fields.pop(field_name)
+
+    def _get_nested_fields(self, name: str) -> set:
+        """Return the set of sub-fields for a nested object."""
+        allowed = self.context.get("fields")
+        if allowed is not None:
+            return allowed.get_nested(name)
+        return self.DEFAULT_FIELDS.get(name, set())
+
+    def get_role(self, obj):
+        """Serialize role data."""
+        role = obj["role"]
+        fields = self._get_nested_fields("role")
+        result = {}
+        if "id" in fields:
+            result["id"] = str(role.uuid)
+        if "name" in fields:
+            result["name"] = role.name
+        return result
+
+    def get_subject(self, obj):
+        """Serialize subject data."""
+        fields = self._get_nested_fields("subject")
+        subject = obj["subject"]
+        result = {}
+        if "id" in fields:
+            result["id"] = str(subject.uuid)
+        if "type" in fields:
+            result["type"] = obj["subject_type"]
+
+        fields = self.context.get("fields")
+        if fields and obj["subject_type"] == "group":
+            group_fields = fields.get_sub_object_fields("subject", "group")
+            if group_fields:
+                group_details = {}
+                for field_name in group_fields:
+                    if field_name == "user_count":
+                        group_details[field_name] = getattr(subject, "principalCount", 0)
+                    else:
+                        value = getattr(subject, field_name, None)
+                        if value is not None:
+                            group_details[field_name] = value
+                if group_details:
+                    result["group"] = group_details
+
+        return result
+
+    def get_resource(self, obj):
+        """Serialize resource data."""
+        fields = self._get_nested_fields("resource")
+        result = {}
+        if "id" in fields:
+            result["id"] = obj["resource_id"]
+        if "type" in fields:
+            result["type"] = obj["resource_type"]
+        if "name" in fields:
+            name = obj.get("resource_name")
+            if name is not None:
+                result["name"] = name
+        return result
 
 
 # ──────────────────────────────────────────────────────────────────────

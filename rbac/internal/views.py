@@ -2218,11 +2218,6 @@ def migrate_binding_scope(request):
     """View method for running binding scope migration.
 
     POST /_private/api/utils/migrate_binding_scope/
-    query params:
-        write_relationships: True, False, outbox, logging (default: True)
-            - True/outbox: Create V2 models and replicate to outbox
-            - logging: Create V2 models and log what would be replicated
-            - False: Create V2 models without replication
 
     Migrates all role bindings to the correct scope based on permission scopes.
     Iterates through roles (not binding mappings) and uses dual write handlers.
@@ -2230,17 +2225,12 @@ def migrate_binding_scope(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
 
-    write_relationships = request.GET.get("write_relationships", "True")
+    logger.info("Running binding scope migration.")
 
-    logger.info(f"Running binding scope migration: write_relationships={write_relationships}")
-
-    migrate_binding_scope_in_worker.delay(write_relationships=write_relationships)
+    migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
-        {
-            "message": "Binding scope migration is running in a background worker.",
-            "write_relationships": write_relationships,
-        },
+        {"message": "Binding scope migration is running in a background worker."},
         status=202,
     )
 

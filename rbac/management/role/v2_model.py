@@ -210,6 +210,11 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 
         return tuples_to_add, tuples_to_remove
 
+    def update(self, name: str, description: str):
+        """Update the role's mutable attributes."""
+        self.name = name
+        self.description = description
+
 
 class SeededRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
     """V2 Seeded role model."""
