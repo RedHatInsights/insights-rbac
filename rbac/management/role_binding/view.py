@@ -120,7 +120,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         fields = serializer.validated_data.get("fields")
         response_serializer = BatchCreateRoleBindingResponseItemSerializer(
-            created_bindings, many=True, context={"fields": fields}
+            created_bindings, many=True, context={"field_selection": fields}
         )
         return Response({"role_bindings": response_serializer.data}, status=status.HTTP_201_CREATED)
 

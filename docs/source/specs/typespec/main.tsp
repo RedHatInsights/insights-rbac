@@ -986,8 +986,8 @@ namespace RoleBindings {
         @query parent_role_bindings?: boolean = false;
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
-        @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
-        @query fields?: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
+        @example("subject(group.name,group.user_count),roles(name),resource(name,type),last_modified")
+        @query fields?: FieldMask = "subject(group.name),roles(name),resource(name,type),last_modified";
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
         @query order_by?: OrderBy = "subject_name";

@@ -1831,10 +1831,10 @@ class BatchCreateViewTests(IdentityRequest):
         item = response.data["role_bindings"][0]
 
         self.assertIn("id", item["role"])
-        self.assertEqual(item["role"]["id"], str(self.role.uuid))
+        self.assertEqual(item["role"]["id"], self.role.uuid)
 
         self.assertIn("id", item["subject"])
-        self.assertEqual(item["subject"]["id"], str(self.group.uuid))
+        self.assertEqual(item["subject"]["id"], self.group.uuid)
         self.assertEqual(item["subject"]["type"], "group")
 
         self.assertIn("id", item["resource"])
@@ -1845,7 +1845,7 @@ class BatchCreateViewTests(IdentityRequest):
         return_value=True,
     )
     def test_batch_create_with_fields_param(self, mock_permission):
-        """Query param ?fields=role(name,id) filters response fields."""
+        """Query param ?fields=role(name,id) strips unrequested top-level sections."""
         url = self._get_batch_create_url()
         response = self.client.post(
             f"{url}?fields=role(name,id)", self._valid_payload(), format="json", **self.headers
@@ -2508,7 +2508,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     {"roles": [{"id": str(self.role1.uuid)}]},
                     "Invalid field(s): Unknown field: 'bogus_field'."
                     " Valid resource fields: ['id', 'name', 'type']."
-                    " Valid role fields: ['id', 'name']."
+                    " Valid roles fields: ['id', 'name']."
                     " Valid subject fields: ['group.description', 'group.name',"
                     " 'group.user_count', 'id', 'type']."
                     " Valid root fields: ['last_modified'].",

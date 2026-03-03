@@ -194,7 +194,7 @@ paths:
           description: Control which fields are included in the response to optimize payload size and improve performance.
           schema:
             $ref: '#/components/schemas/FieldMask'
-            default: subject(group.name),role(name),resource(name,type),last_modified
+            default: subject(group.name),roles(name),resource(name,type),last_modified
           explode: false
         - name: order_by
           in: query
