@@ -515,3 +515,83 @@ class RoleV2RequestSerializerTests(IdentityRequest):
 
         # Verify the injected service was used
         mock_service.create.assert_called_once()
+
+    def test_serializer_update_success(self):
+        """Test that update delegates to service and returns updated role."""
+        role = CustomRoleV2.objects.create(
+            name="Original Role",
+            description="Original description",
+            tenant=self.tenant,
+        )
+        role.permissions.add(self.permission)
+
+        data = {
+            "name": "Updated Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        serializer = RoleV2RequestSerializer(instance=role, data=data, context={"request": self.mock_request})
+
+        self.assertTrue(serializer.is_valid())
+        updated_role = serializer.save()
+
+        self.assertEqual(updated_role.name, "Updated Role")
+        self.assertEqual(updated_role.description, "Updated description")
+
+    def test_serializer_update_nonexistent_role_raises_not_found(self):
+        """Test that updating a nonexistent role raises NotFound."""
+        from rest_framework.exceptions import NotFound
+
+        role = CustomRoleV2.objects.create(
+            name="Original Role",
+            description="Original description",
+            tenant=self.tenant,
+        )
+        # Delete the role to simulate it not existing
+        role_uuid = role.uuid
+        role.delete()
+
+        # Create a mock instance with the deleted UUID
+        mock_instance = Mock()
+        mock_instance.uuid = role_uuid
+
+        data = {
+            "name": "Updated Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        serializer = RoleV2RequestSerializer(instance=mock_instance, data=data, context={"request": self.mock_request})
+
+        self.assertTrue(serializer.is_valid())
+        with self.assertRaises(NotFound):
+            serializer.save()
+
+    def test_serializer_update_duplicate_name_raises_validation_error(self):
+        """Test that updating to a duplicate name raises ValidationError."""
+        role1 = CustomRoleV2.objects.create(
+            name="Role One",
+            description="First role",
+            tenant=self.tenant,
+        )
+
+        role2 = CustomRoleV2.objects.create(
+            name="Role Two",
+            description="Second role",
+            tenant=self.tenant,
+        )
+
+        data = {
+            "name": "Role One",
+            "description": "Second role",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        serializer = RoleV2RequestSerializer(instance=role2, data=data, context={"request": self.mock_request})
+
+        self.assertTrue(serializer.is_valid())
+        with self.assertRaises(serializers.ValidationError) as cm:
+            serializer.save()
+
+        self.assertIn("name", cm.exception.detail)
