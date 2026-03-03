@@ -1685,6 +1685,7 @@ parameters:
   value: "False"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
+  value: 'True'
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
