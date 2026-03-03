@@ -53,9 +53,6 @@ def migrate_custom_role_bindings(role: Role, replicator: RelationReplicator) -> 
     # Use RelationApiDualWriteHandler
     dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE, replicator=replicator)
 
-    if not dual_write.replication_enabled():
-        raise AssertionError("Expected replication to be enabled.")
-
     # Prepare for update: captures current bindings
     dual_write.prepare_for_update()
 
@@ -91,7 +88,8 @@ def migrate_system_role_bindings_for_group(group: Group, replicator: RelationRep
     )
 
     if not dual_write_handler.replication_enabled():
-        raise AssertionError("Expected replication to be enabled.")
+        logger.info(f"Skipping migration for group {group.uuid} ({group.name}) because replication is disabled")
+        return 0
 
     # First remove existing bindings (including wrong-scoped ones) before re-adding correct assignments.
     dual_write_handler.generate_relations_to_remove_roles(system_roles)
@@ -123,9 +121,6 @@ def _migrate_car_bindings(car: CrossAccountRequest, replicator: RelationReplicat
         event_type=ReplicationEventType.MIGRATE_BINDING_SCOPE,
         replicator=replicator,
     )
-
-    if not dual_write_handler.replication_enabled():
-        raise AssertionError("Expected replication to be enabled.")
 
     dual_write_handler.generate_relations_to_remove_roles(roles)
     bindings_cleaned = len(dual_write_handler.relations_to_remove)
@@ -166,10 +161,6 @@ def migrate_all_role_bindings(
 
         if tenant.org_id is None:
             raise ValueError("Cannot migrate binding scope for a tenant without an org_id.")
-
-    # We check for instance equality here to mirror RelationApiDualWriteSubjectHandler.replication_enabled.
-    if settings.REPLICATION_TO_RELATION_ENABLED is not True:
-        raise RuntimeError("Replication must be enabled while migrating binding scope.")
 
     tenant_info = f" for tenant {tenant.org_id}" if tenant else ""
     logger.info(f"Starting binding scope migration{tenant_info}")
